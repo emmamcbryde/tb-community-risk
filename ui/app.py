@@ -1,6 +1,16 @@
+# ensure we can import from parent folder (project root)
+import os, sys
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import streamlit as st
 import pandas as pd
 import numpy as np
+
+
+
+
 from engine.model import simulate_community
 
 # --- Streamlit page setup ---
