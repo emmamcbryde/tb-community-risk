@@ -1,17 +1,23 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from engine.model import simulate_community
 
+# --- Streamlit page setup ---
 st.set_page_config(page_title="TB Community Risk Model", layout="wide")
 
 st.title("🧮 Community-level TB Risk Model")
+st.markdown("Estimate tuberculosis risk in a community based on population traits and interventions.")
 
+# --- Sidebar Inputs ---
 st.sidebar.header("Community Parameters")
 
-# Example inputs
 population = st.sidebar.number_input("Population size", min_value=100, value=10000, step=100)
 indigenous_pct = st.sidebar.slider("Indigenous population (%)", 0, 100, 60)
 smoker_pct = st.sidebar.slider("Smoker population (%)", 0, 100, 30)
+diabetes_pct = st.sidebar.slider("Diabetes (%)", 0, 100, 10)
+renal_pct = st.sidebar.slider("Renal impairment (%)", 0, 100, 5)
+immune_pct = st.sidebar.slider("Immunosuppressed (%)", 0, 100, 3)
 recent_infection = st.sidebar.slider("Recent infection (%)", 0, 50, 5)
 time_horizon = st.sidebar.slider("Time horizon (years)", 1, 30, 20)
 
@@ -19,25 +25,44 @@ st.sidebar.header("Intervention Strategy")
 testing = st.sidebar.selectbox("Testing method", ["None", "TST", "IGRA"])
 treatment = st.sidebar.selectbox("Treatment regimen", ["None", "3HP", "4R", "6H", "9H"])
 
-# Simple placeholder model
-base_incidence = 200  # per 100k, baseline
-risk_factor = (1 + indigenous_pct/100 * 0.5 + smoker_pct/100 * 0.2 + recent_infection/50)
-intervention_factor = 1.0
+st.sidebar.header("Run Simulation")
+run_button = st.sidebar.button("Simulate Community")
 
-if testing != "None" and treatment != "None":
-    intervention_factor = 0.7  # assume 30% reduction in incidence
+# --- Run Model ---
+if run_button:
+    st.info("Running simulation...")
 
-annual_incidence = base_incidence * risk_factor * intervention_factor
+    inputs = {
+        "population": population,
+        "indigenous_pct": indigenous_pct,
+        "smoker_pct": smoker_pct,
+        "diabetes_pct": diabetes_pct,
+        "renal_pct": renal_pct,
+        "immune_pct": immune_pct,
+        "recent_infection": recent_infection,
+        "time_horizon": time_horizon,
+        "testing": testing,
+        "treatment": treatment,
+    }
 
-# Display results
-st.subheader("Results")
-st.metric("Estimated annual incidence (per 100,000)", f"{annual_incidence:.1f}")
+    try:
+        df, summary = simulate_community(inputs, file_path="data/parameters.xlsx")
 
-# Simulated trajectory
-years = np.arange(0, time_horizon + 1)
-incidence_over_time = annual_incidence * np.exp(-0.05 * years)
-df = pd.DataFrame({"Year": years, "Incidence": incidence_over_time})
+        # --- Display Results ---
+        st.subheader("📊 Results Summary")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Peak incidence (per 100,000)", f"{summary['Peak incidence']:.1f}")
+        c2.metric("Total TB cases", f"{summary['Total cases']:.0f}")
+        c3.metric("Total TB deaths", f"{summary['Total TB deaths']:.0f}")
 
-st.line_chart(df.set_index("Year"))
+        st.subheader("📈 Annual Incidence Over Time")
+        st.line_chart(df.set_index("Year")[["Incidence_per_100k"]])
 
-st.caption("Prototype demo — calculations will later be replaced by the full Markov engine.")
+        st.caption("Model uses parameters from data/parameters.xlsx.")
+        st.success("✅ Simulation complete!")
+
+    except Exception as e:
+        st.error(f"Simulation failed: {e}")
+
+else:
+    st.info("Adjust community parameters in the sidebar and click **Simulate Community** to run the model.")
