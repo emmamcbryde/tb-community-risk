@@ -78,14 +78,15 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
     )
 
     # === Intervention effects with coverage ===
+    # === Intervention effects with coverage ===
     coverage = inputs.get("coverage", 1.0)
-    intervention_factor = 1.0
+
     if testing != "None" and treatment != "None":
-        intervention_factor = 0.7  # full test+treat
+        full_effect = 0.7   # 30% reduction if everyone covered
     elif testing != "None":
-        intervention_factor = 0.85
+        full_effect = 0.85  # 15% reduction
     elif treatment != "None":
-        intervention_factor = 0.8
+        full_effect = 0.8   # 20% reduction
     else:
         full_effect = 1.0   # no change
 
@@ -94,9 +95,17 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
 
     # Also produce a baseline (no-intervention) series for comparison
     baseline_factor = 1.0
+
+
+    # Adjust for coverage
+    intervention_factor = 1 - coverage * (1 - full_effect)
+
+    # Also produce a baseline (no-intervention) series for comparison
+    baseline_factor = 1.0
  
 
-    # === Annual simulation ===
+
+   # === Annual simulation ===
     years = np.arange(0, T + 1)
     incidence_baseline = base_incidence * baseline_risk * baseline_factor * np.exp(-0.05 * years)
     incidence_strategy = base_incidence * baseline_risk * intervention_factor * np.exp(-0.05 * years)
@@ -120,16 +129,14 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
         "TB_Deaths_baseline": tb_deaths_baseline,
         "TB_Deaths_strategy": tb_deaths_strategy,
     })
-
-
-
     summary = {
-    "Peak incidence (strategy)": np.max(incidence_strategy),
-    "Total cases (strategy)": np.sum(cases_strategy),
-    "Total TB deaths (strategy)": np.sum(tb_deaths_strategy),
-    "Total cases (baseline)": np.sum(cases_baseline),
-    "Total TB deaths (baseline)": np.sum(tb_deaths_baseline),
-}
+        "Peak incidence": np.max(incidence_strategy),
+        "Total cases": np.sum(cases_strategy),
+        "Total TB deaths": np.sum(tb_deaths_strategy),
+        "Peak incidence (baseline)": np.max(incidence_baseline),
+        "Total cases (baseline)": np.sum(cases_baseline),
+        "Total TB deaths (baseline)": np.sum(tb_deaths_baseline),
+    }
 
 
     return df, summary
