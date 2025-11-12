@@ -34,6 +34,8 @@ time_horizon = st.sidebar.slider("Time horizon (years)", 1, 30, 20)
 st.sidebar.header("Intervention Strategy")
 testing = st.sidebar.selectbox("Testing method", ["None", "TST", "IGRA"])
 treatment = st.sidebar.selectbox("Treatment regimen", ["None", "3HP", "4R", "6H", "9H"])
+coverage = st.sidebar.slider("Intervention coverage (%)", 0, 100, 80)
+
 
 st.sidebar.header("Run Simulation")
 run_button = st.sidebar.button("Simulate Community")
@@ -53,6 +55,7 @@ if run_button:
         "time_horizon": time_horizon,
         "testing": testing,
         "treatment": treatment,
+        "coverage": coverage / 100,  # convert to fraction
     }
 
     try:
@@ -66,7 +69,10 @@ if run_button:
         c3.metric("Total TB deaths", f"{summary['Total TB deaths']:.0f}")
 
         st.subheader("📈 Annual Incidence Over Time")
-        st.line_chart(df.set_index("Year")[["Incidence_per_100k"]])
+        chart_df = df.set_index("Year")[["Incidence_strategy", "Incidence_baseline"]]
+        st.line_chart(chart_df)
+
+        st.caption("_Solid line = chosen strategy, dashed line = baseline (no intervention)_")
 
         st.caption("Model uses parameters from data/parameters.xlsx.")
         st.success("✅ Simulation complete!")
