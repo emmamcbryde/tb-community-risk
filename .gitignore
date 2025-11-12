@@ -1,0 +1,19 @@
+# IDE / Editor backups
+*.bak
+*.tmp
+*.swp
+*.ini
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Spyder / Jupyter workspace
+.spyproject/
+.ipynb_checkpoints/
+.history/
