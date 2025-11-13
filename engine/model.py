@@ -58,7 +58,8 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
     treatment = inputs.get("treatment", "None")
 
     # === Core relative risks ===
-    base_incidence = 200  # baseline per 100k
+    # Use user-provided baseline incidence if available, otherwise default
+    base_incidence = inputs.get("user_incidence", 200)
     rr_indigenous = community_risk.get("Indigenous", 2.0)
     rr_smoking = comorbid.get("Smoking", 1.5)
     rr_diabetes = comorbid.get("Diabetes", 1.8)
@@ -112,6 +113,17 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
 
     cases_baseline = N * incidence_baseline / 1e5
     cases_strategy = N * incidence_strategy / 1e5
+    def infer_ari(incidence_per100k, params, method="duration"):
+        if method == "styablo":   # typo-safe alias if you want
+            f_ss = 0.6  # or read from parameters
+            return ari_styblo(incidence_per100k, f_ssplus=f_ss)
+        else:
+            # Pull from parameters if available; otherwise defaults
+            p_inf   = params.get("p_infectious", 0.7)
+            w_inf   = params.get("w_infectious", 1.0)
+            D_inf   = params.get("duration_infectious_years", 0.5)
+            beta    = params.get("beta_transmission", 10.0/1e5)
+            return ari_duration_based(incidence_per100k, p_inf, w_inf, D_inf, beta)
 
     # Average mortality lookups (fallback defaults)
     avg_tb_mort = np.mean(list(tbmort.values())) if tbmort else 0.05
