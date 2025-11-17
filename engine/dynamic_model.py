@@ -65,10 +65,10 @@ def simulate_dynamic_ltbi(
     # LTBI prevalence at t=0
     LTBI0 = np.array([ltbi_prev.get(a, 0.0) for a in ages])
 
-    # At time 0 → assume ALL LTBI is "slow latency"
+    # At time 0 → assume 95% LTBI is "slow latency"
     S[:, 0] = (1 - LTBI0) * N0
-    L_fast[:, 0] = 0.0
-    L_slow[:, 0] = LTBI0 * N0
+    L_fast[:, 0] = LTBI0 * N0 * 0.05
+    L_slow[:, 0] = LTBI0 * N0 * 0.95
     I[:, 0] = 0.0
     R[:, 0] = 0.0
 
