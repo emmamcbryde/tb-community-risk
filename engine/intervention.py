@@ -76,3 +76,8 @@ def compute_full_effect(
     }
 
     return full_effect, cascade
+
+
+def regimen_cure_probability(regimen_name: str) -> float:
+    reg = REGIMENS.get(regimen_name, REGIMENS["None"])
+    return reg["efficacy"] * reg["completion"]
