@@ -1,20 +1,19 @@
-
 # engine/intervention.py
 
 TESTS = {
-    "None":      {"sensitivity": 0.0,  "specificity": 1.0},
-    "TST":       {"sensitivity": 0.80, "specificity": 0.56},
-    "IGRA":      {"sensitivity": 0.84, "specificity": 0.97},
-    "QFT-Plus":  {"sensitivity": 0.85, "specificity": 0.98},
+    "None": {"sensitivity": 0.0, "specificity": 1.0},
+    "TST": {"sensitivity": 0.80, "specificity": 0.56},
+    "IGRA": {"sensitivity": 0.84, "specificity": 0.97},
+    "QFT-Plus": {"sensitivity": 0.85, "specificity": 0.98},
 }
 
 REGIMENS = {
-    "None": {"efficacy": 0.0,  "completion": 0.0},
-    "1HP":  {"efficacy": 0.90, "completion": 0.88},
-    "3HP":  {"efficacy": 0.92, "completion": 0.82},
-    "6H":   {"efficacy": 0.65, "completion": 0.55},
-    "4R": {"efficacy": 0.90,"completion": 0.85},
-    "9H": {"efficacy": 0.65,"completion": 0.50},
+    "None": {"efficacy": 0.0, "completion": 0.0},
+    "1HP": {"efficacy": 0.90, "completion": 0.88},
+    "3HP": {"efficacy": 0.92, "completion": 0.82},
+    "6H": {"efficacy": 0.65, "completion": 0.75},
+    "4R": {"efficacy": 0.90, "completion": 0.85},
+    "9H": {"efficacy": 0.85, "completion": 0.70},
 }
 
 
@@ -23,7 +22,7 @@ def compute_full_effect(
     treatment: str,
     ltbi_prev: float,
     coverage_testing: float,
-    coverage_treatment: float
+    coverage_treatment: float,
 ):
     """
     Compute intervention hazard reduction using test+regimen cascade.
@@ -42,7 +41,7 @@ def compute_full_effect(
     tp_rate = ltbi_prev * sens
     fp_rate = (1 - ltbi_prev) * (1 - spec)
 
-    true_positives  = tested * tp_rate
+    true_positives = tested * tp_rate
     false_positives = tested * fp_rate
 
     # Treatment
@@ -50,9 +49,19 @@ def compute_full_effect(
     completed_tp = treated_tp * completion
 
     # Protection
-    protected = completed_tp * efficacy
+    protected = completed_tp * efficacy  # fraction of TOTAL population
 
-    hazard_reduction = protected
+    # We care about the fraction of the LTBI pool that is effectively cured
+    if ltbi_prev > 0:
+        frac_ltbi_cured = protected / ltbi_prev
+    else:
+        frac_ltbi_cured = 0.0
+
+    # Cap at 1.0 in case of numerical overshoot
+    hazard_reduction = min(frac_ltbi_cured, 1.0)
+
+    # This full_effect now represents the multiplicative reduction in
+    # reactivation risk among the LTBI pool
     full_effect = 1 - hazard_reduction
 
     cascade = {
