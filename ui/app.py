@@ -71,7 +71,12 @@ time_horizon = st.sidebar.slider("Time horizon (years)", 1, 30, 20)
 # --- Sidebar: Intervention Strategy ---
 st.sidebar.header("Intervention Strategy")
 testing = st.sidebar.selectbox("Testing method", ["None", "TST", "IGRA"])
-treatment = st.sidebar.selectbox("Treatment regimen", ["None", "3HP", "4R", "6H", "9H"])
+treatment = st.sidebar.selectbox("Treatment regimen", ["None", "1HP", "3HP","4R","6H", "9H"])
+
+coverage_testing = st.sidebar.slider("Testing coverage", 0.0, 1.0, 0.5)
+coverage_treatment = st.sidebar.slider("Treatment coverage", 0.0, 1.0, 0.7)
+ltbi_prev_input = st.sidebar.slider("LTBI prevalence (population average)", 0.0, 0.6, 0.25)
+
 
 # --- Sidebar: Model Mode ---
 st.sidebar.header("Model mode")
@@ -162,6 +167,9 @@ if st.sidebar.button("Simulate Community"):
         "testing": testing,
         "treatment": treatment,
         "user_incidence": user_incidence,
+        "coverage_testing": coverage_testing,
+        "coverage_treatment": coverage_treatment,
+        "ltbi_prev": ltbi_prev_input
     }
 
     # ARI and LTBI backcast
