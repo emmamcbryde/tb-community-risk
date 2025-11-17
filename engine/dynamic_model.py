@@ -3,7 +3,12 @@
 import numpy as np
 import pandas as pd
 from engine.params import extract_core_parameters
-from engine.intervention import compute_full_effect
+from engine.intervention import regimen_cure_probability
+
+treatment = inputs.get("treatment", "None")
+coverage_treatment = inputs.get("coverage_treatment", 0.0)
+
+regimen_cure = regimen_cure_probability(treatment)  # per treated LTBI
 
 
 def simulate_dynamic_ltbi(
@@ -51,6 +56,26 @@ def simulate_dynamic_ltbi(
 
     ages = sorted(age_counts.keys())
     A = len(ages)
+    # --- Regimen-based cure probability (dynamic model uses LTBI compartments directly) ---
+    from engine.intervention import REGIMENS
+
+    treatment = inputs.get("treatment", "None")
+    coverage_treatment = inputs.get("coverage_treatment", 0.0)
+    completion_override = inputs.get("completion_override", None)
+
+    reg = REGIMENS.get(treatment, REGIMENS["None"])
+
+    # Biological efficacy is fixed per regimen
+    efficacy = reg["efficacy"]
+
+    # Completion may be overridden in UI
+    if completion_override is not None:
+        completion_used = completion_override
+    else:
+        completion_used = reg["completion"]
+
+    # Cure probability per treated LTBI individual
+    regimen_cure = efficacy * completion_used
 
     # Compartments: age x time
     S = np.zeros((A, T + 1))
@@ -87,24 +112,7 @@ def simulate_dynamic_ltbi(
             return (t + 1) / 3
         return 1.0
 
-        # Compute intervention effect once at model start
-
-    testing = inputs.get("testing", "None")
-    treatment = inputs.get("treatment", "None")
-    coverage_testing = inputs.get("coverage_testing", 0.0)
-    coverage_treatment = inputs.get("coverage_treatment", 0.0)
-
-    # Use population-average LTBI prevalence (or replace with age-specific later)
-    avg_ltbi = float(np.mean([ltbi_prev.get(a, 0.0) for a in ages]))
-
-    full_effect, cascade = compute_full_effect(
-        testing,
-        treatment,
-        ltbi_prev=avg_ltbi,
-        coverage_testing=coverage_testing,
-        coverage_treatment=coverage_treatment,
-    )
-    treat_eff = 1 - full_effect  # so “effect” means cure probability added into model
+    # Compute intervention effect once at model start
 
     total_incidence = np.zeros(T + 1)
 
@@ -130,13 +138,16 @@ def simulate_dynamic_ltbi(
             move_fast_to_slow = L_fast[i, t] * tau_fast_to_slow
 
             # ---- LTBI treatment ----
-            covL = ltbi_treatment_coverage(t)
+
+            cov_rollout = ltbi_treatment_coverage(t)  # ramps from 0 → 1 over 3 years
+            covL = cov_rollout * coverage_treatment  # actual fraction of LTBI treated
+
             treated_fast = L_fast[i, t] * covL
             treated_slow = L_slow[i, t] * covL
 
-            # Successful cures
-            cure_fast = treated_fast * treat_eff
-            cure_slow = treated_slow * treat_eff
+            # Successful cures among those treated
+            cure_fast = treated_fast * regimen_cure
+            cure_slow = treated_slow * regimen_cure
 
             # ---- Deaths ----
             dS = S[i, t] * mu
