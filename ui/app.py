@@ -91,6 +91,7 @@ testing = st.sidebar.selectbox("Testing method", ["None", "TST", "IGRA"])
 treatment = st.sidebar.selectbox(
     "Treatment regimen", ["None", "1HP", "3HP", "4R", "6H", "9H"]
 )
+rollout_years = st.sidebar.slider("Treatment rollout duration (years)", 1, 5, 3)
 
 coverage_testing = st.sidebar.slider("Testing coverage", 0.0, 1.0, 0.5)
 coverage_treatment = st.sidebar.slider("Treatment coverage", 0.0, 1.0, 0.7)
@@ -236,7 +237,9 @@ if st.sidebar.button("Simulate Community"):
 
         # --- Results summary ---
         st.subheader("📊 Results Summary")
-        st.json(summary)
+        # Convert the summary into a table for cleaner presentation
+        summary_df = pd.DataFrame.from_dict(summary, orient='index', columns=["Value"])
+        st.write("📊 Results Summary", summary_df)
 
         # --- Incidence plot ---
         df["Year"] = pd.to_numeric(df["Year"])
