@@ -57,7 +57,7 @@ def simulate_dynamic_ltbi(
     treatment = inputs.get("treatment", "None")
     coverage_treatment = inputs.get("coverage_treatment", 0.0)
     completion_override = inputs.get("completion_override", None)
-
+    rollout_years = inputs.get("rollout_years", 3),
     reg = REGIMENS.get(treatment, REGIMENS["None"])
     efficacy = reg["efficacy"]
 
@@ -93,11 +93,11 @@ def simulate_dynamic_ltbi(
     tau_fast_to_slow = 1 / 5.0  # recent → remote latency transition
 
     # Treatment rollout: ramps to 100% over 3 years
-    def ltbi_treatment_coverage(t):
+    def ltbi_treatment_coverage(t, rollout_years):
         if t < 0:
             return 0.0
-        if t < 3:
-            return (t + 1) / 3
+        if t < rollout_years:
+            return (t + 1) / rollout_years
         return 1.0
 
     # --- 5. Simulation loop ---
@@ -123,7 +123,7 @@ def simulate_dynamic_ltbi(
             move_fast_to_slow = L_fast[i, t] * tau_fast_to_slow
 
             # --- LTBI treatment ---
-            cov_rollout = ltbi_treatment_coverage(t)
+            cov_rollout = ltbi_treatment_coverage(t, rollout_years)
             covL = cov_rollout * coverage_treatment
 
             treated_fast = L_fast[i, t] * covL
