@@ -98,6 +98,19 @@ coverage_treatment = st.sidebar.slider("Treatment coverage", 0.0, 1.0, 0.7)
 ltbi_prev_input = st.sidebar.slider(
     "LTBI prevalence (population average)", 0.0, 0.6, 0.25
 )
+# TB case detection parameters (in months)
+pre_det_months = st.sidebar.number_input(
+    "Mean time to TB diagnosis pre-intervention (months)",
+    min_value=0.5, max_value=60.0, value=6.0, step=0.5
+)
+post_det_months = st.sidebar.number_input(
+    "Mean time to TB diagnosis post-intervention (months)",
+    min_value=0.5, max_value=60.0, value=2.0, step=0.5
+)
+
+delta_pre = 12.0 / pre_det_months   # per year
+delta_post = 12.0 / post_det_months
+
 
 
 # --- Sidebar: Model Mode ---
@@ -198,7 +211,11 @@ if st.sidebar.button("Simulate Community"):
         "coverage_testing": coverage_testing,
         "coverage_treatment": coverage_treatment,
         "ltbi_prev": ltbi_prev_input,
+        "rollout_years": rollout_years,
+        "delta_pre": delta_pre,
+        "delta_post": delta_post,
     }
+
 
     max_age = max(age_counts.keys())
     years_back = range(0, max_age + 1)  # go back as far as oldest age group
