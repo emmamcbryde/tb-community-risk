@@ -12,6 +12,7 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
     base_incidence = float(inputs.get("user_incidence", 30))
     testing = inputs.get("testing", "None")
     treatment = inputs.get("treatment", "None")
+    rollout_years = inputs.get("rollout_years", 3)
 
     # Risk factors
     indigenous = inputs.get("indigenous_pct", 0) / 100
@@ -44,8 +45,8 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
     def rollout_factor(t):
         if t < 1:
             return 0.0
-        elif t < 4:
-            return (t - 0) / 3.0
+        elif t < rollout_years:
+            return (t - 0) / rollout_years
         else:
             return 1.0
 
