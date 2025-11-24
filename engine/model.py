@@ -12,7 +12,7 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
     base_incidence = float(inputs.get("user_incidence", 30))
     testing = inputs.get("testing", "None")
     treatment = inputs.get("treatment", "None")
-    rollout_years = inputs.get("rollout_years", 3)
+    rollout_years = float(inputs.get("rollout_years", 3.0))
 
     # Risk factors
     indigenous = inputs.get("indigenous_pct", 0) / 100
@@ -41,21 +41,18 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
         + recent_inf * (rr_recent_inf - 1)
     )
 
-    # --- 3-year rollout function ---
+    # --- rollout function (user-defined years) ---
     def rollout_factor(t):
-        if t < 1:
+        if t <= 0:
             return 0.0
-        elif t < rollout_years:
-            return (t - 0) / rollout_years
-        else:
-            return 1.0
+        if t < rollout_years:
+            return t / rollout_years
+        return 1.0
 
     # --- Intervention cascade inputs ---
-    coverage_testing = float(inputs.get("coverage_testing", 0.5))  # temporary default
-    coverage_treatment = float(
-        inputs.get("coverage_treatment", 0.7)
-    )  # temporary default
-    ltbi_prev = float(inputs.get("ltbi_prev", 0.25))  # temporary default
+    coverage_testing = float(inputs.get("coverage_testing", 0.5))
+    coverage_treatment = float(inputs.get("coverage_treatment", 0.7))
+    ltbi_prev = float(inputs.get("ltbi_prev", 0.25))
 
     # --- Compute full_effect ---
     full_effect, cascade = compute_full_effect(
@@ -79,7 +76,6 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
     )
     intervention_cases = N * intervention_incidence / 100_000
 
-    # DataFrame
     df = pd.DataFrame(
         {
             "Year": np.tile(years, 2),
