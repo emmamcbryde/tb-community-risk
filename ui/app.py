@@ -145,7 +145,7 @@ if age_method == "Fetch from World Bank/OWID":
         if DEBUG:
             import traceback
 
-            st.code(traceback.format_exc())
+           # st.code(traceback.format_exc())
 
         # ⭐ GUARANTEED fallback path
         try:
@@ -197,7 +197,6 @@ if st.sidebar.button("Simulate Community"):
     # Gather inputs
     inputs = {
         "population": population,
-        "indigenous_pct": indigenous_pct,
         "smoker_pct": smoker_pct,
         "diabetes_pct": diabetes_pct,
         "renal_pct": renal_pct,
