@@ -69,7 +69,6 @@ st.sidebar.header("Community Parameters")
 population = st.sidebar.number_input(
     "Population size", min_value=100, value=10000, step=100
 )
-indigenous_pct = st.sidebar.slider("Indigenous population (%)", 0, 100, 60)
 smoker_pct = st.sidebar.slider("Smoker population (%)", 0, 100, 30)
 diabetes_pct = st.sidebar.slider("Diabetes (%)", 0, 100, 10)
 renal_pct = st.sidebar.slider("Renal impairment (%)", 0, 100, 5)
@@ -96,16 +95,16 @@ rollout_years = st.sidebar.slider("Treatment rollout duration (years)", 1, 5, 3)
 coverage_testing = st.sidebar.slider("Testing coverage", 0.0, 1.0, 0.5)
 coverage_treatment = st.sidebar.slider("Treatment coverage", 0.0, 1.0, 0.7)
 ltbi_prev_input = st.sidebar.slider(
-    "LTBI prevalence (population average)", 0.0, 0.6, 0.25
+    "LTBI prevalence (population average)", 0.0, 1.0, 0.02
 )
 # TB case detection parameters (in months)
 pre_det_months = st.sidebar.number_input(
     "Mean time to TB diagnosis pre-intervention (months)",
-    min_value=0.5, max_value=60.0, value=6.0, step=0.5
+    min_value=0.5, max_value=60.0, value=12.0, step=0.5
 )
 post_det_months = st.sidebar.number_input(
     "Mean time to TB diagnosis post-intervention (months)",
-    min_value=0.5, max_value=60.0, value=2.0, step=0.5
+    min_value=0.5, max_value=60.0, value=6.0, step=0.5
 )
 
 delta_pre = 12.0 / pre_det_months   # per year
