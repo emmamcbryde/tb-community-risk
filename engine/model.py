@@ -15,7 +15,6 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
     rollout_years = float(inputs.get("rollout_years", 3.0))
 
     # Risk factors
-    indigenous = inputs.get("indigenous_pct", 0) / 100
     smoker = inputs.get("smoker_pct", 0) / 100
     diabetes = inputs.get("diabetes_pct", 0) / 100
     renal = inputs.get("renal_pct", 0) / 100
@@ -23,7 +22,6 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
     recent_inf = inputs.get("recent_infection", 0) / 100
 
     # Multipliers
-    rr_indigenous = 2.0
     rr_smoker = 1.5
     rr_diabetes = 1.8
     rr_renal = 2.0
@@ -33,7 +31,6 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
     # Combined baseline risk
     baseline_risk = (
         1
-        + indigenous * (rr_indigenous - 1)
         + smoker * (rr_smoker - 1)
         + diabetes * (rr_diabetes - 1)
         + renal * (rr_renal - 1)
@@ -46,8 +43,8 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
         if t <= 0:
             return 0.0
         if t < rollout_years:
-            return t / rollout_years
-        return 1.0
+            return 1 / rollout_years
+        return 0
 
     # --- Intervention cascade inputs ---
     coverage_testing = float(inputs.get("coverage_testing", 0.5))
@@ -63,16 +60,16 @@ def simulate_community(inputs, file_path="data/parameters.xlsx"):
     years = np.arange(0, T + 1)
 
     intervention_multiplier = np.array(
-        [1 - rollout_factor(t) * (1 - full_effect) for t in years]
+        [1 - rollout_factor(t) * (1-full_effect) for t in years]
     )
 
     # Baseline curves
-    baseline_incidence = base_incidence * baseline_risk * np.exp(-0.0 * years)
+    baseline_incidence = base_incidence * np.exp(-0.0 * years)
     baseline_cases = N * baseline_incidence / 100_000
 
     # Intervention curves
     intervention_incidence = (
-        base_incidence * baseline_risk * intervention_multiplier * np.exp(-0.0 * years)
+        base_incidence * intervention_multiplier * np.exp(-0.0 * years)
     )
     intervention_cases = N * intervention_incidence / 100_000
 
