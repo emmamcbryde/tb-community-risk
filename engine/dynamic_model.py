@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 from engine.params import extract_core_parameters
-from engine.intervention import REGIMENS
+from engine.intervention import REGIMENS, TESTS
 
 
 def simulate_dynamic_ltbi(
@@ -13,7 +13,9 @@ def simulate_dynamic_ltbi(
     file_path="data/parameters.xlsx",
 ):
     """
-    Dynamic age-structured LTBI → TB model with:
+    Dynamic age-structured LTBI → TB model with testing and LTBI treatment.
+
+    Compartments per age:
       - S        : Susceptible
       - L_fast   : Recent latent TB
       - L_slow   : Remote latent TB
@@ -22,8 +24,14 @@ def simulate_dynamic_ltbi(
       - R        : Recovered
 
     We simulate two branches:
-      - Baseline:       detection = delta_pre,   LTBI treatment OFF
-      - Intervention:   detection = delta_post,  LTBI treatment ON with rollout
+      - Baseline:       detection = delta_pre,   LTBI treatment OFF (no test-driven cures)
+      - Intervention:   detection = delta_post,  LTBI treatment ON with rollout and testing
+
+    Testing algorithm (intervention branch):
+      - coverage_testing: fraction of S, L_fast, L_slow tested per year
+      - TESTS[testing]: sensitivity, specificity
+      - True positives (in L_fast, L_slow) can accept LTBI treatment (coverage_treatment)
+      - False positives (in S) are treated for cost/SAE accounting (future), but stay in S.
     """
 
     # ------------------------------
@@ -32,16 +40,22 @@ def simulate_dynamic_ltbi(
     T = int(inputs.get("time_horizon", 20))
 
     # Detection rates (per year)
-    delta_pre = float(inputs.get("delta_pre", 12.0))
-    delta_post = float(inputs.get("delta_post", 6.0))
+    delta_pre = float(inputs.get("delta_pre", 1.0))
+    delta_post = float(inputs.get("delta_post", 2.0))
 
     # LTBI treatment coverage (intervention only)
     coverage_treatment = float(inputs.get("coverage_treatment", 0.0))
     rollout_years = float(inputs.get("rollout_years", 3.0))
 
+    # Testing
+    testing_name = inputs.get("testing", "None")
+    coverage_testing = float(inputs.get("coverage_testing", 0.0))
+    test = TESTS.get(testing_name, TESTS.get("None", {"sensitivity": 0.0, "specificity": 1.0}))
+    sens = float(test["sensitivity"])
+    spec = float(test["specificity"])
+
     # Force of infection strength: secondary infections per infectious case-year
-    # Keep this modest (e.g. 0.5–2) to avoid explosive dynamics.
-    beta = float(inputs.get("secondary_cases_per_index", 1.0))
+    beta = float(inputs.get("secondary_cases_per_index", 1.0))  # keep modest to avoid blow-up
 
     # ------------------------------
     # 2. Load parameters
@@ -69,16 +83,16 @@ def simulate_dynamic_ltbi(
     # ------------------------------
     # 3. Regimen cure logic (LTBI treatment)
     # ------------------------------
-    treatment = inputs.get("treatment", "None")
+    treatment_name = inputs.get("treatment", "None")
     completion_override = inputs.get("completion_override", None)
 
-    reg = REGIMENS.get(treatment, REGIMENS["None"])
+    reg = REGIMENS.get(treatment_name, REGIMENS["None"])
     eff = float(reg["efficacy"])
     if completion_override is not None:
         comp = float(completion_override)
     else:
         comp = float(reg["completion"])
-    regimen_cure = eff * comp  # cure prob per treated LTBI
+    regimen_cure = eff * comp  # cure probability per treated LTBI
 
     # ------------------------------
     # 4. Transition rates
@@ -88,20 +102,13 @@ def simulate_dynamic_ltbi(
     tau_fast_to_slow = 1 / 5.0
     gamma_cure = 0.7        # I → R
 
-    def rollout_factor(t: int) -> float:
-        """Intervention rollout from 0 → 1 over rollout_years."""
-        if t <= 0:
-            return 0.0
-        if t < rollout_years:
-            return 1 / rollout_years
-        return 1.0
-
     # ------------------------------
     # 5. Helper: simulate one branch
     # ------------------------------
-    def run_branch(delta_detection: float, treat_cov: float):
+    def run_branch(delta_detection: float, treat_cov: float, use_testing_for_ltbi: bool):
         """
         Run the dynamic model for a given detection rate and LTBI treatment coverage.
+        If use_testing_for_ltbi is False, we ignore testing effects on L_fast / L_slow.
         Returns total_incidence array of length T+1.
         """
 
@@ -114,7 +121,6 @@ def simulate_dynamic_ltbi(
 
         # Initial conditions
         S[:, 0] = (1 - LTBI0) * N0_vec
-        ## need to update this to split via recency of ltbi user input
         L_fast[:, 0] = LTBI0 * N0_vec * 0.05
         L_slow[:, 0] = LTBI0 * N0_vec * 0.95
 
@@ -126,14 +132,12 @@ def simulate_dynamic_ltbi(
             if N_t <= 0:
                 break
 
-            # Infectious pool: A_tb full, I at 1/6
-            ## need to multiply by infectiousness factor
+            # Infectious pool: A_tb full, I at 1/6 infectiousness
             infectious_pool = np.sum(A_tb[:, t]) + (1.0 / 6.0) * np.sum(I[:, t])
 
             # Force of infection per susceptible person
             foi_t = beta * infectious_pool / N_t
-            # Safety cap: at most 50% chance per year
-            foi_t = min(max(foi_t, 0.0), 0.5)
+            foi_t = min(max(foi_t, 0.0), 0.5)  # cap to avoid absurdly high yearly risk
 
             for idx, a in enumerate(ages):
                 mu = mort.get(a, 0.0)
@@ -157,19 +161,36 @@ def simulate_dynamic_ltbi(
                 # Recent LTBI → remote LTBI
                 move_fs = Lf_t * tau_fast_to_slow
 
-                # LTBI treatment (only if treat_cov > 0)
-                # quota-style rollout: reach final coverage by treating equal chunks each year
-                if t < rollout_years:
-                    covL = treat_cov / rollout_years   # same fraction each rollout year
+                # --- LTBI testing + treatment (intervention only) ---
+                cure_fast = 0.0
+                cure_slow = 0.0
+
+                if use_testing_for_ltbi and treat_cov > 0.0 and testing_name != "None":
+                    # Individuals tested in each compartment
+                    tested_S = S_t * coverage_testing
+                    tested_Lf = Lf_t * coverage_testing
+                    tested_Ls = Ls_t * coverage_testing
+
+                    # True positives (latent) and false positives (susceptible)
+                    TP_fast = tested_Lf * sens
+                    TP_slow = tested_Ls * sens
+                    FP = tested_S * (1.0 - spec)
+
+                    # Of true positives, fraction accept LTBI treatment
+                    treated_fast = TP_fast * treat_cov
+                    treated_slow = TP_slow * treat_cov
+                    treated_FP = FP * treat_cov  # SAEs/costs later; no compartment change now
+
+                    # Cures among treated latent infections
+                    cure_fast = treated_fast * regimen_cure
+                    cure_slow = treated_slow * regimen_cure
+
+                    # Note: we remove ONLY the cured latent from L_fast/L_slow.
+                    # Treatment failures remain latent (still in L).
                 else:
-                    covL = treat_cov                   # maintain full coverage afterwards
-
-                treated_fast = Lf_t * covL
-                treated_slow = Ls_t * covL
-
-
-                cure_fast = treated_fast * regimen_cure
-                cure_slow = treated_slow * regimen_cure
+                    treated_fast = 0.0
+                    treated_slow = 0.0
+                    treated_FP = 0.0
 
                 # Detection A_tb → I
                 detected = delta_detection * A_t
@@ -186,13 +207,21 @@ def simulate_dynamic_ltbi(
                 cure_I = I_t * gamma_cure
 
                 # ----- Updates -----
-                S[idx, t + 1] = S_t - dS - new_inf + cure_fast + cure_slow
+                S[idx, t + 1] = (
+                    S_t
+                    - dS
+                    - new_inf
+                    + cure_fast
+                    + cure_slow
+                    # FP are treated but remain in S; no compartment change here
+                )
 
                 L_fast[idx, t + 1] = (
                     Lf_t
                     + new_inf
                     - new_TB_fast
                     - move_fs
+                    # only cured latent leave L_fast
                     - cure_fast
                     - dLf
                 )
@@ -200,8 +229,9 @@ def simulate_dynamic_ltbi(
                 L_slow[idx, t + 1] = (
                     Ls_t
                     - new_TB_slow
-                    - cure_slow
                     - dLs
+                    # only cured latent leave L_slow
+                    - cure_slow
                     + move_fs
                 )
 
@@ -230,8 +260,11 @@ def simulate_dynamic_ltbi(
     # ------------------------------
     # 6. Run baseline and intervention branches
     # ------------------------------
-    inc_baseline = run_branch(delta_pre, treat_cov=0.0)
-    inc_interv = run_branch(delta_post, treat_cov=coverage_treatment)
+    # Baseline: detection = delta_pre, NO LTBI treatment effect (treat_cov = 0)
+    inc_baseline = run_branch(delta_pre, treat_cov=0.0, use_testing_for_ltbi=False)
+
+    # Intervention: detection = delta_post, full LTBI testing+treatment
+    inc_interv = run_branch(delta_post, treat_cov=coverage_treatment, use_testing_for_ltbi=True)
 
     # ------------------------------
     # 7. Build output
