@@ -40,3 +40,67 @@ def infection_prob_by_age(
             prod *= (1.0 - clearance_rate)
         prob[a] = 1.0 - prod
     return prob
+
+def infection_prob_by_age_split(
+    ages,
+    ari_history,
+    window_recent=5
+):
+    """
+    Split lifetime infection probability into recent vs remote components.
+
+    ages: list of ages (ints)
+    ari_history: dict mapping years in the past to ARI, e.g. 0, -1, -2, ...
+    window_recent: number of most recent years considered "recent" infection.
+
+    Returns three dicts:
+      ever[a]   = P(ever infected by age a)
+      recent[a] = P(infected at least once in the last `window_recent` years)
+      remote[a] = P(infected only more than `window_recent` years ago)
+    """
+    ever = {}
+    recent = {}
+    remote = {}
+
+    min_key = min(ari_history.keys())
+
+    for a in ages:
+        if a <= 0:
+            ever[a] = 0.0
+            recent[a] = 0.0
+            remote[a] = 0.0
+            continue
+
+        # 1. P(no infection over whole life)
+        prod_all = 1.0
+        for k in range(a):
+            ari_k = ari_history.get(-k, ari_history.get(min_key, 0.0))
+            prod_all *= (1.0 - ari_k)
+        P_ever = 1.0 - prod_all
+
+        # 2. P(no infection in last `window_recent` years)
+        max_recent_k = min(window_recent, a)
+        prod_last = 1.0
+        for k in range(max_recent_k):
+            ari_k = ari_history.get(-k, ari_history.get(min_key, 0.0))
+            prod_last *= (1.0 - ari_k)
+
+        # 3. P(no infection > window_recent years ago)
+        prod_old = 1.0
+        if a > window_recent:
+            for k in range(window_recent, a):
+                ari_k = ari_history.get(-k, ari_history.get(min_key, 0.0))
+                prod_old *= (1.0 - ari_k)
+        # if a <= window_recent, prod_old remains 1.0 (no "old" years)
+
+        # Infection only > window_recent years ago AND none in recent window
+        P_remote_only = (1.0 - prod_old) * prod_last
+
+        # Infected at least once in recent window
+        P_recent_any = max(P_ever - P_remote_only, 0.0)  # numeric safety
+
+        ever[a] = P_ever
+        recent[a] = P_recent_any
+        remote[a] = P_remote_only
+
+    return ever, recent, remote
