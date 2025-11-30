@@ -222,6 +222,13 @@ hist_chart = (
 )
 
 st.altair_chart(hist_chart, use_container_width=True)
+# --- Construct age_counts dict (age → count) ---
+age_counts = (
+    age_df
+    .groupby("AgeGroup")["Count"]
+    .sum()
+    .to_dict()
+)
 
 
 
@@ -311,7 +318,6 @@ if st.sidebar.button("Simulate Community"):
         )
         df_dynamic_base, _ = simulate_dynamic_ltbi(
             age_counts=age_counts,
-            ltbi_prev=ltbi_prev,  # ever-infected dict
             inputs=baseline_inputs,
             beta=baseline_inputs.get("secondary_cases_per_index", 0.0),  # beta=0 baseline
             file_path="data/parameters.xlsx",
