@@ -327,9 +327,9 @@ if st.sidebar.button("Simulate Community"):
         dynamic0 = df_dynamic_base.loc[
             (df_dynamic_base["Scenario"] == "Dynamic_baseline") &
             (df_dynamic_base["Year"] == 0),
-            beta==baseline_inputs.get("secondary_cases_per_index", 0.0), 
             "Incidence_per_100k"
         ].iloc[0]
+
 
         st.subheader("🔍 Baseline Year 0 Incidence (No FOI, No Interventions)")
         st.write(
