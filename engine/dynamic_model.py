@@ -8,8 +8,8 @@ from engine.intervention import REGIMENS, TESTS
 
 def simulate_dynamic_ltbi(
     age_counts,
-    ltbi_prev,
     inputs,
+    beta,  # Force of infection strength: infections per infectious case-year
     file_path="data/parameters.xlsx",
 ):
     """
@@ -25,13 +25,7 @@ def simulate_dynamic_ltbi(
 
     We simulate two branches:
       - Baseline:       detection = delta_pre,   LTBI treatment OFF (no test-driven cures)
-      - Intervention:   detection = delta_post,  LTBI treatment ON with rollout and testing
-
-    Testing algorithm (intervention branch):
-      - coverage_testing: fraction of S, L_fast, L_slow tested per year
-      - TESTS[testing]: sensitivity, specificity
-      - True positives (in L_fast, L_slow) can accept LTBI treatment (coverage_treatment)
-      - False positives (in S) are treated for cost/SAE accounting (future), but stay in S.
+      - Intervention:   detection = delta_post,  LTBI treatment ON with rollout and testing.
     """
 
     # ------------------------------
@@ -55,7 +49,7 @@ def simulate_dynamic_ltbi(
     spec = float(test["specificity"])
 
     # Force of infection strength: secondary infections per infectious case-year
-    beta = float(inputs.get("secondary_cases_per_index", 1.0))  # keep modest to avoid blow-up
+    beta = float(inputs.get("infection_per_case", 1.0))  # keep modest to avoid blow-up
 
     # ------------------------------
     # 2. Load parameters
@@ -78,7 +72,22 @@ def simulate_dynamic_ltbi(
     # Initial population and LTBI
     N0_vec = np.array([age_counts[a] for a in ages])
     total_pop0 = float(np.sum(N0_vec))
-    LTBI0 = np.array([ltbi_prev.get(a, 0.0) for a in ages])
+
+    # Prefer LTBI recent/remote split if provided
+    ltbi_recent_by_age = inputs.get("ltbi_recent_by_age")
+    ltbi_remote_by_age = inputs.get("ltbi_remote_by_age")
+
+    if ltbi_recent_by_age is not None and ltbi_remote_by_age is not None:
+        LTBI_recent0 = np.array([ltbi_recent_by_age.get(a, 0.0) for a in ages])
+        LTBI_remote0 = np.array([ltbi_remote_by_age.get(a, 0.0) for a in ages])
+        LTBI_total0 = np.minimum(LTBI_recent0 + LTBI_remote0, 1.0)
+
+        S0 = (1.0 - LTBI_total0) * N0_vec
+        L_fast0 = LTBI_recent0 * N0_vec
+        L_slow0 = LTBI_remote0 * N0_vec
+    else:
+        raise ValueError("LTBI recent/remote split is required but missing.")
+
 
     # ------------------------------
     # 3. Regimen cure logic (LTBI treatment)
@@ -94,13 +103,44 @@ def simulate_dynamic_ltbi(
         comp = float(reg["completion"])
     regimen_cure = eff * comp  # cure probability per treated LTBI
 
-    # ------------------------------
-    # 4. Transition rates
-    # ------------------------------
-    r_fast = 0.01           # L_fast → A_tb
-    r_slow = 0.001          # L_slow → A_tb
+
+    # ------------------------------------------------------
+    # 4. Transition rates WITH risk-factor scaling (Option 1)
+    # ------------------------------------------------------
+
+    # Risk factors from inputs (same as static model)
+    smoker = inputs.get("smoker_pct", 0) / 100.0
+    diabetes = inputs.get("diabetes_pct", 0) / 100.0
+    renal = inputs.get("renal_pct", 0) / 100.0
+    immune = inputs.get("immune_pct", 0) / 100.0
+    recent_inf = inputs.get("recent_infection", 0) / 100.0
+
+    # Relative risks (same as static model)
+    rr_smoker = 1.5
+    rr_diabetes = 1.8
+    rr_renal = 2.0
+    rr_immune = 4.0
+    
+    # Combined multiplier
+    baseline_risk = (
+        1.0
+        + smoker * (rr_smoker - 1.0)
+        + diabetes * (rr_diabetes - 1.0)
+        + renal * (rr_renal - 1.0)
+        + immune * (rr_immune - 1.0)
+    )
+
+    # Base progression hazards
+    r_fast_base = 0.01
+    r_slow_base = 0.001
+
+    # Apply multiplier
+    r_fast = r_fast_base * baseline_risk
+    r_slow = r_slow_base * baseline_risk
+
+    # Other transitions remain unchanged
     tau_fast_to_slow = 1 / 5.0
-    gamma_cure = 0.7        # I → R
+    gamma_cure = 0.7
 
     # ------------------------------
     # 5. Helper: simulate one branch
@@ -120,9 +160,9 @@ def simulate_dynamic_ltbi(
         R = np.zeros((A_age, T + 1))
 
         # Initial conditions
-        S[:, 0] = (1 - LTBI0) * N0_vec
-        L_fast[:, 0] = LTBI0 * N0_vec * 0.05
-        L_slow[:, 0] = LTBI0 * N0_vec * 0.95
+        S[:, 0] = S0
+        L_fast[:, 0] = L_fast0
+        L_slow[:, 0] = L_slow0
 
         total_inc = np.zeros(T + 1)
 
@@ -137,7 +177,7 @@ def simulate_dynamic_ltbi(
 
             # Force of infection per susceptible person
             foi_t = beta * infectious_pool / N_t
-            foi_t = min(max(foi_t, 0.0), 0.5)  # cap to avoid absurdly high yearly risk
+            foi_t = min(max(foi_t, 0.0), 10)  # cap to avoid absurdly high yearly risk
 
             for idx, a in enumerate(ages):
                 mu = mort.get(a, 0.0)
@@ -260,7 +300,7 @@ def simulate_dynamic_ltbi(
     # ------------------------------
     # 6. Run baseline and intervention branches
     # ------------------------------
-    # Baseline: detection = delta_pre, NO LTBI treatment effect (treat_cov = 0)
+    # Baseline: detection = delta_pre, NO LTBI treatment effect, testing ignored
     inc_baseline = run_branch(delta_pre, treat_cov=0.0, use_testing_for_ltbi=False)
 
     # Intervention: detection = delta_post, full LTBI testing+treatment
