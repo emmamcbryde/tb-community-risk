@@ -223,6 +223,7 @@ hist_chart = (
 
 st.altair_chart(hist_chart, use_container_width=True)
 # --- Construct age_counts dict (age → count) ---
+#2
 age_counts = (
     age_df
     .groupby("AgeGroup")["Count"]
