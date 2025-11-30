@@ -29,14 +29,15 @@ def infection_prob_by_age(
     Returns dict: age → probability (0-1)
     """
     prob = {}
+    min_key = min(ari_history.keys())
     for a in ages:
         if a <= 0:
             prob[a] = 0.0
             continue
         prod = 1.0
         for k in range(a):
-            prod *= (1.0 - ari_history.get(-k, ari_history.get(min(ari_history.keys()), 0)))
-            # optionally account for clearance
+            ari_k = ari_history.get(-k, ari_history.get(min_key, 0.0))
+            prod *= (1.0 - ari_k)
             prod *= (1.0 - clearance_rate)
         prob[a] = 1.0 - prod
     return prob
@@ -91,7 +92,6 @@ def infection_prob_by_age_split(
             for k in range(window_recent, a):
                 ari_k = ari_history.get(-k, ari_history.get(min_key, 0.0))
                 prod_old *= (1.0 - ari_k)
-        # if a <= window_recent, prod_old remains 1.0 (no "old" years)
 
         # Infection only > window_recent years ago AND none in recent window
         P_remote_only = (1.0 - prod_old) * prod_last
