@@ -8,10 +8,11 @@ from engine.intervention import REGIMENS, TESTS
 
 def simulate_dynamic_ltbi(
     age_counts,
+    beta,
     inputs,
-    beta,  # Force of infection strength: infections per infectious case-year
     file_path="data/parameters.xlsx",
 ):
+    
     """
     Dynamic age-structured LTBI → TB model with testing and LTBI treatment.
 
@@ -48,8 +49,6 @@ def simulate_dynamic_ltbi(
     sens = float(test["sensitivity"])
     spec = float(test["specificity"])
 
-    # Force of infection strength: secondary infections per infectious case-year
-    beta = float(inputs.get("infection_per_case", 1.0))  # keep modest to avoid blow-up
 
     # ------------------------------
     # 2. Load parameters
