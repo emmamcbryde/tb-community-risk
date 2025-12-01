@@ -278,6 +278,7 @@ if st.sidebar.button("Simulate Community"):
         "rollout_years": rollout_years,
         "delta_pre": delta_pre,
         "delta_post": delta_post,
+        "infection_per_case": infection_per_case,
         "age_counts": age_counts,
         "ltbi_ever_by_age": ltbi_ever,
         "ltbi_recent_by_age": ltbi_recent,
@@ -320,7 +321,7 @@ if st.sidebar.button("Simulate Community"):
         df_dynamic_base, _ = simulate_dynamic_ltbi(
             age_counts=age_counts,
             inputs=baseline_inputs,
-            beta=baseline_inputs.get("secondary_cases_per_index", 0.0),  # beta=0 baseline
+            beta=baseline_inputs.get("infection_per_case", 10.0), # beta=0 baseline
             file_path="data/parameters.xlsx",
         )
 
