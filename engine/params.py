@@ -2,7 +2,7 @@ import pandas as pd
 from pathlib import Path
 
 
-def load_all_parameters(file_path="data/parameters.xlsx"):
+def load_all_parameters(file_path="data/parameters.csv"):
     """
     Load all sheets from the parameters Excel file into a dictionary of DataFrames.
     """
@@ -22,9 +22,9 @@ def load_all_parameters(file_path="data/parameters.xlsx"):
     return data
 
 
-def extract_core_parameters(file_path="data/parameters.xlsx"):
+def extract_core_parameters(file_path="data/parameters.csv"):
     """
-    Extracts key TB model parameters from a complex parameters.xlsx file.
+    Extracts key TB model parameters from a complex parameters.csv file.
     Returns a structured dictionary suitable for simulation input.
     """
 

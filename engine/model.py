@@ -4,7 +4,7 @@ from engine.params import extract_core_parameters
 from engine.intervention import compute_full_effect
 
 
-def simulate_community(inputs, file_path="data/parameters.xlsx"):
+def simulate_community(inputs, file_path="data/parameters.csv"):
 
     # Inputs
     N = float(inputs.get("population", 10000))

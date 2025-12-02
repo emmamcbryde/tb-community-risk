@@ -297,13 +297,13 @@ if st.sidebar.button("Simulate Community"):
     try:
         # --- Model selection ---
         if model_mode == "Static incidence model":
-            df, summary = simulate_community(inputs, file_path="data/parameters.xlsx")
+            df, summary = simulate_community(inputs, file_path="data/parameters.csv")
         else:
             df, summary = simulate_dynamic_ltbi(
                 age_counts=age_counts,
                 beta=inputs.get("infection_per_case", 1.0),
                 inputs=inputs,
-                file_path="data/parameters.xlsx",
+                file_path="data/parameters.csv",
             )
 
         st.write("Model output preview:", df.head())
@@ -316,13 +316,13 @@ if st.sidebar.button("Simulate Community"):
         
         # --- Baseline-only comparison: static vs dynamic at Year 0 ---
         df_static_base, _ = simulate_community(
-            baseline_inputs, file_path="data/parameters.xlsx"
+            baseline_inputs, file_path="data/parameters.csv"
         )
         df_dynamic_base, _ = simulate_dynamic_ltbi(
             age_counts=age_counts,
             inputs=baseline_inputs,
             beta=baseline_inputs.get("infection_per_case", 10.0), # beta=0 baseline
-            file_path="data/parameters.xlsx",
+            file_path="data/parameters.csv",
         )
 
         # Extract Year 0 incidence for baseline branches
