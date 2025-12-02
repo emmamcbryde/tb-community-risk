@@ -10,7 +10,7 @@ def simulate_dynamic_ltbi(
     age_counts,
     beta,
     inputs,
-    file_path="data/parameters.xlsx",
+    file_path="data/parameters.csv",
 ):
     
     """
