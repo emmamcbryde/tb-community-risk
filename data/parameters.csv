@@ -1,0 +1,29 @@
+﻿state,count
+S,9164
+S_no_test,6240
+no_risk,341280
+natural death,6042
+S_true_negative,2346
+left community,3912
+S_FP,432
+S_FP_attend_NTreat,153
+S_FP_no_clinical_followup,52
+S_FP_attend_complete_treat,162
+S_FP_attend_incomplete_treat,63
+ltbi,836
+LTBI no test,563
+LTBI_ongoing_risk,768
+ongoing_risk,25804
+LTBI false negative,86
+LTBI_FN_with_clinical_follow_up,75
+LTBI_TP_attend_NTreat,58
+LTBI_TP_attend_complete_treat,63
+activeTB,41
+recoveredTB,1251
+LTBI_TP_attend_incomplete_treat,21
+LTBI_FN_no_clinical_follow_up,11
+LTBI test positive,22
+LTBI_TP_no_clinical_follow_up,22
+diedTB,3
+LTBI_TP_attend_SAE,4
+S_FP_attend_SAE,2
