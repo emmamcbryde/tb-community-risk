@@ -1,0 +1,53 @@
+﻿p,mid,low,high,distribution,shape,interpretation,,,,QFT_4R,QFT_3HP,QFT_6H,QFT_9H,TST_4R,TST_3HP,TST_6H,TST_9H
+c.cxr,40,30,50,pert,4,Cost of chest X-ray (CXR),,,"""S""",0,0,0,0,0,0,0,0
+c.gp.b.nonvr,20,10,30,pert,4,Cost of GP review for non-visa-required individual,,,"""S_no_test""",0,0,0,0,0,0,0,0
+c.gp.b.vr,30,20,40,pert,4,Cost of GP review for visa-required individual,,,"""no_risk""",0,0,0,0,0,0,0,0
+c.gp.c.nonvr,25,15,35,pert,4,Cost of GP consultation for non-visa-required individual,,,"""natural death""",0,0,0,0,0,0,0,0
+c.gp.c.vr,35,25,45,pert,4,Cost of GP consultation for visa-required individual,,,"""S_true_negative""",113.48,113.48,113.48,113.48,116.07,116.07,116.07,116.07
+c.liver,35,25,50,pert,4,Cost of liver function test,,,"""left community""",0,0,0,0,0,0,0,0
+c.mcs,50,30,70,pert,4,Cost of medical consultation service (MCS),,,"""S_FP""",113.48,113.48,113.48,113.48,116.07,116.07,116.07,116.07
+c.spec.first,120,100,140,pert,4,Cost of first appointment with TB specialist,,,"""S_FP_attend_NTreat""",70,70,70,70,70,70,70,70
+c.spec.review,90,70,110,pert,4,Cost of specialist review appointment,,,"""S_FP_no_clinical_followup""",0,0,0,0,0,0,0,0
+cattend,103.460714,103.460714,103.460714,pert,4,"Cost associated with clinical attendance — likely includes clinician time, facility costs, admin, etc.",,,"""S_FP_attend_complete_treat""",364.06,270.5072,418.92,528.08,364.06,270.5072,418.92,528.08
+cmed1HP,119.92,119.92,197.31,pert,4,cost of medication for one month,,,"""S_FP_attend_incomplete_treat""",260.345,187.7536,261.96,316.54,260.345,187.7536,261.96,316.54
+cmed3HP,76.12,76.12,127.23,pert,4,Medication cost of the  regimen — excludes monitoring or clinician time.,,,"""ltbi""",0,0,0,0,0,0,0,0
+cmed3HR,44.84,39.62,253.65,pert,4,Medication cost of the  regimen — excludes monitoring or clinician time.,,,"""LTBI no test""",0,0,0,0,0,0,0,0
+cmed4R,51.63,43.8,347.31,pert,4,Medication cost of the  regimen — excludes monitoring or clinician time.,,,"""LTBI_ongoing_risk""",0,0,0,0,0,0,0,0
+cmed6H,62.52,62.52,132.66,pert,4,Medication cost of the  regimen — excludes monitoring or clinician time.,,,"""ongoing_risk""",0,0,0,0,0,0,0,0
+cmed6wP,153.3,153.3,245.28,pert,4,Medication cost of the  regimen — excludes monitoring or clinician time.,,,"""LTBI false negative""",113.48,113.48,113.48,113.48,116.07,116.07,116.07,116.07
+cmed9H,93.78,93.78,198.99,pert,4,Medication cost of the  regimen — excludes monitoring or clinician time.,,,"""LTBI_FN_with_clinical_follow_up""",30,30,30,30,30,30,30,30
+cparttreat1HP,48.82333333,0,0,pert,4,costs for this treatment,,,"""LTBI_TP_attend_NTreat""",70,70,70,70,70,70,70,70
+cparttreat3HP,70.06693333,0,0,pert,4,costs for this treatment,,,"""LTBI_TP_attend_complete_treat""",364.06,270.5072,418.92,528.08,364.06,270.5072,418.92,528.08
+cparttreat3HR,59.64026667,0,0,pert,4,costs for this treatment,,,"""activeTB""",,,,,,,,
+cparttreat4R,53.0536,0,0,pert,4,costs for this treatment,,,"""recoveredTB""",0,0,0,0,0,0,0,0
+cparttreat6H,83.4554,0,0,pert,4,costs for this treatment,,,"""LTBI_TP_attend_incomplete_treat""",260.345,187.7536,261.96,316.54,260.345,187.7536,261.96,316.54
+cparttreat6wP,77.8718,0,0,pert,4,costs for this treatment,,,"""LTBI_FN_no_clinical_follow_up""",0,0,0,0,0,0,0,0
+cparttreat9H,111.7972,0,0,pert,4,costs for this treatment,,,"""LTBI test positive""",113.48,113.48,113.48,113.48,116.07,116.07,116.07,116.07
+cparttreatspec1HP,48.82333333,0,0,pert,4,costs for this treatment,,,"""LTBI_TP_no_clinical_follow_up""",0,0,0,0,0,0,0,0
+cparttreatspec3HP,112.1233333,0,0,pert,4,costs for this treatment,,,"""diedTB""",0,0,0,0,0,0,0,0
+cparttreatspec3HR,101.6966667,0,0,pert,4,costs for this treatment,,,"""LTBI_TP_attend_SAE""",,,,,,,,
+cparttreatspec4R,95.11,0,0,pert,4,costs for this treatment,,,"""S_FP_attend_SAE""",,,,,,,,
+cparttreatspec6H,146.54,0,0,pert,4,costs for this treatment,,,,,,,,,,,
+cparttreatspec6wP,98.9,0,0,pert,4,costs for this treatment,,,,,,,,,,,
+cparttreatspec9H,195.91,0,0,pert,4,costs for this treatment,,,,,,,,,,,
+csae3HP,39.4059,0,78.811,pert,4,"Average cost of managing adverse events (AEs) during treatment (e.g., liver function testing, hospitalisation).",,,,,,,,,,,
+csae4R,23.141,0,46.282,pert,4,"Average cost of managing adverse events (AEs) during treatment (e.g., liver function testing, hospitalisation).",,,,,,,,,,,
+csae6H,71.42,0,142.8464,pert,4,"Average cost of managing adverse events (AEs) during treatment (e.g., liver function testing, hospitalisation).",,,,,,,,,,,
+csae9H,71.42,0,142.8464,pert,4,"Average cost of managing adverse events (AEs) during treatment (e.g., liver function testing, hospitalisation).",,,,,,,,,,,
+cscreenqft,113.48,113.48,113.48,pert,4,Cost of QuantiFERON-TB Gold (QFT) screening test — includes test kit and lab processing.,,,,,,,,,,,
+cscreentst,116.07,116.07,116.07,pert,4,Cost of Tuberculin Skin Test (TST) screening — includes PPD injection and reading visit.,,,,,,,,,,,
+ctb,19079.6,13400.74,30436.95,pert,4,"Cost of managing an active tuberculosis case — includes diagnosis, treatment, follow-up, possibly hospitalisation",,,,,,,,,,,
+ctreat1HP,137.62,0,0,pert,4,costs for this medication,,,,,,,,,,,
+ctreat3HP,165.5072,0,0,pert,4,costs for this medication,,,,,,,,,,,
+ctreat3HR,134.2272,0,0,pert,4,costs for this medication,,,,,,,,,,,
+ctreat4R,123.3172,0,0,pert,4,costs for this medication,,,,,,,,,,,
+ctreat6H,187.7508,0,0,pert,4,costs for this medication,,,,,,,,,,,
+ctreat6wP,206.8436,0,0,pert,4,costs for this medication,,,,,,,,,,,
+ctreat9H,254.8544,0,0,pert,4,costs for this medication,,,,,,,,,,,
+ctreatspec1HP,137.62,0,0,pert,4,costs for this review,,,,,,,,,,,
+ctreatspec3HP,249.62,0,0,pert,4,costs for this review,,,,,,,,,,,
+ctreatspec3HR,218.34,0,0,pert,4,costs for this review,,,,,,,,,,,
+ctreatspec4R,207.43,0,0,pert,4,costs for this review,,,,,,,,,,,
+ctreatspec6H,313.92,0,0,pert,4,costs for this review,,,,,,,,,,,
+ctreatspec6wP,248.9,0,0,pert,4,costs for this review,,,,,,,,,,,
+ctreatspec9H,423.08,0,0,pert,4,costs for this review,,,,,,,,,,,
