@@ -1,0 +1,34 @@
+p,mid,low,high,distribution,shape,interpretation
+att,0.8748806,0.8191342,0.9334222,pert,4,Proportion attending clinical assessment (possibly after a positive test or referral).
+attscreen,0.325,0.2,0.6,pert,4,"Proportion of the target population attending LTBI screening (e.g., after invitation or referral)."
+begintrt,0.596,0.262,0.762,pert,4,proportion of people who begin treatment
+num.appt1HP,0,0,1,pert,4,"Treatment cost for 1HP regimen (1 month of daily isoniazid + rifapentine) — likely includes clinician time, follow-up, and medication dispensing"
+num.appt3HP,2,1,4,pert,4,number of appointments required for this regimen
+num.appt3HR,2,1,4,pert,4,costs for this treatment
+num.appt4R,2,1,4,pert,4,number of appointments required for this regimen
+num.appt6H,3,2,7,pert,4,number of appointments required for this regimen
+num.appt6wP,1,1,2,pert,4,costs for this treatment
+num.appt9H,4,3,8,pert,4,number of appointments required for this regimen
+prop.spec,0.135,0.085,0.185,pert,4,? Proportion of individuals who are referred to a TB specialist for further evaluation.
+snqftgit,0.7,0.46,0.88,pert,4,sensitivity of QFT goled
+sntst10,0.77,0.58,0.9,pert,4,sensitivity of TST
+sntst15,0.59,0.3,0.8,pert,4,sensitivity of TST at 15mm
+spqftgit,0.8553,0.7288,0.8913,pert,4,specificity of quantiferon gold
+sptst10,0.7763,0.6271,0.8587,pert,4,specificity of TST
+sptst15,1,1,1,pert,4,specificity of TST at 15mm
+treat.complete.3HP,0.79,0.74,0.9,pert,4,completion proportion of those who start for this regimen
+treat.complete.4R,0.676,0.535,0.872,pert,4,completion proportion of those who start for this regimen
+treat.complete.6H,0.672,0.441,0.85,pert,4,completion proportion of those who start for this regimen
+treat.complete.9H,0.653,0.369,0.85,pert,4,completion proportion of those who start for this regimen
+treat.effic.3HP,0.69,0.28,0.82,pert,4,efficacy for those who finish for this regimen
+treat.effic.4R,0.69,0.5,0.88,pert,4,efficacy for those who finish for this regimen
+treat.effic.6H,0.69,0.41,0.74,pert,4,efficacy for those who finish for this regimen
+treat.effic.9H,0.69,0.41,0.93,pert,4,efficacy for those who finish for this regimen
+ttt3HP,0.292,0.028,0.417,pert,4,Proportion of individuals eligible for 4 months of rifampicin/isoniazid (3HP) treatment who actually initiate treatment.
+ttt4R,0.333,0.25,0.458,pert,4,Proportion of individuals eligible for (4R) treatment who actually initiate treatment.
+ttt6H,0.417,0.333,0.542,pert,4,Proportion of individuals eligible for 4 months of rifampicin (6H) treatment who actually initiate treatment.
+ttt9H,0.542,0.458,0.667,pert,4,Proportion of individuals eligible for 4 months of rifampicin (6H) treatment who actually initiate treatment.
+chance.of.needing.mcs,0.1,0.05,0.2,pert,4,Probability that an individual requires a medical consultation service (MCS)
+proportion.nonvr,0.4,0.3,0.5,pert,4,Proportion of individuals who are not visa-required (non-VR)
+partial_treatment_efficacy,0.5,0.1,0.8,pert,4,average relative impact of a partial treatment regimen
+emigration_rate,0.01,0.005,0.03,pert,4,leaving the community
