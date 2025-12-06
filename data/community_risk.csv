@@ -1,0 +1,4 @@
+﻿type,proportion,pretest_prob
+contact,0.1,0.3
+close_household,0.2,0.1
+community,0.7,0.05
