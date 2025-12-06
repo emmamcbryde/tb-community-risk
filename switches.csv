@@ -1,0 +1,17 @@
+﻿name,value,description,
+onshore,1,"1 = onshore strategy, 0 = offshore",
+emigration,0,"1 = include emigration, 0 = exclude",
+payerperspect,0,"1 = apply payer perspective, 0 = societal",
+disc,0.03,Annual discount rate,
+startyear,2020,First calendar year of the model,
+totalcycles,91,Number of Markov cycles,
+kill.off.above,100,Max age before forced death in model,
+test,QFTGIT,"Comma-separated list: QFTGIT,TST10,TST15",now a user-input dropdown box
+treatment,4R,"Comma-separated list: 4R,3HP,6H,9H",now a user-input dropdown box
+migrant.inflow.size,434340,Total number of new migrants entering,
+finalinflow,0,Final Markov cycle after which no inflow,
+baseline_strategy,1,sets the baseline strategy,
+hard_to_reach_prop,0.1,proportion who are hard to reach,
+hard_to_reach_impact_screening,0.5,impact on screening attendance RR,
+hard_to_reach_impact_clinic,0.7,impact on clinic attandance RR,
+indigenous,1,,
