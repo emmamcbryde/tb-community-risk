@@ -1,0 +1,13 @@
+﻿p,mid,low,high,distribution,shape,interpretation
+uactivetb,0.81821956,0.7068,0.849971637,pert,4,utility of state active TB
+uactivetbr,0.873333333,0.849333333,0.873333333,pert,4,utility of active TBr
+uhealthy,0.8733333,0.8733333,0.8733333,pert,4,utility of healthy
+ultbi3HP,0.8733333,0.86416666,0.8733333,uniform,4,utility of ltbi3HP
+ultbi4R,0.8733333,0.85999999,0.8733333,uniform,4,utility of ltbi4R
+ultbi6H,0.8733333,0.85166667,0.8733333,uniform,4,utility of ltbi6H
+ultbi9H,0.8733333,0.82666665,0.8733333,uniform,4,utility of ltbi9H
+ultbitreatsae,0.8685,0.8525,0.872,pert,4,utility of ltbitreatsae
+ultbipart3HP,0.8733333,0.86874998,0.8733333,uniform,4,utility of ltbipart3HP
+ultbipart4R,0.8733333,0.866666645,0.8733333,uniform,4,utility of ltbipart4R
+ultbipart6H,0.8733333,0.862499985,0.8733333,uniform,4,utility of ltbipart6H
+ultbipart9H,0.8733333,0.849999975,0.8733333,uniform,4,utility of ltbipart9H
