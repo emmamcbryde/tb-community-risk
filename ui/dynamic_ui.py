@@ -68,6 +68,20 @@ def render_dynamic_ui():
     diabetes_pct = st.sidebar.slider("Diabetes (%)", 0, 100, 10)
     renal_pct = st.sidebar.slider("Renal impairment (%)", 0, 100, 5)
     immune_pct = st.sidebar.slider("Immunosuppressed (%)", 0, 100, 3)
+    # --- Testing and Treatment Inputs ---
+    testing_method = st.sidebar.selectbox("Testing method", ["None", "TST", "IGRA"])
+    treatment_method = st.sidebar.selectbox("Treatment regimen", ["None", "1HP", "3HP", "4R", "6H", "9H"])
+
+    coverage_testing = st.sidebar.slider("Testing coverage", 0.0, 1.0, 0.5)
+    coverage_treatment = st.sidebar.slider("Treatment coverage", 0.0, 1.0, 0.7)
+
+    rollout_years = st.sidebar.slider("Rollout duration (years)", 1, 5, 3)
+
+    pre_det_months = st.sidebar.number_input("Mean time to TB diagnosis (pre-intervention months)", 1.0, 60.0, 12.0, 0.5)
+    post_det_months = st.sidebar.number_input("Mean time to TB diagnosis (post-intervention months)", 1.0, 60.0, 6.0, 0.5)
+
+    delta_pre = 12.0 / pre_det_months
+    delta_post = 12.0 / post_det_months
 
     # --- Age distribution ---
     st.sidebar.subheader("Age distribution")
