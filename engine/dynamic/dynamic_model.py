@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 
-def simulate_dynamic(params, years):
+def simulate_dynamic(params, years, intervention=True):
     """
     Dynamic TB model with:
     - age-structured seeding,
@@ -43,16 +43,31 @@ def simulate_dynamic(params, years):
     S0 = 0
     L_fast0 = 0
     L_slow0 = 0
-    I0 = 0
-    R0 = 0
 
     for a, pop in age_counts.items():
-        p_ever = ltbi_ever.get(a, 0)
-        p_recent = ltbi_recent.get(a, 0)
 
-        S0 += pop * (1 - p_ever)
-        L_fast0 += pop * p_recent
-        L_slow0 += pop * (p_ever - p_recent)
+        p_ever = ltbi_ever.get(a, 0.0)
+        p_recent = ltbi_recent.get(a, 0.0)
+
+        S0        += pop * (1 - p_ever)
+        L_fast0   += pop * p_recent
+        L_slow0   += pop * (p_ever - p_recent)
+        
+    initial_inc = params.get("initial_incidence_per_100k", 0)
+    duration = params.get("pre_det_months", 12)/12
+    # total population
+    N_total = sum(age_counts.values())
+
+    # seed I0 based on incidence
+    I0 = N_total * (initial_inc / 100000) * duration
+
+    # reduce susceptibles to account for initial active TB
+    S0 -= I0
+    R0 = 0
+    N  = S0 + L_fast0 + L_slow0 + I0 + R0
+
+    
+
 
     # ----------- Prepare simulation arrays --------------
     t = np.arange(0, years + 1)
