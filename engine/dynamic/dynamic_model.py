@@ -14,6 +14,18 @@ def simulate_dynamic(params, years, intervention=True):
     - Diagnosis improvement (gamma) over rollout years
     - Fine time-step integration (dt = 0.1 years) with ANNUALISED output.
     """
+    print(
+        "Using dynamic_model from:",
+        __file__,
+        "\nRisk factors:",
+        params["smoker_pct"],
+        params["alcohol_pct"],
+        params["diabetes_pct"],
+        params["renal_pct"],
+        params["HIV_treated_pct"],
+        params["HIV_untreated_pct"],
+    )
+
     required_keys = [
     "smoker_pct", "alcohol_pct", "diabetes_pct",
     "renal_pct", "HIV_treated_pct", "HIV_untreated_pct"]
