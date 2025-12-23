@@ -59,8 +59,15 @@ def load_population_data(country_code="AUS", file_path="data/population_age_late
 # Main Dynamic Model UI
 # =====================================================
 def render_static_ui():
-
-    st.header("📈 Dynamic LTBI → TB Model (Pulse Test & Treat)")
+    st.subheader("Static TB Model")
+    st.warning(
+    "The static model is a simplified approximation of the dynamic model. "
+    "It does not simulate transmission feedback and should be interpreted "
+    "as an approximate projection."
+    "This model estimates TB incidence based on LTBI, risk factors, and interventions.\n\n"
+    "• Baseline = no new LTBI test-and-treat\n"
+    "• Intervention = selected LTBI testing and treatment\n"
+    "• Outputs are annualised and shown as rates (per 100,000) and counts")
 
     # --------------------------------------------------
     # Core epidemiological inputs
@@ -78,10 +85,12 @@ def render_static_ui():
     # --------------------------------------------------
     # Risk factors
     # --------------------------------------------------
-    smoker_pct   = st.sidebar.slider("Smoker (%)",           0, 100, 30)
-    diabetes_pct = st.sidebar.slider("Diabetes (%)",         0, 100, 10)
-    renal_pct    = st.sidebar.slider("Renal impairment (%)", 0, 100, 5)
-    immune_pct   = st.sidebar.slider("Immunosuppressed (%)", 0, 100, 3)
+    smoker_pct = st.sidebar.slider("Smoker (%)", 0, 100, 30,help="Proportion of the population with current tobacco smoking.")
+    alcohol_pct = st.sidebar.slider("Excess alcohol use (%)", 0, 100, 15, help="Proportion of the population with excess alcohol consumption.")
+    diabetes_pct = st.sidebar.slider("Diabetes (%)", 0, 100, 10, help="Proportion of the population with diagnosed diabetes mellitus.")
+    renal_pct    = st.sidebar.slider("Renal impairment (%)", 0, 100, 5, help="Proportion of the population with moderate–severe chronic kidney disease.")
+    HIV_treated_pct   = st.sidebar.slider("HIV Treated with antiretrovirals (%)", 0, 100, 3, help="Proportion of the population with HIV under treatment.")
+    HIV_untreated_pct = st.sidebar.slider("HIV Untreated (%)", 0, 100, 3, help="Proportion of the population with HIV not under treatment.")
 
     # --------------------------------------------------
     # LTBI Test & Treat (PULSE model)

@@ -61,6 +61,12 @@ def load_population_data(country_code="AUS", file_path="data/population_age_late
 def render_dynamic_ui():
 
     st.header("📈 Dynamic LTBI → TB Model (Pulse Test & Treat)")
+    st.info(
+        "This model estimates TB incidence based on LTBI, risk factors, and interventions.\n\n"
+        "• Baseline = no new LTBI test-and-treat\n"
+        "• Intervention = selected LTBI testing and treatment\n"
+        "• Outputs are annualised and shown as rates (per 100,000) and counts"
+    )
 
     # --------------------------------------------------
     # Core epidemiological inputs
@@ -78,10 +84,12 @@ def render_dynamic_ui():
     # --------------------------------------------------
     # Risk factors
     # --------------------------------------------------
-    smoker_pct   = st.sidebar.slider("Smoker (%)",           0, 100, 30)
-    diabetes_pct = st.sidebar.slider("Diabetes (%)",         0, 100, 10)
-    renal_pct    = st.sidebar.slider("Renal impairment (%)", 0, 100, 5)
-    immune_pct   = st.sidebar.slider("Immunosuppressed (%)", 0, 100, 3)
+    smoker_pct = st.sidebar.slider("Smoker (%)", 0, 100, 30,help="Proportion of the population with current tobacco smoking.")
+    alcohol_pct = st.sidebar.slider("Excess alcohol use (%)", 0, 100, 15, help="Proportion of the population with excess alcohol consumption.")
+    diabetes_pct = st.sidebar.slider("Diabetes (%)", 0, 100, 10, help="Proportion of the population with diagnosed diabetes mellitus.")
+    renal_pct    = st.sidebar.slider("Renal impairment (%)", 0, 100, 5, help="Proportion of the population with moderate–severe chronic kidney disease.")
+    HIV_treated_pct   = st.sidebar.slider("HIV Treated with antiretrovirals (%)", 0, 100, 3, help="Proportion of the population with HIV under treatment.")
+    HIV_untreated_pct = st.sidebar.slider("HIV Untreated (%)", 0, 100, 3, help="Proportion of the population with HIV not under treatment.")
 
     # --------------------------------------------------
     # LTBI Test & Treat (PULSE model)
@@ -92,9 +100,15 @@ def render_dynamic_ui():
     )
 
     ltbi_coverage = st.sidebar.slider(
-        "LTBI Test & Treat total coverage (fraction of population)",
-        0.0, 1.0, 0.5
-    )
+        "LTBI Test & Treat total coverage (%)",
+        0, 100, 50,
+        help=(
+            "Effective fraction of the population that will successfully complete LTBI "
+            "treatment over the rollout period. This accounts for eligibility, uptake, "
+            "and treatment completion."
+        )
+    ) / 100.0
+
     rollout_years = st.sidebar.slider("Rollout duration (years)", 1, 10, 5)
 
     # --------------------------------------------------
@@ -114,6 +128,11 @@ def render_dynamic_ui():
     # Historical incidence pattern
     # --------------------------------------------------
     st.sidebar.subheader("Historical Incidence Pattern")
+    st.sidebar.markdown(
+        "**Historical TB incidence (for LTBI back-calculation)**  \n"
+        "Historical incidence determines the age distribution of LTBI. "
+        "Higher past incidence leads to higher LTBI prevalence in older ages."
+    )
 
     hist_pattern = st.sidebar.selectbox(
         "Choose pattern:",
@@ -278,6 +297,13 @@ def render_dynamic_ui():
         )
     )
     st.altair_chart(chart, use_container_width=True)
+    st.caption(
+        "This chart shows estimated LTBI prevalence by age (≤60 years).\n\n"
+        "• Recent LTBI = infection acquired in the last 5 years\n"
+        "• Remote LTBI = infection acquired more than 5 years ago\n"
+        "• The stacked height equals total LTBI prevalence at each age\n\n"
+        "The shape reflects the selected historical TB incidence trajectory."
+    )
 
     # --------------------------------------------------
     # RUN SIMULATIONS
@@ -295,7 +321,9 @@ def render_dynamic_ui():
             p["smoker_pct"] = smoker_pct
             p["diabetes_pct"] = diabetes_pct
             p["renal_pct"] = renal_pct
-            p["immune_pct"] = immune_pct
+            p["HIV_untreated_pct"] = HIV_untreated_pct
+            p["HIV_treated_pct"] = HIV_treated_pct
+            p["alcohol_pct"] = alcohol_pct
             p["ltbi_ever"] = ltbi_ever
             p["ltbi_recent"] = ltbi_recent
             p["age_counts"] = age_counts
@@ -338,6 +366,11 @@ def render_dynamic_ui():
             df_out = df_out.round(1)
 
             st.success("Simulation complete.")
+            st.markdown(
+                "**Annual TB incidence**  \n"
+                "Shown as both a rate (per 100,000) and as the absolute number of cases "
+                "in the selected population."
+            )
 
             st.subheader("📈 Annual Incidence per 100,000")
             st.line_chart(df_out[["Baseline_inc_per100k", "Intervention_inc_per100k"]])
