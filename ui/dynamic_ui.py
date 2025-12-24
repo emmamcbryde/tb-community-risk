@@ -23,17 +23,21 @@ def default_age_distribution():
 # =====================================================
 # Load country-specific OWID population structure
 # =====================================================
-def load_population_data(country_code="AUS", file_path="data/population_age_latest.csv"):
+def load_population_data(
+    country_code="AUS", file_path="data/population_age_latest.csv"
+):
 
     df = pd.read_csv(file_path)
     df_country = df[df["iso_code"].str.upper() == country_code.upper()]
 
     if df_country.empty:
         st.warning(f"No population structure for {country_code}. Using default global.")
-        return default_age_distribution(), pd.DataFrame({
-            "age": range(0, 101),
-            "population": [1] * 101,
-        })
+        return default_age_distribution(), pd.DataFrame(
+            {
+                "age": range(0, 101),
+                "population": [1] * 101,
+            }
+        )
 
     # Convert to proportions for display
     total_pop_country = df_country["population"].sum()
@@ -41,18 +45,20 @@ def load_population_data(country_code="AUS", file_path="data/population_age_late
 
     # Build 5-year bins for display
     bin_edges = list(range(0, 105, 5))
-    bin_labels = [f"{bin_edges[i]}–{bin_edges[i+1]-1}" for i in range(len(bin_edges)-1)]
+    bin_labels = [
+        f"{bin_edges[i]}–{bin_edges[i+1]-1}" for i in range(len(bin_edges) - 1)
+    ]
     bin_labels.append("100+")
 
     df_country["AgeBin"] = pd.cut(
-        df_country["age"], bins=bin_edges + [200],
-        labels=bin_labels, right=False
+        df_country["age"], bins=bin_edges + [200], labels=bin_labels, right=False
     )
 
-    df_age_groups = df_country.groupby("AgeBin", as_index=False)[["population","Proportion"]].sum()
+    df_age_groups = df_country.groupby("AgeBin", as_index=False)[
+        ["population", "Proportion"]
+    ].sum()
 
     return df_age_groups, df_country
-
 
 
 # =====================================================
@@ -72,42 +78,83 @@ def render_dynamic_ui():
     # Core epidemiological inputs
     # --------------------------------------------------
     population = st.sidebar.number_input("Population size", min_value=50, value=10000)
-    user_incidence = st.sidebar.number_input("Baseline annual incidence (per 100k)", 0, 500, 30)
+    user_incidence = st.sidebar.number_input(
+        "Baseline annual incidence (per 100k)", 0, 500, 30
+    )
     time_horizon = st.sidebar.slider("Time horizon (years)", 1, 30, 20)
 
     beta = st.sidebar.number_input(
-        "Transmission rate β",
-        min_value=0.0, max_value=50.0,
-        value=8.0, step=0.1
+        "Transmission rate β", min_value=0.0, max_value=50.0, value=7.0, step=0.1
     )
 
     # --------------------------------------------------
     # Risk factors
     # --------------------------------------------------
-    smoker_pct = st.sidebar.slider("Smoker (%)", 0, 100, 30,help="Proportion of the population with current tobacco smoking.")
-    alcohol_pct = st.sidebar.slider("Excess alcohol use (%)", 0, 100, 15, help="Proportion of the population with excess alcohol consumption.")
-    diabetes_pct = st.sidebar.slider("Diabetes (%)", 0, 100, 10, help="Proportion of the population with diagnosed diabetes mellitus.")
-    renal_pct    = st.sidebar.slider("Renal impairment (%)", 0, 100, 5, help="Proportion of the population with moderate–severe chronic kidney disease.")
-    HIV_treated_pct   = st.sidebar.slider("HIV Treated with antiretrovirals (%)", 0, 100, 3, help="Proportion of the population with HIV under treatment.")
-    HIV_untreated_pct = st.sidebar.slider("HIV Untreated (%)", 0, 100, 3, help="Proportion of the population with HIV not under treatment.")
+    smoker_pct = st.sidebar.slider(
+        "Smoker (%)",
+        0,
+        100,
+        30,
+        help="Proportion of the population with current tobacco smoking.",
+    )
+    alcohol_pct = st.sidebar.slider(
+        "Excess alcohol use (%)",
+        0,
+        100,
+        15,
+        help="Proportion of the population with excess alcohol consumption.",
+    )
+    diabetes_pct = st.sidebar.slider(
+        "Diabetes (%)",
+        0,
+        100,
+        10,
+        help="Proportion of the population with diagnosed diabetes mellitus.",
+    )
+    renal_pct = st.sidebar.slider(
+        "Renal impairment (%)",
+        0,
+        100,
+        5,
+        help="Proportion of the population with moderate–severe chronic kidney disease.",
+    )
+    HIV_treated_pct = st.sidebar.slider(
+        "HIV Treated with antiretrovirals (%)",
+        0,
+        100,
+        3,
+        help="Proportion of the population with HIV under treatment.",
+    )
+    HIV_untreated_pct = st.sidebar.slider(
+        "HIV Untreated (%)",
+        0,
+        100,
+        3,
+        help="Proportion of the population with HIV not under treatment.",
+    )
 
     # --------------------------------------------------
     # LTBI Test & Treat (PULSE model)
     # --------------------------------------------------
-    testing_method   = st.sidebar.selectbox("Testing method", ["TST", "IGRA", "None"])
+    testing_method = st.sidebar.selectbox("Testing method", ["TST", "IGRA", "None"])
     treatment_method = st.sidebar.selectbox(
         "Treatment regimen", ["1HP", "3HP", "4R", "6H", "9H", "None"]
     )
 
-    ltbi_coverage = st.sidebar.slider(
-        "LTBI Test & Treat total coverage (%)",
-        0, 100, 50,
-        help=(
-            "Effective fraction of the population that will successfully complete LTBI "
-            "treatment over the rollout period. This accounts for eligibility, uptake, "
-            "and treatment completion."
+    ltbi_coverage = (
+        st.sidebar.slider(
+            "LTBI Test & Treat total coverage (%)",
+            0,
+            100,
+            50,
+            help=(
+                "Effective fraction of the population that will successfully complete LTBI "
+                "treatment over the rollout period. This accounts for eligibility, uptake, "
+                "and treatment completion."
+            ),
         )
-    ) / 100.0
+        / 100.0
+    )
 
     rollout_years = st.sidebar.slider("Rollout duration (years)", 1, 10, 5)
 
@@ -121,7 +168,7 @@ def render_dynamic_ui():
         "Diagnosis delay (months) after intervention", 1.0, 60.0, 6.0, 0.5
     )
 
-    delta_pre  = 12.0 / pre_det_months
+    delta_pre = 12.0 / pre_det_months
     delta_post = 12.0 / post_det_months
 
     # --------------------------------------------------
@@ -136,7 +183,12 @@ def render_dynamic_ui():
 
     hist_pattern = st.sidebar.selectbox(
         "Choose pattern:",
-        ["Constant", "Falling 3%/year", "Rising 3%/year", "Upload CSV (year, incidence)"]
+        [
+            "Constant",
+            "Falling 3%/year",
+            "Rising 3%/year",
+            "Upload CSV (year, incidence)",
+        ],
     )
 
     uploaded_inc_df = None
@@ -160,7 +212,7 @@ def render_dynamic_ui():
 
     age_method = st.sidebar.radio(
         "Choose method:",
-        ["Country ISO code (recommended)", "Upload custom CSV", "Default global"]
+        ["Country ISO code (recommended)", "Upload custom CSV", "Default global"],
     )
 
     if age_method == "Country ISO code (recommended)":
@@ -168,35 +220,36 @@ def render_dynamic_ui():
         age_df_display, df_country = load_population_data(country)
 
     elif age_method == "Upload custom CSV":
-        file = st.sidebar.file_uploader("Upload CSV with AgeGroup,Proportion", type="csv")
+        file = st.sidebar.file_uploader(
+            "Upload CSV with AgeGroup,Proportion", type="csv"
+        )
         if file:
             df = pd.read_csv(file)
-            if {"AgeGroup","Proportion"}.issubset(df.columns):
+            if {"AgeGroup", "Proportion"}.issubset(df.columns):
                 age_df_display = df
-                df_country = pd.DataFrame({
-                    "age": df["AgeGroup"].astype(int),
-                    "population": df["Proportion"] * population
-                })
+                df_country = pd.DataFrame(
+                    {
+                        "age": df["AgeGroup"].astype(int),
+                        "population": df["Proportion"] * population,
+                    }
+                )
             else:
                 st.error("CSV must include AgeGroup and Proportion. Using default.")
                 age_df_display = default_age_distribution()
-                df_country = pd.DataFrame({
-                    "age": range(0,101),
-                    "population": [population/101]*101
-                })
+                df_country = pd.DataFrame(
+                    {"age": range(0, 101), "population": [population / 101] * 101}
+                )
         else:
             age_df_display = default_age_distribution()
-            df_country = pd.DataFrame({
-                "age": range(0,101),
-                "population": [population/101]*101
-            })
+            df_country = pd.DataFrame(
+                {"age": range(0, 101), "population": [population / 101] * 101}
+            )
 
     else:
         age_df_display = default_age_distribution()
-        df_country = pd.DataFrame({
-            "age": range(0,101),
-            "population": [population/101]*101
-        })
+        df_country = pd.DataFrame(
+            {"age": range(0, 101), "population": [population / 101] * 101}
+        )
 
     st.subheader("📊 Age Distribution (5-year bins)")
     st.dataframe(age_df_display)
@@ -209,6 +262,64 @@ def render_dynamic_ui():
     }
 
     ages = sorted(age_counts.keys())
+    # --------------------------------------------------
+    # BUILD INCIDENCE HISTORY FOR LTBI BACK-CALCULATION
+    # --------------------------------------------------
+
+    # ALWAYS define a default first
+    inc_hist = {-k: user_incidence for k in ages}
+
+    if hist_pattern == "Constant":
+        inc_hist = {-k: user_incidence for k in ages}
+
+    elif hist_pattern == "Falling 3%/year":
+        inc_hist = {-k: user_incidence * (1.03**k) for k in ages}
+
+    elif hist_pattern == "Rising 3%/year":
+        inc_hist = {-k: user_incidence * (0.97**k) for k in ages}
+
+    elif hist_pattern == "Upload CSV (year, incidence)":
+        if uploaded_inc_df is not None:
+
+            years = uploaded_inc_df["year"].values
+            incs = uploaded_inc_df["incidence"].values
+
+            year_min = years[0]
+            year_max = years[-1]
+            inc_min = np.min(incs)
+            inc_max = np.max(incs)
+
+            # Estimate trend via geometric mean
+            INCIDENCE_FLOOR = 0.1
+            ratios = []
+            for i in range(1, len(incs)):
+                if incs[i - 1] > INCIDENCE_FLOOR and incs[i] > INCIDENCE_FLOOR:
+                    ratios.append(incs[i] / incs[i - 1])
+            trend = np.exp(np.mean(np.log(ratios))) if ratios else 1.0
+            inc_map = dict(zip(years, incs))
+            inc_hist = {}
+
+            for a in ages:
+                target_year = year_max - a
+
+                if year_min <= target_year <= year_max:
+                    nearest = min(inc_map.keys(), key=lambda y: abs(y - target_year))
+                    inc_hist[-a] = inc_map[nearest]
+
+                elif target_year > year_max:
+                    k = target_year - year_max
+                    extrap = incs[-1] * (trend**k)
+                    inc_hist[-a] = min(extrap, inc_max)
+
+                else:
+                    k = year_min - target_year
+                    extrap = incs[0] * (trend ** (-k))
+                    inc_hist[-a] = max(extrap, inc_min)
+
+        else:
+            # User selected CSV mode but has not uploaded yet
+            st.warning("Incidence CSV not uploaded yet – using constant incidence.")
+            inc_hist = {-k: user_incidence for k in ages}
 
     # --------------------------------------------------
     # BUILD INCIDENCE HISTORY FOR LTBI BACK-CALC
@@ -225,7 +336,7 @@ def render_dynamic_ui():
     elif hist_pattern == "Upload CSV (year, incidence)" and uploaded_inc_df is not None:
 
         years = uploaded_inc_df["year"].values
-        incs  = uploaded_inc_df["incidence"].values
+        incs = uploaded_inc_df["incidence"].values
 
         year_min = years[0]
         year_max = years[-1]
@@ -234,11 +345,13 @@ def render_dynamic_ui():
         inc_max = np.max(incs)
 
         # Estimate trend via geometric mean
+        INCIDENCE_FLOOR = 0.1
         ratios = []
-        for i in range(1,len(incs)):
-            if incs[i-1] > 0:
-                ratios.append(incs[i] / incs[i-1])
-        trend = np.exp(np.mean(np.log(ratios))) if len(ratios)>0 else 1.0
+        for i in range(1, len(incs)):
+            if incs[i - 1] > INCIDENCE_FLOOR and incs[i] > INCIDENCE_FLOOR:
+                ratios.append(incs[i] / incs[i - 1])
+
+        trend = np.exp(np.mean(np.log(ratios))) if len(ratios) > 0 else 1.0
 
         inc_map = dict(zip(years, incs))
         inc_hist = {}
@@ -248,13 +361,13 @@ def render_dynamic_ui():
 
             # within provided years
             if year_min <= target_year <= year_max:
-                nearest = min(inc_map.keys(), key=lambda y: abs(y-target_year))
+                nearest = min(inc_map.keys(), key=lambda y: abs(y - target_year))
                 inc_hist[-a] = inc_map[nearest]
 
             # future years not included → forward extrapolation
             elif target_year > year_max:
                 k = target_year - year_max
-                extrap = incs[-1] * (trend ** k)
+                extrap = incs[-1] * (trend**k)
                 inc_hist[-a] = min(extrap, inc_max)
 
             # older years not included → backward extrapolation
@@ -263,23 +376,36 @@ def render_dynamic_ui():
                 extrap = incs[0] * (trend ** (-k))
                 inc_hist[-a] = max(extrap, inc_min)
 
-    else:  
+    else:
         inc_hist = {-k: user_incidence for k in ages}
+
+    # Smooth incidence history with 3-year moving average
+    inc_series = pd.Series(inc_hist).sort_index()
+    inc_series = inc_series.rolling(window=3, center=True, min_periods=1).mean()
+    inc_hist = inc_series.to_dict()
 
     # --------------------------------------------------
     # LTBI BACK-CALCULATION
     # --------------------------------------------------
     ari_hist = calc_ari_from_incidence(inc_hist)
+    # ARI is floored to avoid numerical instability in LTBI back-calculation
+
+    ARI_FLOOR = 1e-6  # per year
+
+    ari_hist = {t: max(ari, ARI_FLOOR) for t, ari in ari_hist.items()}
+
     ltbi_ever, ltbi_recent, ltbi_remote = infection_prob_by_age_split(ages, ari_hist)
 
     # --------------------------------------------------
     # LTBI BY AGE STACKED CHART (≤ 60 YEARS)
     # --------------------------------------------------
-    ltbi_age_df = pd.DataFrame({
-        "Age": ages,
-        "LTBI_recent": 100 * pd.Series(ltbi_recent),
-        "LTBI_remote": 100 * (pd.Series(ltbi_ever) - pd.Series(ltbi_recent)),
-    })
+    ltbi_age_df = pd.DataFrame(
+        {
+            "Age": ages,
+            "LTBI_recent": 100 * pd.Series(ltbi_recent),
+            "LTBI_remote": 100 * (pd.Series(ltbi_ever) - pd.Series(ltbi_recent)),
+        }
+    )
 
     ltbi_age_df = ltbi_age_df[ltbi_age_df["Age"] <= 60]
     ltbi_age_df = ltbi_age_df.melt(id_vars="Age", var_name="Type", value_name="Percent")
@@ -290,10 +416,7 @@ def render_dynamic_ui():
         alt.Chart(ltbi_age_df)
         .mark_area()
         .encode(
-            x="Age:Q",
-            y="Percent:Q",
-            color="Type:N",
-            tooltip=["Age","Type","Percent"]
+            x="Age:Q", y="Percent:Q", color="Type:N", tooltip=["Age", "Type", "Percent"]
         )
     )
     st.altair_chart(chart, use_container_width=True)
@@ -313,7 +436,7 @@ def render_dynamic_ui():
         st.info("Running baseline and intervention...")
 
         params_base = load_dynamic_parameters()
-        params_int  = params_base.copy()
+        params_int = params_base.copy()
 
         # shared parameters
         for p in (params_base, params_int):
@@ -345,23 +468,33 @@ def render_dynamic_ui():
         params_int["rollout_years"] = rollout_years
 
         try:
-            baseline     = run_dynamic_model(params_base, years=time_horizon, intervention=False)
-            intervention = run_dynamic_model(params_int, years=time_horizon, intervention=True)
+            baseline = run_dynamic_model(
+                params_base, years=time_horizon, intervention=False
+            )
+            intervention = run_dynamic_model(
+                params_int, years=time_horizon, intervention=True
+            )
 
             total_pop = sum(age_counts.values())
             base_I = baseline["incidence"]
-            int_I  = intervention["incidence"]
+            int_I = intervention["incidence"]
 
-            df_out = pd.DataFrame({
-                "Year": baseline["time"],
-                "Baseline_inc_count": base_I,
-                "Intervention_inc_count": int_I,
-                "Baseline_inc_per100k": base_I * 100000 / total_pop,
-                "Intervention_inc_per100k": int_I * 100000 / total_pop,
-            })
+            df_out = pd.DataFrame(
+                {
+                    "Year": baseline["time"],
+                    "Baseline_inc_count": base_I,
+                    "Intervention_inc_count": int_I,
+                    "Baseline_inc_per100k": base_I * 100000 / total_pop,
+                    "Intervention_inc_per100k": int_I * 100000 / total_pop,
+                }
+            )
 
-            df_out["Cases_averted_count"]   = df_out["Baseline_inc_count"] - df_out["Intervention_inc_count"]
-            df_out["Cases_averted_per100k"] = df_out["Baseline_inc_per100k"] - df_out["Intervention_inc_per100k"]
+            df_out["Cases_averted_count"] = (
+                df_out["Baseline_inc_count"] - df_out["Intervention_inc_count"]
+            )
+            df_out["Cases_averted_per100k"] = (
+                df_out["Baseline_inc_per100k"] - df_out["Intervention_inc_per100k"]
+            )
 
             df_out = df_out.round(1)
 
@@ -379,7 +512,7 @@ def render_dynamic_ui():
             st.line_chart(df_out[["Baseline_inc_count", "Intervention_inc_count"]])
 
             st.subheader("🔍 Cases Averted")
-            st.write(df_out[["Year","Cases_averted_count","Cases_averted_per100k"]])
+            st.write(df_out[["Year", "Cases_averted_count", "Cases_averted_per100k"]])
 
         except Exception as e:
             st.error(f"Dynamic model failed: {e}")
