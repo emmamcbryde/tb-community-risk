@@ -1,11 +1,12 @@
 import numpy as np
 import pandas as pd
 
+
 def calc_ari_from_incidence(
-    inc_history,     # dict: year offset (0 now, −1 last year etc) → incidence per 100k
-    f_ssplus=0.6,    # fraction smear‐positive of all forms (constant or dict by year)
-    K=5000.0,        # divisor in classic Stýblo rule
-    adjustment=1.0   # optional multiplier for shorter infectious period etc
+    inc_history,  # dict: year offset (0 now, −1 last year etc) → incidence per 100k
+    f_ssplus=0.6,  # fraction smear‐positive of all forms (constant or dict by year)
+    K=5000.0,  # divisor in classic Stýblo rule
+    adjustment=1.0,  # optional multiplier for shorter infectious period etc
 ):
     """
     Converts incidence history to ARI history (probability) via modernised Stýblo‐style rule.
@@ -17,11 +18,8 @@ def calc_ari_from_incidence(
         ari[t] = min(max(ari_t, 0.0), 1.0)  # clamp between 0 and 1
     return ari
 
-def infection_prob_by_age(
-    ages,
-    ari_history,
-    clearance_rate=0.0
-):
+
+def infection_prob_by_age(ages, ari_history, clearance_rate=0.0):
     """
     Computes P(ever infected by now) for each age in `ages`, using ARI history.
     ari_history keys: 0 (now), -1, -2, ..., −(maxAge‐1)
@@ -29,24 +27,22 @@ def infection_prob_by_age(
     Returns dict: age → probability (0-1)
     """
     prob = {}
-    min_key = min(ari_history.keys())
     for a in ages:
         if a <= 0:
             prob[a] = 0.0
             continue
         prod = 1.0
         for k in range(a):
-            ari_k = ari_history.get(-k, ari_history.get(min_key, 0.0))
-            prod *= (1.0 - ari_k)
-            prod *= (1.0 - clearance_rate)
+            prod *= 1.0 - ari_history.get(
+                -k, ari_history.get(min(ari_history.keys()), 0)
+            )
+            # optionally account for clearance
+            prod *= 1.0 - clearance_rate
         prob[a] = 1.0 - prod
     return prob
 
-def infection_prob_by_age_split(
-    ages,
-    ari_history,
-    window_recent=5
-):
+
+def infection_prob_by_age_split(ages, ari_history, window_recent=5):
     """
     Split lifetime infection probability into recent vs remote components.
 
@@ -76,7 +72,7 @@ def infection_prob_by_age_split(
         prod_all = 1.0
         for k in range(a):
             ari_k = ari_history.get(-k, ari_history.get(min_key, 0.0))
-            prod_all *= (1.0 - ari_k)
+            prod_all *= 1.0 - ari_k
         P_ever = 1.0 - prod_all
 
         # 2. P(no infection in last `window_recent` years)
@@ -84,14 +80,14 @@ def infection_prob_by_age_split(
         prod_last = 1.0
         for k in range(max_recent_k):
             ari_k = ari_history.get(-k, ari_history.get(min_key, 0.0))
-            prod_last *= (1.0 - ari_k)
+            prod_last *= 1.0 - ari_k
 
         # 3. P(no infection > window_recent years ago)
         prod_old = 1.0
         if a > window_recent:
             for k in range(window_recent, a):
                 ari_k = ari_history.get(-k, ari_history.get(min_key, 0.0))
-                prod_old *= (1.0 - ari_k)
+                prod_old *= 1.0 - ari_k
 
         # Infection only > window_recent years ago AND none in recent window
         P_remote_only = (1.0 - prod_old) * prod_last
