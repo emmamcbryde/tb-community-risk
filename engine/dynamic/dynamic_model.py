@@ -27,40 +27,43 @@ def simulate_dynamic(params, years, intervention=True):
     )
 
     required_keys = [
-    "smoker_pct", "alcohol_pct", "diabetes_pct",
-    "renal_pct", "HIV_treated_pct", "HIV_untreated_pct"]
+        "smoker_pct",
+        "alcohol_pct",
+        "diabetes_pct",
+        "renal_pct",
+        "HIV_treated_pct",
+        "HIV_untreated_pct",
+    ]
 
     for k in required_keys:
         if k not in params:
             raise ValueError(f"Missing parameter: {k}")
 
-
     # -------- Extract parameters --------
     beta = params["beta"]
-    smoker_pct   = params["smoker_pct"]
+    smoker_pct = params["smoker_pct"]
     diabetes_pct = params["diabetes_pct"]
-    renal_pct    = params["renal_pct"]
+    renal_pct = params["renal_pct"]
     HIV_untreated_pct = params["HIV_untreated_pct"]
-    HIV_treated_pct   = params["HIV_treated_pct"] 
-    alcohol_pct   = params["alcohol_pct"]
-    ltbi_ever   = params["ltbi_ever"]        # dict age → Prob(ever infected)
-    ltbi_recent = params["ltbi_recent"]      # dict age → Prob(recent infection)
-    age_counts  = params["age_counts"]       # dict age → population
+    HIV_treated_pct = params["HIV_treated_pct"]
+    alcohol_pct = params["alcohol_pct"]
+    ltbi_ever = params["ltbi_ever"]  # dict age → Prob(ever infected)
+    ltbi_recent = params["ltbi_recent"]  # dict age → Prob(recent infection)
+    age_counts = params["age_counts"]  # dict age → population
 
     initial_inc = params.get("initial_incidence_per_100k", 0.0)
     pre_det_months = params.get("pre_det_months", 12.0)
-    delta_pre  = params.get("delta_pre", 0.5)
+    delta_pre = params.get("delta_pre", 0.5)
     delta_post = params.get("delta_post", delta_pre)
 
-    ltbi_coverage    = params.get("ltbi_coverage", 0.0)
-    rollout_years    = params.get("rollout_years", 0)
+    ltbi_coverage = params.get("ltbi_coverage", 0.0)
+    rollout_years = params.get("rollout_years", 0)
     treatment_method = params.get("treatment_method", "None")
 
     # -------- Natural history constants --------
-    sigma_fast = 0.01   # per year
+    sigma_fast = 0.005  # per year
     sigma_slow = 0.001
-    omega      = 1.0/5.0   # fast → slow per year
-
+    omega = 1.0 / 5.0  # fast → slow per year
 
     # --------------------------------------------------
     # Risk factor relative risks (progression LTBI -> TB)
@@ -88,7 +91,6 @@ def simulate_dynamic(params, years, intervention=True):
     risk_multiplier = 1.0
     for k in RR:
         risk_multiplier *= (1 - p[k]) + p[k] * RR[k]
-
 
     sigma_fast_eff = sigma_fast * risk_multiplier
     sigma_slow_eff = sigma_slow * risk_multiplier
@@ -118,10 +120,10 @@ def simulate_dynamic(params, years, intervention=True):
     L_slow0 = 0.0
 
     for a, pop in age_counts.items():
-        p_ever   = ltbi_ever.get(a,   0.0)
+        p_ever = ltbi_ever.get(a, 0.0)
         p_recent = ltbi_recent.get(a, 0.0)
 
-        S0      += pop * (1.0 - p_ever)
+        S0 += pop * (1.0 - p_ever)
         L_fast0 += pop * p_recent
         L_slow0 += pop * (p_ever - p_recent)
 
@@ -145,17 +147,17 @@ def simulate_dynamic(params, years, intervention=True):
     n_steps = int(years / dt)
     t = np.linspace(0.0, years, n_steps + 1)
 
-    S      = np.zeros(n_steps + 1)
+    S = np.zeros(n_steps + 1)
     L_fast = np.zeros(n_steps + 1)
     L_slow = np.zeros(n_steps + 1)
-    I      = np.zeros(n_steps + 1)
-    R      = np.zeros(n_steps + 1)
+    I = np.zeros(n_steps + 1)
+    R = np.zeros(n_steps + 1)
 
-    S[0]      = S0
+    S[0] = S0
     L_fast[0] = L_fast0
     L_slow[0] = L_slow0
-    I[0]      = I0
-    R[0]      = R0
+    I[0] = I0
+    R[0] = R0
 
     # -------- Tau(t) and gamma(t) functions --------
     def tau_at_time(time):
@@ -180,48 +182,41 @@ def simulate_dynamic(params, years, intervention=True):
         time = t[i]
 
         if N <= 0:
-            S[i] = S[i-1]
-            L_fast[i] = L_fast[i-1]
-            L_slow[i] = L_slow[i-1]
-            I[i] = I[i-1]
-            R[i] = R[i-1]
+            S[i] = S[i - 1]
+            L_fast[i] = L_fast[i - 1]
+            L_slow[i] = L_slow[i - 1]
+            I[i] = I[i - 1]
+            R[i] = R[i - 1]
             continue
 
-        lambda_t = beta * I[i-1] / N
+        lambda_t = beta * I[i - 1] / N
 
-        tau_now   = tau_at_time(time)
+        tau_now = tau_at_time(time)
         gamma_now = gamma_at_time(time)
 
         # d/dt terms
-        dS_dt = (
-            -lambda_t * S[i-1]
-            + tau_now * (L_fast[i-1] + L_slow[i-1])
-        )
+        dS_dt = -lambda_t * S[i - 1] + tau_now * (L_fast[i - 1] + L_slow[i - 1])
 
         dLf_dt = (
-            lambda_t * S[i-1]
-            - (sigma_fast_eff + omega + tau_now) * L_fast[i-1]
+            lambda_t * S[i - 1] - (sigma_fast_eff + omega + tau_now) * L_fast[i - 1]
         )
 
-        dLs_dt = (
-            omega * L_fast[i-1]
-            - (sigma_slow_eff + tau_now) * L_slow[i-1]
-        )
+        dLs_dt = omega * L_fast[i - 1] - (sigma_slow_eff + tau_now) * L_slow[i - 1]
 
         dI_dt = (
-            sigma_fast_eff * L_fast[i-1]
-            + sigma_slow_eff * L_slow[i-1]
-            - gamma_now * I[i-1]
+            sigma_fast_eff * L_fast[i - 1]
+            + sigma_slow_eff * L_slow[i - 1]
+            - gamma_now * I[i - 1]
         )
 
-        dR_dt = gamma_now * I[i-1]
+        dR_dt = gamma_now * I[i - 1]
 
         # Euler step
-        S[i]      = S[i-1]      + dS_dt  * dt
-        L_fast[i] = L_fast[i-1] + dLf_dt * dt
-        L_slow[i] = L_slow[i-1] + dLs_dt * dt
-        I[i]      = I[i-1]      + dI_dt  * dt
-        R[i]      = R[i-1]      + dR_dt  * dt
+        S[i] = S[i - 1] + dS_dt * dt
+        L_fast[i] = L_fast[i - 1] + dLf_dt * dt
+        L_slow[i] = L_slow[i - 1] + dLs_dt * dt
+        I[i] = I[i - 1] + dI_dt * dt
+        R[i] = R[i - 1] + dR_dt * dt
 
         N = S[i] + L_fast[i] + L_slow[i] + I[i] + R[i]
 
