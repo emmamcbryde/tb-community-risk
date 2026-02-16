@@ -4,7 +4,6 @@ import numpy as np
 import altair as alt
 
 from engine.dynamic.exec_dynamic import run_dynamic_model
-from engine.dynamic.dynamic_params import load_dynamic_parameters
 from engine.infection_backcast import (
     calc_ari_from_incidence,
     infection_prob_by_age_split,
