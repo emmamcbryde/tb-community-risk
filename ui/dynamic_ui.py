@@ -4,7 +4,6 @@ import numpy as np
 import altair as alt
 
 from engine.dynamic.exec_dynamic import run_dynamic_model
-from engine.dynamic.dynamic_params import load_dynamic_parameters
 from engine.infection_backcast import (
     calc_ari_from_incidence,
     infection_prob_by_age_split,
@@ -266,7 +265,7 @@ def render_dynamic_ui():
     # BUILD INCIDENCE HISTORY FOR LTBI BACK-CALCULATION
     # --------------------------------------------------
 
-    # ALWAYS define a default first
+    # Default: constant (ensures inc_hist is always defined)
     inc_hist = {-k: user_incidence for k in ages}
 
     if hist_pattern == "Constant":
@@ -279,107 +278,56 @@ def render_dynamic_ui():
         inc_hist = {-k: user_incidence * (0.97**k) for k in ages}
 
     elif hist_pattern == "Upload CSV (year, incidence)":
-        if uploaded_inc_df is not None:
 
+        if uploaded_inc_df is None:
+            st.warning("Incidence CSV not uploaded yet – using constant incidence.")
+            inc_hist = {-k: user_incidence for k in ages}
+
+        else:
             years = uploaded_inc_df["year"].values
-            incs = uploaded_inc_df["incidence"].values
+            incs = uploaded_inc_df["incidence"].values.astype(float)
 
             year_min = years[0]
             year_max = years[-1]
-            inc_min = np.min(incs)
-            inc_max = np.max(incs)
 
-            # Estimate trend via geometric mean
+            # Floors/ceilings for stability
             INCIDENCE_FLOOR = 0.1
+            incs = np.maximum(incs, INCIDENCE_FLOOR)
+
+            inc_min = float(np.min(incs))
+            inc_max = float(np.max(incs))
+
+            # Estimate geometric trend ignoring tiny values
             ratios = []
             for i in range(1, len(incs)):
                 if incs[i - 1] > INCIDENCE_FLOOR and incs[i] > INCIDENCE_FLOOR:
                     ratios.append(incs[i] / incs[i - 1])
-            trend = np.exp(np.mean(np.log(ratios))) if ratios else 1.0
+            trend = float(np.exp(np.mean(np.log(ratios)))) if ratios else 1.0
+
             inc_map = dict(zip(years, incs))
             inc_hist = {}
 
             for a in ages:
                 target_year = year_max - a
 
+                # within provided years
                 if year_min <= target_year <= year_max:
                     nearest = min(inc_map.keys(), key=lambda y: abs(y - target_year))
-                    inc_hist[-a] = inc_map[nearest]
+                    inc_hist[-a] = float(inc_map[nearest])
 
+                # forward extrapolation (missing recent years)
                 elif target_year > year_max:
                     k = target_year - year_max
                     extrap = incs[-1] * (trend**k)
-                    inc_hist[-a] = min(extrap, inc_max)
+                    inc_hist[-a] = float(min(extrap, inc_max))
 
+                # backward extrapolation (missing early years)
                 else:
                     k = year_min - target_year
                     extrap = incs[0] * (trend ** (-k))
-                    inc_hist[-a] = max(extrap, inc_min)
+                    inc_hist[-a] = float(max(extrap, inc_min))
 
-        else:
-            # User selected CSV mode but has not uploaded yet
-            st.warning("Incidence CSV not uploaded yet – using constant incidence.")
-            inc_hist = {-k: user_incidence for k in ages}
-
-    # --------------------------------------------------
-    # BUILD INCIDENCE HISTORY FOR LTBI BACK-CALC
-    # --------------------------------------------------
-    if hist_pattern == "Constant":
-        inc_hist = {-k: user_incidence for k in ages}
-
-    elif hist_pattern == "Falling 3%/year":
-        inc_hist = {-k: user_incidence * (1.03**k) for k in ages}
-
-    elif hist_pattern == "Rising 3%/year":
-        inc_hist = {-k: user_incidence * (0.97**k) for k in ages}
-
-    elif hist_pattern == "Upload CSV (year, incidence)" and uploaded_inc_df is not None:
-
-        years = uploaded_inc_df["year"].values
-        incs = uploaded_inc_df["incidence"].values
-
-        year_min = years[0]
-        year_max = years[-1]
-
-        inc_min = np.min(incs)
-        inc_max = np.max(incs)
-
-        # Estimate trend via geometric mean
-        INCIDENCE_FLOOR = 0.1
-        ratios = []
-        for i in range(1, len(incs)):
-            if incs[i - 1] > INCIDENCE_FLOOR and incs[i] > INCIDENCE_FLOOR:
-                ratios.append(incs[i] / incs[i - 1])
-
-        trend = np.exp(np.mean(np.log(ratios))) if len(ratios) > 0 else 1.0
-
-        inc_map = dict(zip(years, incs))
-        inc_hist = {}
-
-        for a in ages:
-            target_year = year_max - a
-
-            # within provided years
-            if year_min <= target_year <= year_max:
-                nearest = min(inc_map.keys(), key=lambda y: abs(y - target_year))
-                inc_hist[-a] = inc_map[nearest]
-
-            # future years not included → forward extrapolation
-            elif target_year > year_max:
-                k = target_year - year_max
-                extrap = incs[-1] * (trend**k)
-                inc_hist[-a] = min(extrap, inc_max)
-
-            # older years not included → backward extrapolation
-            else:
-                k = year_min - target_year
-                extrap = incs[0] * (trend ** (-k))
-                inc_hist[-a] = max(extrap, inc_min)
-
-    else:
-        inc_hist = {-k: user_incidence for k in ages}
-
-    # Smooth incidence history with 3-year moving average
+    # Optional smoothing to avoid sharp year-to-year steps
     inc_series = pd.Series(inc_hist).sort_index()
     inc_series = inc_series.rolling(window=3, center=True, min_periods=1).mean()
     inc_hist = inc_series.to_dict()
@@ -435,8 +383,8 @@ def render_dynamic_ui():
 
         st.info("Running baseline and intervention...")
 
-        params_base = load_dynamic_parameters()
-        params_int = params_base.copy()
+        params_base = {}
+        params_int = {}
 
         # shared parameters
         for p in (params_base, params_int):
