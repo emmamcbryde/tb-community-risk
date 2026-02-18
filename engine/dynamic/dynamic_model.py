@@ -40,6 +40,12 @@ def simulate_dynamic(params, years, intervention=True):
     # Extract parameters
     # ---------------------------
     beta = float(params["beta"])
+    beta = float(params.get("beta", 0.0))
+    beta_series = params.get("beta_series", None)
+    if beta_series is not None:
+        beta_series = np.asarray(beta_series, dtype=float).reshape(-1)
+        if beta_series.size == 0:
+            beta_series = None
 
     smoker_pct = float(params["smoker_pct"])
     alcohol_pct = float(params["alcohol_pct"])
@@ -193,8 +199,16 @@ def simulate_dynamic(params, years, intervention=True):
                 R[i - 1],
             )
             continue
+        beta_now = beta
+        if beta_series is not None:
+            idx = int(np.floor(t))  # 0..years-1
+            idx = max(0, min(idx, len(beta_series) - 1))
+            beta_now = float(beta_series[idx])
 
-        lambda_t = beta * I[i - 1] / N
+        # Use beta_now everywhere beta was used:
+        # lambda_inf = beta_now * I / N
+
+        lambda_t = beta_now * I[i - 1] / N
         tau_now = tau_at_time(time_prev)
         gamma_now = gamma_at_time(time_prev)
 
