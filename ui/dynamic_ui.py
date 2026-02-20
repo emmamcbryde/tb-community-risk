@@ -157,55 +157,43 @@ def build_incidence_history(
             inc_hist = {-k: float(user_incidence) for k in years_back}
         else:
             df = uploaded_inc_df.copy().sort_values("year")
-                    "Incidence CSV missing required columns – using constant incidence."
-                )
-                inc_hist = {-k: float(user_incidence) for k in years_back}
-            else:
-                years = df["year"].values.astype(int)
-                incs = df["incidence"].values.astype(float)
-
-                # avoid zeros
-                incs = np.maximum(incs, INCIDENCE_FLOOR)
-
-                year_min = int(years[0])
-                year_max = int(years[-1])
-
-                inc_min = float(np.min(incs))
-                inc_max = float(np.max(incs))
-
-                # geometric mean trend
-                ratios = []
-                for i in range(1, len(incs)):
-                    if incs[i - 1] > INCIDENCE_FLOOR and incs[i] > INCIDENCE_FLOOR:
-                        ratios.append(incs[i] / incs[i - 1])
-                trend = float(np.exp(np.mean(np.log(ratios)))) if ratios else 1.0
-
-                inc_map = dict(zip(years, incs))
-
-                # define "present" as last year in CSV
-                ref_year = year_max
-
-                inc_hist = {}
-                for k in years_back:
-                    target_year = ref_year - k
-
-                    if year_min <= target_year <= year_max:
-                        nearest = min(
-                            inc_map.keys(), key=lambda y: abs(y - target_year)
-                        )
-                        inc_hist[-k] = float(inc_map[nearest])
-                    elif target_year > year_max:
-                        # forward extrapolation
-                        j = target_year - year_max
-                        extrap = incs[-1] * (trend**j)
-                        inc_hist[-k] = float(min(extrap, inc_max))
-                    else:
-                        # backward extrapolation; never below min observed
-                        j = year_min - target_year
-                        extrap = incs[0] * (trend ** (-j))
-                        inc_hist[-k] = float(max(extrap, inc_min))
             years = df["year"].values.astype(int)
             incs = df["incidence"].values.astype(float)
+
+            # floor to avoid zeros
+            incs = np.maximum(incs, INCIDENCE_FLOOR)
+
+            year_min = int(years[0])
+            year_max = int(years[-1])
+            inc_min = float(np.min(incs))
+            inc_max = float(np.max(incs))
+
+            ratios = []
+            for i in range(1, len(incs)):
+                if incs[i - 1] > INCIDENCE_FLOOR and incs[i] > INCIDENCE_FLOOR:
+                    ratios.append(incs[i] / incs[i - 1])
+            trend = float(np.exp(np.mean(np.log(ratios)))) if ratios else 1.0
+
+            inc_map = dict(zip(years, incs))
+            ref_year = year_max  # "present" = last CSV year
+
+            inc_hist = {}
+            for k in years_back:
+                target_year = ref_year - k
+
+                if year_min <= target_year <= year_max:
+                    nearest = min(inc_map.keys(), key=lambda y: abs(y - target_year))
+                    inc_hist[-k] = float(inc_map[nearest])
+
+                elif target_year > year_max:
+                    j = target_year - year_max
+                    extrap = incs[-1] * (trend**j)
+                    inc_hist[-k] = float(min(extrap, inc_max))
+
+                else:
+                    j = year_min - target_year
+                    extrap = incs[0] * (trend ** (-j))
+                    inc_hist[-k] = float(max(extrap, inc_min))
     else:
         inc_hist = {-k: float(user_incidence) for k in years_back}
 
