@@ -157,7 +157,6 @@ def build_incidence_history(
             inc_hist = {-k: float(user_incidence) for k in years_back}
         else:
             df = uploaded_inc_df.copy().sort_values("year")
-                st.warning(
                     "Incidence CSV missing required columns – using constant incidence."
                 )
                 inc_hist = {-k: float(user_incidence) for k in years_back}
@@ -206,6 +205,7 @@ def build_incidence_history(
                         extrap = incs[0] * (trend ** (-j))
                         inc_hist[-k] = float(max(extrap, inc_min))
             years = df["year"].values.astype(int)
+            incs = df["incidence"].values.astype(float)
     else:
         inc_hist = {-k: float(user_incidence) for k in years_back}
 
