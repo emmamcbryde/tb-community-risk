@@ -197,11 +197,10 @@ def build_incidence_history(
     else:
         inc_hist = {-k: float(user_incidence) for k in years_back}
 
-    # Smooth (3-year moving average)
+    # smooth with 3-year moving average
     inc_series = pd.Series(inc_hist).sort_index()
     inc_series = inc_series.rolling(window=3, center=True, min_periods=1).mean()
 
-    # Final floor
     inc_hist = {
         int(k): float(max(v, INCIDENCE_FLOOR)) for k, v in inc_series.to_dict().items()
     }
@@ -210,8 +209,8 @@ def build_incidence_history(
 
 def compute_ltbi_from_inc_hist(ages, inc_hist, shift_years=0, ari_adjustment=1.0):
     """
-    Compute LTBI probabilities for a reference time shift_years in the past.
-    ari_adjustment scales incidence→ARI mapping, and therefore LTBI.
+    Compute LTBI probabilities at a reference time shift_years in the past.
+    ari_adjustment scales incidence→ARI mapping (Stýblo-style), and therefore LTBI.
     """
     max_age = int(max(ages))
     min_key = int(min(inc_hist.keys()))
@@ -223,8 +222,6 @@ def compute_ltbi_from_inc_hist(ages, inc_hist, shift_years=0, ari_adjustment=1.0
             inc_hist.get(src_key, inc_hist.get(min_key, INCIDENCE_FLOOR))
         )
 
-    # calc_ari_from_incidence supports adjustment= in your updated engine;
-    # keep a fallback for older versions.
     try:
         ari_hist = calc_ari_from_incidence(inc_ref, adjustment=float(ari_adjustment))
     except TypeError:
@@ -235,29 +232,6 @@ def compute_ltbi_from_inc_hist(ages, inc_hist, shift_years=0, ari_adjustment=1.0
     return ltbi_ever, ltbi_recent, ltbi_remote
 
 
-def minimize_scalar_bounded_grid(fn, lo, hi, n=41, refine_steps=4):
-    """SciPy-free bounded minimiser: coarse-to-fine grid search."""
-    best_x = None
-    best_f = float("inf")
-
-    for _ in range(refine_steps):
-        xs = np.linspace(lo, hi, n)
-        fs = np.array([fn(x) for x in xs], dtype=float)
-
-        idx = int(np.argmin(fs))
-        best_x = float(xs[idx])
-        best_f = float(fs[idx])
-
-        if idx == 0:
-            lo, hi = float(xs[0]), float(xs[1])
-        elif idx == n - 1:
-            lo, hi = float(xs[-2]), float(xs[-1])
-        else:
-            lo, hi = float(xs[idx - 1]), float(xs[idx + 1])
-
-    return best_x, best_f
-
-
 def calibrate_beta_and_ltbi_scale(
     age_counts,
     ages,
@@ -266,19 +240,10 @@ def calibrate_beta_and_ltbi_scale(
     risk_inputs,
     pre_det_months,
     delta_pre,
-    beta_bounds=(0.0, 50.0),
-    adj_bounds=(0.2, 2.0),
-    adj_grid_points=13,
+    beta_bounds=BETA_BOUNDS,
+    adj_bounds=ARI_ADJ_BOUNDS,
+    adj_grid_points=ARI_ADJ_GRID_POINTS,
 ):
-    """
-    Jointly calibrate:
-      - beta (transmission)
-      - ari_adjustment (scales incidence→ARI→LTBI mapping)
-
-    Uses nested optimisation:
-      - grid over ari_adjustment
-      - within each, optimise beta
-    """
     total_pop = float(sum(age_counts.values()))
 
     # Observed incidence per 100k over calibration window (oldest -> newest)
