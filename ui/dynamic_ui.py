@@ -384,85 +384,54 @@ def refine_beta_random_walk(
 
     return beta_series_hat, fit
 
-    return best["beta"], best["adj"], best["rmse"], obs, best["fit"]
+
+def _get_annual(sim):
+    if "annual_incidence" in sim:
+        y = np.array(sim["annual_incidence"], dtype=float)
+    elif "incidence" in sim:
+        y = np.array(sim["incidence"], dtype=float)
+    else:
+        raise KeyError(f"Simulation output missing incidence keys: {list(sim.keys())}")
+
+    t = sim.get("annual_incidence_time", None)
+    if t is None:
+        t = np.arange(0, len(y), dtype=float)
+    else:
+        t = np.array(t, dtype=float)
+
+    return t, y
 
 
 # =====================================================
-# Main Dynamic Model UI
+# Main UI
 # =====================================================
 def render_dynamic_ui():
-    st.header("📈 Dynamic LTBI → TB Model (with calibration)")
+    st.header("📈 Dynamic LTBI → TB Model")
+
     st.info(
-        "This model estimates TB incidence based on LTBI, risk factors, and interventions.\n\n"
-        "• Baseline = no new LTBI test-and-treat\n"
-        "• Intervention = selected LTBI testing and treatment\n"
-        "• Outputs are annualised and shown as rates (per 100,000) and counts\n"
-        "• Transmission (β) and LTBI scale are calibrated to historical incidence"
+        "Workflow:\n"
+        "1) **Calibrate** (fits β and ARI adjustment; shows backcast + LTBI by age today)\n"
+        "2) Choose intervention settings\n"
+        "3) **Simulate** (projects baseline vs intervention)\n"
     )
 
-    # --------------------------------------------------
-    # Core inputs
-    # --------------------------------------------------
+    # -------------------------
+    # Inputs that affect calibration
+    # -------------------------
+    st.sidebar.subheader("Core inputs")
     population = st.sidebar.number_input("Population size", min_value=50, value=10000)
     user_incidence = st.sidebar.number_input(
         "Baseline annual incidence (per 100k)", 0, 500, 30
     )
-    time_horizon = st.sidebar.slider("Time horizon (years)", 1, 30, 20)
+    time_horizon = st.sidebar.slider("Projection horizon (years)", 1, 30, 20)
 
-    calib_years = st.sidebar.slider(
-        "Calibration window (years)",
-        5,
-        30,
-        15,
-        help="β and LTBI scale are fitted so that modelled incidence matches the historical incidence pattern "
-        "over this many past years.",
-    )
-
-    # --------------------------------------------------
-    # Risk factors
-    # --------------------------------------------------
-    smoker_pct = st.sidebar.slider(
-        "Smoker (%)",
-        0,
-        100,
-        30,
-        help="Proportion of the population with current tobacco smoking.",
-    )
-    alcohol_pct = st.sidebar.slider(
-        "Excess alcohol use (%)",
-        0,
-        100,
-        15,
-        help="Proportion of the population with excess alcohol consumption.",
-    )
-    diabetes_pct = st.sidebar.slider(
-        "Diabetes (%)",
-        0,
-        100,
-        10,
-        help="Proportion of the population with diagnosed diabetes mellitus.",
-    )
-    renal_pct = st.sidebar.slider(
-        "Renal impairment (%)",
-        0,
-        100,
-        5,
-        help="Proportion of the population with moderate–severe chronic kidney disease.",
-    )
-    HIV_treated_pct = st.sidebar.slider(
-        "HIV Treated with antiretrovirals (%)",
-        0,
-        100,
-        3,
-        help="Proportion of the population with HIV under treatment.",
-    )
-    HIV_untreated_pct = st.sidebar.slider(
-        "HIV Untreated (%)",
-        0,
-        100,
-        3,
-        help="Proportion of the population with HIV not under treatment.",
-    )
+    st.sidebar.subheader("Risk factors")
+    smoker_pct = st.sidebar.slider("Smoker (%)", 0, 100, 30)
+    alcohol_pct = st.sidebar.slider("Excess alcohol use (%)", 0, 100, 15)
+    diabetes_pct = st.sidebar.slider("Diabetes (%)", 0, 100, 10)
+    renal_pct = st.sidebar.slider("Renal impairment (%)", 0, 100, 5)
+    HIV_treated_pct = st.sidebar.slider("HIV treated (%)", 0, 100, 3)
+    HIV_untreated_pct = st.sidebar.slider("HIV untreated (%)", 0, 100, 3)
 
     risk_inputs = {
         "smoker_pct": smoker_pct,
@@ -473,56 +442,7 @@ def render_dynamic_ui():
         "HIV_untreated_pct": HIV_untreated_pct,
     }
 
-    # --------------------------------------------------
-    # LTBI Test & Treat (pulse)
-    # --------------------------------------------------
-    testing_method = st.sidebar.selectbox("Testing method", ["TST", "IGRA", "None"])
-    treatment_method = st.sidebar.selectbox(
-        "Treatment regimen", ["1HP", "3HP", "4R", "6H", "9H", "None"]
-    )
-
-    ltbi_coverage = (
-        st.sidebar.slider(
-            "LTBI Test & Treat total coverage (%)",
-            0,
-            100,
-            50,
-            help="Effective fraction of the population that will successfully complete LTBI treatment over the rollout period.",
-        )
-        / 100.0
-    )
-
-    rollout_years = st.sidebar.slider("Rollout duration (years)", 1, 10, 5)
-
-    # --------------------------------------------------
-    # Diagnosis improvement (intervention only)
-    # --------------------------------------------------
-    st.sidebar.subheader("Diagnosis improvement (intervention)")
-    diag_reduction_pct = st.sidebar.slider(
-        "Percent reduction in time before treatment (%)",
-        0,
-        100,
-        50,
-        help="Reduces the mean time to diagnosis/treatment relative to baseline.",
-    )
-
-    pre_det_months = BASELINE_DIAG_MONTHS
-    post_det_months = max(
-        BASELINE_DIAG_MONTHS * (1.0 - diag_reduction_pct / 100.0), 0.1
-    )
-
-    delta_pre = 12.0 / pre_det_months
-    delta_post = 12.0 / post_det_months
-
-    # --------------------------------------------------
-    # Historical incidence pattern
-    # --------------------------------------------------
-    st.sidebar.subheader("Historical Incidence Pattern")
-    st.sidebar.markdown(
-        "**Historical TB incidence (for LTBI back-calculation & calibration)**  \n"
-        "Historical incidence determines LTBI by age, and is also used to calibrate β."
-    )
-
+    st.sidebar.subheader("Historical incidence pattern")
     hist_pattern = st.sidebar.selectbox(
         "Choose pattern:",
         [
@@ -534,27 +454,28 @@ def render_dynamic_ui():
     )
 
     uploaded_inc_df = None
+    ref_year = None
     if hist_pattern == "Upload CSV (year, incidence)":
         inc_file = st.sidebar.file_uploader("Upload incidence CSV", type="csv")
         if inc_file:
-            try:
-                tmp = pd.read_csv(inc_file)
-                if {"year", "incidence"}.issubset(tmp.columns):
-                    uploaded_inc_df = tmp.sort_values("year")
-                    st.sidebar.success("Incidence history loaded.")
-                else:
-                    st.sidebar.error("CSV must contain columns: year, incidence")
-            except Exception as e:
-                st.sidebar.error(f"Could not read file: {e}")
+            tmp = pd.read_csv(inc_file)
+            if {"year", "incidence"}.issubset(tmp.columns):
+                uploaded_inc_df = tmp.sort_values("year")
+                ref_year = int(uploaded_inc_df["year"].max())
+                st.sidebar.success("Incidence history loaded.")
+            else:
+                st.sidebar.error("CSV must contain columns: year, incidence")
 
-    # --------------------------------------------------
-    # Age distribution
-    # --------------------------------------------------
-    st.sidebar.subheader("Age Distribution")
+    st.sidebar.subheader("Age distribution")
     age_method = st.sidebar.radio(
         "Choose method:",
         ["Country ISO code (recommended)", "Upload custom CSV", "Default global"],
     )
+
+    age_df_display = None
+    df_country = None
+    country = None
+    age_upload_hash = None
 
     if age_method == "Country ISO code (recommended)":
         country = st.sidebar.text_input("ISO3 code", "AUS")
@@ -567,6 +488,7 @@ def render_dynamic_ui():
         if file:
             df = pd.read_csv(file)
             if {"AgeGroup", "Proportion"}.issubset(df.columns):
+                age_upload_hash = hash_df(df[["AgeGroup", "Proportion"]])
                 age_df_display = df
                 df_country = pd.DataFrame(
                     {
@@ -575,7 +497,9 @@ def render_dynamic_ui():
                     }
                 )
             else:
-                st.error("CSV must include AgeGroup and Proportion. Using default.")
+                st.sidebar.error(
+                    "CSV must include AgeGroup and Proportion. Using default."
+                )
                 age_df_display = default_age_distribution()
                 df_country = pd.DataFrame(
                     {"age": range(0, 101), "population": [population / 101] * 101}
@@ -592,10 +516,11 @@ def render_dynamic_ui():
             {"age": range(0, 101), "population": [population / 101] * 101}
         )
 
+    # Show age distribution
     st.subheader("📊 Age Distribution (5-year bins)")
     st.dataframe(age_df_display)
 
-    # Scale to user-selected population
+    # Scale age distribution to chosen population
     total_pop_country = float(df_country["population"].sum())
     age_counts = {
         int(row["age"]): float(population)
@@ -604,94 +529,138 @@ def render_dynamic_ui():
     }
     ages = sorted(age_counts.keys())
     max_age = int(max(ages))
+    total_pop = float(sum(age_counts.values()))
 
-    # Build incidence history deep enough for calibration + LTBI
-    years_back_needed = max_age + calib_years + 5
+    # Build incidence history deep enough for calibration + LTBI backcast
+    years_back_needed = max_age + CALIB_YEARS_FIT + 5
     inc_hist = build_incidence_history(
         hist_pattern, user_incidence, years_back_needed, uploaded_inc_df=uploaded_inc_df
     )
 
-    st.info(
-        "LTBI-by-age will be displayed after calibration (click **Run Dynamic Simulation**)."
+    # -------------------------
+    # Invalidate calibration if upstream inputs changed
+    # -------------------------
+    inc_hash = (
+        hash_df(uploaded_inc_df, cols=["year", "incidence"])
+        if uploaded_inc_df is not None
+        else None
     )
 
-    # --------------------------------------------------
-    # Run simulations
-    # --------------------------------------------------
-    if st.sidebar.button("Run Dynamic Simulation"):
-        st.info("Calibrating β and LTBI scale to historical incidence…")
+    cal_sig = (
+        int(population),
+        float(user_incidence),
+        hist_pattern,
+        inc_hash,
+        age_method,
+        (country or ""),
+        age_upload_hash,
+        tuple(sorted((k, float(v)) for k, v in risk_inputs.items())),
+    )
 
-        beta_hat, ari_adj_hat, rmse, obs_inc, fit_inc = calibrate_beta_and_ltbi_scale(
+    if st.session_state.get("cal_sig", None) != cal_sig:
+        # upstream inputs changed; clear cached results
+        clear_calibration()
+
+    # -------------------------
+    # Calibration button
+    # -------------------------
+    st.sidebar.markdown("---")
+    calibrate_clicked = st.sidebar.button("1) Calibrate")
+
+    if calibrate_clicked:
+        st.info("Running calibration…")
+
+        pre_det_months = BASELINE_DIAG_MONTHS
+        delta_pre = 12.0 / pre_det_months
+
+        beta_hat, ari_adj_hat, _, obs_inc = calibrate_beta_and_ltbi_scale(
             age_counts=age_counts,
             ages=ages,
             inc_hist=inc_hist,
-            calib_years=calib_years,
+            calib_years=CALIB_YEARS_FIT,
             risk_inputs=risk_inputs,
             pre_det_months=pre_det_months,
             delta_pre=delta_pre,
-            beta_bounds=(0.0, 50.0),
-            adj_bounds=(0.2, 2.0),
-            adj_grid_points=13,
         )
+
+        beta_series_hat, fit_inc = refine_beta_random_walk(
+            age_counts=age_counts,
+            ages=ages,
+            inc_hist=inc_hist,
+            calib_years=CALIB_YEARS_FIT,
+            risk_inputs=risk_inputs,
+            pre_det_months=pre_det_months,
+            delta_pre=delta_pre,
+            ari_adjustment=ari_adj_hat,
+            beta_init=beta_hat,
+        )
+
+        rmse_rw = float(np.sqrt(np.mean((np.array(fit_inc) - np.array(obs_inc)) ** 2)))
+        beta_forward = float(beta_series_hat[-1])
+        inc_now_hat = float(fit_inc[-1])  # used to avoid the step-jump into projections
+
+        ltbi_ever_now, ltbi_recent_now, _ = compute_ltbi_from_inc_hist(
+            ages, inc_hist, shift_years=0, ari_adjustment=float(ari_adj_hat)
+        )
+
+        st.session_state["cal_done"] = True
+        st.session_state["cal_sig"] = cal_sig
+        st.session_state["cal_beta_forward"] = beta_forward
+        st.session_state["cal_beta_series"] = np.asarray(beta_series_hat, dtype=float)
+        st.session_state["cal_ari_adj"] = float(ari_adj_hat)
+        st.session_state["cal_rmse_rw"] = rmse_rw
+        st.session_state["cal_obs_inc"] = np.asarray(obs_inc, dtype=float)
+        st.session_state["cal_fit_inc"] = np.asarray(fit_inc, dtype=float)
+        st.session_state["cal_inc_now_hat"] = inc_now_hat
+        st.session_state["cal_ref_year"] = ref_year
+        st.session_state["cal_ltbi_ever_now"] = ltbi_ever_now
+        st.session_state["cal_ltbi_recent_now"] = ltbi_recent_now
+
+        clear_simulation()
+
+    # -------------------------
+    # Display calibration outputs (persist after reruns)
+    # -------------------------
+    if st.session_state.get("cal_done", False):
+        beta_forward = float(st.session_state["cal_beta_forward"])
+        beta_series_hat = np.asarray(st.session_state["cal_beta_series"], dtype=float)
+        ari_adj_hat = float(st.session_state["cal_ari_adj"])
+        rmse_rw = float(st.session_state["cal_rmse_rw"])
+        obs_inc = np.asarray(st.session_state["cal_obs_inc"], dtype=float)
+        fit_inc = np.asarray(st.session_state["cal_fit_inc"], dtype=float)
+        ref_year_used = st.session_state.get("cal_ref_year", None)
+
+        st.subheader("🧪 Calibration results")
 
         st.success(
-            f"Calibration complete: β={beta_hat:.2f}, ARI adjustment={ari_adj_hat:.2f} "
-            f"(RMSE={rmse:.2f} per 100k)"
+            f"Calibrated over {CALIB_YEARS_FIT} years (showing last {CALIB_YEARS_SHOW}). "
+            f"β(t) range {beta_series_hat.min():.2f}–{beta_series_hat.max():.2f}. "
+            f"Using β={beta_forward:.2f} for projections. "
+            f"ARI adjustment={ari_adj_hat:.2f}. RMSE={rmse_rw:.2f} per 100k."
         )
 
-        # Recompute LTBI-at-now using calibrated adjustment
-        ltbi_ever_cal, ltbi_recent_cal, _ = compute_ltbi_from_inc_hist(
-            ages, inc_hist, shift_years=0, ari_adjustment=ari_adj_hat
-        )
+        show_years = min(CALIB_YEARS_SHOW, CALIB_YEARS_FIT)
+        obs_show = obs_inc[-show_years:]
+        fit_show = fit_inc[-show_years:]
 
-        # --- LTBI BY AGE STACKED CHART (≤ 60 YEARS), CALIBRATED ---
-        st.subheader("📉 LTBI Prevalence by Age (after calibration, ages 0–60)")
-
-        ltbi_age_df = pd.DataFrame(
-            {
-                "Age": ages,
-                "LTBI_recent": 100 * pd.Series(ltbi_recent_cal),
-                "LTBI_remote": 100
-                * (pd.Series(ltbi_ever_cal) - pd.Series(ltbi_recent_cal)),
-            }
-        )
-        ltbi_age_df = ltbi_age_df[ltbi_age_df["Age"] <= 60].copy()
-        ltbi_age_df = ltbi_age_df.melt(
-            id_vars="Age", var_name="Type", value_name="Percent"
-        )
-
-        ltbi_chart = (
-            alt.Chart(ltbi_age_df)
-            .mark_area()
-            .encode(
-                x="Age:Q",
-                y="Percent:Q",
-                color="Type:N",
-                tooltip=["Age", "Type", alt.Tooltip("Percent:Q", format=".1f")],
+        if ref_year_used is not None:
+            years_axis = list(
+                range(int(ref_year_used) - show_years, int(ref_year_used))
             )
-        )
-        show_altair(ltbi_chart)
+            x_title = "Calendar year"
+        else:
+            years_axis = list(range(-show_years, 0))
+            x_title = "Years before present (relative)"
 
-        st.caption(
-            "Calibrated LTBI by age (≤60 years).\n\n"
-            "• Recent LTBI = infection acquired in the last 5 years\n"
-            "• Remote LTBI = infection acquired more than 5 years ago\n"
-            "• The stacked height equals total LTBI prevalence at each age\n\n"
-            "This uses the calibrated ARI adjustment."
-        )
-
-        # Calibration fit plot (relative years: -calib_years .. -1)
-        years_axis = list(range(-calib_years, 0))
         df_cal = pd.DataFrame(
-            {"Year": years_axis, "Observed": obs_inc, "Model fit": fit_inc}
+            {"Year": years_axis, "Observed": obs_show, "Model fit": fit_show}
         ).melt(id_vars="Year", var_name="Series", value_name="Incidence_per100k")
 
-        st.subheader("🧪 Calibration fit to historical incidence")
         cal_chart = (
             alt.Chart(df_cal)
             .mark_line()
             .encode(
-                x=alt.X("Year:Q", title="Years relative to present (past < 0)"),
+                x=alt.X("Year:Q", title=x_title),
                 y=alt.Y("Incidence_per100k:Q", title="Incidence per 100,000 per year"),
                 color="Series:N",
                 tooltip=[
@@ -703,136 +672,235 @@ def render_dynamic_ui():
         )
         show_altair(cal_chart)
 
-        # -------------------------
-        # Build baseline + intervention params at "now"
-        # -------------------------
-        params_base = {}
-        params_int = {}
+        # LTBI by age today (calibrated)
+        st.subheader("📉 LTBI prevalence by age today (after calibration, ages 0–60)")
 
-        for p in (params_base, params_int):
-            p["beta"] = beta_hat
-            p.update(risk_inputs)
+        ltbi_ever_now = st.session_state["cal_ltbi_ever_now"]
+        ltbi_recent_now = st.session_state["cal_ltbi_recent_now"]
 
-            p["ltbi_ever"] = ltbi_ever_cal
-            p["ltbi_recent"] = ltbi_recent_cal
-            p["age_counts"] = age_counts
+        ltbi_age_df = pd.DataFrame(
+            {
+                "Age": ages,
+                "LTBI_recent": 100 * pd.Series(ltbi_recent_now),
+                "LTBI_remote": 100
+                * (pd.Series(ltbi_ever_now) - pd.Series(ltbi_recent_now)),
+            }
+        )
+        ltbi_age_df = ltbi_age_df[ltbi_age_df["Age"] <= 60].copy()
+        ltbi_age_df = ltbi_age_df.melt(
+            id_vars="Age", var_name="Type", value_name="Percent"
+        )
 
-            p["pre_det_months"] = pre_det_months
-            p["delta_pre"] = delta_pre
-            p["delta_post"] = delta_post
-
-            p["initial_incidence_per_100k"] = float(user_incidence)
-
-        # baseline = no intervention
-        params_base["treatment_method"] = "None"
-        params_base["testing_method"] = "None"
-        params_base["ltbi_coverage"] = 0.0
-        params_base["rollout_years"] = 0
-
-        # intervention
-        params_int["treatment_method"] = treatment_method
-        params_int["testing_method"] = testing_method
-        params_int["ltbi_coverage"] = ltbi_coverage
-        params_int["rollout_years"] = rollout_years
-
-        try:
-            baseline = run_dynamic_model(
-                params_base, years=time_horizon, intervention=False
+        ltbi_chart = (
+            alt.Chart(ltbi_age_df)
+            .mark_area()
+            .encode(
+                x=alt.X("Age:Q", title="Age"),
+                y=alt.Y("Percent:Q", title="Percent"),
+                color=alt.Color("Type:N", title=None),
+                tooltip=["Age", "Type", alt.Tooltip("Percent:Q", format=".1f")],
             )
-            intervention = run_dynamic_model(
-                params_int, years=time_horizon, intervention=True
+        )
+        show_altair(ltbi_chart)
+
+    # -------------------------
+    # Intervention controls + simulate button
+    # -------------------------
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Intervention settings (for simulation)")
+
+    testing_method = st.sidebar.selectbox("Testing method", ["TST", "IGRA", "None"])
+    treatment_method = st.sidebar.selectbox(
+        "Treatment regimen", ["1HP", "3HP", "4R", "6H", "9H", "None"]
+    )
+    ltbi_coverage = (
+        st.sidebar.slider("LTBI Test & Treat total coverage (%)", 0, 100, 50) / 100.0
+    )
+    rollout_years = st.sidebar.slider("Rollout duration (years)", 1, 10, 5)
+
+    st.sidebar.subheader("Diagnosis improvement (intervention)")
+    diag_reduction_pct = st.sidebar.slider(
+        "Percent reduction in time before treatment (%)", 0, 100, 50
+    )
+
+    simulate_clicked = st.sidebar.button("2) Simulate")
+
+    # simulation invalidation (if intervention settings changed)
+    sim_sig = (
+        st.session_state.get("cal_sig", None),
+        int(time_horizon),
+        testing_method,
+        treatment_method,
+        float(ltbi_coverage),
+        int(rollout_years),
+        float(diag_reduction_pct),
+    )
+    if st.session_state.get("sim_sig", None) != sim_sig:
+        clear_simulation()
+
+    if simulate_clicked:
+        if not st.session_state.get("cal_done", False):
+            st.error("Please run **1) Calibrate** first.")
+        else:
+            st.info("Running baseline and intervention projections…")
+
+            beta_forward = float(st.session_state["cal_beta_forward"])
+            ltbi_ever_now = st.session_state["cal_ltbi_ever_now"]
+            ltbi_recent_now = st.session_state["cal_ltbi_recent_now"]
+            inc_now_hat = float(st.session_state["cal_inc_now_hat"])
+
+            pre_det_months = BASELINE_DIAG_MONTHS
+            post_det_months = max(
+                BASELINE_DIAG_MONTHS * (1.0 - diag_reduction_pct / 100.0), 0.1
+            )
+            delta_pre = 12.0 / pre_det_months
+            delta_post = 12.0 / post_det_months
+
+            params_base = {}
+            params_int = {}
+
+            for p in (params_base, params_int):
+                p["beta"] = float(beta_forward)
+                p.update(risk_inputs)
+                p["ltbi_ever"] = ltbi_ever_now
+                p["ltbi_recent"] = ltbi_recent_now
+                p["age_counts"] = age_counts
+                p["pre_det_months"] = float(pre_det_months)
+                p["delta_pre"] = float(delta_pre)
+                p["delta_post"] = float(delta_post)
+
+                # Key step to avoid the projection “jump”:
+                # Seed I0 using the calibrated fitted incidence at the end of the backcast window.
+                p["initial_incidence_per_100k"] = float(inc_now_hat)
+
+            # baseline = no intervention
+            params_base["treatment_method"] = "None"
+            params_base["testing_method"] = "None"
+            params_base["ltbi_coverage"] = 0.0
+            params_base["rollout_years"] = 0
+
+            # intervention
+            params_int["treatment_method"] = treatment_method
+            params_int["testing_method"] = testing_method
+            params_int["ltbi_coverage"] = float(ltbi_coverage)
+            params_int["rollout_years"] = int(rollout_years)
+
+            sim_base = run_dynamic_model(
+                params_base, years=int(time_horizon), intervention=False
+            )
+            sim_int = run_dynamic_model(
+                params_int, years=int(time_horizon), intervention=True
             )
 
-            total_pop = float(sum(age_counts.values()))
+            t_out, base_cases = _get_annual(sim_base)
+            _, int_cases = _get_annual(sim_int)
 
-            base_cases = np.array(baseline["annual_incidence"], dtype=float)
-            int_cases = np.array(intervention["annual_incidence"], dtype=float)
-
-            years_out = baseline.get("annual_incidence_time")
-            if years_out is None:
-                years_out = np.arange(0, len(base_cases))
-
-            df_out = pd.DataFrame(
+            df_future = pd.DataFrame(
                 {
-                    "Year": years_out,
-                    "Baseline_inc_count": base_cases,
-                    "Intervention_inc_count": int_cases,
+                    "Year": t_out.astype(float),
                     "Baseline_inc_per100k": base_cases * 100000.0 / total_pop,
                     "Intervention_inc_per100k": int_cases * 100000.0 / total_pop,
+                    "Baseline_inc_count": base_cases,
+                    "Intervention_inc_count": int_cases,
                 }
             )
-
-            df_out["Cases_averted_count"] = (
-                df_out["Baseline_inc_count"] - df_out["Intervention_inc_count"]
+            df_future["Cases_averted_count"] = (
+                df_future["Baseline_inc_count"] - df_future["Intervention_inc_count"]
             )
-            df_out["Cases_averted_per100k"] = (
-                df_out["Baseline_inc_per100k"] - df_out["Intervention_inc_per100k"]
+            df_future["Cases_averted_per100k"] = (
+                df_future["Baseline_inc_per100k"]
+                - df_future["Intervention_inc_per100k"]
             )
+            df_future = df_future.round(1)
 
-            df_out = df_out.round(1)
+            st.session_state["sim_sig"] = sim_sig
+            st.session_state["sim_df_future"] = df_future
 
-            st.success("Simulation complete.")
+    # -------------------------
+    # Display simulation outputs (persist after reruns)
+    # -------------------------
+    if st.session_state.get("sim_df_future", None) is not None and st.session_state.get(
+        "cal_done", False
+    ):
+        df_future = st.session_state["sim_df_future"].copy()
 
-            st.subheader("📈 Annual Incidence per 100,000")
-            st.line_chart(
-                df_out.set_index("Year")[
-                    ["Baseline_inc_per100k", "Intervention_inc_per100k"]
-                ]
-            )
+        # Build combined plot: last CALIB_YEARS_SHOW of past fit + future baseline/intervention
+        obs_inc = np.asarray(st.session_state["cal_obs_inc"], dtype=float)
+        fit_inc = np.asarray(st.session_state["cal_fit_inc"], dtype=float)
 
-            st.subheader("📈 Annual Incidence (counts)")
-            st.line_chart(
-                df_out.set_index("Year")[
-                    ["Baseline_inc_count", "Intervention_inc_count"]
-                ]
-            )
+        show_years = min(CALIB_YEARS_SHOW, CALIB_YEARS_FIT)
+        obs_show = obs_inc[-show_years:]
+        fit_show = fit_inc[-show_years:]
+        years_past = np.arange(-show_years, 0).astype(float)
 
-            st.subheader("🔍 Cases Averted")
-            st.write(df_out[["Year", "Cases_averted_count", "Cases_averted_per100k"]])
+        df_past = pd.DataFrame(
+            {
+                "Year": np.concatenate([years_past, years_past]),
+                "Series": ["Observed (past)"] * show_years
+                + ["Model fit (past)"] * show_years,
+                "Incidence_per100k": np.concatenate([obs_show, fit_show]),
+            }
+        )
 
-            # Combined “past fit + future projection” on one chart
-            df_future = df_out[
-                ["Year", "Baseline_inc_per100k", "Intervention_inc_per100k"]
-            ].copy()
-            df_future = df_future.melt(
-                id_vars="Year", var_name="Series", value_name="Incidence_per100k"
-            )
-            df_future["Series"] = df_future["Series"].replace(
-                {
-                    "Baseline_inc_per100k": "Baseline (projected)",
-                    "Intervention_inc_per100k": "Intervention (projected)",
-                }
-            )
+        df_future_long = df_future.melt(
+            id_vars="Year",
+            value_vars=["Baseline_inc_per100k", "Intervention_inc_per100k"],
+            var_name="Series",
+            value_name="Incidence_per100k",
+        )
+        df_future_long["Series"] = df_future_long["Series"].replace(
+            {
+                "Baseline_inc_per100k": "Baseline (projected)",
+                "Intervention_inc_per100k": "Intervention (projected)",
+            }
+        )
 
-            df_all = pd.concat([df_cal, df_future], ignore_index=True)
+        df_all = pd.concat([df_past, df_future_long], ignore_index=True)
+        df_all["Incidence_count"] = (
+            df_all["Incidence_per100k"] * total_pop / 100000.0
+        ).round(1)
 
-            rule = (
-                alt.Chart(pd.DataFrame({"Year": [0.0]}))
-                .mark_rule(strokeDash=[4, 4])
-                .encode(x="Year:Q")
-            )
-            combo = (
-                alt.Chart(df_all)
-                .mark_line()
-                .encode(
-                    x=alt.X(
-                        "Year:Q",
-                        title="Years relative to present (past < 0, future ≥ 0)",
+        rule = (
+            alt.Chart(pd.DataFrame({"Year": [0.0]}))
+            .mark_rule(strokeDash=[4, 4])
+            .encode(x="Year:Q")
+        )
+
+        combo = (
+            alt.Chart(df_all)
+            .mark_line()
+            .encode(
+                x=alt.X(
+                    "Year:Q", title="Years relative to present (past < 0, future ≥ 0)"
+                ),
+                y=alt.Y("Incidence_per100k:Q", title="Incidence per 100,000 per year"),
+                color=alt.Color("Series:N", title=None),
+                tooltip=[
+                    alt.Tooltip("Year:Q", format=".0f"),
+                    "Series:N",
+                    alt.Tooltip("Incidence_per100k:Q", format=".1f"),
+                    alt.Tooltip(
+                        "Incidence_count:Q", format=".1f", title="Incidence (count)"
                     ),
-                    y=alt.Y(
-                        "Incidence_per100k:Q", title="Incidence per 100,000 per year"
-                    ),
-                    color="Series:N",
-                    tooltip=[
-                        "Year",
-                        "Series",
-                        alt.Tooltip("Incidence_per100k:Q", format=".1f"),
-                    ],
-                )
+                ],
             )
+        )
 
-            st.subheader("📈 Incidence: fitted history + projection")
-            show_altair(combo + rule)
+        st.subheader("📈 Incidence: backcast fit + projected baseline vs intervention")
+        show_altair(combo + rule)
 
-        except Exception as e:
-            st.error(f"Dynamic model failed: {e}")
+        st.subheader("📋 Projected annual outcomes (future)")
+        st.dataframe(
+            df_future[
+                [
+                    "Year",
+                    "Baseline_inc_per100k",
+                    "Intervention_inc_per100k",
+                    "Baseline_inc_count",
+                    "Intervention_inc_count",
+                    "Cases_averted_per100k",
+                    "Cases_averted_count",
+                ]
+            ],
+            use_container_width=True,
+        )
