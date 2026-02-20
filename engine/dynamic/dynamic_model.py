@@ -134,20 +134,31 @@ def simulate_dynamic(params, years, intervention=True):
         annual_fraction_treated = 0.0
 
     # ---------------------------
-    # Seed compartments from LTBI by age
+    # Seed / initial conditions
     # ---------------------------
-    S0 = 0.0
-    L_fast0 = 0.0
-    L_slow0 = 0.0
-
-    for a, pop in age_counts.items():
-        p_ever = float(ltbi_ever.get(a, 0.0))
-        p_recent = float(ltbi_recent.get(a, 0.0))
-        S0 += pop * (1.0 - p_ever)
-        L_fast0 += pop * p_recent
-        L_slow0 += pop * (p_ever - p_recent)
-
     N_total = float(sum(age_counts.values()))
+    initial_state = params.get("initial_state", None)
+
+    if initial_state is not None:
+        # Use provided state (typically from end of calibration run)
+        S0 = float(initial_state.get("S", 0.0))
+        L_fast0 = float(initial_state.get("L_fast", 0.0))
+        L_slow0 = float(initial_state.get("L_slow", 0.0))
+        I0 = float(initial_state.get("I", 0.0))
+        R0 = float(initial_state.get("R", 0.0))
+
+        total0 = S0 + L_fast0 + L_slow0 + I0 + R0
+        if total0 <= 0:
+            # fallback: put everyone susceptible
+            S0, L_fast0, L_slow0, I0, R0 = N_total, 0.0, 0.0, 0.0, 0.0
+        else:
+            # renormalize to the specified population (small numeric drift safe)
+            scale = N_total / total0
+            S0 *= scale
+            L_fast0 *= scale
+            L_slow0 *= scale
+            I0 *= scale
+            R0 *= scale
 
     # Seed I0 using: prevalence ≈ incidence * duration (duration = pre_det_months)
     duration_years = pre_det_months / 12.0
