@@ -245,19 +245,16 @@ def calibrate_beta_and_ltbi_scale(
     adj_grid_points=ARI_ADJ_GRID_POINTS,
 ):
     total_pop = float(sum(age_counts.values()))
-
-    # Observed incidence per 100k over calibration window (oldest -> newest)
-    obs = np.array([inc_hist[-k] for k in range(calib_years, 0, -1)], dtype=float)
-
-    # Seed incidence at start of window (used only to initialise I0)
+    obs = np.array(
+        [inc_hist[-k] for k in range(calib_years, 0, -1)], dtype=float
+    )  # oldest->newest
     inc0 = float(inc_hist.get(-calib_years, obs[0]))
 
-    best = {"rmse": float("inf"), "beta": None, "adj": None, "fit": None}
-
+    best = {"rmse": float("inf"), "beta": None, "adj": None}
     adj_values = np.linspace(adj_bounds[0], adj_bounds[1], adj_grid_points)
+    beta_min, beta_max = float(beta_bounds[0]), float(beta_bounds[1])
 
     for adj in adj_values:
-        # LTBI at start of calibration window using this adjustment
         ltbi_ever0, ltbi_recent0, _ = compute_ltbi_from_inc_hist(
             ages, inc_hist, shift_years=calib_years, ari_adjustment=float(adj)
         )
@@ -277,7 +274,7 @@ def calibrate_beta_and_ltbi_scale(
         }
         base_params.update(risk_inputs)
 
-        def objective(beta):
+        def rmse_for_beta(beta):
             p = dict(base_params)
             p["beta"] = float(beta)
             sim = run_dynamic_model(p, years=calib_years, intervention=False)
@@ -287,8 +284,10 @@ def calibrate_beta_and_ltbi_scale(
             err = model_inc_per100k - obs
             return float(np.sqrt(np.mean(err**2)))
 
-        if SCIPY_AVAILABLE:
-            res = minimize_scalar(objective, bounds=beta_bounds, method="bounded")
+        if SCIPY_AVAILABLE and minimize_scalar is not None:
+            res = minimize_scalar(
+                rmse_for_beta, bounds=(beta_min, beta_max), method="bounded"
+            )
             beta_hat = float(res.x)
             rmse = float(res.fun)
         else:
