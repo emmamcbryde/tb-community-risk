@@ -222,6 +222,7 @@ def simulate_dynamic(params, years, intervention=True):
     # ---------------------------
     for i in range(1, n_steps + 1):
         time_prev = t[i - 1]
+        year_idx = int(np.floor(time_prev))
 
         N = S[i - 1] + L_fast[i - 1] + L_slow[i - 1] + I[i - 1] + R[i - 1]
         if N <= 0:
@@ -235,8 +236,7 @@ def simulate_dynamic(params, years, intervention=True):
             continue
         beta_now = beta
         if beta_series is not None:
-            idx = int(np.floor(t))  # 0..years-1
-            idx = max(0, min(idx, len(beta_series) - 1))
+            idx = max(0, min(year_idx, len(beta_series) - 1))
             beta_now = float(beta_series[idx])
 
         # Use beta_now everywhere beta was used:
