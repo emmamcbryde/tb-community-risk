@@ -3,28 +3,48 @@ import numpy as np
 
 def simulate_dynamic(params, years, intervention=True):
     """
-    Dynamic TB model with:
-    - Age-structured seeding from LTBI (ltbi_ever, ltbi_recent, age_counts)
-    - Fast & slow latent compartments
-    - Risk-factor multipliers on progression
-    - Force-of-infection transmission
-    - Pulse-style LTBI test & treat (fraction per year over rollout period), removing L_fast & L_slow to S
-    - Diagnosis improvement (gamma) over rollout years
-    - Fine time-step integration (dt = 0.1 years) with ANNUALISED outputs.
+    Dynamic TB transmission/progression model with:
+    - Susceptible (S)
+    - Fast latent (L_fast) and slow latent (L_slow)
+    - Active TB (I)
+    - Recovered (R)
 
-    Returns:
-    - annual_incidence: NEW active TB cases per year (counts), length = years
-    - annual_prevalence_I: I compartment at integer years (counts), length = years+1
+    Key features:
+    - Age-structured seeding from LTBI (ltbi_ever, ltbi_recent, age_counts) OR
+      optional overriding via params["initial_state"].
+    - Fast & slow latent progression (sigma_fast, sigma_slow) with fast->slow transition (omega).
+    - Risk-factor multipliers on progression.
+    - Force-of-infection transmission (lambda = beta * I / N).
+    - Pulse-style LTBI test & treat: during rollout, a fixed fraction/year moves from L compartments to S.
+    - Diagnosis improvement: gamma transitions I -> R with linear ramp over rollout years.
+    - Euler integration with dt = 0.1 years.
+    - ANNUALISED outputs: annual incidence (counts) per year.
+
+    Parameters expected in `params`:
+      Required always:
+        - age_counts (dict age->count)
+        - smoker_pct, alcohol_pct, diabetes_pct, renal_pct, HIV_treated_pct, HIV_untreated_pct
+        - beta (float) OR beta_series (array-like)
+
+      Required if initial_state is NOT provided:
+        - ltbi_ever (dict age->P ever infected)
+        - ltbi_recent (dict age->P infected in last 5y)
+
+      Optional:
+        - initial_state: dict with keys S, L_fast, L_slow, I, R (counts at t=0)
+        - initial_incidence_per_100k (float): used only when initial_state is absent
+        - pre_det_months, delta_pre, delta_post
+        - ltbi_coverage (0..1), rollout_years (int)
+        - treatment_method (str)
     """
 
     # ---------------------------
-    # Required parameters
+    # Validate essentials
     # ---------------------------
-    required_keys = [
-        "beta",
-        "age_counts",
-        "ltbi_ever",
-        "ltbi_recent",
+    if "age_counts" not in params:
+        raise ValueError("Missing parameter: age_counts")
+
+    risk_keys = [
         "smoker_pct",
         "alcohol_pct",
         "diabetes_pct",
@@ -32,16 +52,11 @@ def simulate_dynamic(params, years, intervention=True):
         "HIV_treated_pct",
         "HIV_untreated_pct",
     ]
-    for k in required_keys:
+    for k in risk_keys:
         if k not in params:
             raise ValueError(f"Missing parameter: {k}")
 
-    # ---------------------------
-    # Extract parameters
-    # ---------------------------
-
-    # --- beta handling: support scalar beta and optional beta_series (per-year) ---
-    # --- beta handling: support scalar beta and optional beta_series (per-year) ---
+    # beta: support scalar beta and optional beta_series (per-year)
     beta_series = params.get("beta_series", None)
     if beta_series is not None:
         beta_series = np.asarray(beta_series, dtype=float).reshape(-1)
@@ -49,14 +64,34 @@ def simulate_dynamic(params, years, intervention=True):
             beta_series = None
 
     if beta_series is None:
-        # Constant-beta mode: require scalar beta
+        if "beta" not in params:
+            raise ValueError("Missing parameter: beta")
         beta = float(params["beta"])
     else:
-        # Series-beta mode: allow missing scalar beta (use last value as fallback)
-        beta_raw = params.get("beta", beta_series[-1])
-        beta_arr = np.asarray(beta_raw, dtype=float)
-        beta = float(beta_arr) if beta_arr.shape == () else float(beta_arr.ravel()[-1])
+        # allow missing scalar beta (use last value as fallback)
+        beta_raw = params.get("beta", float(beta_series[-1]))
+        beta_arr = np.asarray(beta_raw, dtype=float).reshape(-1)
+        beta = float(beta_arr[-1])
 
+    age_counts = params["age_counts"]
+
+    # LTBI inputs (only required if we are NOT overriding initial conditions)
+    initial_state = params.get("initial_state", None)
+    if initial_state is None:
+        for k in ("ltbi_ever", "ltbi_recent"):
+            if k not in params:
+                raise ValueError(
+                    f"Missing parameter: {k} (required when initial_state is not provided)"
+                )
+        ltbi_ever = params["ltbi_ever"]
+        ltbi_recent = params["ltbi_recent"]
+    else:
+        ltbi_ever = params.get("ltbi_ever", {})
+        ltbi_recent = params.get("ltbi_recent", {})
+
+    # ---------------------------
+    # Extract parameters
+    # ---------------------------
     smoker_pct = float(params["smoker_pct"])
     alcohol_pct = float(params["alcohol_pct"])
     diabetes_pct = float(params["diabetes_pct"])
@@ -64,12 +99,7 @@ def simulate_dynamic(params, years, intervention=True):
     HIV_treated_pct = float(params["HIV_treated_pct"])
     HIV_untreated_pct = float(params["HIV_untreated_pct"])
 
-    ltbi_ever = params["ltbi_ever"]  # dict age -> P(ever infected)
-    ltbi_recent = params["ltbi_recent"]  # dict age -> P(infected in last 5y)
-    age_counts = params["age_counts"]  # dict age -> population count
-
     initial_inc = float(params.get("initial_incidence_per_100k", 0.0))
-
     pre_det_months = float(params.get("pre_det_months", 12.0))
     delta_pre = float(params.get("delta_pre", 12.0 / max(pre_det_months, 0.1)))
     delta_post = float(params.get("delta_post", delta_pre))
@@ -83,7 +113,7 @@ def simulate_dynamic(params, years, intervention=True):
     # ---------------------------
     sigma_fast = 0.01  # per year
     sigma_slow = 0.001  # per year
-    omega = 1.0 / 5.0  # fast -> slow per year (rate 1/5)
+    omega = 1.0 / 5.0  # fast -> slow per year
 
     # ---------------------------
     # Risk factor RR multipliers (progression LTBI -> TB)
@@ -126,67 +156,67 @@ def simulate_dynamic(params, years, intervention=True):
     }
     eff = float(regimen_efficacy.get(treatment_method, 0.0))
 
-    # Effective total coverage of LTBI (over rollout period)
     coverage_total = ltbi_coverage * eff
-    if rollout_years > 0:
-        annual_fraction_treated = coverage_total / rollout_years
-    else:
-        annual_fraction_treated = 0.0
+    annual_fraction_treated = (
+        coverage_total / rollout_years if rollout_years > 0 else 0.0
+    )
 
     # ---------------------------
-    # Seed / initial conditions
+    # Seed compartments
     # ---------------------------
-    N_total = float(sum(age_counts.values()))
-    initial_state = params.get("initial_state", None)
+    N_total = float(sum(float(v) for v in age_counts.values()))
 
     if initial_state is not None:
-        # Use provided state (typically from end of calibration run)
-        S0 = float(initial_state.get("S", 0.0))
-        L_fast0 = float(initial_state.get("L_fast", 0.0))
-        L_slow0 = float(initial_state.get("L_slow", 0.0))
-        I0 = float(initial_state.get("I", 0.0))
-        R0 = float(initial_state.get("R", 0.0))
+        # Overridden initial state at t=0 (counts)
+        S0 = float(initial_state.get("S", initial_state.get("S0", 0.0)))
+        L_fast0 = float(initial_state.get("L_fast", initial_state.get("L_fast0", 0.0)))
+        L_slow0 = float(initial_state.get("L_slow", initial_state.get("L_slow0", 0.0)))
+        I0 = float(initial_state.get("I", initial_state.get("I0", 0.0)))
+        R0 = float(initial_state.get("R", initial_state.get("R0", 0.0)))
 
         total0 = S0 + L_fast0 + L_slow0 + I0 + R0
         if total0 <= 0:
-            # fallback: put everyone susceptible
-            S0, L_fast0, L_slow0, I0, R0 = N_total, 0.0, 0.0, 0.0, 0.0
-        else:
-            # renormalize to the specified population (small numeric drift safe)
-            scale = N_total / total0
-            S0 *= scale
-            L_fast0 *= scale
-            L_slow0 *= scale
-            I0 *= scale
-            R0 *= scale
+            raise ValueError("initial_state has non-positive total population.")
+
+        # Make totals match the user population (age_counts) to keep per-100k conversions consistent
+        diff = N_total - total0
+        S0 = S0 + diff
+
+        # Numerical safety (diff should be tiny)
+        S0 = max(S0, 0.0)
 
     else:
-        # Default: seed from LTBI by age
+        # Seed from LTBI by age
         S0 = 0.0
         L_fast0 = 0.0
         L_slow0 = 0.0
 
         for a, pop in age_counts.items():
+            pop = float(pop)
             p_ever = float(ltbi_ever.get(a, 0.0))
             p_recent = float(ltbi_recent.get(a, 0.0))
             S0 += pop * (1.0 - p_ever)
             L_fast0 += pop * p_recent
             L_slow0 += pop * (p_ever - p_recent)
 
-        # Seed I0 using: prevalence ≈ incidence * duration (duration = pre_det_months)
+        # Seed I0 using prevalence ≈ incidence * duration
         duration_years = pre_det_months / 12.0
         I0 = N_total * (initial_inc / 100000.0) * duration_years
 
-        # ensure we don't go negative
+        # subtract prevalent TB from susceptible to keep totals stable
         S0 = max(S0 - I0, 0.0)
         R0 = 0.0
 
     # ---------------------------
     # Time grid (dt = 0.1 years)
     # ---------------------------
+    years = int(years)
+    if years <= 0:
+        raise ValueError("years must be a positive integer.")
+
     dt = 0.1
     n_steps = int(round(years / dt))
-    t = np.linspace(0.0, years, n_steps + 1)
+    t = np.linspace(0.0, float(years), n_steps + 1)
 
     S = np.zeros(n_steps + 1)
     L_fast = np.zeros(n_steps + 1)
@@ -196,8 +226,9 @@ def simulate_dynamic(params, years, intervention=True):
 
     S[0], L_fast[0], L_slow[0], I[0], R[0] = S0, L_fast0, L_slow0, I0, R0
 
-    # Accumulate annual incidence as cases per year interval [y, y+1)
-    annual_incidence = np.zeros(years)  # length = years (0..years-1)
+    annual_incidence = np.zeros(
+        years, dtype=float
+    )  # new TB cases per year interval [y, y+1)
 
     # ---------------------------
     # Intervention functions
@@ -205,7 +236,7 @@ def simulate_dynamic(params, years, intervention=True):
     def tau_at_time(time):
         if (not intervention) or rollout_years <= 0:
             return 0.0
-        if time <= rollout_years:
+        if time < float(rollout_years):
             return annual_fraction_treated
         return 0.0
 
@@ -214,18 +245,18 @@ def simulate_dynamic(params, years, intervention=True):
             return delta_pre
         if rollout_years <= 0:
             return delta_post
-        frac = min(1.0, time / rollout_years)
+        frac = min(1.0, time / float(rollout_years))
         return delta_pre + (delta_post - delta_pre) * frac
 
     # ---------------------------
     # Integrate (Euler, dt=0.1)
     # ---------------------------
     for i in range(1, n_steps + 1):
-        time_prev = t[i - 1]
-        year_idx = int(np.floor(time_prev))
+        time_prev = float(t[i - 1])
 
         N = S[i - 1] + L_fast[i - 1] + L_slow[i - 1] + I[i - 1] + R[i - 1]
         if N <= 0:
+            # carry forward
             S[i], L_fast[i], L_slow[i], I[i], R[i] = (
                 S[i - 1],
                 L_fast[i - 1],
@@ -234,19 +265,18 @@ def simulate_dynamic(params, years, intervention=True):
                 R[i - 1],
             )
             continue
+
         beta_now = beta
         if beta_series is not None:
-            idx = max(0, min(year_idx, len(beta_series) - 1))
-            beta_now = float(beta_series[idx])
-
-        # Use beta_now everywhere beta was used:
-        # lambda_inf = beta_now * I / N
+            beta_idx = int(np.floor(time_prev))  # 0..years-1
+            beta_idx = max(0, min(beta_idx, beta_series.size - 1))
+            beta_now = float(beta_series[beta_idx])
 
         lambda_t = beta_now * I[i - 1] / N
         tau_now = tau_at_time(time_prev)
         gamma_now = gamma_at_time(time_prev)
 
-        # New TB cases (incidence flow) this instant
+        # New TB cases (incidence flow) at this instant
         new_cases_rate = sigma_fast_eff * L_fast[i - 1] + sigma_slow_eff * L_slow[i - 1]
 
         # Accumulate annual cases
@@ -280,18 +310,20 @@ def simulate_dynamic(params, years, intervention=True):
     # ---------------------------
     # Annual prevalence snapshots at integer years
     # ---------------------------
-    annual_years = np.arange(0, years + 1)
-    annual_prevalence_I = np.zeros(years + 1)
-    for y in annual_years:
-        idx = int(round(y / dt))
-        idx = min(idx, n_steps)
-        annual_prevalence_I[y] = I[idx]
+    annual_years = np.arange(0, years + 1, dtype=float)
+    annual_prevalence_I = np.zeros(years + 1, dtype=float)
+    for y in range(0, years + 1):
+        j = int(round(y / dt))
+        j = min(j, n_steps)
+        annual_prevalence_I[y] = float(I[j])
 
     return {
         "time": annual_years,
-        "annual_incidence_time": np.arange(0, years),
+        "annual_incidence_time": np.arange(0, years, dtype=float),
         "annual_incidence": annual_incidence,  # counts per year
-        "annual_prevalence_I": annual_prevalence_I,  # I at year boundaries
+        "annual_prevalence_I": annual_prevalence_I,  # I at year boundaries (counts)
+        # full trajectories at dt resolution (for chaining / debugging)
+        "t": t,
         "S": S,
         "L_fast": L_fast,
         "L_slow": L_slow,
