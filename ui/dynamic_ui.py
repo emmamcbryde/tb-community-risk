@@ -291,28 +291,98 @@ def calibrate_beta_and_ltbi_scale(
             beta_hat = float(res.x)
             rmse = float(res.fun)
         else:
-            beta_hat, rmse = minimize_scalar_bounded_grid(
-                objective, beta_bounds[0], beta_bounds[1]
-            )
+            grid = np.linspace(beta_min, beta_max, 31)
+            vals = [rmse_for_beta(b) for b in grid]
+            j = int(np.argmin(vals))
+            beta_hat = float(grid[j])
+            rmse = float(vals[j])
 
         if rmse < best["rmse"]:
-            p_final = dict(base_params)
-            p_final["beta"] = beta_hat
-            sim_fit = run_dynamic_model(p_final, years=calib_years, intervention=False)
-            fit_inc_per100k = (
-                np.array(sim_fit["annual_incidence"], dtype=float)
-                * 100000.0
-                / total_pop
-            )
+            best.update({"rmse": rmse, "beta": beta_hat, "adj": float(adj)})
 
-            best.update(
-                {
-                    "rmse": rmse,
-                    "beta": beta_hat,
-                    "adj": float(adj),
-                    "fit": fit_inc_per100k,
-                }
-            )
+    return best["beta"], best["adj"], best["rmse"], obs
+
+
+def refine_beta_random_walk(
+    age_counts,
+    ages,
+    inc_hist,
+    calib_years,
+    risk_inputs,
+    pre_det_months,
+    delta_pre,
+    ari_adjustment,
+    beta_init,
+    beta_bounds=BETA_BOUNDS,
+):
+    total_pop = float(sum(age_counts.values()))
+    obs = np.array([inc_hist[-k] for k in range(calib_years, 0, -1)], dtype=float)
+    obs_scale = max(float(np.mean(obs)), 1.0)
+
+    inc0 = float(inc_hist.get(-calib_years, obs[0]))
+    sigma_rw = np.log(1.0 + BETA_RW_PCT / 100.0)
+
+    ltbi_ever0, ltbi_recent0, _ = compute_ltbi_from_inc_hist(
+        ages, inc_hist, shift_years=calib_years, ari_adjustment=float(ari_adjustment)
+    )
+
+    base_params = {
+        "age_counts": age_counts,
+        "ltbi_ever": ltbi_ever0,
+        "ltbi_recent": ltbi_recent0,
+        "initial_incidence_per_100k": inc0,
+        "pre_det_months": float(pre_det_months),
+        "delta_pre": float(delta_pre),
+        "delta_post": float(delta_pre),
+        "ltbi_coverage": 0.0,
+        "rollout_years": 0,
+        "treatment_method": "None",
+        "testing_method": "None",
+    }
+    base_params.update(risk_inputs)
+
+    beta_min, beta_max = float(beta_bounds[0]), float(beta_bounds[1])
+    beta_init = float(np.clip(beta_init, beta_min, beta_max))
+
+    # If SciPy isn't available, fall back to constant beta series
+    if (
+        not (SCIPY_AVAILABLE and minimize is not None)
+        or calib_years < 2
+        or sigma_rw <= 0
+    ):
+        p = dict(base_params)
+        p["beta"] = float(beta_init)
+        sim = run_dynamic_model(p, years=calib_years, intervention=False)
+        fit = np.array(sim["annual_incidence"], dtype=float) * 100000.0 / total_pop
+        return np.full(calib_years, beta_init, dtype=float), fit
+
+    x0 = np.full(calib_years, np.log(beta_init), dtype=float)
+    bounds = [(np.log(beta_min), np.log(beta_max))] * calib_years
+
+    def simulate_from_x(x):
+        beta_series = np.exp(x)
+        p = dict(base_params)
+        p["beta_series"] = np.asarray(beta_series, dtype=float)
+        p["beta"] = float(beta_series[-1])  # scalar fallback
+        sim = run_dynamic_model(p, years=calib_years, intervention=False)
+        pred = np.array(sim["annual_incidence"], dtype=float) * 100000.0 / total_pop
+        return pred
+
+    def objective(x):
+        pred = simulate_from_x(x)
+        data = float(np.mean(((pred - obs) / obs_scale) ** 2))
+        dx = np.diff(x)
+        smooth = float(np.mean((dx / sigma_rw) ** 2))
+        return data + BETA_RW_WEIGHT * smooth
+
+    res = minimize(
+        objective, x0, method="L-BFGS-B", bounds=bounds, options={"maxiter": 120}
+    )
+    x_hat = res.x
+    beta_series_hat = np.exp(x_hat)
+    fit = simulate_from_x(x_hat)
+
+    return beta_series_hat, fit
 
     return best["beta"], best["adj"], best["rmse"], obs, best["fit"]
 
