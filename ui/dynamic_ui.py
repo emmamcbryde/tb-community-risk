@@ -52,6 +52,38 @@ def show_altair(chart):
 # =====================================================
 # Utility: stable hashes for session invalidation
 # =====================================================
+def hash_df(df, cols=None):
+    if df is None:
+        return None
+    if cols is not None:
+        df = df[cols].copy()
+    return int(pd.util.hash_pandas_object(df, index=False).sum())
+
+
+def clear_calibration():
+    for k in [
+        "cal_done",
+        "cal_sig",
+        "cal_beta_forward",
+        "cal_beta_series",
+        "cal_ari_adj",
+        "cal_rmse_rw",
+        "cal_obs_inc",
+        "cal_fit_inc",
+        "cal_inc_now_hat",
+        "cal_ref_year",
+        "cal_ltbi_ever_now",
+        "cal_ltbi_recent_now",
+    ]:
+        st.session_state.pop(k, None)
+    clear_simulation()
+
+
+def clear_simulation():
+    for k in ["sim_sig", "sim_df_future"]:
+        st.session_state.pop(k, None)
+
+
 # =====================================================
 # Default fallback age distribution
 # =====================================================
@@ -78,10 +110,10 @@ def load_population_data(
             pd.DataFrame({"age": range(0, 101), "population": [1] * 101}),
         )
 
-    total_pop_country = df_country["population"].sum()
+    total_pop_country = float(df_country["population"].sum())
     df_country["Proportion"] = df_country["population"] / total_pop_country
 
-    # Build 5-year bins for display
+    # 5-year bins for display
     bin_edges = list(range(0, 105, 5))
     bin_labels = [
         f"{bin_edges[i]}–{bin_edges[i+1]-1}" for i in range(len(bin_edges) - 1)
@@ -92,11 +124,9 @@ def load_population_data(
         df_country["age"], bins=bin_edges + [200], labels=bin_labels, right=False
     )
 
-    # explicit observed= to silence pandas FutureWarning
     df_age_groups = df_country.groupby("AgeBin", as_index=False, observed=False)[
         ["population", "Proportion"]
     ].sum()
-
     return df_age_groups, df_country
 
 
