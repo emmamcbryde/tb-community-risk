@@ -50,6 +50,7 @@ def show_altair(chart):
 
 
 # =====================================================
+# Utility: stable hashes for session invalidation
 # =====================================================
 # Default fallback age distribution
 # =====================================================
@@ -61,6 +62,7 @@ def default_age_distribution():
 
 # =====================================================
 # Load country-specific population structure (OWID file)
+# Load country-specific population structure (OWID CSV)
 # =====================================================
 def load_population_data(
     country_code="AUS", file_path="data/population_age_latest.csv"
