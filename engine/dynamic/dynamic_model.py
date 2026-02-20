@@ -39,13 +39,23 @@ def simulate_dynamic(params, years, intervention=True):
     # ---------------------------
     # Extract parameters
     # ---------------------------
-    beta = float(params["beta"])
-    beta = float(params.get("beta", 0.0))
+
+    # --- beta handling: support scalar beta and optional beta_series (per-year) ---
+    # --- beta handling: support scalar beta and optional beta_series (per-year) ---
     beta_series = params.get("beta_series", None)
     if beta_series is not None:
         beta_series = np.asarray(beta_series, dtype=float).reshape(-1)
         if beta_series.size == 0:
             beta_series = None
+
+    if beta_series is None:
+        # Constant-beta mode: require scalar beta
+        beta = float(params["beta"])
+    else:
+        # Series-beta mode: allow missing scalar beta (use last value as fallback)
+        beta_raw = params.get("beta", beta_series[-1])
+        beta_arr = np.asarray(beta_raw, dtype=float)
+        beta = float(beta_arr) if beta_arr.shape == () else float(beta_arr.ravel()[-1])
 
     smoker_pct = float(params["smoker_pct"])
     alcohol_pct = float(params["alcohol_pct"])
