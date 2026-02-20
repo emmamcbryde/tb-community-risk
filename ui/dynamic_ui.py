@@ -2,15 +2,15 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-from scipy.optimize import minimize
 
-# SciPy is recommended for faster calibration, but optional.
+# SciPy is recommended for calibration. If unavailable, RW refinement falls back to constant beta series.
 try:
-    from scipy.optimize import minimize_scalar
+    from scipy.optimize import minimize_scalar, minimize
 
     SCIPY_AVAILABLE = True
 except Exception:
     minimize_scalar = None
+    minimize = None
     SCIPY_AVAILABLE = False
 
 from engine.dynamic.exec_dynamic import run_dynamic_model
@@ -20,18 +20,29 @@ from engine.infection_backcast import (
 )
 
 # =====================================================
-# Calibration-controlled constants (NOT user-facing)
+# Hard-coded calibration + display configuration
 # =====================================================
-BASELINE_DIAG_MONTHS = 12.0  # mean time to treatment pre-intervention
-INCIDENCE_FLOOR = 0.1  # per 100k, avoids zeros in back-calculation
-ARI_FLOOR = 1e-6  # avoids ARI numerical issues
+BASELINE_DIAG_MONTHS = 12.0
+INCIDENCE_FLOOR = 0.1
+ARI_FLOOR = 1e-6
+
+CALIB_YEARS_FIT = 20  # fit window length
+CALIB_YEARS_SHOW = 10  # show only last 10 years
+
+# Random-walk beta calibration (hard-coded; no UI controls)
+BETA_RW_PCT = 10
+BETA_RW_WEIGHT = 0.005  # you found this is needed given objective scaling
+BETA_BOUNDS = (0.01, 50.0)
+
+# Wider ARI adjustment bounds (improves constant/falling fits)
+ARI_ADJ_BOUNDS = (0.05, 5.0)
+ARI_ADJ_GRID_POINTS = 21
 
 
 # =====================================================
 # Streamlit/Altair compatibility helper
 # =====================================================
 def show_altair(chart):
-    """Compatible with both older and newer Streamlit versions."""
     try:
         st.altair_chart(chart, width="stretch")  # newer Streamlit
     except TypeError:
@@ -54,7 +65,6 @@ def load_population_data(
     country_code="AUS", file_path="data/population_age_latest.csv"
 ):
     df = pd.read_csv(file_path)
-
     mask = df["iso_code"].str.upper() == country_code.upper()
     df_country = df.loc[mask].copy()
 
