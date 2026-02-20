@@ -160,13 +160,26 @@ def simulate_dynamic(params, years, intervention=True):
             I0 *= scale
             R0 *= scale
 
-    # Seed I0 using: prevalence ≈ incidence * duration (duration = pre_det_months)
-    duration_years = pre_det_months / 12.0
-    I0 = N_total * (initial_inc / 100000.0) * duration_years
+    else:
+        # Default: seed from LTBI by age
+        S0 = 0.0
+        L_fast0 = 0.0
+        L_slow0 = 0.0
 
-    # ensure we don't go negative
-    S0 = max(S0 - I0, 0.0)
-    R0 = 0.0
+        for a, pop in age_counts.items():
+            p_ever = float(ltbi_ever.get(a, 0.0))
+            p_recent = float(ltbi_recent.get(a, 0.0))
+            S0 += pop * (1.0 - p_ever)
+            L_fast0 += pop * p_recent
+            L_slow0 += pop * (p_ever - p_recent)
+
+        # Seed I0 using: prevalence ≈ incidence * duration (duration = pre_det_months)
+        duration_years = pre_det_months / 12.0
+        I0 = N_total * (initial_inc / 100000.0) * duration_years
+
+        # ensure we don't go negative
+        S0 = max(S0 - I0, 0.0)
+        R0 = 0.0
 
     # ---------------------------
     # Time grid (dt = 0.1 years)
