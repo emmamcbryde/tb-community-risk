@@ -42,6 +42,9 @@ ARI_ADJ_GRID_POINTS = 21
 JITTER_SEED = 20260225
 SYNTHETIC_X_JITTER = 0.15
 
+# Dummy confidence intervals for projections (aesthetic placeholder)
+DUMMY_CI_PCT = 20.0  # +/- 10%
+
 
 # =====================================================
 # Streamlit/Altair compatibility helper
@@ -1018,6 +1021,30 @@ def render_dynamic_ui():
                 df_future["Baseline_cum_count"] - df_future["Intervention_cum_count"]
             )
 
+            # --------------------------------------------------
+            # Dummy confidence intervals (±10%) for projections
+            # --------------------------------------------------
+            ci = float(DUMMY_CI_PCT) / 100.0
+
+            for prefix in ["Baseline", "Intervention"]:
+                # annual incidence rate CI
+                col_rate = f"{prefix}_inc_per100k"
+                df_future[f"{prefix}_inc_per100k_low"] = (
+                    df_future[col_rate] * (1.0 - ci)
+                ).clip(lower=0.0)
+                df_future[f"{prefix}_inc_per100k_high"] = (
+                    df_future[col_rate] * (1.0 + ci)
+                ).clip(lower=0.0)
+
+                # cumulative count CI
+                col_cum = f"{prefix}_cum_count"
+                df_future[f"{prefix}_cum_count_low"] = (
+                    df_future[col_cum] * (1.0 - ci)
+                ).clip(lower=0.0)
+                df_future[f"{prefix}_cum_count_high"] = (
+                    df_future[col_cum] * (1.0 + ci)
+                ).clip(lower=0.0)
+
             # Round numeric cols (keep Year crisp)
             for c in df_future.columns:
                 if c != "Year":
@@ -1141,6 +1168,33 @@ def render_dynamic_ui():
             .encode(x="Year:Q")
         )
 
+        # --------------------------------------------------
+        # Dummy projection confidence interval band (±10%)
+        # --------------------------------------------------
+        band_df = df_all[
+            df_all["Series"].isin(["Baseline (projected)", "Intervention (projected)"])
+        ].copy()
+        ci = float(DUMMY_CI_PCT) / 100.0
+        band_df["Lower"] = (band_df["Incidence_per100k"] * (1.0 - ci)).clip(lower=0.0)
+        band_df["Upper"] = (band_df["Incidence_per100k"] * (1.0 + ci)).clip(lower=0.0)
+
+        band_layer = (
+            alt.Chart(band_df)
+            .mark_area(opacity=0.18)
+            .encode(
+                x="Year:Q",
+                y="Lower:Q",
+                y2="Upper:Q",
+                color=alt.Color("Series:N", title=None),
+                tooltip=[
+                    alt.Tooltip("Year:Q", format=".0f"),
+                    "Series:N",
+                    alt.Tooltip("Lower:Q", format=".1f", title="Lower (±10%)"),
+                    alt.Tooltip("Upper:Q", format=".1f", title="Upper (±10%)"),
+                ],
+            )
+        )
+
         # Observed as points; everything else as lines
         obs_layer = (
             alt.Chart(df_all[df_all["Series"] == "Observed (past)"])
@@ -1179,7 +1233,7 @@ def render_dynamic_ui():
         )
 
         st.subheader("📈 Incidence: backcast fit + projected baseline vs intervention")
-        show_altair(obs_layer + line_layer + rule)
+        show_altair(band_layer + obs_layer + line_layer + rule)
 
         st.subheader("📋 Projected annual outcomes (future)")
         st.dataframe(
@@ -1196,6 +1250,31 @@ def render_dynamic_ui():
             ],
             use_container_width=True,
         )
+
+        with st.expander("Confidence intervals (projections)"):
+            st.caption(
+                "These are placeholder intervals for aesthetics only (±10% around projected central estimates)."
+            )
+            st.dataframe(
+                df_future[
+                    [
+                        "Year",
+                        "Baseline_inc_per100k_low",
+                        "Baseline_inc_per100k",
+                        "Baseline_inc_per100k_high",
+                        "Intervention_inc_per100k_low",
+                        "Intervention_inc_per100k",
+                        "Intervention_inc_per100k_high",
+                        "Baseline_cum_count_low",
+                        "Baseline_cum_count",
+                        "Baseline_cum_count_high",
+                        "Intervention_cum_count_low",
+                        "Intervention_cum_count",
+                        "Intervention_cum_count_high",
+                    ]
+                ],
+                use_container_width=True,
+            )
 
         with st.expander("Show annual case counts (not cumulative)"):
             st.dataframe(
