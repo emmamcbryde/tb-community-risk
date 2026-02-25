@@ -27,16 +27,23 @@ INCIDENCE_FLOOR = 0.1
 ARI_FLOOR = 1e-6
 
 CALIB_YEARS_FIT = 20  # fit window length
-CALIB_YEARS_SHOW = 10  # show only last N years on charts
+CALIB_YEARS_SHOW = 10  # show only last 10 years
 
 # Random-walk beta calibration (hard-coded; no UI controls)
 BETA_RW_PCT = 10
-BETA_RW_WEIGHT = 0.005  # penalty weight (relative to data misfit)
+BETA_RW_WEIGHT = 0.005  # objective scaling (works well in practice)
 BETA_BOUNDS = (0.01, 50.0)
 
-# ARI adjustment bounds (scales incidence -> ARI -> LTBI)
+# Wider ARI adjustment bounds (improves constant/falling fits)
 ARI_ADJ_BOUNDS = (0.05, 5.0)
 ARI_ADJ_GRID_POINTS = 21
+
+# Observed jitter (synthetic patterns only)
+JITTER_SEED = 20260225
+SYNTHETIC_X_JITTER = 0.15
+
+# Dummy confidence intervals for projections (aesthetic placeholder)
+DUMMY_CI_PCT = 20.0  # +/- 10%
 
 
 # =====================================================
@@ -48,14 +55,6 @@ def show_altair(chart):
         st.altair_chart(chart, width="stretch")  # newer Streamlit
     except TypeError:
         st.altair_chart(chart, use_container_width=True)  # older Streamlit
-
-
-def show_df(df):
-    """Compatible dataframe width helper."""
-    try:
-        st.dataframe(df, width="stretch")
-    except TypeError:
-        st.dataframe(df, use_container_width=True)
 
 
 # =====================================================
@@ -82,7 +81,8 @@ def clear_calibration():
         "cal_ref_year",
         "cal_ltbi_ever_now",
         "cal_ltbi_recent_now",
-        "cal_state_now",
+        "cal_has_user_incidence",
+        "cal_state_present",
     ]:
         st.session_state.pop(k, None)
     clear_simulation()
@@ -143,11 +143,13 @@ def load_population_data(
 # Incidence history builder
 # =====================================================
 def build_incidence_history(
-    hist_pattern, user_incidence, years_back_needed, uploaded_inc_df=None
+    hist_pattern, user_incidence, years_back_needed, uploaded_inc_df=None, smooth=True
 ):
     """
     Returns dict: offset -> incidence per 100k, where 0 = present, -1 = last year, ...
-    Includes flooring + smoothing for stability.
+    Includes flooring + optional smoothing for stability.
+
+    If 'smooth' is False, we do not apply moving-average smoothing (useful for uploaded CSV).
     """
     years_back = list(range(0, years_back_needed + 1))
 
@@ -167,15 +169,13 @@ def build_incidence_history(
         else:
             df = uploaded_inc_df.copy().sort_values("year")
             if not {"year", "incidence"}.issubset(df.columns):
-                st.warning(
-                    "Incidence CSV must have columns: year, incidence. Using constant."
-                )
+                st.warning("Incidence CSV must contain columns: year, incidence.")
                 inc_hist = {-k: float(user_incidence) for k in years_back}
             else:
                 years = df["year"].values.astype(int)
                 incs = df["incidence"].values.astype(float)
 
-                # floor to avoid zeros
+                # floor to avoid zeros blowing up LTBI back-casts
                 incs = np.maximum(incs, INCIDENCE_FLOOR)
 
                 year_min = int(years[0])
@@ -191,7 +191,7 @@ def build_incidence_history(
                 trend = float(np.exp(np.mean(np.log(ratios)))) if ratios else 1.0
 
                 inc_map = dict(zip(years, incs))
-                ref_year = year_max  # "present" = last year in CSV
+                ref_year = year_max  # "present" = last CSV year
 
                 inc_hist = {}
                 for k in years_back:
@@ -204,26 +204,26 @@ def build_incidence_history(
                         inc_hist[-k] = float(inc_map[nearest])
 
                     elif target_year > year_max:
-                        # forward extrapolation (missing recent years)
+                        # forward extrapolation for missing recent years
                         j = target_year - year_max
                         extrap = incs[-1] * (trend**j)
                         inc_hist[-k] = float(min(extrap, inc_max))
 
                     else:
-                        # backward extrapolation; never below minimum observed
+                        # backward extrapolation, never below minimum observed
                         j = year_min - target_year
                         extrap = incs[0] * (trend ** (-j))
                         inc_hist[-k] = float(max(extrap, inc_min))
     else:
         inc_hist = {-k: float(user_incidence) for k in years_back}
 
-    # smooth with 3-year moving average
-    inc_series = pd.Series(inc_hist).sort_index()
-    inc_series = inc_series.rolling(window=3, center=True, min_periods=1).mean()
+    if smooth:
+        inc_series = pd.Series(inc_hist).sort_index()
+        inc_series = inc_series.rolling(window=3, center=True, min_periods=1).mean()
+        inc_hist = inc_series.to_dict()
 
-    inc_hist = {
-        int(k): float(max(v, INCIDENCE_FLOOR)) for k, v in inc_series.to_dict().items()
-    }
+    # final floor
+    inc_hist = {int(k): float(max(v, INCIDENCE_FLOOR)) for k, v in inc_hist.items()}
     return inc_hist
 
 
@@ -265,19 +265,23 @@ def calibrate_beta_and_ltbi_scale(
     adj_grid_points=ARI_ADJ_GRID_POINTS,
 ):
     """
-    Coarse calibration:
-      - grid search ARI adjustment (scales incidence -> ARI -> LTBI),
-      - for each, optimise a constant beta to fit incidence over `calib_years`.
-    Returns:
-      beta_hat, ari_adj_hat, rmse_hat, obs_inc_per100k (oldest -> newest)
+    Calibrates TWO quantities:
+      1) beta (scalar), via bounded optimisation
+      2) ari_adjustment (scalar), via grid search
+
+    Observation alignment:
+      - We compare annual incidence at YEAR-ENDS.
+      - obs includes the present value inc_hist[0] (last point in the calibration window).
     """
     total_pop = float(sum(age_counts.values()))
 
-    # Observed incidence per 100k over calibration window (oldest -> newest)
-    obs = np.array([inc_hist[-k] for k in range(calib_years, 0, -1)], dtype=float)
-
-    # Seed incidence at start of window
-    inc0 = float(inc_hist.get(-calib_years, obs[0]))
+    # obs corresponds to year-ends: [-calib_years+1, ..., 0]
+    obs = np.array(
+        [inc_hist[-k] for k in range(calib_years - 1, -1, -1)], dtype=float
+    )  # oldest->newest
+    inc0 = float(
+        inc_hist.get(-calib_years, obs[0])
+    )  # seed I0 at window start (-calib_years)
 
     best = {"rmse": float("inf"), "beta": None, "adj": None}
     adj_values = np.linspace(adj_bounds[0], adj_bounds[1], adj_grid_points)
@@ -306,7 +310,7 @@ def calibrate_beta_and_ltbi_scale(
         def rmse_for_beta(beta):
             p = dict(base_params)
             p["beta"] = float(beta)
-            sim = run_dynamic_model(p, years=int(calib_years), intervention=False)
+            sim = run_dynamic_model(p, years=calib_years, intervention=False)
             model_inc_per100k = (
                 np.array(sim["annual_incidence"], dtype=float) * 100000.0 / total_pop
             )
@@ -329,7 +333,7 @@ def calibrate_beta_and_ltbi_scale(
         if rmse < best["rmse"]:
             best.update({"rmse": rmse, "beta": beta_hat, "adj": float(adj)})
 
-    return best["beta"], best["adj"], best["rmse"], obs
+    return float(best["beta"]), float(best["adj"]), float(best["rmse"]), obs
 
 
 def refine_beta_random_walk(
@@ -345,23 +349,17 @@ def refine_beta_random_walk(
     beta_bounds=BETA_BOUNDS,
 ):
     """
-    Refine beta from a scalar into a smooth beta(t) over the calibration window.
+    Refine beta from a scalar to a smooth beta(t) series (length=calib_years) over the calibration window.
     Returns:
       beta_series_hat (length calib_years)
+      fit_inc_per100k (length calib_years, aligned to year-ends [-calib_years+1,...,0])
     """
-    beta_min, beta_max = float(beta_bounds[0]), float(beta_bounds[1])
-    beta_init = float(np.clip(beta_init, beta_min, beta_max))
-
-    # If SciPy isn't available, fall back to constant beta series
-    if not (SCIPY_AVAILABLE and minimize is not None) or calib_years < 2:
-        return np.full(calib_years, beta_init, dtype=float)
-
     total_pop = float(sum(age_counts.values()))
-    obs = np.array([inc_hist[-k] for k in range(calib_years, 0, -1)], dtype=float)
+    obs = np.array([inc_hist[-k] for k in range(calib_years - 1, -1, -1)], dtype=float)
     obs_scale = max(float(np.mean(obs)), 1.0)
 
     inc0 = float(inc_hist.get(-calib_years, obs[0]))
-    sigma_rw = float(np.log(1.0 + BETA_RW_PCT / 100.0))
+    sigma_rw = np.log(1.0 + BETA_RW_PCT / 100.0)
 
     ltbi_ever0, ltbi_recent0, _ = compute_ltbi_from_inc_hist(
         ages, inc_hist, shift_years=calib_years, ari_adjustment=float(ari_adjustment)
@@ -382,20 +380,35 @@ def refine_beta_random_walk(
     }
     base_params.update(risk_inputs)
 
+    beta_min, beta_max = float(beta_bounds[0]), float(beta_bounds[1])
+    beta_init = float(np.clip(beta_init, beta_min, beta_max))
+
+    # If SciPy isn't available, fall back to constant beta series
+    if (
+        not (SCIPY_AVAILABLE and minimize is not None)
+        or calib_years < 2
+        or sigma_rw <= 0
+    ):
+        p = dict(base_params)
+        p["beta"] = float(beta_init)
+        sim = run_dynamic_model(p, years=calib_years, intervention=False)
+        fit = np.array(sim["annual_incidence"], dtype=float) * 100000.0 / total_pop
+        return np.full(calib_years, beta_init, dtype=float), fit
+
     x0 = np.full(calib_years, np.log(beta_init), dtype=float)
     bounds = [(np.log(beta_min), np.log(beta_max))] * calib_years
 
-    def simulate_per100k_from_x(x):
+    def simulate_from_x(x):
         beta_series = np.exp(x)
         p = dict(base_params)
         p["beta_series"] = np.asarray(beta_series, dtype=float)
         p["beta"] = float(beta_series[-1])  # scalar fallback
-        sim = run_dynamic_model(p, years=int(calib_years), intervention=False)
+        sim = run_dynamic_model(p, years=calib_years, intervention=False)
         pred = np.array(sim["annual_incidence"], dtype=float) * 100000.0 / total_pop
         return pred
 
     def objective(x):
-        pred = simulate_per100k_from_x(x)
+        pred = simulate_from_x(x)
         data = float(np.mean(((pred - obs) / obs_scale) ** 2))
         dx = np.diff(x)
         smooth = float(np.mean((dx / sigma_rw) ** 2))
@@ -404,13 +417,19 @@ def refine_beta_random_walk(
     res = minimize(
         objective, x0, method="L-BFGS-B", bounds=bounds, options={"maxiter": 120}
     )
-    x_hat = np.asarray(res.x, dtype=float)
+    x_hat = res.x
     beta_series_hat = np.exp(x_hat)
+    fit = simulate_from_x(x_hat)
 
-    return beta_series_hat
+    return beta_series_hat, fit
 
 
 def _get_annual(sim):
+    """
+    Returns:
+      t (0..years-1) representing year INTERVAL INDEX
+      y (counts/year) annual totals for each interval [k,k+1)
+    """
     if "annual_incidence" in sim:
         y = np.array(sim["annual_incidence"], dtype=float)
     elif "incidence" in sim:
@@ -425,6 +444,15 @@ def _get_annual(sim):
         t = np.array(t, dtype=float)
 
     return t, y
+
+
+def _jitter_years(years, enabled: bool):
+    if not enabled:
+        return years.astype(float)
+    rng = np.random.default_rng(JITTER_SEED)
+    return years.astype(float) + rng.uniform(
+        -SYNTHETIC_X_JITTER, SYNTHETIC_X_JITTER, size=len(years)
+    )
 
 
 # =====================================================
@@ -543,7 +571,7 @@ def render_dynamic_ui():
 
     # Show age distribution
     st.subheader("📊 Age Distribution (5-year bins)")
-    show_df(age_df_display)
+    st.dataframe(age_df_display)
 
     # Scale age distribution to chosen population
     total_pop_country = float(df_country["population"].sum())
@@ -558,11 +586,15 @@ def render_dynamic_ui():
 
     # Build incidence history deep enough for calibration + LTBI backcast
     years_back_needed = max_age + CALIB_YEARS_FIT + 5
+    has_user_incidence = (
+        hist_pattern == "Upload CSV (year, incidence)" and uploaded_inc_df is not None
+    )
     inc_hist = build_incidence_history(
         hist_pattern,
         user_incidence,
         years_back_needed,
         uploaded_inc_df=uploaded_inc_df,
+        smooth=not has_user_incidence,  # keep uploaded series exactly (no smoothing)
     )
 
     # -------------------------
@@ -600,7 +632,7 @@ def render_dynamic_ui():
         pre_det_months = BASELINE_DIAG_MONTHS
         delta_pre = 12.0 / pre_det_months
 
-        # Fit beta (scalar) + ARI adjustment
+        # 1) coarse: beta + ARI adjustment
         beta_hat, ari_adj_hat, _, obs_inc = calibrate_beta_and_ltbi_scale(
             age_counts=age_counts,
             ages=ages,
@@ -611,8 +643,8 @@ def render_dynamic_ui():
             delta_pre=delta_pre,
         )
 
-        # Refine beta into a random-walk series
-        beta_series_hat = refine_beta_random_walk(
+        # 2) refine: beta(t) random walk
+        beta_series_hat, _fit_inc_tmp = refine_beta_random_walk(
             age_counts=age_counts,
             ages=ages,
             inc_hist=inc_hist,
@@ -623,27 +655,25 @@ def render_dynamic_ui():
             ari_adjustment=ari_adj_hat,
             beta_init=beta_hat,
         )
-        beta_series_hat = np.asarray(beta_series_hat, dtype=float)
         beta_forward = float(beta_series_hat[-1])
 
-        # Run ONE consistent backcast with the fitted beta_series to:
-        #  - compute fit_inc (per 100k)
-        #  - capture the end-of-calibration state to start projections (avoids a jump)
-        inc0 = float(inc_hist.get(-CALIB_YEARS_FIT, obs_inc[0]))
+        # 3) IMPORTANT: re-run one clean backcast with the final beta_series_hat,
+        #    and store the *final state* as the projection initial condition.
         ltbi_ever0, ltbi_recent0, _ = compute_ltbi_from_inc_hist(
             ages,
             inc_hist,
             shift_years=CALIB_YEARS_FIT,
             ari_adjustment=float(ari_adj_hat),
         )
+        inc0 = float(inc_hist.get(-CALIB_YEARS_FIT, obs_inc[0]))
 
-        p_cal = {
+        params_backcast = {
             "beta": beta_forward,  # scalar fallback
-            "beta_series": beta_series_hat,  # used during calibration years
+            "beta_series": np.asarray(beta_series_hat, dtype=float),
             "age_counts": age_counts,
             "ltbi_ever": ltbi_ever0,
             "ltbi_recent": ltbi_recent0,
-            "initial_incidence_per_100k": float(inc0),
+            "initial_incidence_per_100k": inc0,
             "pre_det_months": float(pre_det_months),
             "delta_pre": float(delta_pre),
             "delta_post": float(delta_pre),
@@ -652,37 +682,42 @@ def render_dynamic_ui():
             "treatment_method": "None",
             "testing_method": "None",
         }
-        p_cal.update(risk_inputs)
+        params_backcast.update(risk_inputs)
 
-        sim_cal = run_dynamic_model(
-            p_cal, years=int(CALIB_YEARS_FIT), intervention=False
+        sim_backcast = run_dynamic_model(
+            params_backcast, years=int(CALIB_YEARS_FIT), intervention=False
         )
         fit_inc = (
-            np.array(sim_cal["annual_incidence"], dtype=float) * 100000.0 / total_pop
+            np.array(sim_backcast["annual_incidence"], dtype=float)
+            * 100000.0
+            / total_pop
         )
-        rmse_rw = float(np.sqrt(np.mean((fit_inc - np.asarray(obs_inc)) ** 2)))
+        rmse_rw = float(np.sqrt(np.mean((fit_inc - np.array(obs_inc)) ** 2)))
 
-        # End-of-calibration state (present): THIS is what we will start projections from.
-        state_now = {
-            "S": float(np.asarray(sim_cal["S"], dtype=float)[-1]),
-            "L_fast": float(np.asarray(sim_cal["L_fast"], dtype=float)[-1]),
-            "L_slow": float(np.asarray(sim_cal["L_slow"], dtype=float)[-1]),
-            "I": float(np.asarray(sim_cal["I"], dtype=float)[-1]),
-            "R": float(np.asarray(sim_cal["R"], dtype=float)[-1]),
-        }
+        # Present state for stitching to projections
+        if "final_state" in sim_backcast and isinstance(
+            sim_backcast["final_state"], dict
+        ):
+            state_present = sim_backcast["final_state"]
+        else:
+            # fallback if engine doesn't return final_state
+            state_present = {
+                "S": float(np.asarray(sim_backcast["S"])[-1]),
+                "L_fast": float(np.asarray(sim_backcast["L_fast"])[-1]),
+                "L_slow": float(np.asarray(sim_backcast["L_slow"])[-1]),
+                "I": float(np.asarray(sim_backcast["I"])[-1]),
+                "R": float(np.asarray(sim_backcast["R"])[-1]),
+            }
 
-        # LTBI by age today (calibrated ARI adjustment) - for display only
+        # LTBI by age today (calibrated ARI adjustment) for display
         ltbi_ever_now, ltbi_recent_now, _ = compute_ltbi_from_inc_hist(
-            ages,
-            inc_hist,
-            shift_years=0,
-            ari_adjustment=float(ari_adj_hat),
+            ages, inc_hist, shift_years=0, ari_adjustment=float(ari_adj_hat)
         )
 
         st.session_state["cal_done"] = True
         st.session_state["cal_sig"] = cal_sig
         st.session_state["cal_beta_forward"] = beta_forward
-        st.session_state["cal_beta_series"] = beta_series_hat
+        st.session_state["cal_beta_series"] = np.asarray(beta_series_hat, dtype=float)
         st.session_state["cal_ari_adj"] = float(ari_adj_hat)
         st.session_state["cal_rmse_rw"] = rmse_rw
         st.session_state["cal_obs_inc"] = np.asarray(obs_inc, dtype=float)
@@ -690,7 +725,8 @@ def render_dynamic_ui():
         st.session_state["cal_ref_year"] = ref_year
         st.session_state["cal_ltbi_ever_now"] = ltbi_ever_now
         st.session_state["cal_ltbi_recent_now"] = ltbi_recent_now
-        st.session_state["cal_state_now"] = state_now
+        st.session_state["cal_has_user_incidence"] = bool(has_user_incidence)
+        st.session_state["cal_state_present"] = dict(state_present)
 
         clear_simulation()
 
@@ -705,9 +741,9 @@ def render_dynamic_ui():
         obs_inc = np.asarray(st.session_state["cal_obs_inc"], dtype=float)
         fit_inc = np.asarray(st.session_state["cal_fit_inc"], dtype=float)
         ref_year_used = st.session_state.get("cal_ref_year", None)
+        jitter_enabled = not bool(st.session_state.get("cal_has_user_incidence", False))
 
         st.subheader("🧪 Calibration results")
-
         st.success(
             f"Calibrated over {CALIB_YEARS_FIT} years (showing last {CALIB_YEARS_SHOW}). "
             f"β(t) range {beta_series_hat.min():.2f}–{beta_series_hat.max():.2f}. "
@@ -719,34 +755,104 @@ def render_dynamic_ui():
         obs_show = obs_inc[-show_years:]
         fit_show = fit_inc[-show_years:]
 
+        # Year axis uses year-END convention:
+        # last calibration point is at Year=0 (relative) or Year=ref_year (calendar)
         if ref_year_used is not None:
-            years_axis = list(
-                range(int(ref_year_used) - show_years, int(ref_year_used))
+            years_axis = np.arange(
+                int(ref_year_used) - show_years + 1, int(ref_year_used) + 1, dtype=float
             )
-            x_title = "Calendar year"
+            x_title = "Calendar year (year-end)"
         else:
-            years_axis = list(range(-show_years, 0))
-            x_title = "Years before present (relative)"
+            years_axis = np.arange(-show_years + 1, 1, dtype=float)
+            x_title = "Years relative to present (year-end, past < 0)"
 
-        df_cal = pd.DataFrame(
-            {"Year": years_axis, "Observed": obs_show, "Model fit": fit_show}
-        ).melt(id_vars="Year", var_name="Series", value_name="Incidence_per100k")
+        # Observed incidence for display:
+        # - Synthetic patterns: use obs_show and add jitter in x
+        # - Uploaded CSV: show exact values where provided (no jitter)
+        if (
+            has_user_incidence
+            and uploaded_inc_df is not None
+            and ref_year_used is not None
+        ):
+            inc_map_raw = dict(
+                zip(
+                    uploaded_inc_df["year"].astype(int),
+                    uploaded_inc_df["incidence"].astype(float),
+                )
+            )
+            obs_display = []
+            for y in years_axis.astype(int):
+                if y in inc_map_raw:
+                    obs_display.append(float(inc_map_raw[y]))
+                else:
+                    # fallback to built series (floored + extrapolated if needed)
+                    offset = int(y) - int(ref_year_used)
+                    obs_display.append(float(inc_hist.get(offset, INCIDENCE_FLOOR)))
+            obs_display = np.array(obs_display, dtype=float)
+        else:
+            obs_display = np.array(obs_show, dtype=float)
 
-        cal_chart = (
-            alt.Chart(df_cal)
-            .mark_line()
+        df_obs = pd.DataFrame(
+            {
+                "Year": _jitter_years(years_axis, enabled=jitter_enabled),
+                "Series": "Observed",
+                "Incidence_per100k": obs_display,
+            }
+        )
+        df_fit = pd.DataFrame(
+            {
+                "Year": years_axis.astype(float),
+                "Series": "Model fit",
+                "Incidence_per100k": fit_show.astype(float),
+            }
+        )
+        df_cal = pd.concat([df_obs, df_fit], ignore_index=True)
+        df_cal["Incidence_count"] = (
+            df_cal["Incidence_per100k"] * total_pop / 100000.0
+        ).round(1)
+
+        obs_points = (
+            alt.Chart(df_cal[df_cal["Series"] == "Observed"])
+            .mark_circle(size=55, opacity=0.8)
             .encode(
                 x=alt.X("Year:Q", title=x_title),
                 y=alt.Y("Incidence_per100k:Q", title="Incidence per 100,000 per year"),
-                color="Series:N",
+                color=alt.Color("Series:N", title=None),
                 tooltip=[
                     alt.Tooltip("Year:Q", format=".0f"),
                     "Series:N",
                     alt.Tooltip("Incidence_per100k:Q", format=".1f"),
+                    alt.Tooltip(
+                        "Incidence_count:Q", format=".1f", title="Incidence (count)"
+                    ),
                 ],
             )
         )
-        show_altair(cal_chart)
+
+        fit_line = (
+            alt.Chart(df_cal[df_cal["Series"] == "Model fit"])
+            .mark_line()
+            .encode(
+                x="Year:Q",
+                y="Incidence_per100k:Q",
+                color=alt.Color("Series:N", title=None),
+                tooltip=[
+                    alt.Tooltip("Year:Q", format=".0f"),
+                    "Series:N",
+                    alt.Tooltip("Incidence_per100k:Q", format=".1f"),
+                    alt.Tooltip(
+                        "Incidence_count:Q", format=".1f", title="Incidence (count)"
+                    ),
+                ],
+            )
+        )
+
+        show_altair(obs_points + fit_line)
+
+        if jitter_enabled:
+            st.caption(
+                "Observed points have a small horizontal jitter (visual only) to reduce overlap. Uploaded incidence is shown without jitter."
+            )
 
         # LTBI by age today (calibrated)
         st.subheader("📉 LTBI prevalence by age today (after calibration, ages 0–60)")
@@ -774,11 +880,7 @@ def render_dynamic_ui():
                 x=alt.X("Age:Q", title="Age"),
                 y=alt.Y("Percent:Q", title="Percent"),
                 color=alt.Color("Type:N", title=None),
-                tooltip=[
-                    alt.Tooltip("Age:Q", format=".0f"),
-                    "Type:N",
-                    alt.Tooltip("Percent:Q", format=".1f"),
-                ],
+                tooltip=["Age", "Type", alt.Tooltip("Percent:Q", format=".1f")],
             )
         )
         show_altair(ltbi_chart)
@@ -825,7 +927,14 @@ def render_dynamic_ui():
             st.info("Running baseline and intervention projections…")
 
             beta_forward = float(st.session_state["cal_beta_forward"])
-            state_now = st.session_state["cal_state_now"]
+            ltbi_ever_now = st.session_state["cal_ltbi_ever_now"]
+            ltbi_recent_now = st.session_state["cal_ltbi_recent_now"]
+
+            # Critical: use the calibrated END-STATE as the projection initial state
+            state_present = dict(st.session_state["cal_state_present"])
+            fit0_per100k = float(
+                np.asarray(st.session_state["cal_fit_inc"], dtype=float)[-1]
+            )
 
             pre_det_months = BASELINE_DIAG_MONTHS
             post_det_months = max(
@@ -840,15 +949,21 @@ def render_dynamic_ui():
             for p in (params_base, params_int):
                 p["beta"] = float(beta_forward)
                 p.update(risk_inputs)
+
+                # still required by engine (even though we stitch state)
+                p["ltbi_ever"] = ltbi_ever_now
+                p["ltbi_recent"] = ltbi_recent_now
                 p["age_counts"] = age_counts
 
-                # START FROM THE END-OF-CALIBRATION STATE (prevents a visible jump at t=0)
-                p["initial_state"] = dict(state_now)
-
-                # diagnosis params
                 p["pre_det_months"] = float(pre_det_months)
                 p["delta_pre"] = float(delta_pre)
                 p["delta_post"] = float(delta_post)
+
+                # Stitch: start from calibrated state at "present"
+                p["initial_state"] = dict(state_present)
+                p["initial_incidence_per_100k"] = float(
+                    fit0_per100k
+                )  # backward compatible seeding if engine ignores initial_state
 
             # baseline = no intervention
             params_base["treatment_method"] = "None"
@@ -869,26 +984,71 @@ def render_dynamic_ui():
                 params_int, years=int(time_horizon), intervention=True
             )
 
-            t_out, base_cases = _get_annual(sim_base)
-            _, int_cases = _get_annual(sim_int)
+            t_out, base_cases_annual = _get_annual(
+                sim_base
+            )  # annual count per interval
+            _, int_cases_annual = _get_annual(sim_int)
+
+            # Year-END axis for projection: annual incidence [0,1) plotted at Year=1, etc.
+            t_end = t_out.astype(float) + 1.0
+
+            base_per100k = base_cases_annual * 100000.0 / total_pop
+            int_per100k = int_cases_annual * 100000.0 / total_pop
+
+            base_cum = np.cumsum(base_cases_annual)
+            int_cum = np.cumsum(int_cases_annual)
 
             df_future = pd.DataFrame(
                 {
-                    "Year": t_out.astype(float),
-                    "Baseline_inc_per100k": base_cases * 100000.0 / total_pop,
-                    "Intervention_inc_per100k": int_cases * 100000.0 / total_pop,
-                    "Baseline_inc_count": base_cases,
-                    "Intervention_inc_count": int_cases,
+                    "Year": t_end,
+                    "Baseline_inc_per100k": base_per100k,
+                    "Intervention_inc_per100k": int_per100k,
+                    "Baseline_annual_count": base_cases_annual,
+                    "Intervention_annual_count": int_cases_annual,
+                    "Baseline_cum_count": base_cum,
+                    "Intervention_cum_count": int_cum,
                 }
-            )
-            df_future["Cases_averted_count"] = (
-                df_future["Baseline_inc_count"] - df_future["Intervention_inc_count"]
             )
             df_future["Cases_averted_per100k"] = (
                 df_future["Baseline_inc_per100k"]
                 - df_future["Intervention_inc_per100k"]
             )
-            df_future = df_future.round(1)
+            df_future["Cases_averted_annual_count"] = (
+                df_future["Baseline_annual_count"]
+                - df_future["Intervention_annual_count"]
+            )
+            df_future["Cases_averted_cum_count"] = (
+                df_future["Baseline_cum_count"] - df_future["Intervention_cum_count"]
+            )
+
+            # --------------------------------------------------
+            # Dummy confidence intervals (±10%) for projections
+            # --------------------------------------------------
+            ci = float(DUMMY_CI_PCT) / 100.0
+
+            for prefix in ["Baseline", "Intervention"]:
+                # annual incidence rate CI
+                col_rate = f"{prefix}_inc_per100k"
+                df_future[f"{prefix}_inc_per100k_low"] = (
+                    df_future[col_rate] * (1.0 - ci)
+                ).clip(lower=0.0)
+                df_future[f"{prefix}_inc_per100k_high"] = (
+                    df_future[col_rate] * (1.0 + ci)
+                ).clip(lower=0.0)
+
+                # cumulative count CI
+                col_cum = f"{prefix}_cum_count"
+                df_future[f"{prefix}_cum_count_low"] = (
+                    df_future[col_cum] * (1.0 - ci)
+                ).clip(lower=0.0)
+                df_future[f"{prefix}_cum_count_high"] = (
+                    df_future[col_cum] * (1.0 + ci)
+                ).clip(lower=0.0)
+
+            # Round numeric cols (keep Year crisp)
+            for c in df_future.columns:
+                if c != "Year":
+                    df_future[c] = df_future[c].round(1)
 
             st.session_state["sim_sig"] = sim_sig
             st.session_state["sim_df_future"] = df_future
@@ -904,19 +1064,76 @@ def render_dynamic_ui():
         # Build combined plot: last CALIB_YEARS_SHOW of past fit + future baseline/intervention
         obs_inc = np.asarray(st.session_state["cal_obs_inc"], dtype=float)
         fit_inc = np.asarray(st.session_state["cal_fit_inc"], dtype=float)
+        ref_year_used = st.session_state.get("cal_ref_year", None)
+        jitter_enabled = not bool(st.session_state.get("cal_has_user_incidence", False))
 
         show_years = min(CALIB_YEARS_SHOW, CALIB_YEARS_FIT)
         obs_show = obs_inc[-show_years:]
         fit_show = fit_inc[-show_years:]
-        years_past = np.arange(-show_years, 0).astype(float)
 
-        df_past = pd.DataFrame(
+        if ref_year_used is not None:
+            years_past = np.arange(
+                int(ref_year_used) - show_years + 1, int(ref_year_used) + 1, dtype=float
+            )
+            x_title = "Calendar year (year-end)"
+        else:
+            years_past = np.arange(-show_years + 1, 1, dtype=float)
+            x_title = "Years relative to present (year-end, past < 0)"
+
+        # Observed display (same rule as calibration chart)
+        if (
+            has_user_incidence
+            and uploaded_inc_df is not None
+            and ref_year_used is not None
+        ):
+            inc_map_raw = dict(
+                zip(
+                    uploaded_inc_df["year"].astype(int),
+                    uploaded_inc_df["incidence"].astype(float),
+                )
+            )
+            obs_display = []
+            for y in years_past.astype(int):
+                if y in inc_map_raw:
+                    obs_display.append(float(inc_map_raw[y]))
+                else:
+                    offset = int(y) - int(ref_year_used)
+                    obs_display.append(float(inc_hist.get(offset, INCIDENCE_FLOOR)))
+            obs_display = np.array(obs_display, dtype=float)
+        else:
+            obs_display = np.array(obs_show, dtype=float)
+
+        df_obs = pd.DataFrame(
             {
-                "Year": np.concatenate([years_past, years_past]),
-                "Series": ["Observed (past)"] * show_years
-                + ["Model fit (past)"] * show_years,
-                "Incidence_per100k": np.concatenate([obs_show, fit_show]),
+                "Year": _jitter_years(years_past, enabled=jitter_enabled),
+                "Series": "Observed (past)",
+                "Incidence_per100k": obs_display,
             }
+        )
+
+        df_fit = pd.DataFrame(
+            {
+                "Year": years_past.astype(float),
+                "Series": "Model fit (past)",
+                "Incidence_per100k": fit_show.astype(float),
+            }
+        )
+
+        # Future: include a Year=0 anchor equal to last fitted year, so it visually joins
+        fit0 = float(fit_inc[-1])
+        df_anchor = pd.DataFrame(
+            [
+                {
+                    "Year": 0.0 if ref_year_used is None else float(ref_year_used),
+                    "Series": "Baseline (projected)",
+                    "Incidence_per100k": fit0,
+                },
+                {
+                    "Year": 0.0 if ref_year_used is None else float(ref_year_used),
+                    "Series": "Intervention (projected)",
+                    "Incidence_per100k": fit0,
+                },
+            ]
         )
 
         df_future_long = df_future.melt(
@@ -932,24 +1149,58 @@ def render_dynamic_ui():
             }
         )
 
-        df_all = pd.concat([df_past, df_future_long], ignore_index=True)
+        # If plotting in calendar years, shift future Year (1..horizon) to calendar year-ends
+        if ref_year_used is not None:
+            df_future_long["Year"] = df_future_long["Year"] + float(ref_year_used)
+
+        df_all = pd.concat(
+            [df_obs, df_fit, df_anchor, df_future_long], ignore_index=True
+        )
         df_all["Incidence_count"] = (
             df_all["Incidence_per100k"] * total_pop / 100000.0
         ).round(1)
 
+        # Rule at present
+        rule_year = 0.0 if ref_year_used is None else float(ref_year_used)
         rule = (
-            alt.Chart(pd.DataFrame({"Year": [0.0]}))
+            alt.Chart(pd.DataFrame({"Year": [rule_year]}))
             .mark_rule(strokeDash=[4, 4])
             .encode(x="Year:Q")
         )
 
-        combo = (
-            alt.Chart(df_all)
-            .mark_line()
+        # --------------------------------------------------
+        # Dummy projection confidence interval band (±10%)
+        # --------------------------------------------------
+        band_df = df_all[
+            df_all["Series"].isin(["Baseline (projected)", "Intervention (projected)"])
+        ].copy()
+        ci = float(DUMMY_CI_PCT) / 100.0
+        band_df["Lower"] = (band_df["Incidence_per100k"] * (1.0 - ci)).clip(lower=0.0)
+        band_df["Upper"] = (band_df["Incidence_per100k"] * (1.0 + ci)).clip(lower=0.0)
+
+        band_layer = (
+            alt.Chart(band_df)
+            .mark_area(opacity=0.18)
             .encode(
-                x=alt.X(
-                    "Year:Q", title="Years relative to present (past < 0, future ≥ 0)"
-                ),
+                x="Year:Q",
+                y="Lower:Q",
+                y2="Upper:Q",
+                color=alt.Color("Series:N", title=None),
+                tooltip=[
+                    alt.Tooltip("Year:Q", format=".0f"),
+                    "Series:N",
+                    alt.Tooltip("Lower:Q", format=".1f", title="Lower (±10%)"),
+                    alt.Tooltip("Upper:Q", format=".1f", title="Upper (±10%)"),
+                ],
+            )
+        )
+
+        # Observed as points; everything else as lines
+        obs_layer = (
+            alt.Chart(df_all[df_all["Series"] == "Observed (past)"])
+            .mark_circle(size=55, opacity=0.8)
+            .encode(
+                x=alt.X("Year:Q", title=x_title),
                 y=alt.Y("Incidence_per100k:Q", title="Incidence per 100,000 per year"),
                 color=alt.Color("Series:N", title=None),
                 tooltip=[
@@ -963,28 +1214,77 @@ def render_dynamic_ui():
             )
         )
 
-        st.subheader("📈 Incidence: backcast fit + projected baseline vs intervention")
-        show_altair(combo + rule)
-
-        # Optional continuity check (useful when stress testing)
-        last_fit = float(fit_inc[-1])
-        first_proj = float(df_future["Baseline_inc_per100k"].iloc[0])
-        st.caption(
-            f"Continuity check: last fitted year (−1) = {last_fit:.1f} per 100k; "
-            f"first projected year (0→1) baseline = {first_proj:.1f} per 100k."
+        line_layer = (
+            alt.Chart(df_all[df_all["Series"] != "Observed (past)"])
+            .mark_line()
+            .encode(
+                x="Year:Q",
+                y="Incidence_per100k:Q",
+                color=alt.Color("Series:N", title=None),
+                tooltip=[
+                    alt.Tooltip("Year:Q", format=".0f"),
+                    "Series:N",
+                    alt.Tooltip("Incidence_per100k:Q", format=".1f"),
+                    alt.Tooltip(
+                        "Incidence_count:Q", format=".1f", title="Incidence (count)"
+                    ),
+                ],
+            )
         )
 
+        st.subheader("📈 Incidence: backcast fit + projected baseline vs intervention")
+        show_altair(band_layer + obs_layer + line_layer + rule)
+
         st.subheader("📋 Projected annual outcomes (future)")
-        show_df(
+        st.dataframe(
             df_future[
                 [
                     "Year",
                     "Baseline_inc_per100k",
                     "Intervention_inc_per100k",
-                    "Baseline_inc_count",
-                    "Intervention_inc_count",
                     "Cases_averted_per100k",
-                    "Cases_averted_count",
+                    "Baseline_cum_count",
+                    "Intervention_cum_count",
+                    "Cases_averted_cum_count",
                 ]
-            ]
+            ],
+            use_container_width=True,
         )
+
+        with st.expander("Confidence intervals (projections)"):
+            st.caption(
+                "These are placeholder intervals for aesthetics only (±10% around projected central estimates)."
+            )
+            st.dataframe(
+                df_future[
+                    [
+                        "Year",
+                        "Baseline_inc_per100k_low",
+                        "Baseline_inc_per100k",
+                        "Baseline_inc_per100k_high",
+                        "Intervention_inc_per100k_low",
+                        "Intervention_inc_per100k",
+                        "Intervention_inc_per100k_high",
+                        "Baseline_cum_count_low",
+                        "Baseline_cum_count",
+                        "Baseline_cum_count_high",
+                        "Intervention_cum_count_low",
+                        "Intervention_cum_count",
+                        "Intervention_cum_count_high",
+                    ]
+                ],
+                use_container_width=True,
+            )
+
+        with st.expander("Show annual case counts (not cumulative)"):
+            st.dataframe(
+                df_future[
+                    [
+                        "Year",
+                        "Baseline_annual_count",
+                        "Intervention_annual_count",
+                        "Cases_averted_annual_count",
+                    ]
+                ],
+                use_container_width=True,
+            )
