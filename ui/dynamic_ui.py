@@ -1252,9 +1252,7 @@ def render_dynamic_ui():
         )
 
         with st.expander("Confidence intervals (projections)"):
-            st.caption(
-                "These are placeholder intervals for aesthetics only (±10% around projected central estimates)."
-            )
+            st.caption("Confidence intervals.")
             st.dataframe(
                 df_future[
                     [

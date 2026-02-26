@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-import scipy
 from engine.dynamic.exec_dynamic import run_dynamic_model
 from engine.infection_backcast import (
     calc_ari_from_incidence,
