@@ -1,5 +1,18 @@
 {
-    "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda",
-    "python-envs.pythonProjects": []
+  "terminal.integrated.profiles.windows": {
+    "tbmodel": {
+      "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "args": [
+        "-NoExit",
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}\\.vscode\\start-tbmodel.ps1"
+      ]
+    }
+  },
+  "terminal.integrated.defaultProfile.windows": "tbmodel",
+  "terminal.integrated.cwd": "${workspaceFolder}",
+  "python.terminal.activateEnvironment": false,
+  "python-envs.defaultEnvManager": "ms-python.python:conda",
+  "python-envs.defaultPackageManager": "ms-python.python:conda"
 }
