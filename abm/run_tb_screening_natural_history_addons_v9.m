@@ -4,7 +4,7 @@ function out = run_tb_screening_natural_history_addons_v9(resultsOrCsv, Nattr)
 % If a v9 RESULTS struct is supplied, the do-nothing summary is derived from
 % that run and the attributable-risk table is estimated from a larger
 % no-intervention cohort using the same settings.
-
+outDir = get_output_dir_v9();
 if nargin < 2 || isempty(Nattr)
     Nattr = 50000;
 end

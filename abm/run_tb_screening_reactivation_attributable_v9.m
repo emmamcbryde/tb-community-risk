@@ -20,7 +20,7 @@ function out = run_tb_screening_reactivation_attributable_v9(resultsOrCsv, Nattr
 % CSVs also written:
 %   tb_reactivation_attributable_v9.csv
 %   tb_natural_history_check_v9.csv
-
+outDir = get_output_dir_v9();
 if nargin < 2 || isempty(Nattr)
     Nattr = 50000;
 end
@@ -80,7 +80,7 @@ attrib = struct2table(rows, 'AsArray', true);
 attrib = sortrows(attrib, 'ExpectedAttributableCases20y_Per1500', 'descend');
 
 % -------------------- Charts: attributable risk by factor --------------------
-[thisDir, ~, ~] = fileparts(mfilename('fullpath'));
+% [thisDir, ~, ~] = fileparts(mfilename('fullpath'));
 
 f1 = figure('Name','TB reactivation attributable cases','Color','w');
 barh(attrib.ExpectedAttributableCases20y_Per1500);
@@ -91,7 +91,7 @@ set(gca, ...
 xlabel('Expected attributable active TB cases per 1500 over 20 years');
 title('Reactivation risk factors: attributable active TB burden');
 grid on;
-pngCases = fullfile(thisDir, 'tb_reactivation_attributable_cases_v9.png');
+pngCases = fullfile(outDir, 'tb_reactivation_attributable_cases_v9.png');
 try
     exportgraphics(f1, pngCases, 'Resolution', 300);
 catch
@@ -107,7 +107,7 @@ set(gca, ...
 xlabel('Population attributable fraction of 20-year active TB risk (%)');
 title('Reactivation risk factors: attributable fraction');
 grid on;
-pngPaf = fullfile(thisDir, 'tb_reactivation_attributable_fraction_v9.png');
+pngPaf = fullfile(outDir, 'tb_reactivation_attributable_fraction_v9.png');
 
 try
     exportgraphics(f2, pngPaf, 'Resolution', 300);
@@ -144,8 +144,8 @@ end
 
 function nat = build_large_natural_history_run(resultsOrCsv, Nattr)
 thisFile = mfilename('fullpath');
-[thisDir, ~, ~] = fileparts(thisFile);
-defaultCsv = fullfile(thisDir, 'default_data.csv');
+%[outDir, ~, ~] = fileparts(thisFile);
+defaultCsv = fullfile(outDir, 'default_data.csv');
 
 if nargin < 1 || isempty(resultsOrCsv)
     nat = tb_screening_mc_model_v9(defaultCsv, ...

@@ -14,8 +14,9 @@ function out = run_tb_screening_igra_charts_v9(regimen, nReps, coverageGrid)
 %   out.figureFiles       struct of PNG paths
 
 thisFile = mfilename('fullpath');
-[thisDir, ~, ~] = fileparts(thisFile);
-csvFile = fullfile(thisDir, 'mock_data.csv');
+%[thisDir, ~, ~] = fileparts(thisFile);
+outDir = get_output_dir_v9();
+csvFile = fullfile(outDir, 'mock_data.csv');
 
 if nargin < 1 || isempty(regimen)
     regimen = '3HP';
@@ -70,7 +71,7 @@ end
 plotData = struct2table(rows, 'AsArray', true);
 plotData = sortrows(plotData, {'screeningStrategy','screenCoverage'});
 
-dataCsv = fullfile(thisDir, sprintf('igra_%s_strategy_plot_data_v9.csv', lower(regimen)));
+dataCsv = fullfile(outDir, sprintf('igra_%s_strategy_plot_data_v9.csv', lower(regimen)));
 writetable(plotData, dataCsv);
 
 % Subset for the direct comparisons requested.
@@ -86,7 +87,7 @@ title(sprintf('IGRA + %s: treated proportion vs infections cured', regimen))
 grid on
 legend('Location','best')
 ylim([0 inf])
-png1 = fullfile(thisDir, sprintf('igra_%s_prop_treated_vs_cured_v9.png', lower(regimen)));
+png1 = fullfile(outDir, sprintf('igra_%s_prop_treated_vs_cured_v9.png', lower(regimen)));
 saveas(fig1, png1);
 
 fig2 = figure('Name', 'IGRA prevention yield', 'Color', 'w');
@@ -98,7 +99,7 @@ title(sprintf('IGRA + %s: treated proportion vs active TB prevented', regimen))
 grid on
 legend('Location','best')
 ylim([0 inf])
-png2 = fullfile(thisDir, sprintf('igra_%s_prop_treated_vs_prevented_v9.png', lower(regimen)));
+png2 = fullfile(outDir, sprintf('igra_%s_prop_treated_vs_prevented_v9.png', lower(regimen)));
 saveas(fig2, png2);
 
 fig3 = figure('Name', 'IGRA cure NNS', 'Color', 'w');
@@ -110,7 +111,7 @@ title(sprintf('IGRA + %s: treated proportion vs NNS to cure infection', regimen)
 grid on
 legend('Location','best')
 ylim([0 inf])
-png3 = fullfile(thisDir, sprintf('igra_%s_prop_treated_vs_nns_cure_v9.png', lower(regimen)));
+png3 = fullfile(outDir, sprintf('igra_%s_prop_treated_vs_nns_cure_v9.png', lower(regimen)));
 saveas(fig3, png3);
 
 fig4 = figure('Name', 'IGRA prevent NNS', 'Color', 'w');
@@ -122,7 +123,7 @@ title(sprintf('IGRA + %s: treated proportion vs NNS to prevent active TB', regim
 grid on
 legend('Location','best')
 ylim([0 inf])
-png4 = fullfile(thisDir, sprintf('igra_%s_prop_treated_vs_nns_prevent_v9.png', lower(regimen)));
+png4 = fullfile(outDir, sprintf('igra_%s_prop_treated_vs_nns_prevent_v9.png', lower(regimen)));
 saveas(fig4, png4);
 
 out = struct();
