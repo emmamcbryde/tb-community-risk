@@ -17,8 +17,6 @@ Thumbs.db
 .spyproject/
 .ipynb_checkpoints/
 .history/
-abm/tb_reactivation_attributable_v9.csv
-abm/tb_reactivation_attributable_fraction_v9.png
-abm/tb_reactivation_attributable_cases_v9.png
-abm/tb_natural_history_check_v9.csv
-abm/tb_do_nothing_summary_v9.csv
+# ABM generated outputs
+abm/output/*
+!abm/output/.gitkeep

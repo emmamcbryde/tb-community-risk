@@ -25,7 +25,7 @@ function out = run_tb_screening_targeting_profile_v9(regimen, coverageGrid, Npro
 
 thisFile = mfilename('fullpath');
 [thisDir, ~, ~] = fileparts(thisFile);
-csvFile = fullfile(thisDir, 'mock_data.csv');
+csvFile = fullfile(thisDir, 'default_data.csv');
 
 if nargin < 1 || isempty(regimen)
     regimen = '3HP';
