@@ -22,10 +22,10 @@ function out = run_tb_screening_targeting_profile_v9(regimen, coverageGrid, Npro
 %   - incremental: among the newly added people between two cutoffs, who are they?
 %   - dominantRiskFactors is a simple label based on enriched factors among the
 %     selected group or band; use the prevalence/enrichment columns for detail.
-
-thisFile = mfilename('fullpath');
-[thisDir, ~, ~] = fileparts(thisFile);
-csvFile = fullfile(thisDir, 'default_data.csv');
+outDir = get_output_dir_v9();
+%thisFile = mfilename('fullpath');
+[outDir, ~, ~] = fileparts(thisFile);
+csvFile = fullfile(outDir, 'default_data.csv');
 
 if nargin < 1 || isempty(regimen)
     regimen = '3HP';
@@ -123,9 +123,9 @@ keepCols = {'screeningStrategy','screenCoverageUpper','nSelected','scoreThreshol
     'rrDiabetes','rrSmoking','rrCLD','rrAlcohol'};
 topline = cumulative(:, keepCols);
 
-cumCsv = fullfile(thisDir, sprintf('igra_%s_targeting_profile_cumulative_v9.csv', lower(regimen)));
-bandCsv = fullfile(thisDir, sprintf('igra_%s_targeting_profile_incremental_v9.csv', lower(regimen)));
-topCsv = fullfile(thisDir, sprintf('igra_%s_targeting_profile_topline_v9.csv', lower(regimen)));
+cumCsv = fullfile(outDir, sprintf('igra_%s_targeting_profile_cumulative_v9.csv', lower(regimen)));
+bandCsv = fullfile(outDir, sprintf('igra_%s_targeting_profile_incremental_v9.csv', lower(regimen)));
+topCsv = fullfile(outDir, sprintf('igra_%s_targeting_profile_topline_v9.csv', lower(regimen)));
 
 writetable(cumulative, cumCsv);
 writetable(incremental, bandCsv);

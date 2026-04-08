@@ -10,7 +10,7 @@ function out = run_tb_screening_do_nothing_v9(results)
 %
 % A CSV file is also written to the current folder:
 %   tb_do_nothing_summary_v9.csv
-
+outDir = get_output_dir_v9();
 if nargin < 1 || isempty(results)
     results = run_tb_screening_example_v9;
 end
@@ -77,7 +77,7 @@ out.derived = table(raw.nInfected, raw.nActiveBy2y, raw.nActiveBy20y, postActive
 out.resultsUsed = results;
 
 try
-    writetable(summary, 'tb_do_nothing_summary_v9.csv');
+    writetable(summary, fullfile(outDir, 'tb_do_nothing_summary_v9.csv'));
 catch
 end
 end

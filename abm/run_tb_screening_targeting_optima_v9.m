@@ -9,7 +9,7 @@ function out = run_tb_screening_targeting_optima_v9(regimen, nReps, coverageGrid
 %   out.profile          result struct from run_tb_screening_targeting_profile_v9
 %   out.optima           summary table of optimal cutoffs and dominant categories
 %   out.optimaCsv        CSV file path
-
+outDir = get_output_dir_v9();
 if nargin < 1 || isempty(regimen)
     regimen = '3HP';
 end
@@ -27,7 +27,7 @@ if nargin < 5 || isempty(seed)
 end
 
 thisFile = mfilename('fullpath');
-[thisDir, ~, ~] = fileparts(thisFile);
+[outDir, ~, ~] = fileparts(thisFile);
 
 % Get efficiency frontier.
 gradient = run_tb_screening_targeted_gradient_v9('IGRA', regimen, nReps);
@@ -48,7 +48,7 @@ rows{end+1} = build_optimum_row('prevent', 'pooledNNS_prevent', gradient, profil
 optima = vertcat(rows{:});
 optima = sortrows(optima, {'objective','efficiencyMetric'});
 
-optCsv = fullfile(thisDir, sprintf('igra_%s_targeting_optima_v9.csv', lower(regimen)));
+optCsv = fullfile(outDir, sprintf('igra_%s_targeting_optima_v9.csv', lower(regimen)));
 writetable(optima, optCsv);
 
 out = struct();
