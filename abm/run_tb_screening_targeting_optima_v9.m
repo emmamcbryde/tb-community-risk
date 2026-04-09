@@ -26,9 +26,6 @@ if nargin < 5 || isempty(seed)
     seed = 1;
 end
 
-thisFile = mfilename('fullpath');
-[outDir, ~, ~] = fileparts(thisFile);
-
 % Get efficiency frontier.
 gradient = run_tb_screening_targeted_gradient_v9('IGRA', regimen, nReps);
 if ~isempty(coverageGrid)

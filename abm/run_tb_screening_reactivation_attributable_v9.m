@@ -136,16 +136,16 @@ out.figureFiles = struct( ...
     'populationAttributableFraction', pngPaf);
 
 try
-    writetable(attrib, 'tb_reactivation_attributable_v9.csv');
-    writetable(summary, 'tb_natural_history_check_v9.csv');
+    writetable(attrib, fullfile(outDir, 'tb_reactivation_attributable_v9.csv'));
+    writetable(summary, fullfile(outDir, 'tb_natural_history_check_v9.csv'));
 catch
 end
 end
 
 function nat = build_large_natural_history_run(resultsOrCsv, Nattr)
 thisFile = mfilename('fullpath');
-%[outDir, ~, ~] = fileparts(thisFile);
-defaultCsv = fullfile(outDir, 'default_data.csv');
+[thisDir, ~, ~] = fileparts(thisFile);
+defaultCsv = fullfile(thisDir, 'default_data.csv');
 
 if nargin < 1 || isempty(resultsOrCsv)
     nat = tb_screening_mc_model_v9(defaultCsv, ...
