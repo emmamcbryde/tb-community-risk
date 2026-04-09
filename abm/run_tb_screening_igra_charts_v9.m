@@ -14,9 +14,9 @@ function out = run_tb_screening_igra_charts_v9(regimen, nReps, coverageGrid)
 %   out.figureFiles       struct of PNG paths
 
 thisFile = mfilename('fullpath');
-%[thisDir, ~, ~] = fileparts(thisFile);
+[thisDir, ~, ~] = fileparts(thisFile);
 outDir = get_output_dir_v9();
-csvFile = fullfile(outDir, 'mock_data.csv');
+csvFile = fullfile(thisDir, 'default_data.csv');
 
 if nargin < 1 || isempty(regimen)
     regimen = '3HP';
