@@ -6,9 +6,18 @@ thisFile = mfilename('fullpath');
 
 config = struct();
 
+% Stable scenario metadata
+config.configVersion = 'apy_v9_config_v1';
+config.modelVersion = 'v9';
+config.scenarioLabel = 'APY default scenario';
+config.usesDefaults = true;
+
 % Input/output paths
 config.csvFile = fullfile(thisDir, 'default_data.csv');
 config.outputDir = get_output_dir_v9();
+config.sourceDataFiles = struct( ...
+    'tbDataFile', 'default_data.csv', ...
+    'ageDistributionFile', 'default_age_distribution.csv');
 
 % Cohort / simulation size
 config.N = 1500;

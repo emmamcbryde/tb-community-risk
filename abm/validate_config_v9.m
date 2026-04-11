@@ -5,6 +5,8 @@ if ~isstruct(config)
     error('Config must be a struct.');
 end
 
+config = apply_metadata_defaults(config);
+
 requiredFields = { ...
     'csvFile', 'N', 'nReps', 'seed', 'screenWindow', 'followHorizon', ...
     'screenCoverage', 'screeningStrategy', 'ageDistributionFile', ...
@@ -57,6 +59,59 @@ if ~isstruct(config.riskPrev)
 end
 if ~isstruct(config.diseaseOR)
     error('config.diseaseOR must be a struct.');
+end
+
+if ~ischar(config.configVersion) && ~(isstring(config.configVersion) && isscalar(config.configVersion))
+    error('config.configVersion must be a character vector or scalar string.');
+end
+if ~ischar(config.modelVersion) && ~(isstring(config.modelVersion) && isscalar(config.modelVersion))
+    error('config.modelVersion must be a character vector or scalar string.');
+end
+if ~ischar(config.scenarioLabel) && ~(isstring(config.scenarioLabel) && isscalar(config.scenarioLabel))
+    error('config.scenarioLabel must be a character vector or scalar string.');
+end
+if ~(islogical(config.usesDefaults) && isscalar(config.usesDefaults))
+    error('config.usesDefaults must be a logical scalar.');
+end
+if ~isstruct(config.sourceDataFiles)
+    error('config.sourceDataFiles must be a struct.');
+end
+sourceRequired = {'tbDataFile', 'ageDistributionFile'};
+for i = 1:numel(sourceRequired)
+    if ~isfield(config.sourceDataFiles, sourceRequired{i})
+        error('config.sourceDataFiles is missing required field: %s', sourceRequired{i});
+    end
+end
+
+config.configVersion = char(string(config.configVersion));
+config.modelVersion = char(string(config.modelVersion));
+config.scenarioLabel = char(string(config.scenarioLabel));
+config.sourceDataFiles.tbDataFile = char(string(config.sourceDataFiles.tbDataFile));
+config.sourceDataFiles.ageDistributionFile = char(string(config.sourceDataFiles.ageDistributionFile));
+end
+
+function config = apply_metadata_defaults(config)
+defaults = build_default_config_v9();
+metaFields = {'configVersion', 'modelVersion', 'scenarioLabel', 'usesDefaults', 'sourceDataFiles'};
+for i = 1:numel(metaFields)
+    fieldName = metaFields{i};
+    if ~isfield(config, fieldName) || isempty(config.(fieldName))
+        config.(fieldName) = defaults.(fieldName);
+    end
+end
+
+if isfield(config, 'csvFile') && ~isempty(config.csvFile)
+    [~, name, ext] = fileparts(char(string(config.csvFile)));
+    config.sourceDataFiles.tbDataFile = [name ext];
+elseif ~isfield(config.sourceDataFiles, 'tbDataFile') || isempty(config.sourceDataFiles.tbDataFile)
+    config.sourceDataFiles.tbDataFile = defaults.sourceDataFiles.tbDataFile;
+end
+
+if isfield(config, 'ageDistributionFile') && ~isempty(config.ageDistributionFile)
+    [~, name, ext] = fileparts(char(string(config.ageDistributionFile)));
+    config.sourceDataFiles.ageDistributionFile = [name ext];
+elseif ~isfield(config.sourceDataFiles, 'ageDistributionFile') || isempty(config.sourceDataFiles.ageDistributionFile)
+    config.sourceDataFiles.ageDistributionFile = defaults.sourceDataFiles.ageDistributionFile;
 end
 end
 

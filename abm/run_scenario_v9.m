@@ -2,6 +2,7 @@ function results = run_scenario_v9(config)
 %RUN_SCENARIO_V9 Validate a config struct and run the v9 reference engine.
 
 config = validate_config_v9(config);
+config.usesDefaults = is_default_execution_config(config);
 
 args = {};
 args = add_if_set(args, 'N', config.N);
@@ -49,6 +50,16 @@ end
 
 results = tb_screening_mc_model_v9(config.csvFile, args{:});
 results.interfaceConfig = config;
+end
+
+function tf = is_default_execution_config(config)
+defaults = build_default_config_v9();
+ignoreFields = {'scenarioLabel', 'usesDefaults'};
+for i = 1:numel(ignoreFields)
+    defaults = rmfield(defaults, ignoreFields{i});
+    config = rmfield(config, ignoreFields{i});
+end
+tf = isequaln(config, defaults);
 end
 
 function args = add_if_set(args, name, value)
