@@ -160,3 +160,15 @@ When given a task:
 4. edit conservatively
 5. validate
 6. summarise the exact files changed
+
+
+## UI mode rules
+
+The APY v9 interface uses two modes:
+- Simple mode
+- Advanced mode
+
+Do not infer what these mean from context.
+Follow `SIMPLE_ADVANCED_SPEC.md` as the source of truth.
+
+If a field is not explicitly listed for Simple mode, put it in Advanced mode unless told otherwise.
