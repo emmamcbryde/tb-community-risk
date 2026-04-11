@@ -12,7 +12,7 @@ function results = run_tb_screening_user_options_v9()
 %   - female, BCG   : scalar only
 %
 % Age distribution can be supplied either as:
-%   - a file path (e.g. age_groups_SA.xlsx), or
+%   - a file path (e.g. default_age_distribution.csv), or
 %   - a table with one age-band column and one proportion column.
 %
 % The model still calibrates to the requested LTBI prevalence and active TB
@@ -42,7 +42,7 @@ user.ltbiPrevalence = [];             % e.g. 0.0753
 user.activeTBPrevalence = [];         % e.g. 0.0130
 
 % Age distribution
-user.ageDistributionFile = '';        % '' = auto-detect age_groups_SA.xlsx next to mock_data.csv
+user.ageDistributionFile = '';        % '' = auto-detect default_age_distribution.csv next to default_data.csv
 user.ageDistributionTable = table();  % optional manual table override
 user.age85PlusMax = 89;
 
