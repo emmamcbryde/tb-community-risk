@@ -1237,7 +1237,12 @@ elseif isempty(ageFile) || ~isfile(ageFile)
     pars.ageDistributionTable = table();
     return;
 else
-    T = readtable(ageFile, 'Sheet', sheetName);
+    [~, ~, ext] = fileparts(ageFile);
+    if strcmpi(ext, '.csv')
+        T = readtable(ageFile);
+    else
+        T = readtable(ageFile, 'Sheet', sheetName);
+    end
     pars.ageDistributionSource = ageFile;
 end
 varNames = string(T.Properties.VariableNames);
@@ -1292,9 +1297,15 @@ if strlength(ageDistributionFile) > 0
     return;
 end
 csvDir = fileparts(char(csvFile));
-candidate = fullfile(csvDir, 'age_groups_SA.xlsx');
-if isfile(candidate)
-    ageFile = candidate;
+candidateCsv = fullfile(csvDir, 'default_age_distribution.csv');
+candidateXlsx = fullfile(csvDir, 'default_age_distribution.xlsx');
+legacyXlsx = fullfile(csvDir, 'age_groups_SA.xlsx');
+if isfile(candidateCsv)
+    ageFile = candidateCsv;
+elseif isfile(candidateXlsx)
+    ageFile = candidateXlsx;
+elseif isfile(legacyXlsx)
+    ageFile = legacyXlsx;
 else
     ageFile = '';
 end
