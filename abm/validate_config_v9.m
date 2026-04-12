@@ -10,7 +10,7 @@ config = apply_metadata_defaults(config);
 requiredFields = { ...
     'csvFile', 'N', 'nReps', 'seed', 'screenWindow', 'followHorizon', ...
     'screenCoverage', 'screeningStrategy', 'ageDistributionFile', ...
-    'ageDistributionTable', 'age85PlusMax', 'riskPrev', 'diseaseOR', ...
+    'ageDistributionTable', 'age85PlusMax', 'targetAgeOR', 'riskPrev', 'diseaseOR', ...
     'testType', 'regimen'};
 
 for i = 1:numel(requiredFields)
@@ -34,6 +34,7 @@ validate_positive_scalar(config.screenWindow, 'config.screenWindow');
 validate_positive_scalar(config.followHorizon, 'config.followHorizon');
 validate_fraction_scalar(config.screenCoverage, 'config.screenCoverage');
 validate_positive_scalar(config.age85PlusMax, 'config.age85PlusMax');
+validate_positive_scalar(config.targetAgeOR, 'config.targetAgeOR');
 
 if config.followHorizon <= config.screenWindow
     error('config.followHorizon must be > config.screenWindow.');
@@ -112,6 +113,10 @@ if isfield(config, 'ageDistributionFile') && ~isempty(config.ageDistributionFile
     config.sourceDataFiles.ageDistributionFile = [name ext];
 elseif ~isfield(config.sourceDataFiles, 'ageDistributionFile') || isempty(config.sourceDataFiles.ageDistributionFile)
     config.sourceDataFiles.ageDistributionFile = defaults.sourceDataFiles.ageDistributionFile;
+end
+
+if ~isfield(config, 'targetAgeOR') || isempty(config.targetAgeOR)
+    config.targetAgeOR = defaults.targetAgeOR;
 end
 end
 
