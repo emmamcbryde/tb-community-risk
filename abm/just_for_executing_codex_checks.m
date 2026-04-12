@@ -1,0 +1,11 @@
+clear functions; 
+rehash; 
+cfg = build_default_config_v9(); 
+cfg.N = 50; 
+cfg.nReps = 1; 
+res = run_scenario_v9(cfg); 
+bundle = build_results_bundle_v9(res);
+disp(bundle.headline.available); 
+disp(bundle.doNothing.available); 
+disp(bundle.attributableRisk.available);
+disp(fieldnames(bundle));

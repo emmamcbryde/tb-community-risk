@@ -1,104 +1,31 @@
 function config = validate_config_v9(config)
-%VALIDATE_CONFIG_V9 Lightweight validation for the v9 backend config.
+%VALIDATE_CONFIG_V9 MATLAB-facing wrapper for v9 config validation.
 
 if ~isstruct(config)
     error('Config must be a struct.');
 end
 
 config = apply_metadata_defaults(config);
+config = normalize_config_text_fields(config);
 
-requiredFields = { ...
-    'csvFile', 'N', 'nReps', 'seed', 'screenWindow', 'followHorizon', ...
-    'screenCoverage', 'screeningStrategy', 'ageDistributionFile', ...
-    'ageDistributionTable', 'age85PlusMax', 'targetAgeOR', 'riskPrev', 'diseaseOR', ...
-    'testType', 'regimen'};
-
-for i = 1:numel(requiredFields)
-    if ~isfield(config, requiredFields{i})
-        error('Config is missing required field: %s', requiredFields{i});
-    end
+report = collect_validation_issues_v9(config);
+if ~report.isValid
+    error('validate_config_v9:InvalidConfig', '%s', build_error_message(report));
 end
-
-config.csvFile = char(string(config.csvFile));
-if isempty(strtrim(config.csvFile))
-    error('config.csvFile must be a non-empty path.');
-end
-if ~isfile(config.csvFile)
-    error('config.csvFile not found: %s', config.csvFile);
-end
-
-validate_positive_scalar(config.N, 'config.N');
-validate_positive_scalar(config.nReps, 'config.nReps');
-validate_nonnegative_scalar(config.seed, 'config.seed');
-validate_positive_scalar(config.screenWindow, 'config.screenWindow');
-validate_positive_scalar(config.followHorizon, 'config.followHorizon');
-validate_fraction_scalar(config.screenCoverage, 'config.screenCoverage');
-validate_positive_scalar(config.age85PlusMax, 'config.age85PlusMax');
-validate_positive_scalar(config.targetAgeOR, 'config.targetAgeOR');
-
-if config.followHorizon <= config.screenWindow
-    error('config.followHorizon must be > config.screenWindow.');
-end
-
-if ~isempty(config.ageDistributionFile)
-    config.ageDistributionFile = char(string(config.ageDistributionFile));
-    if ~isfile(config.ageDistributionFile)
-        error('config.ageDistributionFile not found: %s', config.ageDistributionFile);
-    end
-end
-
-if ~istable(config.ageDistributionTable)
-    error('config.ageDistributionTable must be a table.');
-end
-
-if ~isempty(config.ageDistributionFile) && height(config.ageDistributionTable) > 0
-    error('Provide either config.ageDistributionFile or config.ageDistributionTable, not both.');
-end
-
-if ~isstruct(config.riskPrev)
-    error('config.riskPrev must be a struct.');
-end
-if ~isstruct(config.diseaseOR)
-    error('config.diseaseOR must be a struct.');
-end
-
-if ~ischar(config.configVersion) && ~(isstring(config.configVersion) && isscalar(config.configVersion))
-    error('config.configVersion must be a character vector or scalar string.');
-end
-if ~ischar(config.modelVersion) && ~(isstring(config.modelVersion) && isscalar(config.modelVersion))
-    error('config.modelVersion must be a character vector or scalar string.');
-end
-if ~ischar(config.scenarioLabel) && ~(isstring(config.scenarioLabel) && isscalar(config.scenarioLabel))
-    error('config.scenarioLabel must be a character vector or scalar string.');
-end
-if ~(islogical(config.usesDefaults) && isscalar(config.usesDefaults))
-    error('config.usesDefaults must be a logical scalar.');
-end
-if ~isstruct(config.sourceDataFiles)
-    error('config.sourceDataFiles must be a struct.');
-end
-sourceRequired = {'tbDataFile', 'ageDistributionFile'};
-for i = 1:numel(sourceRequired)
-    if ~isfield(config.sourceDataFiles, sourceRequired{i})
-        error('config.sourceDataFiles is missing required field: %s', sourceRequired{i});
-    end
-end
-
-config.configVersion = char(string(config.configVersion));
-config.modelVersion = char(string(config.modelVersion));
-config.scenarioLabel = char(string(config.scenarioLabel));
-config.sourceDataFiles.tbDataFile = char(string(config.sourceDataFiles.tbDataFile));
-config.sourceDataFiles.ageDistributionFile = char(string(config.sourceDataFiles.ageDistributionFile));
 end
 
 function config = apply_metadata_defaults(config)
 defaults = build_default_config_v9();
-metaFields = {'configVersion', 'modelVersion', 'scenarioLabel', 'usesDefaults', 'sourceDataFiles'};
-for i = 1:numel(metaFields)
-    fieldName = metaFields{i};
+defaultFields = fieldnames(defaults);
+for i = 1:numel(defaultFields)
+    fieldName = defaultFields{i};
     if ~isfield(config, fieldName) || isempty(config.(fieldName))
         config.(fieldName) = defaults.(fieldName);
     end
+end
+
+if ~isfield(config, 'sourceDataFiles') || ~isstruct(config.sourceDataFiles) || isempty(fieldnames(config.sourceDataFiles))
+    config.sourceDataFiles = defaults.sourceDataFiles;
 end
 
 if isfield(config, 'csvFile') && ~isempty(config.csvFile)
@@ -114,26 +41,38 @@ if isfield(config, 'ageDistributionFile') && ~isempty(config.ageDistributionFile
 elseif ~isfield(config.sourceDataFiles, 'ageDistributionFile') || isempty(config.sourceDataFiles.ageDistributionFile)
     config.sourceDataFiles.ageDistributionFile = defaults.sourceDataFiles.ageDistributionFile;
 end
-
-if ~isfield(config, 'targetAgeOR') || isempty(config.targetAgeOR)
-    config.targetAgeOR = defaults.targetAgeOR;
-end
 end
 
-function validate_positive_scalar(x, name)
-if ~(isnumeric(x) && isscalar(x) && isfinite(x) && x > 0)
-    error('%s must be a positive finite scalar.', name);
+function config = normalize_config_text_fields(config)
+config.csvFile = char(string(config.csvFile));
+config.configVersion = char(string(config.configVersion));
+config.modelVersion = char(string(config.modelVersion));
+config.scenarioLabel = char(string(config.scenarioLabel));
+config.sourceDataFiles.tbDataFile = char(string(config.sourceDataFiles.tbDataFile));
+config.sourceDataFiles.ageDistributionFile = char(string(config.sourceDataFiles.ageDistributionFile));
+
+if ~isempty(config.ageDistributionFile)
+    config.ageDistributionFile = char(string(config.ageDistributionFile));
+end
+if isfield(config, 'testType') && ~isempty(config.testType)
+    config.testType = char(string(config.testType));
+end
+if isfield(config, 'regimen') && ~isempty(config.regimen)
+    config.regimen = char(string(config.regimen));
+end
+if isfield(config, 'screeningStrategy') && ~isempty(config.screeningStrategy)
+    config.screeningStrategy = char(string(config.screeningStrategy));
+end
+if isfield(config, 'partialShortCourseMode') && ~isempty(config.partialShortCourseMode)
+    config.partialShortCourseMode = char(string(config.partialShortCourseMode));
 end
 end
 
-function validate_nonnegative_scalar(x, name)
-if ~(isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0)
-    error('%s must be a non-negative finite scalar.', name);
+function msg = build_error_message(report)
+lines = cell(1, numel(report.errors));
+for i = 1:numel(report.errors)
+    issue = report.errors(i);
+    lines{i} = sprintf('[%s] %s: %s', issue.code, issue.fieldLabel, issue.message);
 end
-end
-
-function validate_fraction_scalar(x, name)
-if ~(isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0 && x <= 1)
-    error('%s must be a scalar in [0, 1].', name);
-end
+msg = strjoin(lines, newline);
 end
