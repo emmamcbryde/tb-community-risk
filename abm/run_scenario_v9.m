@@ -14,6 +14,7 @@ args = add_if_set(args, 'screenCoverage', config.screenCoverage);
 args = add_if_set(args, 'screeningStrategy', config.screeningStrategy);
 args = add_if_set(args, 'ltbiPrevalence', config.ltbiPrevalence);
 args = add_if_set(args, 'activeTBPrevalence', config.activeTBPrevalence);
+args = add_if_set(args, 'targetAgeOR', config.targetAgeOR);
 args = add_if_set(args, 'age85PlusMax', config.age85PlusMax);
 args = add_if_set(args, 'ageDistributionSheet', config.ageDistributionSheet);
 args = add_if_set(args, 'testType', config.testType);

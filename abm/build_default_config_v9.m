@@ -33,6 +33,7 @@ config.screeningStrategy = 'prevent';
 % Calibration targets
 config.ltbiPrevalence = [];
 config.activeTBPrevalence = [];
+config.targetAgeOR = 7.54;
 
 % Age distribution
 config.ageDistributionFile = '';

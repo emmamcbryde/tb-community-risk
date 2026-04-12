@@ -169,6 +169,6 @@ The APY v9 interface uses two modes:
 - Advanced mode
 
 Do not infer what these mean from context.
-Follow `SIMPLE_ADVANCED_SPEC.md` as the source of truth.
+Follow `APY_v9_simple_vs_advanced_spec.md` as the source of truth.
 
 If a field is not explicitly listed for Simple mode, put it in Advanced mode unless told otherwise.
