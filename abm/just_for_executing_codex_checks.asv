@@ -9,16 +9,14 @@ disp(appState.ResultsAreStale)
 disp(appState.LastRunSucceeded)
 
 
-%% test 2
-
+%%
 appState = app_startup_v9();
 appState = app_validate_v9(appState);
 
 disp(~isempty(appState.LastValidationReport))
 disp(appState.ResultsAreStale)
 
-%% test 3
-
+%%
 appState = app_startup_v9();
 appState.CurrentUIState.N = 200;
 appState.CurrentUIState.nReps = 10;
@@ -30,9 +28,7 @@ disp(appState.ResultsAreStale)
 disp(~isempty(appState.LastResults))
 disp(~isempty(appState.LastBundle))
 
-%% test 4
-
-appState.CurrentUIState.screenCoverage = 0.40;
+%%appState.CurrentUIState.screenCoverage = 0.40;
 [appState, report] = app_input_changed_v9(appState, appState.CurrentUIState);
 
 disp(appState.LastRunSucceeded)
@@ -43,9 +39,6 @@ disp(isempty(appState.LastExports))
 disp(isempty(appState.LastDoNothing))
 disp(isempty(appState.LastAttributableRisk))
 
-%% test 5
-clear functions
-rehash
-appState = app_run_do_nothing_v9(appState);
+%%appState = app_run_do_nothing_v9(appState);
 disp(~isempty(appState.LastDoNothing))
 disp(appState.LastBundle.doNothing.available)
