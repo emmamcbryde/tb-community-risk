@@ -49,3 +49,25 @@ rehash
 appState = app_run_do_nothing_v9(appState);
 disp(~isempty(appState.LastDoNothing))
 disp(appState.LastBundle.doNothing.available)
+
+%%
+clear functions
+rehash
+
+schema = build_ui_schema_v9();
+cfg = build_default_config_v9();
+
+uiState = config_to_ui_state_v9(cfg, schema);
+cfg2 = ui_state_to_config_v9(uiState, schema, cfg);
+
+disp(cfg.targetAgeOR)
+disp(cfg2.targetAgeOR)
+disp(strcmp(cfg.testType, cfg2.testType))
+disp(strcmp(cfg.regimen, cfg2.regimen))
+disp(strcmp(cfg.screeningStrategy, cfg2.screeningStrategy))
+
+disp(schema_field_key_v9('diseaseOR.alcohol'))
+disp(schema_component_name_v9('screenCoverage', 'number'))
+disp(schema_component_name_v9('testType', 'select'))
+disp(schema_component_name_v9('ageDistributionTable', 'table'))
+disp(schema_component_name_v9('useDefaults', 'boolean'))

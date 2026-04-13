@@ -31,7 +31,7 @@ end
 fields = [schema.simpleFields(:); schema.advancedFields(:)];
 for i = 1:numel(fields)
     field = fields(i);
-    key = ui_state_key_v9(field);
+    key = schema_field_key_v9(field);
     if isfield(uiState.fieldValues, key)
         config = set_nested_field_v9(config, field.sourceConfigField, uiState.fieldValues.(key));
     end
@@ -53,19 +53,6 @@ end
 s.(head) = set_nested_field_v9(s.(head), tail, value);
 end
 
-function key = ui_state_key_v9(field)
-source = field.sourceConfigField;
-if isempty(source)
-    source = field.internalName;
-end
-key = regexprep(source, '[^a-zA-Z0-9_]', '_');
-if isempty(key)
-    key = 'field';
-end
-if isstrprop(key(1), 'digit')
-    key = ['f_' key];
-end
-end
 
 function tf = is_schema_struct(value)
 tf = isstruct(value) && isfield(value, 'simpleFields') && isfield(value, 'advancedFields');
