@@ -20,3 +20,4 @@ Thumbs.db
 # ABM generated outputs
 abm/output/*
 !abm/output/.gitkeep
+*.asv
