@@ -71,3 +71,9 @@ disp(schema_component_name_v9('screenCoverage', 'number'))
 disp(schema_component_name_v9('testType', 'select'))
 disp(schema_component_name_v9('ageDistributionTable', 'table'))
 disp(schema_component_name_v9('useDefaults', 'boolean'))
+
+
+disp(schema_component_name_v9('ageDistributionTable', 'table'))
+disp(schema_component_name_v9('testType', 'select'))
+disp(schema_component_name_v9('useDefaults', 'boolean'))
+disp(schema_component_name_v9('screenCoverage', 'number'))
