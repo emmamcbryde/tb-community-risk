@@ -21,3 +21,4 @@ Thumbs.db
 abm/output/*
 !abm/output/.gitkeep
 *.asv
+abm/app_code.txt
