@@ -41,6 +41,14 @@ end
 end
 
 function write_component_value_v9(component, value)
+if isempty(value)
+    if isprop(component, 'AllowEmpty') && isprop(component, 'Value')
+        component.AllowEmpty = 'on';
+        component.Value = [];
+    end
+    return;
+end
+
 if isprop(component, 'Value')
     component.Value = value;
 elseif isprop(component, 'Data')
