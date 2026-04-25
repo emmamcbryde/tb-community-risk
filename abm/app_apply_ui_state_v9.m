@@ -50,8 +50,72 @@ if isempty(value)
 end
 
 if isprop(component, 'Value')
+    if isprop(component, 'Items')
+        [hasMatch, matchedValue] = match_dropdown_item_v9(component.Items, value);
+        if ~hasMatch
+            return;
+        end
+        component.Value = matchedValue;
+        return;
+    end
     component.Value = value;
 elseif isprop(component, 'Data')
     component.Data = value;
+end
+end
+
+function [hasMatch, matchedValue] = match_dropdown_item_v9(items, value)
+hasMatch = false;
+matchedValue = [];
+
+valueText = scalar_text_v9(value);
+if isempty(valueText)
+    return;
+end
+
+itemTexts = string(items);
+exactMatch = (itemTexts == valueText);
+if any(exactMatch, 'all')
+    hasMatch = true;
+    matchedValue = get_item_value_v9(items, find(exactMatch, 1, 'first'));
+    return;
+end
+
+caseInsensitiveMatch = strcmpi(cellstr(itemTexts(:)), char(valueText));
+if any(caseInsensitiveMatch)
+    hasMatch = true;
+    matchedValue = get_item_value_v9(items, find(caseInsensitiveMatch, 1, 'first'));
+end
+end
+
+function textValue = scalar_text_v9(value)
+textValue = string.empty;
+
+if iscell(value)
+    if ~isscalar(value)
+        return;
+    end
+    value = value{1};
+end
+
+try
+    textValue = string(value);
+catch
+    textValue = string.empty;
+    return;
+end
+
+if ~isscalar(textValue)
+    textValue = string.empty;
+end
+end
+
+function itemValue = get_item_value_v9(items, index)
+if iscell(items)
+    itemValue = items{index};
+elseif ischar(items) && size(items, 1) > 1
+    itemValue = deblank(items(index, :));
+else
+    itemValue = items(index);
 end
 end

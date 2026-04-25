@@ -77,3 +77,14 @@ disp(schema_component_name_v9('ageDistributionTable', 'table'))
 disp(schema_component_name_v9('testType', 'select'))
 disp(schema_component_name_v9('useDefaults', 'boolean'))
 disp(schema_component_name_v9('screenCoverage', 'number'))
+
+%%
+% clear functions
+rehash
+
+cfg = build_default_config_v9();
+cfg.N = 200;
+cfg.nReps = 10;
+
+results = run_scenario_v9(cfg);
+disp(results.calibration)
