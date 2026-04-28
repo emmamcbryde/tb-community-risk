@@ -7,7 +7,7 @@
     "configVersion": "apy_v9_config_v1",
     "modelVersion": "v9",
     "scenarioLabel": "APY default scenario",
-    "usesDefaults": true,
+    "useDefaults": true,
     "csvFile": "C:\\Users\\emmas\\Documents\\GITHUB\\tb-community-risk\\abm\\default_data.csv",
     "outputDir": "C:\\Users\\emmas\\Documents\\GITHUB\\tb-community-risk\\abm\\output",
     "sourceDataFiles": {

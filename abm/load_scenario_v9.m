@@ -14,7 +14,6 @@ loadInfo.filename = filename;
 loadInfo.contractVersion = '';
 loadInfo.success = false;
 loadInfo.messages = {};
-
 if isstruct(payload) && isfield(payload, 'contractVersion')
     loadInfo.contractVersion = char(string(payload.contractVersion));
 end
@@ -25,7 +24,8 @@ if ~isstruct(payload) || ~isfield(payload, 'config') || ~isstruct(payload.config
     return;
 end
 
-config = merge_loaded_struct(config, payload.config);
+loadedConfig = normalize_defaults_flag(payload.config);
+config = merge_loaded_struct(config, loadedConfig);
 if isfield(payload.config, 'ageDistributionTableRows')
     config.ageDistributionTable = rows_to_table(payload.config.ageDistributionTableRows);
 end
@@ -56,6 +56,16 @@ for i = 1:numel(fields)
     else
         s.(name) = loaded.(name);
     end
+end
+end
+
+function s = normalize_defaults_flag(s)
+s = s;
+if isstruct(s) && isfield(s, 'usesDefaults')
+    if ~isfield(s, 'useDefaults') || isempty(s.useDefaults)
+        s.useDefaults = s.usesDefaults;
+    end
+    s = rmfield(s, 'usesDefaults');
 end
 end
 

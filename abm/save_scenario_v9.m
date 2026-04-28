@@ -36,6 +36,12 @@ end
 
 function out = config_to_json_struct(config)
 out = config;
+if isfield(out, 'usesDefaults')
+    if ~isfield(out, 'useDefaults') || isempty(out.useDefaults)
+        out.useDefaults = out.usesDefaults;
+    end
+    out = rmfield(out, 'usesDefaults');
+end
 if isfield(out, 'ageDistributionTable') && istable(out.ageDistributionTable)
     out.ageDistributionTableRows = table2struct(out.ageDistributionTable, 'ToScalar', false);
     out = rmfield(out, 'ageDistributionTable');

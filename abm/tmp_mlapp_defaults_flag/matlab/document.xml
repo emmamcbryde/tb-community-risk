@@ -1,0 +1,740 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="code"/></w:pPr><w:r><w:t><![CDATA[classdef APYV9WebApp < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                        matlab.ui.Figure
+        MainTabGroup                    matlab.ui.container.TabGroup
+        ScenarioTab                     matlab.ui.container.Tab
+        LoadScenarioButton              matlab.ui.control.Button
+        SaveScenarioButton              matlab.ui.control.Button
+        UseDefaultsCheckBox             matlab.ui.control.CheckBox
+        ScenarioLabelEditField          matlab.ui.control.EditField
+        ScenarioLabel                   matlab.ui.control.Label
+        InputsTab                       matlab.ui.container.Tab
+        RegimenEffFullEditField         matlab.ui.control.NumericEditField
+        RegimenEffFullEditFieldLabel    matlab.ui.control.Label
+        RegimenADRstopEditField         matlab.ui.control.NumericEditField
+        RegimenADRstopEditFieldLabel    matlab.ui.control.Label
+        RegimenPCompleteEditField       matlab.ui.control.NumericEditField
+        RegimenPCompleteEditFieldLabel  matlab.ui.control.Label
+        PStartTPTEditField              matlab.ui.control.NumericEditField
+        PStartTPTEditFieldLabel         matlab.ui.control.Label
+        ScreenCoverageEditField         matlab.ui.control.NumericEditField
+        ScreenCoverageEditFieldLabel    matlab.ui.control.Label
+        ScreeningStrategyDropDown       matlab.ui.control.DropDown
+        ScreeningStrategyDropDownLabel  matlab.ui.control.Label
+        RegimenDropDown                 matlab.ui.control.DropDown
+        RegimenDropDownLabel            matlab.ui.control.Label
+        TestTypeDropDown                matlab.ui.control.DropDown
+        TesttypeLabel                   matlab.ui.control.Label
+        ActiveTBPrevalenceEditField     matlab.ui.control.NumericEditField
+        ActiveTBprevalenceLabel         matlab.ui.control.Label
+        LtbiPrevalenceEditField         matlab.ui.control.NumericEditField
+        TBIprevalenceLabel              matlab.ui.control.Label
+        AdvancedTab                     matlab.ui.container.Tab
+        NRepsEditField                  matlab.ui.control.NumericEditField
+        NRepsEditFieldLabel             matlab.ui.control.Label
+        RunTab                          matlab.ui.container.Tab
+        ValidationMessagesTextArea      matlab.ui.control.TextArea
+        ValidationMessagesLabel         matlab.ui.control.Label
+        ValidateButton                  matlab.ui.control.Button
+        RunButton                       matlab.ui.control.Button
+        ResultsTab                      matlab.ui.container.Tab
+        TechnicalDetailsTextArea        matlab.ui.control.TextArea
+        TechnicalDetailsLabel           matlab.ui.control.Label
+        HeadlineResultsTable            matlab.ui.control.Table
+        DownloadsTab                    matlab.ui.container.Tab
+        DownloadsTable                  matlab.ui.control.Table
+        ExportResultsButton             matlab.ui.control.Button
+    end
+
+
+    properties (Access = private)
+        AppState % Description
+    end
+
+
+    methods (Access = private)
+        function txt = localIssueText(app, issue)
+            txt = '';
+            if isstruct(issue)
+                if isfield(issue, 'message') && ~isempty(issue.message)
+                    txt = char(string(issue.message));
+                elseif isfield(issue, 'text') && ~isempty(issue.text)
+                    txt = char(string(issue.text));
+                else
+                    txt = strtrim(evalc('disp(issue)'));
+                end
+            else
+                txt = char(string(issue));
+            end
+        end
+
+        function InputValueChanged(app, event)
+            uiState = app_collect_ui_state_v9(app, app.AppState.Schema);
+            app.AppState.CurrentUIState = uiState;
+
+            if isfield(app.AppState.CurrentConfig, 'useDefaults')
+                app.AppState.CurrentConfig.useDefaults = logical(app.UseDefaultsCheckBox.Value);
+            end
+
+            [app.AppState, ~] = app_input_changed_v9(app.AppState, uiState);
+
+            refreshValidationDisplay(app);
+            refreshResultsDisplay(app);
+        end
+        function refreshValidationDisplay(app)
+            displayModel = validation_report_to_display_v9(app.AppState.LastValidationReport);
+
+            lines = {
+                displayModel.summaryText
+                sprintf('Valid: %d', displayModel.isValid)
+                sprintf('Warnings present: %d', displayModel.hasWarnings)
+                };
+
+            if ~isempty(displayModel.errorRows)
+                for i = 1:numel(displayModel.errorRows)
+                    lines{end+1, 1} = ['ERROR: ' app.localIssueText(displayModel.errorRows(i))]; %#ok<AGROW>
+                end
+            end
+
+            if ~isempty(displayModel.warningRows)
+                for i = 1:numel(displayModel.warningRows)
+                    lines{end+1, 1} = ['WARNING: ' app.localIssueText(displayModel.warningRows(i))]; %#ok<AGROW>
+                end
+            end
+
+            if ~isempty(displayModel.infoRows)
+                for i = 1:numel(displayModel.infoRows)
+                    lines{end+1, 1} = ['INFO: ' app.localIssueText(displayModel.infoRows(i))]; %#ok<AGROW>
+                end
+            end
+
+            app.ValidationMessagesTextArea.Value = lines;
+
+        end
+
+        function refreshResultsDisplay(app)
+            if isempty(app.AppState) || isempty(app.AppState.LastBundle)
+                app.setUITableData(app.HeadlineResultsTable, [], "No results available");
+                app.TechnicalDetailsTextArea.Value = {'No technical details available.'};
+                app.setUITableData(app.DownloadsTable, [], "No downloads available yet");
+                return;
+            end
+
+            displayModel = results_bundle_to_display_v9(app.AppState.LastBundle);
+
+            headlineTbl = [];
+            if isstruct(displayModel) && isfield(displayModel, 'headline') ...
+                    && isfield(displayModel.headline, 'available') && displayModel.headline.available
+
+                if isfield(displayModel.headline, 'keyMetricsTable') && istable(displayModel.headline.keyMetricsTable)
+                    headlineTbl = displayModel.headline.keyMetricsTable;
+                elseif isfield(displayModel.headline, 'summaryTable') && istable(displayModel.headline.summaryTable)
+                    headlineTbl = displayModel.headline.summaryTable;
+                elseif isfield(displayModel.headline, 'keyMetricsRows') && ~isempty(displayModel.headline.keyMetricsRows)
+                    try
+                        headlineTbl = struct2table(displayModel.headline.keyMetricsRows, 'AsArray', true);
+                    catch
+                    end
+                end
+            end
+            app.setUITableData(app.HeadlineResultsTable, headlineTbl, "No results available");
+
+            technicalLines = {};
+            if app.AppState.ResultsAreStale
+                technicalLines{end+1,1} = 'Results are stale. Re-run the scenario to refresh outputs.';
+            end
+
+            if isstruct(displayModel) && isfield(displayModel, 'technical') ...
+                    && isfield(displayModel.technical, 'available') && displayModel.technical.available
+
+                technicalLines{end+1,1} = 'Technical details available.';
+
+                if isfield(displayModel, 'metadata') && isstruct(displayModel.metadata)
+                    if isfield(displayModel.metadata, 'contractVersion')
+                        technicalLines{end+1,1} = ['Contract version: ' char(string(displayModel.metadata.contractVersion))];
+                    end
+                end
+
+                if isfield(displayModel.technical, 'interfaceConfig') && ~isempty(displayModel.technical.interfaceConfig)
+                    technicalLines{end+1,1} = 'Interface config summary:';
+                    technicalLines{end+1,1} = strtrim(evalc('disp(displayModel.technical.interfaceConfig)'));
+                end
+            end
+
+            if isempty(technicalLines)
+                technicalLines = {'No technical details available.'};
+            end
+
+            app.TechnicalDetailsTextArea.Value = technicalLines;
+
+            downloadsTbl = [];
+            if isstruct(displayModel) && isfield(displayModel, 'downloads') ...
+                    && isstruct(displayModel.downloads) ...
+                    && isfield(displayModel.downloads, 'available') ...
+                    && displayModel.downloads.available
+
+                rows = struct([]);
+
+                if isfield(displayModel.downloads, 'summaryCsv') && ~isempty(displayModel.downloads.summaryCsv)
+                    rows(end+1).FileType = "Summary CSV"; %#ok<AGROW>
+                    rows(end).Path = string(displayModel.downloads.summaryCsv);
+                end
+
+                if isfield(displayModel.downloads, 'keyMetricsCsv') && ~isempty(displayModel.downloads.keyMetricsCsv)
+                    rows(end+1).FileType = "Key metrics CSV"; %#ok<AGROW>
+                    rows(end).Path = string(displayModel.downloads.keyMetricsCsv);
+                end
+
+                if isfield(displayModel.downloads, 'payload') && ~isempty(displayModel.downloads.payload)
+                    try
+                        payloadFields = fieldnames(displayModel.downloads.payload);
+                        for k = 1:numel(payloadFields)
+                            val = displayModel.downloads.payload.(payloadFields{k});
+                            if ischar(val) || isstring(val)
+                                rows(end+1).FileType = string(payloadFields{k}); %#ok<AGROW>
+                                rows(end).Path = string(val);
+                            end
+                        end
+                    catch
+                    end
+                end
+
+                if ~isempty(rows)
+                    downloadsTbl = struct2table(rows);
+                end
+            end
+
+            app.setUITableData(app.DownloadsTable, downloadsTbl, "No downloads available yet");
+
+        end
+
+
+        function setUITableData(app, uiTable, tbl, placeholderText)
+
+            if nargin < 4 || isempty(placeholderText)
+                placeholderText = "No data available";
+            end
+
+            if istable(tbl) && ~isempty(tbl)
+                uiTable.Data = tbl;
+                try
+                    uiTable.ColumnName = tbl.Properties.VariableNames;
+                catch
+                end
+            else
+                uiTable.Data = table(string(placeholderText), 'VariableNames', {'Status'});
+                uiTable.ColumnName = {'Status'};
+            end
+
+        end
+    end
+
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Code that executes after component creation
+        function startupFcn(app)
+
+            drawnow;
+            app.UIFigure.WindowState = 'maximized';
+
+            [app.AppState, ~, ~] = app_startup_v9();
+            app = app_apply_ui_state_v9(app, app.AppState.CurrentUIState, app.AppState.Schema);
+
+            if isfield(app.AppState.CurrentConfig, 'useDefaults')
+                app.UseDefaultsCheckBox.Value = logical(app.AppState.CurrentConfig.useDefaults);
+            end
+
+            refreshValidationDisplay(app);
+            refreshResultsDisplay(app);
+
+        end
+
+        % Button pushed function: RunButton
+        function RunButtonPushed(app, event)
+
+            uiState = app_collect_ui_state_v9(app, app.AppState.Schema);
+            app.AppState.CurrentUIState = uiState;
+
+            if isfield(app.AppState.CurrentConfig, 'useDefaults')
+                app.AppState.CurrentConfig.useDefaults = logical(app.UseDefaultsCheckBox.Value);
+            end
+
+            [app.AppState, ~, runError] = app_run_v9(app.AppState, uiState);
+
+            refreshValidationDisplay(app);
+
+            if ~isempty(runError)
+                app.TechnicalDetailsTextArea.Value = { ...
+                    'Run failed.'; ...
+                    runError};
+                return;
+            end
+
+            refreshResultsDisplay(app);
+        
+        end
+
+        % Button pushed function: ValidateButton
+        function ValidateButtonPushed(app, event)
+
+            uiState = app_collect_ui_state_v9(app, app.AppState.Schema);
+            app.AppState.CurrentUIState = uiState;
+
+            if isfield(app.AppState.CurrentConfig, 'useDefaults')
+                app.AppState.CurrentConfig.useDefaults = logical(app.UseDefaultsCheckBox.Value);
+            end
+
+            [app.AppState, ~, validationError] = app_validate_v9(app.AppState, uiState);
+
+            refreshValidationDisplay(app);
+
+            if ~isempty(validationError)
+                app.ValidationMessagesTextArea.Value = { ...
+                    'Validation failed.'; ...
+                    validationError};
+            end
+
+        end
+
+        % Button pushed function: LoadScenarioButton
+        function LoadScenarioButtonPushed(app, event)
+
+            [fileName, filePath] = uigetfile('*.json', 'Load scenario');
+            if isequal(fileName, 0) || isequal(filePath, 0)
+                return;
+            end
+
+            fullName = fullfile(filePath, fileName);
+            [app.AppState, ~, ~, ~] = app_load_scenario_v9(app.AppState, fullName);
+
+            app = app_apply_ui_state_v9(app, app.AppState.CurrentUIState, app.AppState.Schema);
+
+            if isfield(app.AppState.CurrentConfig, 'useDefaults')
+                app.UseDefaultsCheckBox.Value = logical(app.AppState.CurrentConfig.useDefaults);
+            end
+
+            refreshValidationDisplay(app);
+            refreshResultsDisplay(app);
+
+
+        end
+
+        % Button pushed function: SaveScenarioButton
+        function SaveScenarioButtonPushed(app, event)
+
+            uiState = app_collect_ui_state_v9(app, app.AppState.Schema);
+            app.AppState.CurrentUIState = uiState;
+            app.AppState.CurrentConfig = ui_state_to_config_v9(uiState, app.AppState.Schema, app.AppState.CurrentConfig);
+
+            if isfield(app.AppState.CurrentConfig, 'useDefaults')
+                app.AppState.CurrentConfig.useDefaults = logical(app.UseDefaultsCheckBox.Value);
+            end
+
+            defaultFile = 'scenario_v9.json';
+            if isfield(app.AppState.CurrentConfig, 'scenarioLabel') && ~isempty(app.AppState.CurrentConfig.scenarioLabel)
+                defaultFile = [regexprep(char(string(app.AppState.CurrentConfig.scenarioLabel)), '[^a-zA-Z0-9_-]', '_') '.json'];
+            end
+
+            [fileName, filePath] = uiputfile('*.json', 'Save scenario', defaultFile);
+            if isequal(fileName, 0) || isequal(filePath, 0)
+                return;
+            end
+
+            fullName = fullfile(filePath, fileName);
+            [app.AppState, ~, errMsg] = app_save_scenario_v9(app.AppState, fullName);
+
+            if ~isempty(errMsg)
+                app.ValidationMessagesTextArea.Value = { ...
+                    'Save failed.'; ...
+                    errMsg};
+                return;
+            end
+
+            refreshValidationDisplay(app);
+
+        end
+
+        % Button pushed function: ExportResultsButton
+        function ExportResultsButtonPushed(app, event)
+            answer = inputdlg('Export base name:', 'Export results', 1, {'tb_screening_v9'});
+            if isempty(answer)
+                return;
+            end
+
+            baseName = strtrim(answer{1});
+            if isempty(baseName)
+                baseName = 'tb_screening_v9';
+            end
+
+            [app.AppState, ~, errMsg] = app_export_v9(app.AppState, baseName);
+
+            if ~isempty(errMsg)
+                app.TechnicalDetailsTextArea.Value = { ...
+                    'Export failed.'; ...
+                    errMsg};
+                return;
+            end
+            refreshResultsDisplay(app);
+        end
+
+        % Value changed function: LtbiPrevalenceEditField
+        function LtbiPrevalenceEditFieldValueChanged(app, event)
+             InputValueChanged(app, event);
+
+        end
+
+        % Value changed function: ActiveTBPrevalenceEditField
+        function ActiveTBPrevalenceEditFieldValueChanged(app, event)
+             InputValueChanged(app, event);
+
+        end
+
+        % Value changed function: TestTypeDropDown
+        function TestTypeDropDownValueChanged(app, event)
+             InputValueChanged(app, event);
+
+        end
+
+        % Value changed function: RegimenDropDown
+        function RegimenRegimenDropDownValueChanged(app, event)
+             InputValueChanged(app, event);
+
+        end
+
+        % Value changed function: ScreeningStrategyDropDown
+        function ScreeningStrategyDropDownValueChanged(app, event)
+             InputValueChanged(app, event);
+
+        end
+
+        % Value changed function: ScreenCoverageEditField
+        function ScreenCoverageEditFieldValueChanged(app, event)
+             InputValueChanged(app, event);
+
+        end
+
+        % Value changed function: PStartTPTEditField
+        function PStartTPTEditFieldValueChanged(app, event)
+             InputValueChanged(app, event);
+
+        end
+
+        % Value changed function: RegimenPCompleteEditField
+        function RegimenPCompleteEditFieldValueChanged(app, event)
+             InputValueChanged(app, event);
+        end
+
+        % Value changed function: RegimenADRstopEditField
+        function RegimenADRstopEditFieldValueChanged(app, event)
+             InputValueChanged(app, event);
+
+        end
+
+        % Value changed function: RegimenEffFullEditField
+        function RegimenEffFullEditFieldValueChanged(app, event)
+             InputValueChanged(app, event);
+
+        end
+
+        % Value changed function: NRepsEditField
+        function NRepsEditFieldValueChanged(app, event)
+             InputValueChanged(app, event);
+
+        end
+
+        % Value changed function: ScenarioLabelEditField
+        function ScenarioLabelEditFieldValueChanged(app, event)
+            InputValueChanged(app, event);
+            
+        end
+
+        % Value changed function: UseDefaultsCheckBox
+        function UseDefaultsCheckBoxValueChanged(app, event)
+            InputValueChanged(app, event);
+            
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [100 100 1272 988];
+            app.UIFigure.Name = 'MATLAB App';
+
+            % Create MainTabGroup
+            app.MainTabGroup = uitabgroup(app.UIFigure);
+            app.MainTabGroup.Position = [19 259 968 719];
+
+            % Create ScenarioTab
+            app.ScenarioTab = uitab(app.MainTabGroup);
+            app.ScenarioTab.Title = 'Scenario';
+
+            % Create ScenarioLabel
+            app.ScenarioLabel = uilabel(app.ScenarioTab);
+            app.ScenarioLabel.HorizontalAlignment = 'right';
+            app.ScenarioLabel.Position = [131 591 85 22];
+            app.ScenarioLabel.Text = 'Scenario Label';
+
+            % Create ScenarioLabelEditField
+            app.ScenarioLabelEditField = uieditfield(app.ScenarioTab, 'text');
+            app.ScenarioLabelEditField.ValueChangedFcn = createCallbackFcn(app, @ScenarioLabelEditFieldValueChanged, true);
+            app.ScenarioLabelEditField.Position = [231 591 100 22];
+            app.ScenarioLabelEditField.Value = 'DEFAULT';
+
+            % Create UseDefaultsCheckBox
+            app.UseDefaultsCheckBox = uicheckbox(app.ScenarioTab);
+            app.UseDefaultsCheckBox.ValueChangedFcn = createCallbackFcn(app, @UseDefaultsCheckBoxValueChanged, true);
+            app.UseDefaultsCheckBox.Text = 'Use Defaults';
+            app.UseDefaultsCheckBox.Position = [144 452 90 22];
+
+            % Create SaveScenarioButton
+            app.SaveScenarioButton = uibutton(app.ScenarioTab, 'push');
+            app.SaveScenarioButton.ButtonPushedFcn = createCallbackFcn(app, @SaveScenarioButtonPushed, true);
+            app.SaveScenarioButton.Position = [144 332 100 22];
+            app.SaveScenarioButton.Text = 'Save Scenario';
+
+            % Create LoadScenarioButton
+            app.LoadScenarioButton = uibutton(app.ScenarioTab, 'push');
+            app.LoadScenarioButton.ButtonPushedFcn = createCallbackFcn(app, @LoadScenarioButtonPushed, true);
+            app.LoadScenarioButton.Position = [139 656 100 22];
+            app.LoadScenarioButton.Text = 'Load Scenario';
+
+            % Create InputsTab
+            app.InputsTab = uitab(app.MainTabGroup);
+            app.InputsTab.Title = 'Inputs';
+
+            % Create TBIprevalenceLabel
+            app.TBIprevalenceLabel = uilabel(app.InputsTab);
+            app.TBIprevalenceLabel.HorizontalAlignment = 'right';
+            app.TBIprevalenceLabel.Position = [88 578 86 22];
+            app.TBIprevalenceLabel.Text = 'TBI prevalence';
+
+            % Create LtbiPrevalenceEditField
+            app.LtbiPrevalenceEditField = uieditfield(app.InputsTab, 'numeric');
+            app.LtbiPrevalenceEditField.ValueChangedFcn = createCallbackFcn(app, @LtbiPrevalenceEditFieldValueChanged, true);
+            app.LtbiPrevalenceEditField.Position = [189 578 100 22];
+
+            % Create ActiveTBprevalenceLabel
+            app.ActiveTBprevalenceLabel = uilabel(app.InputsTab);
+            app.ActiveTBprevalenceLabel.HorizontalAlignment = 'right';
+            app.ActiveTBprevalenceLabel.Position = [40 501 118 22];
+            app.ActiveTBprevalenceLabel.Text = 'Active TB prevalence';
+
+            % Create ActiveTBPrevalenceEditField
+            app.ActiveTBPrevalenceEditField = uieditfield(app.InputsTab, 'numeric');
+            app.ActiveTBPrevalenceEditField.ValueChangedFcn = createCallbackFcn(app, @ActiveTBPrevalenceEditFieldValueChanged, true);
+            app.ActiveTBPrevalenceEditField.Position = [173 501 100 22];
+
+            % Create TesttypeLabel
+            app.TesttypeLabel = uilabel(app.InputsTab);
+            app.TesttypeLabel.HorizontalAlignment = 'right';
+            app.TesttypeLabel.Position = [131 397 56 22];
+            app.TesttypeLabel.Text = 'Test Type';
+
+            % Create TestTypeDropDown
+            app.TestTypeDropDown = uidropdown(app.InputsTab);
+            app.TestTypeDropDown.Items = {'IGRA', 'TST'};
+            app.TestTypeDropDown.ValueChangedFcn = createCallbackFcn(app, @TestTypeDropDownValueChanged, true);
+            app.TestTypeDropDown.Position = [202 397 100 22];
+            app.TestTypeDropDown.Value = 'IGRA';
+
+            % Create RegimenDropDownLabel
+            app.RegimenDropDownLabel = uilabel(app.InputsTab);
+            app.RegimenDropDownLabel.HorizontalAlignment = 'right';
+            app.RegimenDropDownLabel.Position = [157 332 53 22];
+            app.RegimenDropDownLabel.Text = 'Regimen';
+
+            % Create RegimenDropDown
+            app.RegimenDropDown = uidropdown(app.InputsTab);
+            app.RegimenDropDown.Items = {'3HP', '4R', '3HR', '6H', '9H'};
+            app.RegimenDropDown.ValueChangedFcn = createCallbackFcn(app, @RegimenRegimenDropDownValueChanged, true);
+            app.RegimenDropDown.Position = [225 332 100 22];
+            app.RegimenDropDown.Value = '3HP';
+
+            % Create ScreeningStrategyDropDownLabel
+            app.ScreeningStrategyDropDownLabel = uilabel(app.InputsTab);
+            app.ScreeningStrategyDropDownLabel.HorizontalAlignment = 'right';
+            app.ScreeningStrategyDropDownLabel.Position = [99 226 107 22];
+            app.ScreeningStrategyDropDownLabel.Text = 'Screening Strategy';
+
+            % Create ScreeningStrategyDropDown
+            app.ScreeningStrategyDropDown = uidropdown(app.InputsTab);
+            app.ScreeningStrategyDropDown.Items = {'random', 'ltbi', 'cure', 'prevent'};
+            app.ScreeningStrategyDropDown.ValueChangedFcn = createCallbackFcn(app, @ScreeningStrategyDropDownValueChanged, true);
+            app.ScreeningStrategyDropDown.Position = [221 226 100 22];
+            app.ScreeningStrategyDropDown.Value = 'random';
+
+            % Create ScreenCoverageEditFieldLabel
+            app.ScreenCoverageEditFieldLabel = uilabel(app.InputsTab);
+            app.ScreenCoverageEditFieldLabel.HorizontalAlignment = 'right';
+            app.ScreenCoverageEditFieldLabel.Position = [563 578 98 22];
+            app.ScreenCoverageEditFieldLabel.Text = 'Screen Coverage';
+
+            % Create ScreenCoverageEditField
+            app.ScreenCoverageEditField = uieditfield(app.InputsTab, 'numeric');
+            app.ScreenCoverageEditField.ValueChangedFcn = createCallbackFcn(app, @ScreenCoverageEditFieldValueChanged, true);
+            app.ScreenCoverageEditField.Position = [676 578 100 22];
+
+            % Create PStartTPTEditFieldLabel
+            app.PStartTPTEditFieldLabel = uilabel(app.InputsTab);
+            app.PStartTPTEditFieldLabel.HorizontalAlignment = 'right';
+            app.PStartTPTEditFieldLabel.Position = [611 501 67 22];
+            app.PStartTPTEditFieldLabel.Text = 'P Start TPT';
+
+            % Create PStartTPTEditField
+            app.PStartTPTEditField = uieditfield(app.InputsTab, 'numeric');
+            app.PStartTPTEditField.ValueChangedFcn = createCallbackFcn(app, @PStartTPTEditFieldValueChanged, true);
+            app.PStartTPTEditField.Position = [693 501 100 22];
+
+            % Create RegimenPCompleteEditFieldLabel
+            app.RegimenPCompleteEditFieldLabel = uilabel(app.InputsTab);
+            app.RegimenPCompleteEditFieldLabel.HorizontalAlignment = 'right';
+            app.RegimenPCompleteEditFieldLabel.Position = [549 418 112 22];
+            app.RegimenPCompleteEditFieldLabel.Text = 'RegimenPComplete';
+
+            % Create RegimenPCompleteEditField
+            app.RegimenPCompleteEditField = uieditfield(app.InputsTab, 'numeric');
+            app.RegimenPCompleteEditField.ValueChangedFcn = createCallbackFcn(app, @RegimenPCompleteEditFieldValueChanged, true);
+            app.RegimenPCompleteEditField.Position = [676 418 100 22];
+
+            % Create RegimenADRstopEditFieldLabel
+            app.RegimenADRstopEditFieldLabel = uilabel(app.InputsTab);
+            app.RegimenADRstopEditFieldLabel.HorizontalAlignment = 'right';
+            app.RegimenADRstopEditFieldLabel.Position = [577 311 101 22];
+            app.RegimenADRstopEditFieldLabel.Text = 'RegimenADRstop';
+
+            % Create RegimenADRstopEditField
+            app.RegimenADRstopEditField = uieditfield(app.InputsTab, 'numeric');
+            app.RegimenADRstopEditField.ValueChangedFcn = createCallbackFcn(app, @RegimenADRstopEditFieldValueChanged, true);
+            app.RegimenADRstopEditField.Position = [693 311 100 22];
+
+            % Create RegimenEffFullEditFieldLabel
+            app.RegimenEffFullEditFieldLabel = uilabel(app.InputsTab);
+            app.RegimenEffFullEditFieldLabel.HorizontalAlignment = 'right';
+            app.RegimenEffFullEditFieldLabel.Position = [581 186 87 22];
+            app.RegimenEffFullEditFieldLabel.Text = 'RegimenEffFull';
+
+            % Create RegimenEffFullEditField
+            app.RegimenEffFullEditField = uieditfield(app.InputsTab, 'numeric');
+            app.RegimenEffFullEditField.ValueChangedFcn = createCallbackFcn(app, @RegimenEffFullEditFieldValueChanged, true);
+            app.RegimenEffFullEditField.Position = [683 186 100 22];
+
+            % Create AdvancedTab
+            app.AdvancedTab = uitab(app.MainTabGroup);
+            app.AdvancedTab.Title = 'Advanced';
+
+            % Create NRepsEditFieldLabel
+            app.NRepsEditFieldLabel = uilabel(app.AdvancedTab);
+            app.NRepsEditFieldLabel.HorizontalAlignment = 'right';
+            app.NRepsEditFieldLabel.Position = [167 543 42 22];
+            app.NRepsEditFieldLabel.Text = 'NReps';
+
+            % Create NRepsEditField
+            app.NRepsEditField = uieditfield(app.AdvancedTab, 'numeric');
+            app.NRepsEditField.ValueChangedFcn = createCallbackFcn(app, @NRepsEditFieldValueChanged, true);
+            app.NRepsEditField.Position = [224 543 100 22];
+
+            % Create RunTab
+            app.RunTab = uitab(app.MainTabGroup);
+            app.RunTab.Title = 'Run';
+
+            % Create RunButton
+            app.RunButton = uibutton(app.RunTab, 'push');
+            app.RunButton.ButtonPushedFcn = createCallbackFcn(app, @RunButtonPushed, true);
+            app.RunButton.Position = [166 599 100 22];
+            app.RunButton.Text = 'Run Scenario';
+
+            % Create ValidateButton
+            app.ValidateButton = uibutton(app.RunTab, 'push');
+            app.ValidateButton.ButtonPushedFcn = createCallbackFcn(app, @ValidateButtonPushed, true);
+            app.ValidateButton.Position = [166 635 100 22];
+            app.ValidateButton.Text = 'Validate Inputs';
+
+            % Create ValidationMessagesLabel
+            app.ValidationMessagesLabel = uilabel(app.RunTab);
+            app.ValidationMessagesLabel.HorizontalAlignment = 'right';
+            app.ValidationMessagesLabel.Position = [158 488 115 22];
+            app.ValidationMessagesLabel.Text = 'Validation Messages';
+
+            % Create ValidationMessagesTextArea
+            app.ValidationMessagesTextArea = uitextarea(app.RunTab);
+            app.ValidationMessagesTextArea.Position = [288 452 150 60];
+
+            % Create ResultsTab
+            app.ResultsTab = uitab(app.MainTabGroup);
+            app.ResultsTab.Title = 'Results';
+
+            % Create HeadlineResultsTable
+            app.HeadlineResultsTable = uitable(app.ResultsTab);
+            app.HeadlineResultsTable.ColumnName = {'Column 1'; 'Column 2'; 'Column 3'; 'Column 4'};
+            app.HeadlineResultsTable.RowName = {};
+            app.HeadlineResultsTable.Position = [1 147 606 549];
+
+            % Create TechnicalDetailsLabel
+            app.TechnicalDetailsLabel = uilabel(app.ResultsTab);
+            app.TechnicalDetailsLabel.HorizontalAlignment = 'right';
+            app.TechnicalDetailsLabel.Position = [44 243 95 22];
+            app.TechnicalDetailsLabel.Text = 'Technical Details';
+
+            % Create TechnicalDetailsTextArea
+            app.TechnicalDetailsTextArea = uitextarea(app.ResultsTab);
+            app.TechnicalDetailsTextArea.Position = [154 207 150 60];
+
+            % Create DownloadsTab
+            app.DownloadsTab = uitab(app.MainTabGroup);
+            app.DownloadsTab.Title = 'Downloads';
+
+            % Create ExportResultsButton
+            app.ExportResultsButton = uibutton(app.DownloadsTab, 'push');
+            app.ExportResultsButton.ButtonPushedFcn = createCallbackFcn(app, @ExportResultsButtonPushed, true);
+            app.ExportResultsButton.Position = [55 598 100 22];
+            app.ExportResultsButton.Text = 'Export Results';
+
+            % Create DownloadsTable
+            app.DownloadsTable = uitable(app.DownloadsTab);
+            app.DownloadsTable.ColumnName = {'Column 1'; 'Column 2'; 'Column 3'; 'Column 4'};
+            app.DownloadsTable.RowName = {};
+            app.DownloadsTable.Position = [180 136 291 526];
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = APYV9WebApp
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            % Execute the startup function
+            runStartupFcn(app, @startupFcn)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end]]></w:t></w:r></w:p></w:body></w:document>
