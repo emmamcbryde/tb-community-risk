@@ -115,9 +115,23 @@
         end
 
         function refreshResultsDisplay(app)
+            isStale = isstruct(app.AppState) && isfield(app.AppState, 'ResultsAreStale') ...
+                && logical(app.AppState.ResultsAreStale);
+            if isStale
+                app.ResultsTab.Title = 'Results (stale)';
+            else
+                app.ResultsTab.Title = 'Results';
+            end
+
             if isempty(app.AppState) || isempty(app.AppState.LastBundle)
                 app.setUITableData(app.HeadlineResultsTable, [], "No results available");
-                app.TechnicalDetailsTextArea.Value = {'No technical details available.'};
+                if isStale
+                    app.TechnicalDetailsTextArea.Value = { ...
+                        'STALE RESULTS: Inputs have changed. Re-run the scenario before using these outputs.'; ...
+                        'No technical details available.'};
+                else
+                    app.TechnicalDetailsTextArea.Value = {'No technical details available.'};
+                end
                 app.setUITableData(app.DownloadsTable, [], "No downloads available yet");
                 return;
             end
@@ -142,8 +156,8 @@
             app.setUITableData(app.HeadlineResultsTable, headlineTbl, "No results available");
 
             technicalLines = {};
-            if app.AppState.ResultsAreStale
-                technicalLines{end+1,1} = 'Results are stale. Re-run the scenario to refresh outputs.';
+            if isStale
+                technicalLines{end+1,1} = 'STALE RESULTS: Inputs have changed. Re-run the scenario before using these outputs.';
             end
 
             if isstruct(displayModel) && isfield(displayModel, 'technical') ...

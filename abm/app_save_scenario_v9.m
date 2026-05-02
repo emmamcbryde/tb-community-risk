@@ -5,6 +5,13 @@ saveInfo = struct();
 errMsg = '';
 
 try
+    report = collect_validation_issues_v9(appState.CurrentConfig);
+    appState.LastValidationReport = report;
+    if isfield(report, 'errors') && ~isempty(report.errors)
+        errMsg = 'Save blocked: fix fatal validation errors before saving this scenario.';
+        return;
+    end
+
     saveInfo = save_scenario_v9(appState.CurrentConfig, filename);
     appState.LastScenarioFile = filename;
 catch ME

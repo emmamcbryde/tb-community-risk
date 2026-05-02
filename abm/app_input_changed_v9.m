@@ -7,13 +7,20 @@ report = collect_validation_issues_v9(cfg);
 appState.CurrentConfig = cfg;
 appState.CurrentUIState = uiState;
 appState.LastValidationReport = report;
-appState.ResultsAreStale = true;
-appState.LastRunSucceeded = false;
-appState.LastExports = [];
-appState.LastDoNothing = [];
-appState.LastAttributableRisk = [];
-appState.LastTargetedVsRandom = [];
-appState.LastCharts = [];
+
+resultsStillFresh = isfield(appState, 'LastRunConfig') && ~isempty(appState.LastRunConfig) ...
+    && isfield(appState, 'LastRunSucceeded') && logical(appState.LastRunSucceeded) ...
+    && configs_substantively_equal_v9(cfg, appState.LastRunConfig);
+
+appState.ResultsAreStale = ~resultsStillFresh;
+if ~resultsStillFresh
+    appState.LastRunSucceeded = false;
+    appState.LastExports = [];
+    appState.LastDoNothing = [];
+    appState.LastAttributableRisk = [];
+    appState.LastTargetedVsRandom = [];
+    appState.LastCharts = [];
+end
 
 validationDisplay = validation_report_to_display_v9(report);
 resultsDisplay = results_bundle_to_display_v9(appState.LastBundle);
