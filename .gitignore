@@ -23,3 +23,4 @@ abm/output/*
 *.asv
 abm/app_code.txt
 *.json
+abm/just_for_executing_codex_checks.m

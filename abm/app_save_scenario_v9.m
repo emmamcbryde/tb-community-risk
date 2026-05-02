@@ -12,9 +12,18 @@ try
         return;
     end
 
-    saveInfo = save_scenario_v9(appState.CurrentConfig, filename);
+    saveInfo = save_scenario_v9(appState.CurrentConfig, filename, ...
+        get_if_present(appState, 'CurrentEconomicsConfig'));
     appState.LastScenarioFile = filename;
 catch ME
     errMsg = ME.message;
+end
+end
+
+function value = get_if_present(s, fieldName)
+if isstruct(s) && isfield(s, fieldName)
+    value = s.(fieldName);
+else
+    value = [];
 end
 end

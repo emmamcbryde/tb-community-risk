@@ -12,6 +12,7 @@ args = add_if_present(args, 'targetedVsRandom', get_if_present(appState, 'LastTa
 args = add_if_present(args, 'doNothing', get_if_present(appState, 'LastDoNothing'));
 args = add_if_present(args, 'attributableRisk', get_if_present(appState, 'LastAttributableRisk'));
 args = add_if_present(args, 'charts', get_if_present(appState, 'LastCharts'));
+args = add_if_present(args, 'economics', get_if_present(appState, 'LastEconomics'));
 args = add_if_present(args, 'downloads', get_if_present(appState, 'LastExports'));
 
 appState.LastBundle = build_results_bundle_v9(appState.LastResults, args{:});

@@ -20,6 +20,9 @@ if ~resultsStillFresh
     appState.LastAttributableRisk = [];
     appState.LastTargetedVsRandom = [];
     appState.LastCharts = [];
+    appState.LastEconomics = [];
+    appState.LastEconomicsConfig = [];
+    appState.EconomicsAreStale = true;
 end
 
 validationDisplay = validation_report_to_display_v9(report);

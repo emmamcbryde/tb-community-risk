@@ -10,6 +10,7 @@ displayModel.targetedVsRandom = get_or_empty(bundle, 'targetedVsRandom');
 displayModel.doNothing = get_or_empty(bundle, 'doNothing');
 displayModel.attributableRisk = get_or_empty(bundle, 'attributableRisk');
 displayModel.charts = get_or_empty(bundle, 'charts');
+displayModel.economics = economics_display_or_empty(bundle);
 displayModel.downloads = get_or_empty(bundle, 'downloads');
 
 displayModel.visibleSections = {};
@@ -28,5 +29,15 @@ if isstruct(s) && isfield(s, fieldName)
     value = s.(fieldName);
 else
     value = struct();
+end
+end
+
+function value = economics_display_or_empty(bundle)
+value = get_or_empty(bundle, 'economics');
+if ~isstruct(value) || ~isfield(value, 'available') || ~logical(value.available)
+    return;
+end
+if isfield(value, 'summaryTable') && istable(value.summaryTable)
+    value.summaryRows = table2struct(value.summaryTable, 'ToScalar', false);
 end
 end

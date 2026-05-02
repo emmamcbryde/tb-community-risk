@@ -33,6 +33,9 @@ try
     appState.LastAttributableRisk = [];
     appState.LastTargetedVsRandom = [];
     appState.LastCharts = [];
+    appState.LastEconomics = [];
+    appState.LastEconomicsConfig = [];
+    appState.EconomicsAreStale = true;
     appState = app_refresh_bundle_v9(appState);
 catch ME
     appState.ResultsAreStale = true;

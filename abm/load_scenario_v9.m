@@ -14,6 +14,8 @@ loadInfo.filename = filename;
 loadInfo.contractVersion = '';
 loadInfo.success = false;
 loadInfo.messages = {};
+loadInfo.economicsConfig = [];
+loadInfo.hasEconomics = false;
 if isstruct(payload) && isfield(payload, 'contractVersion')
     loadInfo.contractVersion = char(string(payload.contractVersion));
 end
@@ -28,6 +30,10 @@ loadedConfig = normalize_defaults_flag(payload.config);
 config = merge_loaded_struct(config, loadedConfig);
 if isfield(payload.config, 'ageDistributionTableRows')
     config.ageDistributionTable = rows_to_table(payload.config.ageDistributionTableRows);
+end
+if isfield(payload, 'economics') && isstruct(payload.economics)
+    loadInfo.economicsConfig = merge_loaded_struct(build_default_economics_config_v9(), payload.economics);
+    loadInfo.hasEconomics = true;
 end
 
 report = collect_validation_issues_v9(config);

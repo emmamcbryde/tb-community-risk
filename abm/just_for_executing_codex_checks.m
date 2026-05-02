@@ -88,3 +88,29 @@ cfg.nReps = 10;
 
 results = run_scenario_v9(cfg);
 disp(results.calibration)
+
+%%
+clear functions
+rehash
+
+cfg = build_default_config_v9();
+cfg.N = 200;
+cfg.nReps = 10;
+
+results = run_scenario_v9(cfg);
+
+econCfg = build_economics_preset_kwab150_v9();
+econCfg.costs.falsePositiveIncrementalPerPerson = 0;
+econCfg.costs.programSetupTotal = 0;
+econCfg.costs.programRunningTotal = 0;
+
+econ = run_health_economics_v9(results, econCfg);
+
+bundle = build_results_bundle_v9(results, 'economics', econ);
+displayModel = results_bundle_to_display_v9(bundle);
+
+disp(bundle.economics.available)
+disp(displayModel.economics.available)
+disp(fieldnames(bundle.economics))
+disp(fieldnames(displayModel.economics))
+disp(displayModel.economics.summaryRows)
