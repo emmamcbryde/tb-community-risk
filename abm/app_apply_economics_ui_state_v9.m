@@ -11,7 +11,22 @@ for i = 1:numel(names)
     if ~isprop(app, name)
         continue;
     end
-    write_component_value(app.(name), uiState.fieldValues.(name));
+    %write_component_value(app.(name), uiState.fieldValues.(name));
+    try
+        value = uiState.fieldValues.(name);
+
+        if strcmp(name, 'ProgramCostBasisDropDown')
+            if isempty(value) || (ischar(value) && isempty(strtrim(value))) || ...
+                    (isstring(value) && all(strlength(strtrim(value)) == 0))
+                value = 'unspecified';
+            end
+        end
+
+        write_component_value(app.(name), value);
+    catch ME
+        error('Failed writing economics component "%s" with value of class "%s": %s', ...
+            name, class(uiState.fieldValues.(name)), ME.message);
+    end
 end
 end
 
@@ -25,7 +40,28 @@ if isempty(value)
     end
     return;
 end
+if isprop(component, 'Items')
+    items = string(component.Items);
+    sval = string(value);
 
+    if strlength(strtrim(sval)) == 0
+        idx = find(items == "unspecified", 1);
+        if ~isempty(idx)
+            component.Value = char(items(idx));
+        end
+        return;
+    end
+
+    idx = find(items == sval, 1);
+    if isempty(idx)
+        idx = find(strcmpi(items, sval), 1);
+    end
+
+    if ~isempty(idx)
+        component.Value = char(items(idx));
+    end
+    return;
+end
 if isprop(component, 'Value')
     if isprop(component, 'Items')
         [hasMatch, matchedValue] = match_dropdown_item(component.Items, value);
