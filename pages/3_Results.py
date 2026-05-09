@@ -22,6 +22,7 @@ metadata = bundle.get("metadata", {})
 headline = bundle.get("headline", {})
 technical = bundle.get("technical", {})
 downloads = bundle.get("downloads", {})
+economics = st.session_state.get("economics_results")
 
 if st.session_state.get("results_stale"):
     st.warning("These results are stale because scenario inputs changed after the last run.")
@@ -48,6 +49,32 @@ if headline.get("summaryRows"):
     )
 if not headline.get("keyMetricsRows") and not headline.get("summaryRows"):
     st.json(headline, expanded=False)
+
+st.subheader("Economics")
+if not economics:
+    st.info("Economics has not been run for these results yet.")
+    st.page_link("pages/4_Economics.py", label="Open Economics page")
+else:
+    if st.session_state.get("dirty_economics") or st.session_state.get("results_stale"):
+        st.warning("Economics results are stale. Open the Economics page and rerun economics.")
+    else:
+        st.success("Economics results are available.")
+
+    summary_rows = economics.get("summaryRows") or []
+    if summary_rows:
+        st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
+    else:
+        st.info("No economics summary rows were returned.")
+
+    status = economics.get("status", {})
+    status_rows = [
+        {"field": "last_economics_run_at", "value": st.session_state.get("last_economics_run_at")},
+        {"field": "isComplete", "value": status.get("isComplete")},
+        {"field": "missingInputs", "value": status.get("missingInputs")},
+        {"field": "notCalculated", "value": status.get("notCalculated")},
+    ]
+    st.dataframe(arrow_safe_dataframe(status_rows), width="stretch", hide_index=True)
+    st.page_link("pages/4_Economics.py", label="Open Economics page")
 
 st.subheader("Technical Details")
 technical_summary = {
