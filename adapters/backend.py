@@ -18,6 +18,9 @@ class Backend(Protocol):
     def default_economics_config(self) -> JsonDict:
         ...
 
+    def economics_preset_kwab150(self) -> JsonDict:
+        ...
+
     def validate_config(self, config: JsonDict) -> JsonDict:
         ...
 
@@ -44,6 +47,13 @@ class Backend(Protocol):
         ...
 
     def run_economics(self, results: JsonDict, economics_config: JsonDict) -> JsonDict:
+        ...
+
+    def run_economics_for_config(
+        self,
+        config: JsonDict,
+        economics_config: JsonDict,
+    ) -> JsonDict:
         ...
 
     def run_scenario_bundle(

@@ -27,6 +27,7 @@ def init_session_state() -> None:
         "dirty_config": False,
         "dirty_economics": False,
         "results_stale": False,
+        "last_economics_run_at": "",
         "last_run_at": "",
         "last_validated_at": "",
         "messages": [],
@@ -57,6 +58,18 @@ def mark_config_changed() -> None:
     st.session_state["validation_report"] = None
     if st.session_state.get("results_bundle"):
         st.session_state["results_stale"] = True
+    if st.session_state.get("economics_results"):
+        st.session_state["dirty_economics"] = True
+
+
+def mark_economics_changed() -> None:
+    if st.session_state.get("economics_results"):
+        st.session_state["dirty_economics"] = True
+
+
+def mark_economics_completed() -> None:
+    st.session_state["last_economics_run_at"] = datetime.now(timezone.utc).isoformat()
+    st.session_state["dirty_economics"] = False
 
 
 def sync_backend_status(status: dict[str, Any]) -> None:

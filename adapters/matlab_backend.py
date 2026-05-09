@@ -45,6 +45,9 @@ class MatlabBackend:
     def default_economics_config(self) -> JsonDict:
         return self._call("build_default_economics_config_v9")
 
+    def economics_preset_kwab150(self) -> JsonDict:
+        return self._call("build_economics_preset_kwab150_v9")
+
     def validate_config(self, config: JsonDict) -> JsonDict:
         return self._call_json("collect_validation_issues_json_v9", config)
 
@@ -86,6 +89,13 @@ class MatlabBackend:
 
     def run_economics(self, results: JsonDict, economics_config: JsonDict) -> JsonDict:
         return self._call("run_health_economics_v9", results, economics_config)
+
+    def run_economics_for_config(
+        self,
+        config: JsonDict,
+        economics_config: JsonDict,
+    ) -> JsonDict:
+        return self._call_json("run_health_economics_json_v9", config, economics_config)
 
     def run_scenario_bundle(
         self,
