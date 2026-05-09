@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 
+import pandas as pd
 import streamlit as st
 
 from app.display import arrow_safe_dataframe
@@ -175,6 +177,15 @@ def economics_overview_rows(config: dict) -> list[dict[str, object]]:
     ]
 
 
+def economics_summary_csv(economics_results: dict) -> bytes:
+    rows = economics_results.get("summaryRows") or []
+    return pd.DataFrame(rows).to_csv(index=False).encode("utf-8")
+
+
+def economics_assumptions_json(config: dict) -> str:
+    return json.dumps(config, indent=2, sort_keys=True)
+
+
 cols = st.columns(2)
 if cols[0].button("Load economics defaults", type="primary"):
     try:
@@ -308,6 +319,12 @@ st.dataframe(
     width="content",
     hide_index=True,
 )
+st.download_button(
+    "Download economics assumptions JSON",
+    data=economics_assumptions_json(econ_config),
+    file_name="economics_assumptions.json",
+    mime="application/json",
+)
 
 can_run = bool(config and results_bundle and not st.session_state.get("results_stale"))
 if not config:
@@ -336,6 +353,12 @@ if econ_results:
     summary_rows = econ_results.get("summaryRows") or []
     if summary_rows:
         st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
+        st.download_button(
+            "Download economics summary CSV",
+            data=economics_summary_csv(econ_results),
+            file_name="economics_summary.csv",
+            mime="text/csv",
+        )
     else:
         st.info("No economics summary rows were returned.")
 
@@ -352,3 +375,5 @@ if econ_results:
         },
         expanded=False,
     )
+else:
+    st.info("Run economics to enable the economics summary CSV download.")

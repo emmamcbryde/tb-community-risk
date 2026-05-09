@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from app.display import arrow_safe_dataframe
@@ -23,6 +25,16 @@ headline = bundle.get("headline", {})
 technical = bundle.get("technical", {})
 downloads = bundle.get("downloads", {})
 economics = st.session_state.get("economics_results")
+economics_config = st.session_state.get("economics_config")
+
+
+def economics_summary_csv(economics_results: dict) -> bytes:
+    rows = economics_results.get("summaryRows") or []
+    return pd.DataFrame(rows).to_csv(index=False).encode("utf-8")
+
+
+def economics_assumptions_json(config: dict) -> str:
+    return json.dumps(config, indent=2, sort_keys=True)
 
 if st.session_state.get("results_stale"):
     st.warning("These results are stale because scenario inputs changed after the last run.")
@@ -53,6 +65,13 @@ if not headline.get("keyMetricsRows") and not headline.get("summaryRows"):
 st.subheader("Economics")
 if not economics:
     st.info("Economics has not been run for these results yet.")
+    if economics_config:
+        st.download_button(
+            "Download economics assumptions JSON",
+            data=economics_assumptions_json(economics_config),
+            file_name="economics_assumptions.json",
+            mime="application/json",
+        )
     st.page_link("pages/4_Economics.py", label="Open Economics page")
 else:
     if st.session_state.get("dirty_economics") or st.session_state.get("results_stale"):
@@ -63,8 +82,22 @@ else:
     summary_rows = economics.get("summaryRows") or []
     if summary_rows:
         st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
+        st.download_button(
+            "Download economics summary CSV",
+            data=economics_summary_csv(economics),
+            file_name="economics_summary.csv",
+            mime="text/csv",
+        )
     else:
         st.info("No economics summary rows were returned.")
+
+    if economics_config:
+        st.download_button(
+            "Download economics assumptions JSON",
+            data=economics_assumptions_json(economics_config),
+            file_name="economics_assumptions.json",
+            mime="application/json",
+        )
 
     status = economics.get("status", {})
     status_rows = [
