@@ -25,6 +25,14 @@ ECONOMICS_WIDGET_KEYS = [
     "econ_currency_code",
     "econ_price_year",
     "econ_location_label",
+    "econ_test_igra",
+    "econ_test_tst",
+    "econ_regimen_3hp",
+    "econ_regimen_4r",
+    "econ_regimen_3hr",
+    "econ_regimen_6h",
+    "econ_regimen_9h",
+    "econ_false_positive_incremental",
     "econ_active_tb_cost",
     "econ_setup_total",
     "econ_running_total",
@@ -34,6 +42,17 @@ ECONOMICS_WIDGET_FIELDS = {
     "econ_currency_code": ("metadata", "currencyCode"),
     "econ_price_year": ("metadata", "priceYear"),
     "econ_location_label": ("metadata", "locationLabel"),
+    "econ_test_igra": ("costs", "test", "IGRA"),
+    "econ_test_tst": ("costs", "test", "TST"),
+    "econ_regimen_3hp": ("costs", "regimen", "x3HP"),
+    "econ_regimen_4r": ("costs", "regimen", "x4R"),
+    "econ_regimen_3hr": ("costs", "regimen", "x3HR"),
+    "econ_regimen_6h": ("costs", "regimen", "x6H"),
+    "econ_regimen_9h": ("costs", "regimen", "x9H"),
+    "econ_false_positive_incremental": (
+        "costs",
+        "falsePositiveIncrementalPerPerson",
+    ),
     "econ_active_tb_cost": ("costs", "activeTBDiseasePerCase"),
     "econ_setup_total": ("costs", "programSetupTotal"),
     "econ_running_total": ("costs", "programRunningTotal"),
@@ -64,8 +83,8 @@ def widget_value(value: object) -> str:
 
 
 def sync_econ_widgets_from_config(config: dict) -> None:
-    for key, (section, field) in ECONOMICS_WIDGET_FIELDS.items():
-        value = config.get(section, {}).get(field)
+    for key, path in ECONOMICS_WIDGET_FIELDS.items():
+        value = nested_get(config, path)
         st.session_state[key] = widget_value(value)
 
 
@@ -88,6 +107,8 @@ def economics_config_from_widgets(base_config: dict) -> dict:
     config = deepcopy(base_config)
     ensure_nested(config, "metadata")
     ensure_nested(config, "costs")
+    ensure_nested(config, "costs", "test")
+    ensure_nested(config, "costs", "regimen")
     config["metadata"]["currencyCode"] = str(
         st.session_state.get("econ_currency_code", "")
     ).strip()
@@ -98,6 +119,16 @@ def economics_config_from_widgets(base_config: dict) -> dict:
     config["metadata"]["locationLabel"] = str(
         st.session_state.get("econ_location_label", "")
     ).strip()
+    config["costs"]["test"]["IGRA"] = parse_optional_number("econ_test_igra")
+    config["costs"]["test"]["TST"] = parse_optional_number("econ_test_tst")
+    config["costs"]["regimen"]["x3HP"] = parse_optional_number("econ_regimen_3hp")
+    config["costs"]["regimen"]["x4R"] = parse_optional_number("econ_regimen_4r")
+    config["costs"]["regimen"]["x3HR"] = parse_optional_number("econ_regimen_3hr")
+    config["costs"]["regimen"]["x6H"] = parse_optional_number("econ_regimen_6h")
+    config["costs"]["regimen"]["x9H"] = parse_optional_number("econ_regimen_9h")
+    config["costs"]["falsePositiveIncrementalPerPerson"] = parse_optional_number(
+        "econ_false_positive_incremental"
+    )
     config["costs"]["activeTBDiseasePerCase"] = parse_optional_number(
         "econ_active_tb_cost"
     )
@@ -106,13 +137,35 @@ def economics_config_from_widgets(base_config: dict) -> dict:
     return config
 
 
+def nested_get(config: dict, path: tuple[str, ...]) -> object:
+    current: object = config
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
 def economics_overview_rows(config: dict) -> list[dict[str, object]]:
     metadata = config.get("metadata", {})
     costs = config.get("costs", {})
+    test_costs = costs.get("test", {})
+    regimen_costs = costs.get("regimen", {})
     return [
         {"field": "currencyCode", "value": metadata.get("currencyCode")},
         {"field": "priceYear", "value": metadata.get("priceYear")},
         {"field": "locationLabel", "value": metadata.get("locationLabel")},
+        {"field": "test.IGRA", "value": test_costs.get("IGRA")},
+        {"field": "test.TST", "value": test_costs.get("TST")},
+        {"field": "regimen.3HP", "value": regimen_costs.get("x3HP")},
+        {"field": "regimen.4R", "value": regimen_costs.get("x4R")},
+        {"field": "regimen.3HR", "value": regimen_costs.get("x3HR")},
+        {"field": "regimen.6H", "value": regimen_costs.get("x6H")},
+        {"field": "regimen.9H", "value": regimen_costs.get("x9H")},
+        {
+            "field": "falsePositiveIncrementalPerPerson",
+            "value": costs.get("falsePositiveIncrementalPerPerson"),
+        },
         {
             "field": "activeTBDiseasePerCase",
             "value": costs.get("activeTBDiseasePerCase"),
@@ -169,8 +222,11 @@ if st.session_state.get("dirty_economics") and st.session_state.get("economics_r
 st.subheader("Edit Economics Inputs")
 metadata = ensure_nested(econ_config, "metadata")
 costs = ensure_nested(econ_config, "costs")
+ensure_nested(econ_config, "costs", "test")
+ensure_nested(econ_config, "costs", "regimen")
 
 with st.form("economics_edits"):
+    st.markdown("Metadata")
     st.text_input(
         "Currency code",
         key="econ_currency_code",
@@ -182,6 +238,41 @@ with st.form("economics_edits"):
     st.text_input(
         "Location label",
         key="econ_location_label",
+    )
+    st.markdown("Test costs")
+    optional_number_input(
+        "IGRA test cost",
+        "econ_test_igra",
+    )
+    optional_number_input(
+        "TST cost",
+        "econ_test_tst",
+    )
+    st.markdown("Regimen costs")
+    optional_number_input(
+        "3HP regimen cost",
+        "econ_regimen_3hp",
+    )
+    optional_number_input(
+        "4R regimen cost",
+        "econ_regimen_4r",
+    )
+    optional_number_input(
+        "3HR regimen cost",
+        "econ_regimen_3hr",
+    )
+    optional_number_input(
+        "6H regimen cost",
+        "econ_regimen_6h",
+    )
+    optional_number_input(
+        "9H regimen cost",
+        "econ_regimen_9h",
+    )
+    st.markdown("Program and disease costs")
+    optional_number_input(
+        "False-positive incremental cost per person",
+        "econ_false_positive_incremental",
     )
     optional_number_input(
         "Active TB disease cost per case",
