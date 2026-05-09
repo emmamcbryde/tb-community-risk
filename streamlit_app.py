@@ -13,7 +13,7 @@ backend = get_backend()
 with st.sidebar:
     st.header("TB Community Risk")
     status = backend.status()
-    st.caption(f"APY backend: {status['name']}")
+    st.caption(f"APY MATLAB backend: {status['name']}")
     st.caption(f"MATLAB started: {status['started']}")
     if status.get("error"):
         st.error(status["error"])
