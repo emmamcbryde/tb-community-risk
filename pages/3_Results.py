@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
-from app.display import arrow_safe_dataframe
+from app.display import (
+    arrow_safe_dataframe,
+    economics_assumptions_json,
+    economics_summary_csv,
+    safe_download_stem,
+)
 from app.state import init_session_state
 
 
@@ -26,15 +29,7 @@ technical = bundle.get("technical", {})
 downloads = bundle.get("downloads", {})
 economics = st.session_state.get("economics_results")
 economics_config = st.session_state.get("economics_config")
-
-
-def economics_summary_csv(economics_results: dict) -> bytes:
-    rows = economics_results.get("summaryRows") or []
-    return pd.DataFrame(rows).to_csv(index=False).encode("utf-8")
-
-
-def economics_assumptions_json(config: dict) -> str:
-    return json.dumps(config, indent=2, sort_keys=True)
+scenario_label = metadata.get("scenarioLabel")
 
 if st.session_state.get("results_stale"):
     st.warning("These results are stale because scenario inputs changed after the last run.")
@@ -66,10 +61,11 @@ st.subheader("Economics")
 if not economics:
     st.info("Economics has not been run for these results yet.")
     if economics_config:
+        st.markdown("Downloads")
         st.download_button(
             "Download economics assumptions JSON",
             data=economics_assumptions_json(economics_config),
-            file_name="economics_assumptions.json",
+            file_name=f"{safe_download_stem(scenario_label, 'economics_assumptions')}.json",
             mime="application/json",
         )
     st.page_link("pages/4_Economics.py", label="Open Economics page")
@@ -81,24 +77,29 @@ else:
 
     summary_rows = economics.get("summaryRows") or []
     if summary_rows:
+        st.markdown("Summary")
         st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
+    else:
+        st.info("No economics summary rows were returned.")
+
+    st.markdown("Downloads")
+    if summary_rows:
         st.download_button(
             "Download economics summary CSV",
             data=economics_summary_csv(economics),
-            file_name="economics_summary.csv",
+            file_name=f"{safe_download_stem(scenario_label, 'economics_summary')}.csv",
             mime="text/csv",
         )
-    else:
-        st.info("No economics summary rows were returned.")
 
     if economics_config:
         st.download_button(
             "Download economics assumptions JSON",
             data=economics_assumptions_json(economics_config),
-            file_name="economics_assumptions.json",
+            file_name=f"{safe_download_stem(scenario_label, 'economics_assumptions')}.json",
             mime="application/json",
         )
 
+    st.markdown("Status")
     status = economics.get("status", {})
     status_rows = [
         {"field": "last_economics_run_at", "value": st.session_state.get("last_economics_run_at")},

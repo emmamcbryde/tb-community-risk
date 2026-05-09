@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-import json
 from copy import deepcopy
 
-import pandas as pd
 import streamlit as st
 
-from app.display import arrow_safe_dataframe
+from app.display import (
+    arrow_safe_dataframe,
+    economics_assumptions_json,
+    economics_summary_csv,
+    safe_download_stem,
+)
 from app.state import (
     get_backend,
     init_session_state,
@@ -177,15 +180,6 @@ def economics_overview_rows(config: dict) -> list[dict[str, object]]:
     ]
 
 
-def economics_summary_csv(economics_results: dict) -> bytes:
-    rows = economics_results.get("summaryRows") or []
-    return pd.DataFrame(rows).to_csv(index=False).encode("utf-8")
-
-
-def economics_assumptions_json(config: dict) -> str:
-    return json.dumps(config, indent=2, sort_keys=True)
-
-
 cols = st.columns(2)
 if cols[0].button("Load economics defaults", type="primary"):
     try:
@@ -220,6 +214,7 @@ if cols[1].button("Load KWAB150 preset"):
 config = st.session_state.get("config")
 results_bundle = st.session_state.get("results_bundle")
 econ_config = st.session_state.get("economics_config")
+scenario_label = (results_bundle or {}).get("metadata", {}).get("scenarioLabel")
 
 if not econ_config:
     st.info("Load economics defaults or the KWAB150 preset to begin.")
@@ -313,7 +308,7 @@ if submitted:
     except ValueError as exc:
         st.error(f"Invalid economics number: {exc}")
 
-st.subheader("Current Economics Config")
+st.subheader("Current Assumptions")
 st.dataframe(
     arrow_safe_dataframe(economics_overview_rows(econ_config)),
     width="content",
@@ -322,7 +317,7 @@ st.dataframe(
 st.download_button(
     "Download economics assumptions JSON",
     data=economics_assumptions_json(econ_config),
-    file_name="economics_assumptions.json",
+    file_name=f"{safe_download_stem(scenario_label, 'economics_assumptions')}.json",
     mime="application/json",
 )
 
@@ -353,10 +348,11 @@ if econ_results:
     summary_rows = econ_results.get("summaryRows") or []
     if summary_rows:
         st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
+        st.markdown("Downloads")
         st.download_button(
             "Download economics summary CSV",
             data=economics_summary_csv(econ_results),
-            file_name="economics_summary.csv",
+            file_name=f"{safe_download_stem(scenario_label, 'economics_summary')}.csv",
             mime="text/csv",
         )
     else:
