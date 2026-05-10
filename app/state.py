@@ -31,6 +31,19 @@ def init_session_state() -> None:
         "last_run_at": "",
         "last_validated_at": "",
         "messages": [],
+        "compare_baseline_config": None,
+        "compare_comparator_config": None,
+        "compare_baseline_bundle": None,
+        "compare_comparator_bundle": None,
+        "compare_baseline_economics_results": None,
+        "compare_comparator_economics_results": None,
+        "compare_baseline_validation_report": None,
+        "compare_comparator_validation_report": None,
+        "compare_dirty": False,
+        "compare_results_stale": False,
+        "compare_economics_stale": False,
+        "compare_last_run_at": "",
+        "compare_last_economics_run_at": "",
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
@@ -65,6 +78,8 @@ def mark_config_changed() -> None:
 def mark_economics_changed() -> None:
     if st.session_state.get("economics_results"):
         st.session_state["dirty_economics"] = True
+    if st.session_state.get("compare_baseline_economics_results") or st.session_state.get("compare_comparator_economics_results"):
+        st.session_state["compare_economics_stale"] = True
 
 
 def mark_economics_completed() -> None:
