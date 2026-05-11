@@ -35,6 +35,7 @@ def init_session_state() -> None:
         "compare_comparator_config": None,
         "compare_baseline_bundle": None,
         "compare_comparator_bundle": None,
+        "compare_economics_config": None,
         "compare_baseline_economics_results": None,
         "compare_comparator_economics_results": None,
         "compare_baseline_validation_report": None,
