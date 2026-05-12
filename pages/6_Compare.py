@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import json
+import math
 
 import altair as alt
 import pandas as pd
@@ -33,6 +35,44 @@ DEFAULT_RESOLVED_FIELDS = {
     "regimenPComplete",
     "regimenADRstop",
     "regimenEffFull",
+}
+STRATEGY_FIELD_MAP = {
+    "pStartTPT": "pStartTPT",
+    "regimenPComplete": "pComplete",
+    "regimenADRstop": "pADRstop",
+    "regimenEffFull": "effFull",
+}
+STRESS_TEST_PRESETS = {
+    "Custom": {
+        "baseline": {},
+        "comparator": {},
+        "note": "Manual comparison setup.",
+    },
+    "IGRA vs TST": {
+        "baseline": {"testType": "IGRA"},
+        "comparator": {"testType": "TST"},
+        "note": "Check test-specific yield, false positives, treatment starts, and testing cost.",
+    },
+    "3HP vs 4R": {
+        "baseline": {"regimen": "3HP"},
+        "comparator": {"regimen": "4R"},
+        "note": "Check regimen-driven completion, benefit, adverse-stop behavior, and treatment cost.",
+    },
+    "Low vs high coverage": {
+        "baseline": {"screenCoverage": 0.2},
+        "comparator": {"screenCoverage": 0.8},
+        "note": "Check scaling: screened, starts, completions, benefits, and costs should generally increase.",
+    },
+    "Cascade improvement": {
+        "baseline": {},
+        "comparator": {
+            "pStartTPT": 0.9,
+            "regimenPComplete": 0.9,
+            "regimenADRstop": 0.02,
+            "regimenEffFull": 0.9,
+        },
+        "note": "Check improved starts, completions, infection cured, and active TB prevented.",
+    },
 }
 
 
@@ -66,18 +106,74 @@ def clone_config(config: dict | None) -> dict | None:
     return deepcopy(config)
 
 
+def apply_overrides(config: dict, overrides: dict[str, object]) -> dict:
+    updated = clone_config(config) or {}
+    updated.update(overrides)
+    return updated
+
+
+def preset_payload(
+    assumptions_rows: list[dict[str, object]],
+    outcome_diff: list[dict[str, object]],
+    outcome_warnings: list[str],
+    econ_diff: list[dict[str, object]],
+    econ_warnings: list[str],
+) -> dict[str, object]:
+    return {
+        "exportedAt": utc_now(),
+        "selectedPreset": st.session_state.get("compare_selected_preset", "Custom"),
+        "manualStatus": st.session_state.get("compare_manual_status", "Not reviewed"),
+        "manualNotes": st.session_state.get("compare_manual_notes", ""),
+        "stale": {
+            "compareResults": bool(st.session_state.get("compare_results_stale")),
+            "compareEconomics": bool(st.session_state.get("compare_economics_stale")),
+            "compareOutputsCleared": bool(st.session_state.get("compare_outputs_cleared")),
+        },
+        "timestamps": {
+            "comparisonRunAt": st.session_state.get("compare_last_run_at", ""),
+            "economicsRunAt": st.session_state.get("compare_last_economics_run_at", ""),
+        },
+        "baselineConfig": st.session_state.get("compare_baseline_config"),
+        "comparatorConfig": st.session_state.get("compare_comparator_config"),
+        "compareEconomicsConfig": st.session_state.get("compare_economics_config"),
+        "selectedAssumptionsDiff": assumptions_rows,
+        "outcomesDiff": outcome_diff,
+        "outcomeWarnings": outcome_warnings,
+        "economicsDiff": econ_diff,
+        "economicsWarnings": econ_warnings,
+    }
+
+
+def json_download(data: dict[str, object]) -> str:
+    return json.dumps(json_safe_for_export(data), indent=2, sort_keys=True)
+
+
+def json_safe_for_export(value: object) -> object:
+    if isinstance(value, dict):
+        return {str(key): json_safe_for_export(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe_for_export(item) for item in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
 def mark_compare_dirty() -> None:
     st.session_state["compare_dirty"] = True
-    if (
+    if has_compare_outputs():
+        reset_compare_outputs(outputs_cleared=True)
+
+
+def has_compare_outputs() -> bool:
+    return bool(
         st.session_state.get("compare_baseline_bundle")
         or st.session_state.get("compare_comparator_bundle")
         or st.session_state.get("compare_baseline_economics_results")
         or st.session_state.get("compare_comparator_economics_results")
-    ):
-        reset_compare_outputs()
+    )
 
 
-def reset_compare_outputs() -> None:
+def reset_compare_outputs(outputs_cleared: bool = False) -> None:
     st.session_state["compare_baseline_bundle"] = None
     st.session_state["compare_comparator_bundle"] = None
     st.session_state["compare_economics_config"] = None
@@ -87,6 +183,7 @@ def reset_compare_outputs() -> None:
     st.session_state["compare_comparator_validation_report"] = None
     st.session_state["compare_results_stale"] = False
     st.session_state["compare_economics_stale"] = False
+    st.session_state["compare_outputs_cleared"] = outputs_cleared
 
 
 def bundle_interface_config(bundle: dict | None) -> dict:
@@ -101,14 +198,43 @@ def bundle_interface_config(bundle: dict | None) -> dict:
     return {}
 
 
+def bundle_strategy(bundle: dict | None) -> dict:
+    if not bundle:
+        return {}
+    headline = bundle.get("headline")
+    if not isinstance(headline, dict):
+        return {}
+    strategy = headline.get("strategy")
+    if isinstance(strategy, dict):
+        return strategy
+    return {}
+
+
 def is_blank_default_value(value: object) -> bool:
     return value is None or value == "" or value == []
 
 
+def value_from_dict_case_insensitive(data: dict, field: str) -> object:
+    if field in data:
+        return data.get(field)
+    lower_field = field.lower()
+    for key, value in data.items():
+        if str(key).lower() == lower_field:
+            return value
+    return None
+
+
 def resolved_assumption_value(field: str, config: dict, bundle: dict | None) -> object:
     interface_config = bundle_interface_config(bundle)
-    if field in interface_config:
-        return interface_config.get(field)
+    interface_value = value_from_dict_case_insensitive(interface_config, field)
+    if not (field in DEFAULT_RESOLVED_FIELDS and is_blank_default_value(interface_value)):
+        if interface_value is not None:
+            return interface_value
+    strategy_field = STRATEGY_FIELD_MAP.get(field)
+    if strategy_field:
+        strategy_value = value_from_dict_case_insensitive(bundle_strategy(bundle), strategy_field)
+        if strategy_value is not None:
+            return strategy_value
     raw_value = config.get(field)
     if field in DEFAULT_RESOLVED_FIELDS and is_blank_default_value(raw_value):
         return "default (resolved at run)"
@@ -255,8 +381,9 @@ st.caption("Compare one baseline APY scenario with one comparator APY scenario."
 cols = st.columns(4)
 if cols[0].button("Load default baseline", type="primary"):
     try:
+        had_outputs = has_compare_outputs()
         st.session_state["compare_baseline_config"] = backend.default_config()
-        reset_compare_outputs()
+        reset_compare_outputs(outputs_cleared=had_outputs)
         st.session_state["compare_dirty"] = False
         sync_backend_status(backend.status())
         st.success("Default baseline loaded.")
@@ -269,8 +396,9 @@ if cols[0].button("Load default baseline", type="primary"):
 if cols[1].button("Use current scenario"):
     current = clone_config(st.session_state.get("config"))
     if current:
+        had_outputs = has_compare_outputs()
         st.session_state["compare_baseline_config"] = current
-        reset_compare_outputs()
+        reset_compare_outputs(outputs_cleared=had_outputs)
         st.session_state["compare_dirty"] = False
         st.success("Current scenario copied to baseline.")
     else:
@@ -307,8 +435,35 @@ if not baseline_config or not comparator_config:
     st.info("Load a baseline and comparator to begin.")
     st.stop()
 
+st.subheader("Named Stress Test")
+preset_names = list(STRESS_TEST_PRESETS)
+selected_preset = st.selectbox(
+    "Preset",
+    preset_names,
+    index=choice_index(st.session_state.get("compare_selected_preset"), preset_names),
+)
+st.session_state["compare_selected_preset"] = selected_preset
+st.caption(STRESS_TEST_PRESETS[selected_preset]["note"])
+if st.button("Apply preset to baseline/comparator"):
+    preset = STRESS_TEST_PRESETS[selected_preset]
+    baseline = apply_overrides(baseline_config, preset["baseline"])
+    comparator = apply_overrides(comparator_config, preset["comparator"])
+    baseline["scenarioLabel"] = f"{selected_preset} baseline"
+    comparator["scenarioLabel"] = f"{selected_preset} comparator"
+    st.session_state["compare_baseline_config"] = baseline
+    st.session_state["compare_comparator_config"] = comparator
+    st.session_state["compare_selected_preset"] = selected_preset
+    mark_compare_dirty()
+    baseline_config = baseline
+    comparator_config = comparator
+    baseline_bundle = st.session_state.get("compare_baseline_bundle")
+    comparator_bundle = st.session_state.get("compare_comparator_bundle")
+    st.success("Stress-test preset applied.")
+
 if st.session_state.get("compare_results_stale"):
     st.warning("Comparison results are stale because assumptions changed. Outputs are hidden until comparison is rerun.")
+if st.session_state.get("compare_outputs_cleared"):
+    st.warning("Previous compare outputs were cleared because assumptions changed. Rerun comparison to generate current outputs.")
 
 st.subheader("Comparator Assumptions")
 with st.form("compare_comparator_edits"):
@@ -380,6 +535,7 @@ if run_cols[1].button("Run comparison", type="primary"):
         st.session_state["compare_dirty"] = False
         st.session_state["compare_results_stale"] = False
         st.session_state["compare_economics_stale"] = False
+        st.session_state["compare_outputs_cleared"] = False
         st.session_state["compare_last_run_at"] = utc_now()
         sync_backend_status(backend.status())
         st.success("Comparison run completed.")
@@ -474,8 +630,30 @@ elif compare_economics_config:
 else:
     st.info("Load economics assumptions on the Economics page, then rerun comparison to snapshot them for Compare.")
 
+st.subheader("Manual Test Status")
+status_options = ["Not reviewed", "Pass", "Concern", "Fail"]
+manual_status = st.selectbox(
+    "Review status",
+    status_options,
+    index=choice_index(st.session_state.get("compare_manual_status"), status_options),
+)
+st.session_state["compare_manual_status"] = manual_status
+manual_notes = st.text_area(
+    "Review notes",
+    value=st.session_state.get("compare_manual_notes", ""),
+    placeholder="Record expected-direction checks, anomalies, or follow-up actions.",
+)
+st.session_state["compare_manual_notes"] = manual_notes
+
 st.subheader("Downloads")
-download_cols = st.columns(3)
+comparison_payload = preset_payload(
+    assumptions_rows,
+    outcome_diff,
+    outcome_warnings,
+    econ_diff,
+    econ_warnings,
+)
+download_cols = st.columns(4)
 download_cols[0].download_button(
     "Assumptions diff CSV",
     data=csv_download(assumptions_rows),
@@ -496,3 +674,9 @@ if econ_diff and not st.session_state.get("compare_results_stale") and not st.se
         file_name=f"{safe_download_stem('apy_compare', 'economics_diff')}.csv",
         mime="text/csv",
     )
+download_cols[3].download_button(
+    "Comparison JSON",
+    data=json_download(comparison_payload),
+    file_name=f"{safe_download_stem('apy_compare', 'comparison')}.json",
+    mime="application/json",
+)

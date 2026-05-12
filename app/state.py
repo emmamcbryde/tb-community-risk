@@ -43,8 +43,12 @@ def init_session_state() -> None:
         "compare_dirty": False,
         "compare_results_stale": False,
         "compare_economics_stale": False,
+        "compare_outputs_cleared": False,
         "compare_last_run_at": "",
         "compare_last_economics_run_at": "",
+        "compare_selected_preset": "Custom",
+        "compare_manual_status": "Not reviewed",
+        "compare_manual_notes": "",
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)

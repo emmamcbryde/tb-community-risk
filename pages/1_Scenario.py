@@ -156,22 +156,52 @@ if config:
             strategy_options,
             index=choice_index(config.get("screeningStrategy"), strategy_options, 3),
         )
-        n_reps = st.number_input(
-            "Simulation replicates",
-            min_value=1,
-            value=int(config.get("nReps", 1)),
-            step=100,
-        )
+        with st.expander("Advanced / run controls"):
+            st.caption("Technical run controls for stress testing and reproducibility.")
+            population_size = st.number_input(
+                "N",
+                min_value=1,
+                value=int(config.get("N", 1)),
+                step=100,
+            )
+            n_reps = st.number_input(
+                "Simulation replicates",
+                min_value=1,
+                value=int(config.get("nReps", 1)),
+                step=10,
+            )
+            seed = st.number_input(
+                "Random seed",
+                min_value=0,
+                value=int(config.get("seed", 1)),
+                step=1,
+            )
+            screen_window = st.number_input(
+                "Screen window",
+                min_value=0.01,
+                value=float(config.get("screenWindow", 2.0)),
+                step=0.5,
+            )
+            follow_horizon = st.number_input(
+                "Follow-up horizon",
+                min_value=0.01,
+                value=float(config.get("followHorizon", 20.0)),
+                step=1.0,
+            )
         submitted = st.form_submit_button("Apply edits")
 
     if submitted:
         updates = {
             "scenarioLabel": scenario_label,
+            "N": int(population_size),
+            "nReps": int(n_reps),
+            "seed": int(seed),
+            "screenWindow": float(screen_window),
+            "followHorizon": float(follow_horizon),
             "screenCoverage": float(screen_coverage),
             "testType": test_type,
             "regimen": regimen,
             "screeningStrategy": screening_strategy,
-            "nReps": int(n_reps),
         }
         changed = any(config.get(key) != value for key, value in updates.items())
         if changed:
