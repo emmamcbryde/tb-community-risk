@@ -31,6 +31,12 @@ def init_session_state() -> None:
         "last_run_at": "",
         "last_validated_at": "",
         "messages": [],
+        "dynamic_results_bundle": None,
+        "dynamic_last_run_at": "",
+        "dynamic_results_stale": False,
+        "dynamic_compare_rows": None,
+        "dynamic_abm_compare_last_run_at": "",
+        "dynamic_abm_compare_warnings": [],
         "compare_baseline_config": None,
         "compare_comparator_config": None,
         "compare_baseline_bundle": None,
@@ -90,6 +96,32 @@ def mark_economics_changed() -> None:
 def mark_economics_completed() -> None:
     st.session_state["last_economics_run_at"] = datetime.now(timezone.utc).isoformat()
     st.session_state["dirty_economics"] = False
+
+
+def mark_dynamic_run_completed() -> None:
+    st.session_state["dynamic_last_run_at"] = datetime.now(timezone.utc).isoformat()
+    st.session_state["dynamic_results_stale"] = False
+    st.session_state["dynamic_compare_rows"] = None
+    st.session_state["dynamic_abm_compare_warnings"] = []
+
+
+def clear_dynamic_outputs() -> None:
+    st.session_state["dynamic_results_bundle"] = None
+    st.session_state["dynamic_results_stale"] = False
+    st.session_state["dynamic_compare_rows"] = None
+    st.session_state["dynamic_abm_compare_last_run_at"] = ""
+    st.session_state["dynamic_abm_compare_warnings"] = []
+
+
+def mark_dynamic_outputs_stale() -> None:
+    if st.session_state.get("dynamic_results_bundle"):
+        st.session_state["dynamic_results_stale"] = True
+
+
+def mark_dynamic_abm_compare_completed(rows: list[dict[str, Any]], warnings: list[str]) -> None:
+    st.session_state["dynamic_compare_rows"] = rows
+    st.session_state["dynamic_abm_compare_warnings"] = warnings
+    st.session_state["dynamic_abm_compare_last_run_at"] = datetime.now(timezone.utc).isoformat()
 
 
 def sync_backend_status(status: dict[str, Any]) -> None:

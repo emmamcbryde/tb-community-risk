@@ -14,10 +14,12 @@ except Exception:
     SCIPY_AVAILABLE = False
 
 from engine.dynamic.exec_dynamic import run_dynamic_model
+from engine.integration.dynamic_output_contract_v9 import build_dynamic_results_bundle_v9
 from engine.infection_backcast import (
     calc_ari_from_incidence,
     infection_prob_by_age_split,
 )
+from app.state import clear_dynamic_outputs, mark_dynamic_run_completed
 
 # =====================================================
 # Hard-coded calibration + display configuration
@@ -91,6 +93,7 @@ def clear_calibration():
 def clear_simulation():
     for k in ["sim_sig", "sim_df_future"]:
         st.session_state.pop(k, None)
+    clear_dynamic_outputs()
 
 
 # =====================================================
@@ -1052,6 +1055,27 @@ def render_dynamic_ui():
 
             st.session_state["sim_sig"] = sim_sig
             st.session_state["sim_df_future"] = df_future
+            st.session_state["dynamic_results_bundle"] = build_dynamic_results_bundle_v9(
+                df_future=df_future,
+                params_base=params_base,
+                params_intervention=params_int,
+                calibration={
+                    "beta_forward": beta_forward,
+                    "ari_adjustment": st.session_state.get("cal_ari_adj"),
+                    "rmse": st.session_state.get("cal_rmse_rw"),
+                    "ref_year": st.session_state.get("cal_ref_year"),
+                },
+                metadata={
+                    "population": total_pop,
+                    "time_horizon": int(time_horizon),
+                    "testing_method": testing_method,
+                    "treatment_method": treatment_method,
+                    "ltbi_coverage": float(ltbi_coverage),
+                    "rollout_years": int(rollout_years),
+                    "diagnosis_reduction_pct": float(diag_reduction_pct),
+                },
+            )
+            mark_dynamic_run_completed()
 
     # -------------------------
     # Display simulation outputs (persist after reruns)

@@ -53,6 +53,9 @@ navigation = st.navigation(
         "Dynamic Model": [
             st.Page("pages/5_Dynamic_Model.py", title="Dynamic Workflow"),
         ],
+        "Integrated workflow": [
+            st.Page("pages/7_Dynamic_ABM_Compare.py", title="Dynamic + ABM Compare"),
+        ],
     }
 )
 
