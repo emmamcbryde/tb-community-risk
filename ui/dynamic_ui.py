@@ -12,7 +12,16 @@ except Exception:
     minimize_scalar = None
     minimize = None
     SCIPY_AVAILABLE = False
+from pathlib import Path
+import sys
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.import_bootstrap import ensure_repo_root
+
+ensure_repo_root(REPO_ROOT)
 from engine.dynamic.exec_dynamic import run_dynamic_model
 from engine.integration.dynamic_output_contract_v9 import build_dynamic_results_bundle_v9
 from engine.infection_backcast import (
