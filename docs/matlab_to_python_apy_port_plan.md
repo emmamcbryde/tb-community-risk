@@ -164,7 +164,7 @@ Manual MATLAB validation remains useful during development but should not be req
 
 ## Priority Summary
 
-P0 files:
+### P0 Files
 
 - `build_default_config_v9.m`
 - `build_results_bundle_v9.m`
@@ -175,7 +175,7 @@ P0 files:
 - `tb_screening_mc_model_v9.m`
 - `validate_config_v9.m`
 
-P1 files:
+### P1 Files
 
 - `build_default_economics_config_v9.m`
 - `build_economics_preset_kwab150_v9.m`
@@ -186,7 +186,7 @@ P1 files:
 - `save_scenario_v9.m`
 - `validate_economics_config_v9.m`
 
-P2 files:
+### P2 Files
 
 - `configs_substantively_equal_v9.m`
 - `export_results_v9.m`
@@ -200,14 +200,14 @@ P2 files:
 - `run_tb_screening_targeting_profile_v9.m`
 - `validation_report_to_display_v9.m`
 
-P3 files:
+### P3 Files
 
 - `app_export_v9.m`
 - `build_ui_schema_v9.m`
 - `run_tb_screening_igra_addons_v9.m`
 - `run_tb_screening_igra_charts_v9.m`
 
-Do-not-port files:
+### Do-Not-Port Files
 
 - `app_apply_economics_ui_state_v9.m`
 - `app_apply_ui_state_v9.m`
