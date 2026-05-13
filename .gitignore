@@ -1,6 +1,8 @@
 # IDE / Editor backups
 *.bak
 *.tmp
+*.tmp.log
+streamlit_smoke*.log
 *.swp
 *.ini
 

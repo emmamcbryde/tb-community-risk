@@ -29,6 +29,11 @@ from engine.infection_backcast import (
     infection_prob_by_age_split,
 )
 from app.state import clear_dynamic_outputs, mark_dynamic_run_completed
+from ui.dynamic_age_distribution import (
+    default_five_year_age_distribution,
+    expand_five_year_age_distribution,
+    normalise_age_distribution,
+)
 
 # =====================================================
 # Hard-coded calibration + display configuration
@@ -112,53 +117,6 @@ def default_age_distribution():
     ages = list(range(0, 101))
     prop = np.array([1 / 101] * 101)
     return pd.DataFrame({"AgeGroup": ages, "Proportion": prop})
-
-
-def default_five_year_age_distribution() -> pd.DataFrame:
-    rows = []
-    for start in range(0, 100, 5):
-        rows.append(
-            {
-                "AgeGroup": f"{start}-{start + 4}",
-                "AgeStart": start,
-                "AgeEnd": start + 4,
-                "Proportion": 5 / 101,
-            }
-        )
-    rows.append(
-        {
-            "AgeGroup": "100+",
-            "AgeStart": 100,
-            "AgeEnd": 100,
-            "Proportion": 1 / 101,
-        }
-    )
-    return pd.DataFrame(rows)
-
-
-def normalise_age_distribution(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
-    out["Proportion"] = pd.to_numeric(out["Proportion"], errors="coerce").fillna(0.0)
-    out["Proportion"] = out["Proportion"].clip(lower=0.0)
-    total = float(out["Proportion"].sum())
-    if total > 0:
-        out["Proportion"] = out["Proportion"] / total
-    return out
-
-
-def expand_five_year_age_distribution(df: pd.DataFrame, population: float) -> pd.DataFrame:
-    df = normalise_age_distribution(df)
-    rows = []
-    for _, row in df.iterrows():
-        start = int(row["AgeStart"])
-        end = int(row["AgeEnd"])
-        ages = list(range(start, end + 1))
-        if not ages:
-            continue
-        per_age_population = float(row["Proportion"]) * float(population) / len(ages)
-        for age in ages:
-            rows.append({"age": age, "population": per_age_population})
-    return pd.DataFrame(rows)
 
 
 # =====================================================
@@ -662,7 +620,18 @@ def render_dynamic_ui():
                         "Proportion": float(value),
                     }
                 )
-        age_df_display = normalise_age_distribution(pd.DataFrame(manual_rows))
+        manual_age_df = pd.DataFrame(manual_rows)
+        manual_total = float(
+            pd.to_numeric(manual_age_df["Proportion"], errors="coerce")
+            .fillna(0.0)
+            .clip(lower=0.0)
+            .sum()
+        )
+        if manual_total == 0:
+            st.warning(
+                "Manual age distribution values summed to zero, so the default age distribution was used."
+            )
+        age_df_display = normalise_age_distribution(manual_age_df)
         manual_age_hash = hash_df(age_df_display, cols=["AgeStart", "AgeEnd", "Proportion"])
         df_country = expand_five_year_age_distribution(age_df_display, population)
 
