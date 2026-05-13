@@ -146,42 +146,46 @@ def extract_abm_key_metrics(bundle: dict) -> dict[str, Any]:
         ["cumulative_baseline_active_tb_cases"],
     )
     baseline = dynamic_comparison.get("cumulative_baseline_active_tb_cases", baseline)
-    baseline = baseline if number_or_none(baseline) is not None else median_column(derived_rows, "nActiveBy20y_DoNothing")
     baseline = baseline if number_or_none(baseline) is not None else first_metric(
         lookup,
         ["cumulative_baseline_active_tb_cases", "baselineActiveTB", "nBaselineActiveTB"],
     )
+    baseline = baseline if number_or_none(baseline) is not None else median_column(derived_rows, "nActiveBy20y_DoNothing")
 
     intervention = first_metric(
         dynamic_comparison_rows,
         ["cumulative_intervention_active_tb_cases"],
     )
     intervention = dynamic_comparison.get("cumulative_intervention_active_tb_cases", intervention)
-    intervention = intervention if number_or_none(intervention) is not None else median_column(derived_rows, "nActiveBy20y_AfterStrategy")
     intervention = intervention if number_or_none(intervention) is not None else first_metric(
         lookup,
         ["cumulative_intervention_active_tb_cases", "interventionActiveTB", "nInterventionActiveTB"],
     )
+    intervention = intervention if number_or_none(intervention) is not None else median_column(derived_rows, "nActiveBy20y_AfterStrategy")
 
     averted = first_metric(dynamic_comparison_rows, ["cumulative_cases_averted"])
     averted = dynamic_comparison.get("cumulative_cases_averted", averted)
+    averted = averted if number_or_none(averted) is not None else first_metric(
+        lookup,
+        ["cumulative_cases_averted", "preventedActiveTB"],
+    )
     averted = averted if number_or_none(averted) is not None else median_column(derived_rows, "nActiveBy20y_Prevented")
     averted = averted if number_or_none(averted) is not None else first_metric(
         lookup,
-        ["cumulative_cases_averted", "nPreventedActiveTB", "preventedActiveTB"],
+        ["nPreventedActiveTB"],
     )
 
     rel_reduction = first_metric(dynamic_comparison_rows, ["relative_reduction_cumulative_active_tb_cases"])
     rel_reduction = dynamic_comparison.get("relative_reduction_cumulative_active_tb_cases", rel_reduction)
-    rel_reduction = rel_reduction if number_or_none(rel_reduction) is not None else median_column(derived_rows, "relReduction20y")
-    rel_reduction = rel_reduction if number_or_none(rel_reduction) is not None else first_metric(
-        summary_rows,
-        ["Relative reduction in 20-year active TB burden"],
-    )
     rel_reduction = rel_reduction if number_or_none(rel_reduction) is not None else first_metric(
         lookup,
         ["relative_reduction", "relativeReduction", "relative_reduction_cumulative_active_tb_cases"],
     )
+    rel_reduction = rel_reduction if number_or_none(rel_reduction) is not None else first_metric(
+        summary_rows,
+        ["Relative reduction in 20-year active TB burden"],
+    )
+    rel_reduction = rel_reduction if number_or_none(rel_reduction) is not None else median_column(derived_rows, "relReduction20y")
 
     return {
         "horizon": interface_config.get("followHorizon"),

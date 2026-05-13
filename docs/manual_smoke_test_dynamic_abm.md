@@ -47,3 +47,20 @@ Open **Integrated workflow > Dynamic + ABM Compare** and check:
 ## Expected limitation
 
 Some comparison rows may be unavailable until the APY results bundle exposes dynamic-style cumulative baseline/intervention active TB case metrics. This is expected and should be shown as a warning, not hidden.
+
+## Confirmed APY dynamic-comparison block
+
+The APY bundle debug panel should show `technical.dynamicComparison.available = true` when do-nothing/natural-history outputs are included. A confirmed MATLAB smoke test produced:
+
+```text
+technical.dynamicComparison.available = true
+source = doNothing.derived
+population = 1500
+followHorizon = 20
+cumulative_baseline_active_tb_cases = 37
+cumulative_intervention_active_tb_cases = 25
+cumulative_cases_averted = 12
+relative_reduction_cumulative_active_tb_cases ~= 0.3196
+```
+
+Exact values may differ if APY scenario settings, seed, population, `nReps`, or follow-up horizon differ.

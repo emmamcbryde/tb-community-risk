@@ -13,7 +13,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from app.display import arrow_safe_dataframe, safe_download_stem
 from app.state import init_session_state, mark_dynamic_abm_compare_completed
-from engine.integration.compare_dynamic_abm_v9 import compare_dynamic_abm_v9
+from engine.integration.compare_dynamic_abm_v9 import compare_dynamic_abm_v9, number_or_none
+
+
+TOTAL_ALIGNED_METRICS = 6
 
 
 def metric_lookup(bundle: dict) -> dict[str, object]:
@@ -90,6 +93,64 @@ def numeric_comparison_rows(rows: list[dict[str, object]]) -> pd.DataFrame:
     return pd.DataFrame(numeric_rows)
 
 
+def nested_dict(bundle: dict, *keys: str) -> dict:
+    value: object = bundle
+    for key in keys:
+        if not isinstance(value, dict):
+            return {}
+        value = value.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def match_status(dynamic_value: object, abm_value: object) -> str:
+    dynamic_number = number_or_none(dynamic_value)
+    abm_number = number_or_none(abm_value)
+    if dynamic_number is None or abm_number is None:
+        return "unknown"
+    return "yes" if dynamic_number == abm_number else "no"
+
+
+def comparison_summary_rows(
+    dynamic_bundle: dict,
+    abm_bundle: dict,
+    comparison_rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    comparable_count = sum(1 for row in comparison_rows if row.get("comparable"))
+    dynamic_comparison = nested_dict(abm_bundle, "technical", "dynamicComparison")
+    dynamic_metrics = {row["metric"]: row.get("dynamic_value") for row in comparison_rows}
+    abm_metrics = {row["metric"]: row.get("abm_value") for row in comparison_rows}
+    return [
+        {
+            "field": "Dynamic bundle present",
+            "value": "yes" if dynamic_bundle else "no",
+        },
+        {
+            "field": "APY bundle present",
+            "value": "yes" if abm_bundle else "no",
+        },
+        {
+            "field": "Comparable metrics available",
+            "value": f"{comparable_count} of {TOTAL_ALIGNED_METRICS}",
+        },
+        {
+            "field": "APY dynamic-comparison available",
+            "value": dynamic_comparison.get("available", "unknown"),
+        },
+        {
+            "field": "APY dynamic-comparison source",
+            "value": dynamic_comparison.get("source") or "unavailable",
+        },
+        {
+            "field": "Population match",
+            "value": match_status(dynamic_metrics.get("population"), abm_metrics.get("population")),
+        },
+        {
+            "field": "Horizon match",
+            "value": match_status(dynamic_metrics.get("horizon"), abm_metrics.get("horizon")),
+        },
+    ]
+
+
 init_session_state()
 
 st.title("Dynamic + APY ABM Compare")
@@ -125,6 +186,13 @@ mark_dynamic_abm_compare_completed(rows, warnings)
 
 comparable_rows = [row for row in rows if row.get("comparable")]
 non_comparable_rows = [row for row in rows if not row.get("comparable")]
+
+st.subheader("Comparison Summary")
+st.dataframe(
+    arrow_safe_dataframe(comparison_summary_rows(dynamic_bundle, abm_bundle, rows)),
+    width="content",
+    hide_index=True,
+)
 
 st.subheader("Comparable Metrics")
 if comparable_rows:
