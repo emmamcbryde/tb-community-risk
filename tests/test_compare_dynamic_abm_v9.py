@@ -52,6 +52,7 @@ class CompareDynamicAbmV9Tests(unittest.TestCase):
 
         self.assertTrue(comparison["comparisonRows"])
         self.assertTrue(comparison["warnings"])
+        self.assertTrue(comparison["missing_dynamic_metrics"])
         self.assertTrue(any(not row["comparable"] for row in comparison["comparisonRows"]))
 
     def test_non_comparable_metrics_are_warned_not_silently_dropped(self) -> None:
@@ -61,6 +62,7 @@ class CompareDynamicAbmV9Tests(unittest.TestCase):
         self.assertIn("NNS/NNT", warning_text)
         self.assertIn("False positives treated", warning_text)
         self.assertIn("ABM economics outputs", warning_text)
+        self.assertTrue(comparison["structurally_non_comparable_metrics"])
 
 
 if __name__ == "__main__":

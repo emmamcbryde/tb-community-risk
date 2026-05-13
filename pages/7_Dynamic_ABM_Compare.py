@@ -30,6 +30,29 @@ def metric_lookup(bundle: dict) -> dict[str, object]:
     return lookup
 
 
+def headline_rows(bundle: dict) -> list[dict[str, object]]:
+    headline = bundle.get("headline") or {}
+    rows = headline.get("keyMetricsRows") or headline.get("summaryRows") or []
+    return rows if isinstance(rows, list) else []
+
+
+def bundle_debug_rows(bundle: dict) -> list[dict[str, object]]:
+    metadata = bundle.get("metadata") or {}
+    projection = bundle.get("projection") or {}
+    annual_rows = projection.get("annualRows") or []
+    metric_names = [str(row.get("Metric") or row.get("metric")) for row in headline_rows(bundle) if isinstance(row, dict)]
+    return [
+        {"field": "topLevelKeys", "value": sorted(bundle.keys())},
+        {"field": "model", "value": bundle.get("model", "")},
+        {"field": "modelVersion", "value": bundle.get("modelVersion") or metadata.get("modelVersion", "")},
+        {"field": "contractVersion", "value": bundle.get("contractVersion") or metadata.get("contractVersion", "")},
+        {"field": "metadata.modelVersion", "value": metadata.get("modelVersion", "")},
+        {"field": "headlineRowCount", "value": len(headline_rows(bundle))},
+        {"field": "keyMetrics", "value": metric_names},
+        {"field": "projectionAnnualRowsCount", "value": len(annual_rows) if isinstance(annual_rows, list) else 0},
+    ]
+
+
 def summary_rows(title: str, bundle: dict) -> list[dict[str, object]]:
     lookup = metric_lookup(bundle)
     metadata = bundle.get("metadata") or {}
@@ -78,6 +101,12 @@ summary = summary_rows("Dynamic model", dynamic_bundle) + summary_rows("APY ABM"
 st.subheader("Latest Results")
 st.dataframe(arrow_safe_dataframe(summary), width="stretch", hide_index=True)
 
+with st.expander("Dynamic bundle debug", expanded=False):
+    st.dataframe(arrow_safe_dataframe(bundle_debug_rows(dynamic_bundle)), width="stretch", hide_index=True)
+
+with st.expander("APY bundle debug", expanded=False):
+    st.dataframe(arrow_safe_dataframe(bundle_debug_rows(abm_bundle)), width="stretch", hide_index=True)
+
 comparison = compare_dynamic_abm_v9(dynamic_bundle, abm_bundle)
 rows = comparison.get("comparisonRows") or []
 warnings = comparison.get("warnings") or []
@@ -109,6 +138,13 @@ else:
 st.subheader("Warnings And Non-Comparable Metrics")
 if non_comparable_rows:
     st.dataframe(arrow_safe_dataframe(non_comparable_rows), width="stretch", hide_index=True)
+if comparison.get("missing_dynamic_metrics"):
+    st.warning("Missing dynamic metrics: " + ", ".join(comparison["missing_dynamic_metrics"]))
+if comparison.get("missing_abm_metrics"):
+    st.warning("Missing APY ABM metrics: " + ", ".join(comparison["missing_abm_metrics"]))
+if comparison.get("structurally_non_comparable_metrics"):
+    with st.expander("Structurally non-comparable metrics", expanded=False):
+        st.write(comparison["structurally_non_comparable_metrics"])
 for warning in warnings:
     st.warning(warning)
 
