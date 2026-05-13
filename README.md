@@ -93,7 +93,8 @@ ui/static_ui.py
 │   ├── 3_Results.py              # Display portable results bundle
 │   ├── 4_Economics.py            # Economics assumptions and outputs
 │   ├── 5_Dynamic_Model.py        # Dynamic model workflow page
-│   └── 6_Compare.py              # APY baseline vs comparator comparison
+│   ├── 6_Compare.py              # APY baseline vs comparator comparison
+│   └── 7_Dynamic_ABM_Compare.py  # Dynamic model + APY ABM comparison
 │
 ├── abm/                          # MATLAB APY v9 ABM and related files
 │   ├── tb_screening_mc_model_v9.m
@@ -107,6 +108,7 @@ ui/static_ui.py
 │
 ├── engine/                       # Python dynamic/static model code
 │   ├── dynamic/
+│   ├── integration/
 │   ├── static/
 │   ├── infection_backcast.py
 │   ├── intervention.py
@@ -292,7 +294,21 @@ The Python dynamic model is retained for continuous-time LTBI-to-TB modelling wi
 - baseline and intervention projection;
 - annual incidence and cases-averted outputs.
 
-The dynamic model and APY v9 ABM are not yet fully fused. The intended next step is a thin integration/comparison layer that lets the Python dynamic model and APY v9 ABM outputs be compared side by side without replacing either model.
+---
+
+## Integrated workflow
+
+The integrated Dynamic + APY ABM Compare page compares the latest Python dynamic model projection with the latest APY v9 ABM results bundle.
+
+The comparison layer:
+
+- reads existing Streamlit session-state bundles;
+- does not run MATLAB unless the user explicitly runs APY from the APY Run Model page;
+- shows side-by-side metrics only where a conservative alignment exists;
+- flags missing and structurally non-comparable metrics instead of forcing equivalence;
+- exposes debug panels for the dynamic bundle and APY bundle.
+
+Current aligned metrics include horizon, population, cumulative cases averted, and, when APY `technical.dynamicComparison` is available, cumulative baseline/intervention active TB cases and relative reduction.
 
 ---
 
@@ -376,14 +392,15 @@ When editing this branch:
 
 For Python/Streamlit syntax checks:
 
-```bash
-python -m py_compile streamlit_app.py app/*.py adapters/*.py pages/*.py
+```powershell
+$files = @('streamlit_app.py') + (Get-ChildItem app,adapters,engine,pages,ui -Recurse -Filter *.py | ForEach-Object { $_.FullName })
+python -m py_compile @files
 ```
 
 For broader Python checks, add or run tests when available:
 
 ```bash
-python -m pytest
+python -m unittest discover -s tests
 ```
 
 For MATLAB-backed changes, use lightweight MATLAB validation only when MATLAB is available. At minimum, check that the relevant APY v9 functions are on the MATLAB path and that generated outputs are written to the expected output folder.
@@ -453,17 +470,15 @@ ui/app.py
 
 ---
 
-## Current integration roadmap
+## Current integration status
 
-The next recommended development step is to preserve the current v9 work and add a thin dynamic-ABM comparison layer.
-
-Suggested future additions:
+The branch includes a thin dynamic-ABM comparison layer:
 
 ```text
 engine/integration/risk_factor_crosswalk_v9.csv
 engine/integration/compare_dynamic_abm_v9.py
-engine/integration/output_contracts_v9.py
-pages/7_Integrated_Dynamic_ABM.py
+engine/integration/dynamic_output_contract_v9.py
+pages/7_Dynamic_ABM_Compare.py
 ```
 
-The first integration target should be side-by-side comparison, not forced equivalence. The dynamic Python model and MATLAB APY v9 ABM use different structures and partly different risk-factor definitions, so comparison should clearly flag which metrics are directly comparable and which are model-specific.
+The integration target is side-by-side comparison, not forced equivalence. The dynamic Python model and MATLAB APY v9 ABM use different structures and partly different risk-factor definitions, so the comparison page flags which metrics are directly comparable and which are model-specific.

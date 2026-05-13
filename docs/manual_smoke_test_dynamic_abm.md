@@ -27,6 +27,8 @@ streamlit run streamlit_app.py
 5. Confirm `st.session_state["results_bundle"]` exists.
    - Use the **Dynamic + ABM Compare** page and open **APY bundle debug**.
    - The debug panel should show top-level APY bundle keys, headline metrics, and metadata.
+   - After a successful APY run with do-nothing/natural-history outputs included, confirm `technical.dynamicComparison.available = true`.
+   - Confirm the APY debug panel lists dynamic-comparison metric names.
 
 ## Integrated comparison page
 

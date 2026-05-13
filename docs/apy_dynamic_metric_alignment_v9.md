@@ -74,13 +74,16 @@ These are comparable now when both bundles expose numeric values:
 
 - Horizon: dynamic `projection_horizon` vs APY `technical.interfaceConfig.followHorizon`.
 - Population: dynamic `metadata.population` vs APY `technical.interfaceConfig.N`.
-- Cases averted: dynamic `cumulative_cases_averted` vs APY `nPreventedActiveTB`.
+- Cumulative baseline active TB cases: dynamic `cumulative_baseline_active_tb_cases` vs APY `technical.dynamicComparison.cumulative_baseline_active_tb_cases`, when available.
+- Cumulative intervention active TB cases: dynamic `cumulative_intervention_active_tb_cases` vs APY `technical.dynamicComparison.cumulative_intervention_active_tb_cases`, when available.
+- Cases averted: dynamic `cumulative_cases_averted` vs APY `technical.dynamicComparison.cumulative_cases_averted`, or fallback APY `nPreventedActiveTB`.
+- Relative reduction: dynamic `relative_reduction_cumulative_active_tb_cases` vs APY `technical.dynamicComparison.relative_reduction_cumulative_active_tb_cases`, when available.
 
-The cases-averted comparison is directionally useful but not structurally identical unless the APY bundle explicitly exposes baseline and intervention cumulative active TB cases over the same horizon.
+The cases-averted fallback through `nPreventedActiveTB` is directionally useful but less transparent than the full `technical.dynamicComparison` block because it does not expose the paired baseline/intervention cumulative active TB counts.
 
-## Metrics missing from APY for better dynamic comparison
+## APY dynamic-comparison block
 
-Recommended APY-side additions to `abm/build_results_bundle_v9.m` or a non-engine bundle helper:
+`abm/build_results_bundle_v9.m` now exposes:
 
 - `cumulative_baseline_active_tb_cases` over `followHorizon`.
 - `cumulative_intervention_active_tb_cases` over `followHorizon`.
@@ -88,12 +91,20 @@ Recommended APY-side additions to `abm/build_results_bundle_v9.m` or a non-engin
 - `relative_reduction_cumulative_active_tb_cases`.
 - `population` copied from `results.interfaceConfig.N`.
 - `followHorizon` copied from `results.interfaceConfig.followHorizon`.
-- `scenarioLabel`.
-- `screeningStrategy`.
-- `testType`.
-- `regimen`.
 
-Do not add these by changing `abm/tb_screening_mc_model_v9.m`. If needed, add derived display fields in `abm/build_results_bundle_v9.m` or another app-facing wrapper.
+These are stored at:
+
+```text
+bundle.technical.dynamicComparison
+```
+
+Preferred source order:
+
+1. `doNothing.derived` when available.
+2. `results.raw.nActiveBy20y` and `results.raw.nPreventedActiveTB` fallback.
+3. unavailable with explicit `missingFields` and `notes`.
+
+No disease equations or simulation logic are changed.
 
 ## Metrics missing from dynamic for APY comparison
 
@@ -114,4 +125,4 @@ These should remain flagged as structurally non-comparable unless the dynamic mo
 
 ## Recommendation
 
-The smallest useful next APY output-contract addition is a derived comparison section that exposes population, horizon, cumulative intervention active TB cases, cumulative baseline/no-intervention active TB cases, cumulative cases averted, and relative reduction. This should be added at the bundle/output layer only, without changing APY simulation logic.
+Use `technical.dynamicComparison` for dynamic/APY comparison where available. Continue to flag APY pathway metrics, economics outputs, and risk-factor attributable outputs as structurally non-comparable unless explicit equivalent dynamic outputs are added later.

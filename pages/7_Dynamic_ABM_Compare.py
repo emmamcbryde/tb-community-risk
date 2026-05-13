@@ -38,9 +38,18 @@ def headline_rows(bundle: dict) -> list[dict[str, object]]:
 
 def bundle_debug_rows(bundle: dict) -> list[dict[str, object]]:
     metadata = bundle.get("metadata") or {}
+    technical = bundle.get("technical") or {}
+    dynamic_comparison = technical.get("dynamicComparison") if isinstance(technical, dict) else {}
+    dynamic_comparison = dynamic_comparison if isinstance(dynamic_comparison, dict) else {}
     projection = bundle.get("projection") or {}
     annual_rows = projection.get("annualRows") or []
     metric_names = [str(row.get("Metric") or row.get("metric")) for row in headline_rows(bundle) if isinstance(row, dict)]
+    dynamic_comparison_rows = dynamic_comparison.get("metricRows") or []
+    dynamic_comparison_metrics = [
+        str(row.get("Metric") or row.get("metric"))
+        for row in dynamic_comparison_rows
+        if isinstance(row, dict)
+    ]
     return [
         {"field": "topLevelKeys", "value": sorted(bundle.keys())},
         {"field": "model", "value": bundle.get("model", "")},
@@ -50,6 +59,8 @@ def bundle_debug_rows(bundle: dict) -> list[dict[str, object]]:
         {"field": "headlineRowCount", "value": len(headline_rows(bundle))},
         {"field": "keyMetrics", "value": metric_names},
         {"field": "projectionAnnualRowsCount", "value": len(annual_rows) if isinstance(annual_rows, list) else 0},
+        {"field": "technical.dynamicComparison.available", "value": dynamic_comparison.get("available", "")},
+        {"field": "technical.dynamicComparison.metrics", "value": dynamic_comparison_metrics},
     ]
 
 
