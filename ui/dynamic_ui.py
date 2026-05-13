@@ -114,6 +114,53 @@ def default_age_distribution():
     return pd.DataFrame({"AgeGroup": ages, "Proportion": prop})
 
 
+def default_five_year_age_distribution() -> pd.DataFrame:
+    rows = []
+    for start in range(0, 100, 5):
+        rows.append(
+            {
+                "AgeGroup": f"{start}-{start + 4}",
+                "AgeStart": start,
+                "AgeEnd": start + 4,
+                "Proportion": 5 / 101,
+            }
+        )
+    rows.append(
+        {
+            "AgeGroup": "100+",
+            "AgeStart": 100,
+            "AgeEnd": 100,
+            "Proportion": 1 / 101,
+        }
+    )
+    return pd.DataFrame(rows)
+
+
+def normalise_age_distribution(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["Proportion"] = pd.to_numeric(out["Proportion"], errors="coerce").fillna(0.0)
+    out["Proportion"] = out["Proportion"].clip(lower=0.0)
+    total = float(out["Proportion"].sum())
+    if total > 0:
+        out["Proportion"] = out["Proportion"] / total
+    return out
+
+
+def expand_five_year_age_distribution(df: pd.DataFrame, population: float) -> pd.DataFrame:
+    df = normalise_age_distribution(df)
+    rows = []
+    for _, row in df.iterrows():
+        start = int(row["AgeStart"])
+        end = int(row["AgeEnd"])
+        ages = list(range(start, end + 1))
+        if not ages:
+            continue
+        per_age_population = float(row["Proportion"]) * float(population) / len(ages)
+        for age in ages:
+            rows.append({"age": age, "population": per_age_population})
+    return pd.DataFrame(rows)
+
+
 # =====================================================
 # Load country-specific population structure (OWID CSV)
 # =====================================================
@@ -534,17 +581,27 @@ def render_dynamic_ui():
     st.sidebar.subheader("Age distribution")
     age_method = st.sidebar.radio(
         "Choose method:",
-        ["Country ISO code (recommended)", "Upload custom CSV", "Default global"],
+        [
+            "Country ISO code (recommended)",
+            "Enter manually by 5-year age group",
+            "Upload custom CSV",
+            "Default global",
+        ],
     )
 
     age_df_display = None
     df_country = None
     country = None
     age_upload_hash = None
+    manual_age_hash = None
+    manual_age_distribution_requested = False
 
     if age_method == "Country ISO code (recommended)":
         country = st.sidebar.text_input("ISO3 code", "AUS")
         age_df_display, df_country = load_population_data(country)
+
+    elif age_method == "Enter manually by 5-year age group":
+        manual_age_distribution_requested = True
 
     elif age_method == "Upload custom CSV":
         file = st.sidebar.file_uploader(
@@ -580,6 +637,34 @@ def render_dynamic_ui():
         df_country = pd.DataFrame(
             {"age": range(0, 101), "population": [population / 101] * 101}
         )
+
+    if manual_age_distribution_requested:
+        default_manual = default_five_year_age_distribution()
+        manual_rows = []
+        st.caption("Enter proportions by 5-year age band. Values are normalised automatically.")
+        with st.expander("Manual 5-year age distribution", expanded=True):
+            columns = st.columns(3)
+            for idx, row in default_manual.iterrows():
+                with columns[idx % 3]:
+                    value = st.number_input(
+                        str(row["AgeGroup"]),
+                        min_value=0.0,
+                        value=float(row["Proportion"]),
+                        step=0.01,
+                        format="%.6f",
+                        key=f"manual_age_prop_{row['AgeStart']}_{row['AgeEnd']}",
+                    )
+                manual_rows.append(
+                    {
+                        "AgeGroup": row["AgeGroup"],
+                        "AgeStart": int(row["AgeStart"]),
+                        "AgeEnd": int(row["AgeEnd"]),
+                        "Proportion": float(value),
+                    }
+                )
+        age_df_display = normalise_age_distribution(pd.DataFrame(manual_rows))
+        manual_age_hash = hash_df(age_df_display, cols=["AgeStart", "AgeEnd", "Proportion"])
+        df_country = expand_five_year_age_distribution(age_df_display, population)
 
     # Show age distribution
     st.subheader("📊 Age Distribution (5-year bins)")
@@ -626,6 +711,7 @@ def render_dynamic_ui():
         age_method,
         (country or ""),
         age_upload_hash,
+        manual_age_hash,
         tuple(sorted((k, float(v)) for k, v in risk_inputs.items())),
     )
 
