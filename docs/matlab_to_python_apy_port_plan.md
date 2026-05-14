@@ -154,7 +154,10 @@ Current implementation status:
 - Config/default/validation parity is implemented in `engine.apy.config` and `engine.apy.validation`.
 - Deterministic data loading, age distribution, regimen, summary, calibration, and cohort primitives are implemented.
 - Single-cohort simulation is implemented in `engine.apy.simulation`.
-- The full replicate runner, result bundle builder, do-nothing simulation, economics, and Streamlit Python-backend switch are still pending.
+- The replicate runner is implemented in `engine.apy.runner`.
+- A minimal Python result bundle is implemented in `engine.apy.results_bundle`.
+- A stochastic summary parity diagnostic helper is implemented in `engine.apy.parity`.
+- Do-nothing simulation, economics, and the Streamlit Python-backend switch are still pending.
 - The Python ABM does not yet claim MATLAB distributional parity for full scenario summaries.
 
 ## Validation Strategy
