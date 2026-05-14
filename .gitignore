@@ -19,6 +19,7 @@ Thumbs.db
 .spyproject/
 .ipynb_checkpoints/
 .history/
+
 # ABM generated outputs
 abm/output/*
 !abm/output/.gitkeep
