@@ -2,7 +2,9 @@
 
 ## Scope
 
-This inventory covers the MATLAB files in `abm/` on the `model-split` branch. The Python port should preserve `abm/tb_screening_mc_model_v9.m` as the reference implementation until validation passes. This plan does not propose changes to the MATLAB engine, the Python dynamic model equations, or the current Streamlit behavior.
+This inventory covers the MATLAB files in `abm/` on the `model-split` branch.
+The Python port should preserve `abm/tb_screening_mc_model_v9.m` as the reference implementation until validation passes.
+This plan does not propose changes to the MATLAB engine, the Python dynamic model equations, or the current Streamlit behavior.
 
 The first Python-native APY target is a backend MVP that can run APY scenarios without MATLAB and produce the same JSON-like results contract used by the existing Streamlit APY Results and Dynamic + APY ABM Compare pages.
 

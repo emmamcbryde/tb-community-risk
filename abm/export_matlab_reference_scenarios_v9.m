@@ -41,6 +41,7 @@ write_json_file(fullfile(outDir, 'scenario_config.json'), config);
 write_json_file(fullfile(outDir, 'matlab_results_bundle.json'), bundle);
 write_json_file(fullfile(outDir, 'matlab_dynamic_comparison.json'), ...
     bundle.technical.dynamicComparison);
+write_json_file(fullfile(outDir, 'manifest.json'), reference_manifest(scenarioName));
 
 summary = summarise_results_v9(results);
 writetable(summary.summaryTable, fullfile(outDir, 'matlab_summary.csv'));
@@ -56,6 +57,26 @@ if isfield(results, 'raw') && istable(results.raw)
 end
 
 fprintf('Reference outputs written to: %s\n', outDir);
+end
+
+function manifest = reference_manifest(scenarioName)
+manifest = struct();
+manifest.scenario_id = scenarioName;
+manifest.model = 'MATLAB APY v9 reference';
+manifest.purpose = 'Compact reference fixture for Python APY port validation';
+manifest.expected_files = { ...
+    'scenario_config.json', ...
+    'matlab_dynamic_comparison.json', ...
+    'matlab_summary.csv'};
+manifest.excluded_large_files = { ...
+    'matlab_results_bundle.json', ...
+    'matlab_raw_replicates.csv'};
+manifest.validation_focus = { ...
+    'summary metrics', ...
+    'technical.dynamicComparison', ...
+    'output contract compatibility'};
+manifest.tolerance_notes = ...
+    'Exact individual-level equality is not expected because MATLAB and NumPy random streams differ.';
 end
 
 function write_json_file(filename, value)
