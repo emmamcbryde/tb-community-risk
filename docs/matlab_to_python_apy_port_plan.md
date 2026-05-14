@@ -149,6 +149,14 @@ This P0 set is enough to:
 7. Port `run_tb_screening_do_nothing_v9.m` sufficiently to produce `technical.dynamicComparison`.
 8. Add a Python backend adapter behind the existing Streamlit backend interface, but keep MATLAB as the default until parity is acceptable.
 
+Current implementation status:
+
+- Config/default/validation parity is implemented in `engine.apy.config` and `engine.apy.validation`.
+- Deterministic data loading, age distribution, regimen, summary, calibration, and cohort primitives are implemented.
+- Single-cohort simulation is implemented in `engine.apy.simulation`.
+- The full replicate runner, result bundle builder, do-nothing simulation, economics, and Streamlit Python-backend switch are still pending.
+- The Python ABM does not yet claim MATLAB distributional parity for full scenario summaries.
+
 ## Validation Strategy
 
 Use MATLAB v9 as the reference until explicitly retired.
