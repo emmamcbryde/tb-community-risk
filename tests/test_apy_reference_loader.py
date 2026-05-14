@@ -114,6 +114,8 @@ class ApyReferenceLoaderTests(unittest.TestCase):
         self.assertIn("matlab_summary.csv", expected_files)
         self.assertIn("matlab_results_bundle.json", excluded_files)
         self.assertIn("matlab_raw_replicates.csv", excluded_files)
+        for expected_file in expected_files:
+            self.assertTrue((reference_dir / expected_file).is_file())
         self.assertEqual(loaded["scenario_config"]["N"], 1500)
         self.assertTrue(loaded["dynamic_comparison"]["available"])
         self.assertFalse(loaded["summary"].empty)

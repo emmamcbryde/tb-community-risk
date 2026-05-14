@@ -27,6 +27,7 @@ abm/app_code.txt
 *.json
 !validation/matlab_reference/**/scenario_config.json
 !validation/matlab_reference/**/matlab_dynamic_comparison.json
+!validation/matlab_reference/**/matlab_parameter_snapshot.json
 !validation/matlab_reference/**/manifest.json
 validation/matlab_reference/**/matlab_results_bundle.json
 validation/matlab_reference/**/matlab_raw_replicates.csv

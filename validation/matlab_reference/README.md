@@ -13,6 +13,7 @@ Validation should focus on:
 - medians and uncertainty intervals;
 - stable output-contract fields;
 - `technical.dynamicComparison` values where available;
+- compact deterministic parameter snapshots where available;
 - scenario configuration compatibility.
 
 Generated reference outputs should not be treated as general model outputs.
