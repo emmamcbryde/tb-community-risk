@@ -93,6 +93,22 @@ def run_scenario(config: dict[str, Any] | None = None) -> dict[str, Any]:
     return run_replicates(config=config)
 
 
+def run_scenario_with_do_nothing(
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from engine.apy.natural_history import run_do_nothing_summary
+    from engine.apy.results_bundle import build_results_bundle
+
+    results = run_scenario(config)
+    do_nothing = run_do_nothing_summary(results)
+    bundle = build_results_bundle(results, do_nothing=do_nothing)
+    return {
+        "results": results,
+        "doNothing": do_nothing,
+        "bundle": bundle,
+    }
+
+
 def build_strategy_metadata(config: dict[str, Any], reg: dict[str, Any]) -> dict[str, Any]:
     return {
         "testType": str(config["testType"]).upper(),

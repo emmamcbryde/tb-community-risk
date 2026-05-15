@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from engine.apy.results_bundle import KEY_METRICS, build_results_bundle
+from engine.apy.natural_history import run_do_nothing_summary
 from engine.apy.runner import run_replicates
 
 
@@ -42,6 +43,31 @@ class ApyResultsBundleTests(unittest.TestCase):
         self.assertIn("missingFields", dynamic)
         self.assertIn("do-nothing", dynamic["notes"])
         self.assertIn("cumulative_cases_averted", dynamic)
+
+    def test_bundle_with_do_nothing_has_complete_dynamic_comparison(self) -> None:
+        do_nothing = run_do_nothing_summary(self.results)
+        bundle = build_results_bundle(self.results, do_nothing=do_nothing)
+        dynamic = bundle["technical"]["dynamicComparison"]
+
+        self.assertIs(dynamic["available"], True)
+        self.assertEqual(dynamic["source"], "doNothing.derived")
+        self.assertEqual(dynamic["missingFields"], [])
+
+    def test_complete_dynamic_comparison_metric_rows_include_required_metrics(self) -> None:
+        do_nothing = run_do_nothing_summary(self.results)
+        bundle = build_results_bundle(self.results, do_nothing=do_nothing)
+        rows = bundle["technical"]["dynamicComparison"]["metricRows"]
+        metrics = {row["Metric"] for row in rows}
+
+        self.assertEqual(
+            metrics,
+            {
+                "cumulative_baseline_active_tb_cases",
+                "cumulative_intervention_active_tb_cases",
+                "cumulative_cases_averted",
+                "relative_reduction_cumulative_active_tb_cases",
+            },
+        )
 
 
 if __name__ == "__main__":

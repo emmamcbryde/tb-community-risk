@@ -5,9 +5,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from engine.apy.parity import compare_python_summary_to_reference
+from engine.apy.parity import (
+    compare_dynamic_comparison_to_reference,
+    compare_python_summary_to_reference,
+)
 from engine.apy.reference_loader import load_reference_dir
-from engine.apy.runner import run_replicates
+from engine.apy.runner import run_replicates, run_scenario_with_do_nothing
 
 
 FIXTURE_DIR = (
@@ -62,6 +65,30 @@ class ApyParityTests(unittest.TestCase):
         )
 
         self.assertFalse(comparison["Comparable"].any())
+
+    def test_dynamic_comparison_compares_to_reference_without_crashing(self) -> None:
+        reference = load_reference_dir(FIXTURE_DIR)
+        python_out = run_scenario_with_do_nothing({"N": 100, "nReps": 2, "seed": 13})
+
+        comparison = compare_dynamic_comparison_to_reference(
+            python_out["bundle"]["technical"]["dynamicComparison"],
+            reference["dynamic_comparison"],
+        )
+
+        self.assertEqual(
+            list(comparison.columns),
+            [
+                "Metric",
+                "PythonMedian",
+                "MatlabMedian",
+                "AbsoluteDifference",
+                "RelativeDifference",
+                "Comparable",
+                "Notes",
+            ],
+        )
+        self.assertEqual(len(comparison), 4)
+        self.assertTrue(comparison["Notes"].str.contains("strict equality").any())
 
 
 if __name__ == "__main__":

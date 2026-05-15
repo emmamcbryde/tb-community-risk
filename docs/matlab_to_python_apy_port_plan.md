@@ -156,8 +156,10 @@ Current implementation status:
 - Single-cohort simulation is implemented in `engine.apy.simulation`.
 - The replicate runner is implemented in `engine.apy.runner`.
 - A minimal Python result bundle is implemented in `engine.apy.results_bundle`.
+- Do-nothing/natural-history summary support is implemented in `engine.apy.natural_history`.
+- Python bundles can produce a complete `technical.dynamicComparison` block when supplied with do-nothing derived rows.
 - A stochastic summary parity diagnostic helper is implemented in `engine.apy.parity`.
-- Do-nothing simulation, economics, and the Streamlit Python-backend switch are still pending.
+- Economics, attributable-risk add-ons, and the Streamlit Python-backend switch are still pending.
 - The Python ABM does not yet claim MATLAB distributional parity for full scenario summaries.
 
 ## Validation Strategy

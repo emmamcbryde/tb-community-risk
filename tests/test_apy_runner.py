@@ -4,7 +4,11 @@ import unittest
 
 import pandas as pd
 
-from engine.apy.runner import run_replicates, run_scenario
+from engine.apy.runner import (
+    run_replicates,
+    run_scenario,
+    run_scenario_with_do_nothing,
+)
 
 
 class ApyRunnerTests(unittest.TestCase):
@@ -70,6 +74,16 @@ class ApyRunnerTests(unittest.TestCase):
 
         self.assertEqual(raw["rep"].tolist(), [1, 2])
         self.assertTrue((raw["seed"] >= 0).all())
+
+    def test_run_scenario_with_do_nothing_returns_bundle(self) -> None:
+        out = run_scenario_with_do_nothing({"N": 50, "nReps": 2, "seed": 12})
+
+        self.assertIn("results", out)
+        self.assertIn("doNothing", out)
+        self.assertIn("bundle", out)
+        dynamic = out["bundle"]["technical"]["dynamicComparison"]
+        self.assertIs(dynamic["available"], True)
+        self.assertEqual(dynamic["source"], "doNothing.derived")
 
 
 if __name__ == "__main__":

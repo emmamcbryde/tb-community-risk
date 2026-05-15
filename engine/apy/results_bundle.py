@@ -4,6 +4,8 @@ from typing import Any
 
 import pandas as pd
 
+from engine.apy.summary import empirical_quantile
+
 
 KEY_METRICS = [
     "nScreened",
@@ -20,10 +22,13 @@ KEY_METRICS = [
 ]
 
 
-def build_results_bundle(results: dict[str, Any]) -> dict[str, Any]:
+def build_results_bundle(
+    results: dict[str, Any],
+    do_nothing: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     summary = results["summary"]
     key_metrics = summary[summary["Metric"].isin(KEY_METRICS)].copy()
-    dynamic_comparison = _build_dynamic_comparison(results)
+    dynamic_comparison = _build_dynamic_comparison(results, do_nothing=do_nothing)
     return {
         "metadata": {
             "available": True,
@@ -56,7 +61,69 @@ def build_results_bundle(results: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_dynamic_comparison(results: dict[str, Any]) -> dict[str, Any]:
+def _build_dynamic_comparison(
+    results: dict[str, Any],
+    do_nothing: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if do_nothing is not None and isinstance(do_nothing.get("derived"), pd.DataFrame):
+        return _build_complete_dynamic_comparison(results, do_nothing["derived"])
+    return _build_partial_dynamic_comparison(results)
+
+
+def _build_complete_dynamic_comparison(
+    results: dict[str, Any],
+    derived: pd.DataFrame,
+) -> dict[str, Any]:
+    cfg = results.get("interfaceConfig", {})
+    metric_map = {
+        "cumulative_baseline_active_tb_cases": "nActiveBy20y_DoNothing",
+        "cumulative_intervention_active_tb_cases": "nActiveBy20y_AfterStrategy",
+        "cumulative_cases_averted": "nActiveBy20y_Prevented",
+        "relative_reduction_cumulative_active_tb_cases": "relReduction20y",
+    }
+    missing = [
+        column for column in metric_map.values()
+        if column not in derived.columns
+    ]
+    if missing:
+        partial = _build_partial_dynamic_comparison(results)
+        partial["source"] = "doNothing.derived incomplete"
+        partial["missingFields"] = missing
+        partial["notes"] = (
+            "Do-nothing derived table was supplied but lacks required "
+            "dynamic-comparison fields."
+        )
+        return partial
+
+    metric_rows = [
+        _dynamic_metric_row(metric, derived[column])
+        for metric, column in metric_map.items()
+    ]
+    rows_by_metric = {row["Metric"]: row for row in metric_rows}
+    return {
+        "available": True,
+        "source": "doNothing.derived",
+        "population": cfg.get("N"),
+        "followHorizon": cfg.get("followHorizon"),
+        "cumulative_baseline_active_tb_cases": rows_by_metric[
+            "cumulative_baseline_active_tb_cases"
+        ]["Median"],
+        "cumulative_intervention_active_tb_cases": rows_by_metric[
+            "cumulative_intervention_active_tb_cases"
+        ]["Median"],
+        "cumulative_cases_averted": rows_by_metric[
+            "cumulative_cases_averted"
+        ]["Median"],
+        "relative_reduction_cumulative_active_tb_cases": rows_by_metric[
+            "relative_reduction_cumulative_active_tb_cases"
+        ]["Median"],
+        "metricRows": metric_rows,
+        "missingFields": [],
+        "notes": "",
+    }
+
+
+def _build_partial_dynamic_comparison(results: dict[str, Any]) -> dict[str, Any]:
     cfg = results.get("interfaceConfig", {})
     summary_by_metric = {
         row["Metric"]: row for row in results["summary"].to_dict(orient="records")
@@ -106,6 +173,25 @@ def _build_dynamic_comparison(results: dict[str, Any]) -> dict[str, Any]:
         "metricRows": metric_rows,
         "missingFields": missing,
         "notes": "Full dynamicComparison requires do-nothing/natural-history add-on parity.",
+    }
+
+
+def _dynamic_metric_row(metric: str, values) -> dict[str, Any]:
+    x = pd.Series(values, dtype="float64")
+    x = x.dropna()
+    if x.empty:
+        median = low = high = None
+    else:
+        median = float(x.median())
+        low = float(empirical_quantile(x.to_numpy(), 0.025))
+        high = float(empirical_quantile(x.to_numpy(), 0.975))
+    return {
+        "Metric": metric,
+        "Median": median,
+        "Low95": low,
+        "High95": high,
+        "Source": "doNothing.derived",
+        "Notes": "",
     }
 
 
