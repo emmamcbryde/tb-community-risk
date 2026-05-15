@@ -2,6 +2,14 @@ from pathlib import Path
 import unittest
 
 
+def _cr_only_count(raw: bytes) -> int:
+    return sum(
+        1
+        for index, byte in enumerate(raw)
+        if byte == 13 and (index + 1 >= len(raw) or raw[index + 1] != 10)
+    )
+
+
 class ApySourceFormattingTests(unittest.TestCase):
     def test_apy_python_sources_are_not_minified(self):
         root = Path(__file__).resolve().parents[1]
@@ -12,7 +20,19 @@ class ApySourceFormattingTests(unittest.TestCase):
                 continue
 
             with self.subTest(file=path.name):
-                lines = path.read_text(encoding="utf-8").splitlines()
+                raw = path.read_bytes()
+                lines = raw.decode("utf-8").splitlines()
+
+                self.assertGreater(
+                    raw.count(b"\n"),
+                    0,
+                    f"{path} contains no LF line endings",
+                )
+                self.assertEqual(
+                    _cr_only_count(raw),
+                    0,
+                    f"{path} contains CR-only line endings",
+                )
 
                 self.assertGreater(
                     len(lines),
@@ -26,6 +46,14 @@ class ApySourceFormattingTests(unittest.TestCase):
                     240,
                     f"{path} contains an unexpectedly long line",
                 )
+
+    def test_gitattributes_uses_detectable_line_endings(self):
+        root = Path(__file__).resolve().parents[1]
+        path = root / ".gitattributes"
+        raw = path.read_bytes()
+
+        self.assertGreater(raw.count(b"\n"), 0)
+        self.assertEqual(_cr_only_count(raw), 0)
 
 
 if __name__ == "__main__":
