@@ -1,0 +1,148 @@
+[
+  {
+    "scenario_id": "default_random_igra_3hp_N1500_seed1",
+    "description": "Default random IGRA 3HP scenario used as the first Python-vs-MATLAB reference fixture.",
+    "config_overrides": {
+      "screeningStrategy": "random",
+      "testType": "IGRA",
+      "regimen": "3HP",
+      "screenCoverage": 0.3,
+      "N": 1500,
+      "nReps": 2000,
+      "seed": 1
+    },
+    "expected_focus": [
+      "baseline smoke fixture",
+      "random screening",
+      "IGRA",
+      "3HP"
+    ],
+    "notes": "Current committed compact fixture."
+  },
+  {
+    "scenario_id": "ltbi_igra_3hp_N1500_seed1",
+    "description": "LTBI-targeted IGRA 3HP scenario.",
+    "config_overrides": {
+      "screeningStrategy": "ltbi",
+      "testType": "IGRA",
+      "regimen": "3HP",
+      "screenCoverage": 0.3,
+      "N": 1500,
+      "nReps": 2000,
+      "seed": 1
+    },
+    "expected_focus": [
+      "LTBI targeting",
+      "targeted vs random comparison"
+    ],
+    "notes": "Requires MATLAB fixture export before full validation."
+  },
+  {
+    "scenario_id": "cure_igra_3hp_N1500_seed1",
+    "description": "Cure-targeted IGRA 3HP scenario.",
+    "config_overrides": {
+      "screeningStrategy": "cure",
+      "testType": "IGRA",
+      "regimen": "3HP",
+      "screenCoverage": 0.3,
+      "N": 1500,
+      "nReps": 2000,
+      "seed": 1
+    },
+    "expected_focus": [
+      "cure targeting",
+      "targeted strategy outputs"
+    ],
+    "notes": "Requires MATLAB fixture export before full validation."
+  },
+  {
+    "scenario_id": "prevent_igra_3hp_N1500_seed1",
+    "description": "Prevent-targeted IGRA 3HP scenario.",
+    "config_overrides": {
+      "screeningStrategy": "prevent",
+      "testType": "IGRA",
+      "regimen": "3HP",
+      "screenCoverage": 0.3,
+      "N": 1500,
+      "nReps": 2000,
+      "seed": 1
+    },
+    "expected_focus": [
+      "prevention targeting",
+      "prevented active TB"
+    ],
+    "notes": "Requires MATLAB fixture export before full validation."
+  },
+  {
+    "scenario_id": "random_tst_3hp_N1500_seed1",
+    "description": "Random TST 3HP scenario.",
+    "config_overrides": {
+      "screeningStrategy": "random",
+      "testType": "TST",
+      "regimen": "3HP",
+      "screenCoverage": 0.3,
+      "N": 1500,
+      "nReps": 2000,
+      "seed": 1
+    },
+    "expected_focus": [
+      "TST test performance",
+      "BCG-related false positives"
+    ],
+    "notes": "Requires MATLAB fixture export before full validation."
+  },
+  {
+    "scenario_id": "random_igra_4r_N1500_seed1",
+    "description": "Random IGRA 4R scenario.",
+    "config_overrides": {
+      "screeningStrategy": "random",
+      "testType": "IGRA",
+      "regimen": "4R",
+      "screenCoverage": 0.3,
+      "N": 1500,
+      "nReps": 2000,
+      "seed": 1
+    },
+    "expected_focus": [
+      "4R regimen",
+      "regimen cascade parity"
+    ],
+    "notes": "Requires MATLAB fixture export before full validation."
+  },
+  {
+    "scenario_id": "zero_coverage_igra_3hp_N1500_seed1",
+    "description": "Zero-coverage random IGRA 3HP scenario.",
+    "config_overrides": {
+      "screeningStrategy": "random",
+      "testType": "IGRA",
+      "regimen": "3HP",
+      "screenCoverage": 0,
+      "N": 1500,
+      "nReps": 2000,
+      "seed": 1
+    },
+    "expected_focus": [
+      "zero screening coverage",
+      "edge-case counts"
+    ],
+    "notes": "Requires MATLAB fixture export before full validation."
+  },
+  {
+    "scenario_id": "high_coverage_igra_3hp_N1500_seed1",
+    "description": "High-coverage random IGRA 3HP scenario.",
+    "config_overrides": {
+      "screeningStrategy": "random",
+      "testType": "IGRA",
+      "regimen": "3HP",
+      "screenCoverage": 0.8,
+      "N": 1500,
+      "nReps": 2000,
+      "seed": 1
+    },
+    "expected_focus": [
+      "high screening coverage",
+      "coverage sensitivity"
+    ],
+    "notes": "Requires MATLAB fixture export before full validation."
+  }
+]

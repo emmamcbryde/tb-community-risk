@@ -8,7 +8,11 @@ import pandas as pd
 
 from engine.apy.config import build_default_config
 from engine.apy.parity import DYNAMIC_COMPARISON_METRICS
-from engine.apy.reference_loader import load_reference_dir
+from engine.apy.reference_loader import (
+    list_reference_scenario_dirs,
+    load_reference_dir,
+    load_reference_scenario_suite,
+)
 from engine.apy.runner import run_scenario_with_do_nothing
 
 
@@ -89,6 +93,93 @@ def run_reference_distributional_validation(
     }
 
 
+def run_reference_suite_distributional_validation(
+    reference_root: str | Path,
+    suite_file: str | Path | None = None,
+    scenario_ids: list[str] | None = None,
+    config_overrides: dict[str, Any] | None = None,
+    tolerance: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    root = Path(reference_root)
+    scenarios = _suite_scenarios(root, suite_file)
+    requested_ids = _normalise_scenario_ids(scenario_ids)
+    if requested_ids is not None:
+        scenarios = [
+            scenario for scenario in scenarios
+            if scenario["scenario_id"] in requested_ids
+        ]
+
+    scenario_rows = []
+    metric_frames = []
+    scenario_results = {}
+    for scenario in scenarios:
+        scenario_id = str(scenario["scenario_id"])
+        scenario_dir = root / scenario_id
+        if not scenario_dir.is_dir():
+            scenario_rows.append(
+                {
+                    "scenario_id": scenario_id,
+                    "n_metrics": 0,
+                    "n_pass": 0,
+                    "n_fail": 0,
+                    "pass_rate": math.nan,
+                    "max_abs_relative_difference": math.nan,
+                    "notes": f"Reference fixture directory missing: {scenario_dir}",
+                }
+            )
+            continue
+
+        validation_output = run_reference_distributional_validation(
+            scenario_dir,
+            config_overrides=config_overrides,
+            tolerance=tolerance,
+        )
+        validation = validation_output["validation"].copy()
+        validation.insert(0, "scenario_id", scenario_id)
+        metric_frames.append(validation)
+        scenario_results[scenario_id] = validation_output
+
+        comparable_rel = validation["RelativeDifference"].abs().dropna()
+        n_metrics = int(len(validation))
+        n_pass = int(validation["Pass"].sum())
+        scenario_rows.append(
+            {
+                "scenario_id": scenario_id,
+                "n_metrics": n_metrics,
+                "n_pass": n_pass,
+                "n_fail": n_metrics - n_pass,
+                "pass_rate": math.nan if n_metrics == 0 else n_pass / n_metrics,
+                "max_abs_relative_difference": (
+                    math.nan if comparable_rel.empty else float(comparable_rel.max())
+                ),
+                "notes": "Fixture validated against Python diagnostic tolerances.",
+            }
+        )
+
+    metric_rows = (
+        pd.concat(metric_frames, ignore_index=True)
+        if metric_frames
+        else pd.DataFrame(
+            columns=[
+                "scenario_id",
+                "Metric",
+                "PythonMedian",
+                "MatlabMedian",
+                "AbsoluteDifference",
+                "RelativeDifference",
+                "Tolerance",
+                "Pass",
+                "Notes",
+            ]
+        )
+    )
+    return {
+        "scenarioRows": pd.DataFrame(scenario_rows),
+        "metricRows": metric_rows,
+        "scenarioResults": scenario_results,
+    }
+
+
 def portable_config_from_reference(reference_config: dict[str, Any]) -> dict[str, Any]:
     config = build_default_config()
     for field in PORTABLE_REFERENCE_FIELDS:
@@ -157,15 +248,21 @@ def _validation_row(
 ) -> dict[str, Any]:
     comparable = python_value is not None and matlab_value is not None
     if comparable:
-        abs_diff = float(python_value) - float(matlab_value)
-        rel_diff = (
-            math.nan
-            if float(matlab_value) == 0
-            else abs_diff / float(matlab_value)
-        )
-        allowed = _allowed_difference(metric, float(matlab_value), tolerance)
-        passed = abs(abs_diff) <= allowed
-        tolerance_label = f"abs <= {allowed:.6g}"
+        py = float(python_value)
+        matlab = float(matlab_value)
+        if math.isinf(py) or math.isinf(matlab):
+            same_infinity = math.isinf(py) and math.isinf(matlab) and py == matlab
+            abs_diff = 0.0 if same_infinity else math.inf
+            rel_diff = 0.0 if same_infinity else math.inf
+            allowed = 0.0
+            passed = same_infinity
+            tolerance_label = "same infinity"
+        else:
+            abs_diff = py - matlab
+            rel_diff = math.nan if matlab == 0 else abs_diff / matlab
+            allowed = _allowed_difference(metric, matlab, tolerance)
+            passed = abs(abs_diff) <= allowed
+            tolerance_label = f"abs <= {allowed:.6g}"
     else:
         abs_diff = math.nan
         rel_diff = math.nan
@@ -248,3 +345,31 @@ def _matlab_empty_to_none(value):
     if isinstance(value, list):
         return [_matlab_empty_to_none(item) for item in value]
     return value
+
+
+def _suite_scenarios(root: Path, suite_file: str | Path | None) -> list[dict[str, Any]]:
+    if suite_file is not None:
+        return load_reference_scenario_suite(suite_file)
+
+    return [
+        {
+            "scenario_id": path.name,
+            "description": "Discovered committed MATLAB reference fixture.",
+            "config_overrides": {},
+            "expected_focus": [],
+            "notes": "Discovered from reference directory.",
+        }
+        for path in list_reference_scenario_dirs(root)
+    ]
+
+
+def _normalise_scenario_ids(scenario_ids: list[str] | None) -> set[str] | None:
+    if not scenario_ids:
+        return None
+    out = set()
+    for item in scenario_ids:
+        for part in str(item).split(","):
+            part = part.strip()
+            if part:
+                out.add(part)
+    return out

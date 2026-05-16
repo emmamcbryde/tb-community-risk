@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import shutil
 import unittest
 
 import pandas as pd
@@ -9,13 +11,17 @@ from engine.apy.distributional_validation import (
     build_distributional_validation_table,
     portable_config_from_reference,
     run_reference_distributional_validation,
+    run_reference_suite_distributional_validation,
 )
 from engine.apy.reference_loader import load_reference_dir
+from scripts.run_apy_distributional_validation import main as run_validation_cli
 
 
 FIXTURE_DIR = (
     Path("validation") / "matlab_reference" / "default_random_igra_3hp_N1500_seed1"
 )
+REFERENCE_ROOT = Path("validation") / "matlab_reference"
+SUITE_FILE = REFERENCE_ROOT / "scenario_suite_v1.json"
 
 
 class ApyDistributionalValidationTests(unittest.TestCase):
@@ -76,6 +82,76 @@ class ApyDistributionalValidationTests(unittest.TestCase):
         self.assertEqual(out["config"]["seed"], 1)
         self.assertEqual(out["config"]["screeningStrategy"], "random")
         self.assertEqual(len(out["validation"]), 6)
+
+    def test_batch_validation_runs_on_committed_default_fixture(self) -> None:
+        out = run_reference_suite_distributional_validation(
+            REFERENCE_ROOT,
+            suite_file=SUITE_FILE,
+            scenario_ids=["default_random_igra_3hp_N1500_seed1"],
+            config_overrides={"N": 100, "nReps": 2},
+        )
+
+        self.assertIn("scenarioRows", out)
+        self.assertIn("metricRows", out)
+        self.assertEqual(len(out["scenarioRows"]), 1)
+        self.assertFalse(out["metricRows"].empty)
+
+    def test_batch_validation_reports_missing_suite_fixtures(self) -> None:
+        suite_path = Path("validation") / "output" / "test_missing_suite.json"
+        suite_path.parent.mkdir(parents=True, exist_ok=True)
+        suite_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "scenario_id": "missing_fixture_for_test",
+                        "description": "Missing fixture for unit test.",
+                        "config_overrides": {},
+                        "expected_focus": [],
+                        "notes": "",
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        try:
+            out = run_reference_suite_distributional_validation(
+                REFERENCE_ROOT,
+                suite_file=suite_path,
+                scenario_ids=["missing_fixture_for_test"],
+                config_overrides={"N": 100, "nReps": 2},
+            )
+
+            row = out["scenarioRows"].iloc[0]
+            self.assertEqual(row["n_metrics"], 0)
+            self.assertIn("missing", row["notes"])
+        finally:
+            suite_path.unlink(missing_ok=True)
+
+    def test_cli_runs_quick_default_fixture(self) -> None:
+        out_dir = Path("validation") / "output" / "test_cli_distributional_validation"
+        shutil.rmtree(out_dir, ignore_errors=True)
+        try:
+            exit_code = run_validation_cli(
+                [
+                    "--reference-root",
+                    str(REFERENCE_ROOT),
+                    "--suite-file",
+                    str(SUITE_FILE),
+                    "--scenario-id",
+                    "default_random_igra_3hp_N1500_seed1",
+                    "--quick",
+                    "2",
+                    "--output-dir",
+                    str(out_dir),
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue((out_dir / "scenario_summary.csv").is_file())
+            self.assertTrue((out_dir / "metric_validation_rows.csv").is_file())
+            self.assertTrue((out_dir / "validation_report.md").is_file())
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

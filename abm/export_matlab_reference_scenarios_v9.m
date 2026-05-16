@@ -15,22 +15,27 @@ rehash;
 fprintf('MATLAB engine resolution for tb_screening_mc_model_v9:\n');
 fprintf('%s\n', strtrim(evalc('which tb_screening_mc_model_v9 -all')));
 
-scenarioName = 'default_random_igra_3hp_N1500_seed1';
 thisDir = fileparts(mfilename('fullpath'));
 repoRoot = fileparts(thisDir);
-outDir = fullfile(repoRoot, 'validation', 'matlab_reference', scenarioName);
+referenceRoot = fullfile(repoRoot, 'validation', 'matlab_reference');
+suiteFile = fullfile(referenceRoot, 'scenario_suite_v1.json');
+scenarios = load_reference_suite(suiteFile);
+
+for i = 1:numel(scenarios)
+    export_one_reference_scenario(referenceRoot, scenarios(i));
+end
+end
+
+function export_one_reference_scenario(referenceRoot, scenario)
+scenarioName = char(scenario.scenario_id);
+outDir = fullfile(referenceRoot, scenarioName);
 if ~exist(outDir, 'dir')
     mkdir(outDir);
 end
 
 config = build_default_config_v9();
 config.scenarioLabel = scenarioName;
-config.N = 1500;
-config.seed = 1;
-config.followHorizon = 20;
-config.screeningStrategy = 'random';
-config.testType = 'IGRA';
-config.regimen = '3HP';
+config = apply_config_overrides(config, scenario.config_overrides);
 
 fprintf('Running MATLAB APY reference scenario: %s\n', scenarioName);
 results = run_scenario_v9(config);
@@ -41,9 +46,7 @@ write_json_file(fullfile(outDir, 'scenario_config.json'), config);
 write_json_file(fullfile(outDir, 'matlab_results_bundle.json'), bundle);
 write_json_file(fullfile(outDir, 'matlab_dynamic_comparison.json'), ...
     bundle.technical.dynamicComparison);
-write_json_file(fullfile(outDir, 'matlab_parameter_snapshot.json'), ...
-    parameter_snapshot(results));
-write_json_file(fullfile(outDir, 'manifest.json'), reference_manifest(scenarioName));
+write_json_file(fullfile(outDir, 'manifest.json'), reference_manifest(scenario));
 
 summary = summarise_results_v9(results);
 writetable(summary.summaryTable, fullfile(outDir, 'matlab_summary.csv'));
@@ -61,15 +64,40 @@ end
 fprintf('Reference outputs written to: %s\n', outDir);
 end
 
-function manifest = reference_manifest(scenarioName)
+function scenarios = load_reference_suite(suiteFile)
+if ~exist(suiteFile, 'file')
+    error('Reference scenario suite not found: %s', suiteFile);
+end
+payload = jsondecode(fileread(suiteFile));
+if isstruct(payload)
+    scenarios = payload;
+elseif iscell(payload)
+    scenarios = [payload{:}];
+else
+    error('Reference scenario suite must be a JSON object array.');
+end
+end
+
+function config = apply_config_overrides(config, overrides)
+if isempty(overrides)
+    return;
+end
+fields = fieldnames(overrides);
+for i = 1:numel(fields)
+    config.(fields{i}) = overrides.(fields{i});
+end
+end
+
+function manifest = reference_manifest(scenario)
+scenarioName = char(scenario.scenario_id);
 manifest = struct();
 manifest.scenario_id = scenarioName;
+manifest.description = scenario.description;
 manifest.model = 'MATLAB APY v9 reference';
 manifest.purpose = 'Compact reference fixture for Python APY port validation';
 manifest.expected_files = { ...
     'scenario_config.json', ...
     'matlab_dynamic_comparison.json', ...
-    'matlab_parameter_snapshot.json', ...
     'matlab_summary.csv'};
 manifest.excluded_large_files = { ...
     'matlab_results_bundle.json', ...

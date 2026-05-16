@@ -71,3 +71,101 @@ All 22 compared metrics passed the current initial tolerance rule.
 - Do-nothing and `technical.dynamicComparison` parity are now covered for this
   fixture, but economics, attributable-risk add-ons, and Streamlit Python
   backend switching remain pending.
+
+## Scenario Suite V1
+
+The next diagnostic suite is defined in:
+
+`validation/matlab_reference/scenario_suite_v1.json`
+
+It covers:
+
+- random / IGRA / 3HP at default 30% coverage;
+- LTBI, cure, and prevent targeting with IGRA / 3HP;
+- TST vs IGRA under random screening;
+- 4R vs 3HP under random IGRA screening;
+- zero coverage and high coverage edge/sensitivity cases.
+
+All eight compact scenario fixtures are committed at the time of this note.
+Missing suite fixture directories are still reported in the batch validation
+summary rather than causing the validator to fail.
+
+Batch run date: 2026-05-16
+
+All eight scenarios passed the current diagnostic tolerances.
+
+| Scenario | Metrics | Passed | Failed | Pass rate | Max absolute relative difference |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| default_random_igra_3hp_N1500_seed1 | 22 | 22 | 0 | 1.0 | 0.0526315789 |
+| ltbi_igra_3hp_N1500_seed1 | 22 | 22 | 0 | 1.0 | 0.0188679245 |
+| cure_igra_3hp_N1500_seed1 | 22 | 22 | 0 | 1.0 | 0.0151515152 |
+| prevent_igra_3hp_N1500_seed1 | 22 | 22 | 0 | 1.0 | 0.05 |
+| random_tst_3hp_N1500_seed1 | 22 | 22 | 0 | 1.0 | 0.0333333333 |
+| random_igra_4r_N1500_seed1 | 22 | 22 | 0 | 1.0 | 0.0095238095 |
+| zero_coverage_igra_3hp_N1500_seed1 | 22 | 22 | 0 | 1.0 | 0.0088495575 |
+| high_coverage_igra_3hp_N1500_seed1 | 22 | 22 | 0 | 1.0 | 0.0555555556 |
+
+## Generating MATLAB Compact Fixtures
+
+From MATLAB, run:
+
+```matlab
+clear functions
+rehash
+export_matlab_reference_scenarios_v9
+```
+
+The exporter reads `validation/matlab_reference/scenario_suite_v1.json` and
+writes compact outputs under:
+
+`validation/matlab_reference/<scenario_id>/`
+
+Commit only:
+
+- `scenario_config.json`
+- `matlab_dynamic_comparison.json`
+- `matlab_summary.csv`
+- `manifest.json`
+
+Large raw/bundle files should remain ignored.
+
+## Running Python Batch Validation
+
+Run the suite against whatever MATLAB fixtures are currently present:
+
+```powershell
+python scripts/run_apy_distributional_validation.py `
+  --reference-root validation/matlab_reference `
+  --suite-file validation/matlab_reference/scenario_suite_v1.json `
+  --output-dir validation/output/apy_python_matlab_distributional_validation
+```
+
+For a quick local check against one scenario:
+
+```powershell
+python scripts/run_apy_distributional_validation.py `
+  --reference-root validation/matlab_reference `
+  --suite-file validation/matlab_reference/scenario_suite_v1.json `
+  --scenario-id default_random_igra_3hp_N1500_seed1 `
+  --quick 20
+```
+
+Outputs are written to:
+
+- `scenario_summary.csv`
+- `metric_validation_rows.csv`
+- `validation_report.md`
+
+The output directory is generated data and should not be committed by default.
+
+## Future Tolerance Tightening
+
+Current tolerances are broad diagnostic tolerances. They should be tightened
+after:
+
+- multiple MATLAB fixtures are committed;
+- random, targeted, TST, regimen, zero-coverage, and high-coverage scenarios
+  are all represented;
+- failures are triaged as stochastic variation, known model-port gap, or
+  genuine implementation bug;
+- repeated validation runs show stable median-level agreement.
