@@ -12,6 +12,7 @@ from app.display import (
 )
 from app.state import (
     get_backend,
+    get_backend_name,
     init_session_state,
     mark_economics_changed,
     mark_economics_completed,
@@ -22,9 +23,18 @@ from app.state import (
 
 init_session_state()
 backend = get_backend()
+backend_name = get_backend_name()
 
 st.title("Economics")
-st.caption("First economics workflow backed by MATLAB.")
+st.caption("First economics workflow. Economics is currently backed by MATLAB.")
+
+if backend_name == "python_apy":
+    st.warning(
+        "Economics is currently available only through the MATLAB APY backend. "
+        "The Python APY backend does not yet include economics."
+    )
+    st.info("Switch to the MATLAB v9 reference backend on the Scenario page to run economics.")
+    st.stop()
 
 ECONOMICS_WIDGET_KEYS = [
     "econ_currency_code",

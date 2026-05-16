@@ -8,30 +8,67 @@ import streamlit as st
 from app.display import arrow_safe_dataframe, display_string
 from app.state import (
     get_backend,
+    get_backend_name,
     init_session_state,
     mark_config_changed,
     mark_validation_completed,
     record_message,
+    set_backend_name,
     sync_backend_status,
 )
 from adapters.paths import scenarios_dir
 
 
 init_session_state()
-backend = get_backend()
 
 st.title("Scenario")
-st.caption("Initial APY v9 scenario shell backed by MATLAB.")
+st.caption("APY v9 scenario setup for the selected backend.")
+
+BACKEND_LABELS = {
+    "matlab": "MATLAB v9 reference",
+    "python_apy": "Python APY v9 port (experimental)",
+}
+BACKEND_NAMES = {label: name for name, label in BACKEND_LABELS.items()}
+
+current_backend_name = get_backend_name()
+selected_backend_label = st.selectbox(
+    "APY backend",
+    list(BACKEND_NAMES),
+    index=list(BACKEND_NAMES).index(
+        BACKEND_LABELS.get(current_backend_name, BACKEND_LABELS["matlab"])
+    ),
+)
+selected_backend_name = BACKEND_NAMES[selected_backend_label]
+if selected_backend_name != current_backend_name:
+    set_backend_name(selected_backend_name)
+    st.rerun()
+
+backend = get_backend()
+
+st.caption(
+    "MATLAB remains the reference backend. The Python APY backend is experimental "
+    "and has passed diagnostic validation across the committed scenario suite, "
+    "but economics and attributable-risk add-ons are not yet ported."
+)
 
 
 def display_backend_status() -> None:
     status = backend.status()
     sync_backend_status(status)
     cols = st.columns(3)
-    cols[0].metric("Backend", status.get("name", "unknown"))
-    cols[1].metric("MATLAB started", "yes" if status.get("started") else "no")
+    cols[0].metric(
+        "Backend",
+        BACKEND_LABELS.get(status.get("name"), status.get("name", "unknown")),
+    )
+    if status.get("name") == "matlab":
+        cols[1].metric("MATLAB started", "yes" if status.get("started") else "no")
+    else:
+        cols[1].metric("MATLAB required", "no")
     cols[2].metric("Adapter", "error" if status.get("error") else "ready")
-    st.caption(f"ABM path: {status.get('abm_path', '')}")
+    if status.get("experimental"):
+        st.warning("Python APY backend is experimental. MATLAB remains the reference backend.")
+    if status.get("abm_path"):
+        st.caption(f"ABM path: {status.get('abm_path', '')}")
     if status.get("error"):
         st.error(status["error"])
 
@@ -105,7 +142,7 @@ def scenario_path(filename: str) -> Path:
 st.subheader("Backend Status")
 display_backend_status()
 
-if st.button("Load MATLAB defaults", type="primary"):
+if st.button("Load backend defaults", type="primary"):
     try:
         st.session_state["config"] = backend.default_config()
         reset_run_state()
@@ -299,4 +336,4 @@ if config:
             record_message("error", message)
             st.error(message)
 else:
-    st.info("Load MATLAB defaults to initialize the scenario state.")
+    st.info("Load backend defaults to initialize the scenario state.")

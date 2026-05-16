@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
 
 from adapters.matlab_backend import MatlabBackend
 from adapters.paths import repo_root
+from adapters.python_apy_backend import PythonApyBackend
 
 
 def init_session_state() -> None:
@@ -17,6 +19,7 @@ def init_session_state() -> None:
             "started": False,
             "error": "",
         },
+        "apy_backend_name": "matlab",
         "config": None,
         "economics_config": None,
         "validation_report": None,
@@ -60,10 +63,59 @@ def init_session_state() -> None:
         st.session_state.setdefault(key, value)
 
 
+def get_backend_name() -> str:
+    return str(st.session_state.get("apy_backend_name", "matlab"))
+
+
+def set_backend_name(name: str) -> None:
+    if name not in {"matlab", "python_apy"}:
+        raise ValueError(f"Unsupported APY backend: {name}")
+    if st.session_state.get("apy_backend_name") == name:
+        return
+    st.session_state["apy_backend_name"] = name
+    clear_apy_outputs_for_backend_switch()
+
+
+def clear_apy_outputs_for_backend_switch() -> None:
+    st.session_state["validation_report"] = None
+    st.session_state["results_bundle"] = None
+    st.session_state["economics_results"] = None
+    st.session_state["dirty_config"] = False
+    st.session_state["dirty_economics"] = False
+    st.session_state["results_stale"] = False
+    st.session_state["last_economics_run_at"] = ""
+    st.session_state["last_run_at"] = ""
+    st.session_state["last_validated_at"] = ""
+    st.session_state["compare_baseline_bundle"] = None
+    st.session_state["compare_comparator_bundle"] = None
+    st.session_state["compare_baseline_economics_results"] = None
+    st.session_state["compare_comparator_economics_results"] = None
+    st.session_state["compare_baseline_validation_report"] = None
+    st.session_state["compare_comparator_validation_report"] = None
+    st.session_state["compare_dirty"] = False
+    st.session_state["compare_results_stale"] = False
+    st.session_state["compare_economics_stale"] = False
+    st.session_state["compare_outputs_cleared"] = True
+    st.session_state["compare_last_run_at"] = ""
+    st.session_state["compare_last_economics_run_at"] = ""
+
+
 @st.cache_resource(show_spinner=False)
-def get_backend() -> MatlabBackend:
-    """Return the cached backend resource for this Streamlit process."""
-    return MatlabBackend(repo_root())
+def get_matlab_backend(root: str) -> MatlabBackend:
+    return MatlabBackend(Path(root))
+
+
+@st.cache_resource(show_spinner=False)
+def get_python_apy_backend(root: str) -> PythonApyBackend:
+    return PythonApyBackend(Path(root))
+
+
+def get_backend() -> MatlabBackend | PythonApyBackend:
+    """Return the selected cached APY backend resource."""
+    root = str(repo_root())
+    if get_backend_name() == "python_apy":
+        return get_python_apy_backend(root)
+    return get_matlab_backend(root)
 
 
 def mark_run_completed() -> None:

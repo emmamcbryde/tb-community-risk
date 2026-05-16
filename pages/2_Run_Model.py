@@ -4,6 +4,7 @@ import streamlit as st
 
 from app.state import (
     get_backend,
+    get_backend_name,
     init_session_state,
     mark_run_completed,
     mark_validation_completed,
@@ -14,9 +15,13 @@ from app.state import (
 
 init_session_state()
 backend = get_backend()
+backend_name = get_backend_name()
 
 st.title("Run Model")
-st.caption("Runs the frozen MATLAB v9 backend and stores the portable results bundle.")
+if backend_name == "python_apy":
+    st.caption("Runs the experimental Python APY v9 backend and stores the portable results bundle.")
+else:
+    st.caption("Runs the MATLAB v9 reference backend and stores the portable results bundle.")
 
 config = st.session_state.get("config")
 if not config:
@@ -26,8 +31,12 @@ if not config:
 status = backend.status()
 sync_backend_status(status)
 st.caption(
-    f"Backend: {status.get('name', 'unknown')} | MATLAB started: "
-    f"{'yes' if status.get('started') else 'no'}"
+    f"Backend: {status.get('name', 'unknown')}"
+    + (
+        f" | MATLAB started: {'yes' if status.get('started') else 'no'}"
+        if status.get("name") == "matlab"
+        else " | MATLAB required: no"
+    )
 )
 if status.get("error"):
     st.error(status["error"])
@@ -60,9 +69,13 @@ if report:
         st.error("Config has validation errors.")
     st.json(report, expanded=False)
 
-run_label = "Run MATLAB model"
+run_label = "Run Python APY model" if backend_name == "python_apy" else "Run MATLAB model"
 if st.session_state.get("dirty_config"):
-    run_label = "Validate and run MATLAB model"
+    run_label = (
+        "Validate and run Python APY model"
+        if backend_name == "python_apy"
+        else "Validate and run MATLAB model"
+    )
 
 if st.button(run_label, type="primary"):
     try:
@@ -76,6 +89,8 @@ if st.button(run_label, type="primary"):
             st.session_state["validation_report"] = validation["report"]
         st.session_state["economics_results"] = None
         st.session_state["dirty_economics"] = True
+        if backend_name == "python_apy":
+            st.session_state["economics_config"] = None
         sync_backend_status(backend.status())
         mark_run_completed()
         st.success("Model run completed.")

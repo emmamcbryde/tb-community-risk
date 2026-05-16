@@ -12,7 +12,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.display import arrow_safe_dataframe, safe_download_stem
-from app.state import init_session_state, mark_dynamic_abm_compare_completed
+from app.state import (
+    get_backend_name,
+    init_session_state,
+    mark_dynamic_abm_compare_completed,
+)
 from engine.integration.compare_dynamic_abm_v9 import compare_dynamic_abm_v9, number_or_none
 
 
@@ -120,6 +124,7 @@ def comparison_summary_rows(
     dynamic_metrics = {row["metric"]: row.get("dynamic_value") for row in comparison_rows}
     abm_metrics = {row["metric"]: row.get("abm_value") for row in comparison_rows}
     return [
+        {"field": "APY backend", "value": get_backend_name()},
         {
             "field": "Dynamic bundle present",
             "value": "yes" if dynamic_bundle else "no",
@@ -165,7 +170,7 @@ abm_bundle = st.session_state.get("results_bundle")
 if not dynamic_bundle:
     st.warning("No dynamic model results bundle is available. Open Dynamic Model, calibrate, then simulate.")
 if not abm_bundle:
-    st.warning("No APY ABM results bundle is available. Open APY Run Model and run the MATLAB-backed scenario.")
+    st.warning("No APY ABM results bundle is available. Open APY Run Model and run the selected APY backend.")
 if not dynamic_bundle or not abm_bundle:
     st.stop()
 

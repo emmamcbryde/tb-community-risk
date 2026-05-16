@@ -133,6 +133,21 @@ with st.expander("Calibration"):
 with st.expander("Interface config"):
     st.json(technical.get("interfaceConfig", {}), expanded=False)
 
+with st.expander("Dynamic comparison"):
+    dynamic_comparison = technical.get("dynamicComparison", {})
+    if isinstance(dynamic_comparison, dict):
+        metric_rows = dynamic_comparison.get("metricRows") or []
+        overview = [
+            {"field": key, "value": value}
+            for key, value in dynamic_comparison.items()
+            if key != "metricRows"
+        ]
+        st.dataframe(arrow_safe_dataframe(overview), width="stretch", hide_index=True)
+        if metric_rows:
+            st.dataframe(arrow_safe_dataframe(metric_rows), width="stretch", hide_index=True)
+    else:
+        st.json(dynamic_comparison, expanded=False)
+
 st.subheader("Downloads")
 if downloads.get("available"):
     download_rows = [
