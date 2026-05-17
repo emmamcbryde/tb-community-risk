@@ -1,0 +1,10 @@
+apy_abm_factor,dynamic_factor,shared,comparability,notes
+smoking,smoker_pct,true,partial,"Shared concept, but prevalence definitions and model effects may differ."
+alcohol_drugs,alcohol_pct,true,partial,"Dynamic model separates alcohol percentage; APY factor may combine alcohol/drugs."
+diabetes,diabetes_pct,true,partial,"Shared concept, but effect implementation may differ."
+renal_disease,renal_pct,true,partial,"Shared concept, but case definitions may differ."
+close_contact,,false,not directly comparable,"APY-only risk factor in current crosswalk."
+marijuana,,false,not directly comparable,"APY-only risk factor in current crosswalk."
+chronic_lung_disease,,false,not directly comparable,"APY-only risk factor in current crosswalk."
+,HIV_treated_pct,false,not directly comparable,"Dynamic-only HIV treated input in current crosswalk."
+,HIV_untreated_pct,false,not directly comparable,"Dynamic-only HIV untreated input in current crosswalk."

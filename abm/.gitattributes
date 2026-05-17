@@ -1,0 +1,16 @@
+# Default: let Git treat text files sensibly
+* text=auto
+
+# MATLAB source/code files: keep LF everywhere
+*.m text eol=lf
+
+# Common MATLAB/Simulink binary-ish files: do not line-ending-normalise
+*.mlx binary
+*.mat binary
+*.fig binary
+*.mlapp binary
+*.slx binary
+*.mdl binary
+*.sldd binary
+*.p binary
+*.mex* binary

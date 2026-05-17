@@ -10,7 +10,7 @@ config = struct();
 config.configVersion = 'apy_v9_config_v1';
 config.modelVersion = 'v9';
 config.scenarioLabel = 'APY default scenario';
-config.usesDefaults = true;
+config.useDefaults = true;
 
 % Input/output paths
 config.csvFile = fullfile(thisDir, 'default_data.csv');

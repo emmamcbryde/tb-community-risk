@@ -12,11 +12,27 @@ except Exception:
     minimize_scalar = None
     minimize = None
     SCIPY_AVAILABLE = False
+from pathlib import Path
+import sys
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.import_bootstrap import ensure_repo_root
+
+ensure_repo_root(REPO_ROOT)
 from engine.dynamic.exec_dynamic import run_dynamic_model
+from engine.integration.dynamic_output_contract_v9 import build_dynamic_results_bundle_v9
 from engine.infection_backcast import (
     calc_ari_from_incidence,
     infection_prob_by_age_split,
+)
+from app.state import clear_dynamic_outputs, mark_dynamic_run_completed
+from ui.dynamic_age_distribution import (
+    default_five_year_age_distribution,
+    expand_five_year_age_distribution,
+    normalise_age_distribution,
 )
 
 # =====================================================
@@ -91,6 +107,7 @@ def clear_calibration():
 def clear_simulation():
     for k in ["sim_sig", "sim_df_future"]:
         st.session_state.pop(k, None)
+    clear_dynamic_outputs()
 
 
 # =====================================================
@@ -522,17 +539,27 @@ def render_dynamic_ui():
     st.sidebar.subheader("Age distribution")
     age_method = st.sidebar.radio(
         "Choose method:",
-        ["Country ISO code (recommended)", "Upload custom CSV", "Default global"],
+        [
+            "Country ISO code (recommended)",
+            "Enter manually by 5-year age group",
+            "Upload custom CSV",
+            "Default global",
+        ],
     )
 
     age_df_display = None
     df_country = None
     country = None
     age_upload_hash = None
+    manual_age_hash = None
+    manual_age_distribution_requested = False
 
     if age_method == "Country ISO code (recommended)":
         country = st.sidebar.text_input("ISO3 code", "AUS")
         age_df_display, df_country = load_population_data(country)
+
+    elif age_method == "Enter manually by 5-year age group":
+        manual_age_distribution_requested = True
 
     elif age_method == "Upload custom CSV":
         file = st.sidebar.file_uploader(
@@ -568,6 +595,45 @@ def render_dynamic_ui():
         df_country = pd.DataFrame(
             {"age": range(0, 101), "population": [population / 101] * 101}
         )
+
+    if manual_age_distribution_requested:
+        default_manual = default_five_year_age_distribution()
+        manual_rows = []
+        st.caption("Enter proportions by 5-year age band. Values are normalised automatically.")
+        with st.expander("Manual 5-year age distribution", expanded=True):
+            columns = st.columns(3)
+            for idx, row in default_manual.iterrows():
+                with columns[idx % 3]:
+                    value = st.number_input(
+                        str(row["AgeGroup"]),
+                        min_value=0.0,
+                        value=float(row["Proportion"]),
+                        step=0.01,
+                        format="%.6f",
+                        key=f"manual_age_prop_{row['AgeStart']}_{row['AgeEnd']}",
+                    )
+                manual_rows.append(
+                    {
+                        "AgeGroup": row["AgeGroup"],
+                        "AgeStart": int(row["AgeStart"]),
+                        "AgeEnd": int(row["AgeEnd"]),
+                        "Proportion": float(value),
+                    }
+                )
+        manual_age_df = pd.DataFrame(manual_rows)
+        manual_total = float(
+            pd.to_numeric(manual_age_df["Proportion"], errors="coerce")
+            .fillna(0.0)
+            .clip(lower=0.0)
+            .sum()
+        )
+        if manual_total == 0:
+            st.warning(
+                "Manual age distribution values summed to zero, so the default age distribution was used."
+            )
+        age_df_display = normalise_age_distribution(manual_age_df)
+        manual_age_hash = hash_df(age_df_display, cols=["AgeStart", "AgeEnd", "Proportion"])
+        df_country = expand_five_year_age_distribution(age_df_display, population)
 
     # Show age distribution
     st.subheader("📊 Age Distribution (5-year bins)")
@@ -614,6 +680,7 @@ def render_dynamic_ui():
         age_method,
         (country or ""),
         age_upload_hash,
+        manual_age_hash,
         tuple(sorted((k, float(v)) for k, v in risk_inputs.items())),
     )
 
@@ -1052,6 +1119,27 @@ def render_dynamic_ui():
 
             st.session_state["sim_sig"] = sim_sig
             st.session_state["sim_df_future"] = df_future
+            st.session_state["dynamic_results_bundle"] = build_dynamic_results_bundle_v9(
+                df_future=df_future,
+                params_base=params_base,
+                params_intervention=params_int,
+                calibration={
+                    "beta_forward": beta_forward,
+                    "ari_adjustment": st.session_state.get("cal_ari_adj"),
+                    "rmse": st.session_state.get("cal_rmse_rw"),
+                    "ref_year": st.session_state.get("cal_ref_year"),
+                },
+                metadata={
+                    "population": total_pop,
+                    "time_horizon": int(time_horizon),
+                    "testing_method": testing_method,
+                    "treatment_method": treatment_method,
+                    "ltbi_coverage": float(ltbi_coverage),
+                    "rollout_years": int(rollout_years),
+                    "diagnosis_reduction_pct": float(diag_reduction_pct),
+                },
+            )
+            mark_dynamic_run_completed()
 
     # -------------------------
     # Display simulation outputs (persist after reruns)

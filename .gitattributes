@@ -1,0 +1,22 @@
+# Default text handling
+* text=auto
+
+# Python and app source
+*.py text eol=lf
+*.md text eol=lf
+*.csv text eol=lf
+*.json text eol=lf
+
+# MATLAB source/code files
+*.m text eol=lf
+
+# Common MATLAB/Simulink binary-ish files
+*.mlx binary
+*.mat binary
+*.fig binary
+*.mlapp binary
+*.slx binary
+*.mdl binary
+*.sldd binary
+*.p binary
+*.mex* binary

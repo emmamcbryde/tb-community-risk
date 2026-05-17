@@ -2,7 +2,7 @@ function results = run_scenario_v9(config)
 %RUN_SCENARIO_V9 Validate a config struct and run the v9 reference engine.
 
 config = validate_config_v9(config);
-config.usesDefaults = is_default_execution_config(config);
+config.useDefaults = is_default_execution_config(config);
 
 args = {};
 args = add_if_set(args, 'N', config.N);
@@ -55,7 +55,7 @@ end
 
 function tf = is_default_execution_config(config)
 defaults = build_default_config_v9();
-ignoreFields = {'scenarioLabel', 'usesDefaults'};
+ignoreFields = {'scenarioLabel', 'useDefaults'};
 for i = 1:numel(ignoreFields)
     defaults = rmfield(defaults, ignoreFields{i});
     config = rmfield(config, ignoreFields{i});

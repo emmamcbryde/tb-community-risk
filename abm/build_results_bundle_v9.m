@@ -12,10 +12,12 @@ p.addParameter('doNothing', [], @(x) isempty(x) || isstruct(x));
 p.addParameter('attributableRisk', [], @(x) isempty(x) || isstruct(x));
 p.addParameter('charts', [], @(x) isempty(x) || isstruct(x));
 p.addParameter('downloads', [], @(x) isempty(x) || isstruct(x));
+p.addParameter('economics', [], @(x) isempty(x) || isstruct(x));
 p.parse(varargin{:});
 opt = p.Results;
 
 summary = summarise_results_v9(results);
+dynamicComparison = build_dynamic_comparison_block_v9(results, opt.doNothing);
 
 bundle = struct();
 
@@ -26,7 +28,7 @@ bundle.metadata = struct( ...
     'modelVersion', get_if_present(results, {'interfaceConfig', 'modelVersion'}), ...
     'configVersion', get_if_present(results, {'interfaceConfig', 'configVersion'}), ...
     'scenarioLabel', get_if_present(results, {'interfaceConfig', 'scenarioLabel'}), ...
-    'usesDefaults', get_if_present(results, {'interfaceConfig', 'usesDefaults'}), ...
+    'useDefaults', get_if_present(results, {'interfaceConfig', 'useDefaults'}), ...
     'sourceDataFiles', get_if_present(results, {'interfaceConfig', 'sourceDataFiles'}));
 
 bundle.validation = struct( ...
@@ -51,7 +53,8 @@ bundle.technical = struct( ...
     'calibration', get_if_present(results, {'calibration'}), ...
     'exampleCohortMeta', table_meta_or_empty(get_if_present(results, {'exampleCohort'})), ...
     'rawMeta', table_meta_or_empty(get_if_present(results, {'raw'})), ...
-    'interfaceConfig', get_if_present(results, {'interfaceConfig'}));
+    'interfaceConfig', get_if_present(results, {'interfaceConfig'}), ...
+    'dynamicComparison', dynamicComparison);
 
 bundle.targetedVsRandom = struct( ...
     'available', ~isempty(opt.targetedVsRandom), ...
@@ -87,6 +90,22 @@ bundle.charts = struct( ...
     'dataCsv', get_if_present(opt.charts, {'dataCsv'}), ...
     'figureFiles', get_if_present(opt.charts, {'figureFiles'}));
 
+bundle.economics = struct( ...
+    'available', logical(get_if_present_or_default(opt.economics, {'available'}, ~isempty(opt.economics))), ...
+    'source', get_if_present(opt.economics, {'source'}), ...
+    'contractVersion', get_if_present(opt.economics, {'contractVersion'}), ...
+    'metadata', get_if_present(opt.economics, {'metadata'}), ...
+    'inputs', get_if_present(opt.economics, {'inputs'}), ...
+    'strategy', get_if_present(opt.economics, {'strategy'}), ...
+    'quantities', get_if_present(opt.economics, {'quantities'}), ...
+    'unitCosts', get_if_present(opt.economics, {'unitCosts'}), ...
+    'costs', get_if_present(opt.economics, {'costs'}), ...
+    'costEffectiveness', get_if_present(opt.economics, {'costEffectiveness'}), ...
+    'summaryTable', get_if_present(opt.economics, {'summaryTable'}), ...
+    'summaryRows', table_rows_or_passthrough(get_if_present(opt.economics, {'summaryRows'}), ...
+        get_if_present(opt.economics, {'summaryTable'})), ...
+    'status', get_if_present(opt.economics, {'status'}));
+
 bundle.downloads = struct( ...
     'available', ~isempty(opt.downloads), ...
     'source', iff(~isempty(opt.downloads), 'export_results_v9', ''), ...
@@ -111,11 +130,26 @@ for i = 1:numel(pathParts)
 end
 end
 
+function value = get_if_present_or_default(s, pathParts, defaultValue)
+value = get_if_present(s, pathParts);
+if isempty(value)
+    value = defaultValue;
+end
+end
+
 function out = table_rows_or_empty(value)
 if istable(value)
     out = table2struct(value, 'ToScalar', false);
 else
     out = struct.empty(0, 1);
+end
+end
+
+function out = table_rows_or_passthrough(rowsValue, tableValue)
+if isstruct(rowsValue)
+    out = rowsValue;
+else
+    out = table_rows_or_empty(tableValue);
 end
 end
 
@@ -161,4 +195,168 @@ if cond
 else
     out = b;
 end
+end
+
+function dyn = build_dynamic_comparison_block_v9(results, doNothing)
+metricNames = [ ...
+    "cumulative_baseline_active_tb_cases"; ...
+    "cumulative_intervention_active_tb_cases"; ...
+    "cumulative_cases_averted"; ...
+    "relative_reduction_cumulative_active_tb_cases" ...
+    ];
+missingFields = {};
+notes = "";
+source = "";
+baselineVec = [];
+interventionVec = [];
+avertedVec = [];
+relativeReductionVec = [];
+
+derived = get_if_present(doNothing, {'derived'});
+if istable(derived)
+    baselineVec = table_column_if_present(derived, 'nActiveBy20y_DoNothing');
+    interventionVec = table_column_if_present(derived, 'nActiveBy20y_AfterStrategy');
+    avertedVec = table_column_if_present(derived, 'nActiveBy20y_Prevented');
+    relativeReductionVec = table_column_if_present(derived, 'relReduction20y');
+    req = {'nActiveBy20y_DoNothing','nActiveBy20y_AfterStrategy','nActiveBy20y_Prevented','relReduction20y'};
+    for i = 1:numel(req)
+        if isempty(table_column_if_present(derived, req{i}))
+            missingFields{end+1} = ['doNothing.derived.', req{i}]; %#ok<AGROW>
+        end
+    end
+    if isempty(missingFields)
+        source = 'doNothing.derived';
+    end
+end
+
+if isempty(source)
+    missingFields = {};
+    raw = get_if_present(results, {'raw'});
+    if istable(raw)
+        baselineVec = table_column_if_present(raw, 'nActiveBy20y');
+        avertedVec = table_column_if_present(raw, 'nPreventedActiveTB');
+        if isempty(baselineVec)
+            missingFields{end+1} = 'results.raw.nActiveBy20y'; %#ok<AGROW>
+        end
+        if isempty(avertedVec)
+            missingFields{end+1} = 'results.raw.nPreventedActiveTB'; %#ok<AGROW>
+        end
+        if isempty(missingFields)
+            interventionVec = baselineVec - avertedVec;
+            relativeReductionVec = safe_fraction_vec_v9(avertedVec, baselineVec);
+            source = 'results.raw';
+        end
+    else
+        missingFields = {'results.raw'};
+    end
+end
+
+population = first_nonempty( ...
+    get_if_present(results, {'interfaceConfig', 'N'}), ...
+    get_if_present(results, {'settings', 'N'}));
+followHorizon = first_nonempty( ...
+    get_if_present(results, {'interfaceConfig', 'followHorizon'}), ...
+    get_if_present(results, {'settings', 'followHorizon'}));
+
+if isempty(source)
+    notes = "Dynamic-comparison APY metrics could not be derived from this bundle.";
+    dyn = struct( ...
+        'available', false, ...
+        'source', '', ...
+        'population', population, ...
+        'followHorizon', followHorizon, ...
+        'cumulative_baseline_active_tb_cases', [], ...
+        'cumulative_intervention_active_tb_cases', [], ...
+        'cumulative_cases_averted', [], ...
+        'relative_reduction_cumulative_active_tb_cases', [], ...
+        'metricRows', struct.empty(0, 1), ...
+        'missingFields', {missingFields}, ...
+        'notes', char(notes));
+    return;
+end
+
+values = {baselineVec, interventionVec, avertedVec, relativeReductionVec};
+rows = repmat(struct('Metric', '', 'Median', NaN, 'Low95', NaN, 'High95', NaN, 'Source', '', 'Notes', ''), numel(metricNames), 1);
+for i = 1:numel(metricNames)
+    rows(i) = summarise_vector_for_dynamic_comparison(metricNames(i), values{i}, source, notes);
+end
+
+dyn = struct( ...
+    'available', true, ...
+    'source', source, ...
+    'population', population, ...
+    'followHorizon', followHorizon, ...
+    'cumulative_baseline_active_tb_cases', rows(1).Median, ...
+    'cumulative_intervention_active_tb_cases', rows(2).Median, ...
+    'cumulative_cases_averted', rows(3).Median, ...
+    'relative_reduction_cumulative_active_tb_cases', rows(4).Median, ...
+    'metricRows', rows, ...
+    'missingFields', {{}}, ...
+    'notes', char(notes));
+end
+
+function row = summarise_vector_for_dynamic_comparison(metricName, x, source, notes)
+[med, low, high] = summarise_numeric_vector(x);
+row = struct( ...
+    'Metric', char(metricName), ...
+    'Median', med, ...
+    'Low95', low, ...
+    'High95', high, ...
+    'Source', char(source), ...
+    'Notes', char(notes));
+end
+
+function [med, low, high] = summarise_numeric_vector(x)
+x = double(x(:));
+x = x(~isnan(x));
+if isempty(x)
+    med = NaN;
+    low = NaN;
+    high = NaN;
+    return;
+end
+x = sort(x);
+med = median(x);
+low = quantile_sorted_v9(x, 0.025);
+high = quantile_sorted_v9(x, 0.975);
+end
+
+function q = quantile_sorted_v9(x, p)
+n = numel(x);
+if n == 1
+    q = x;
+    return;
+end
+pos = 1 + (n - 1) * p;
+lo = floor(pos);
+hi = ceil(pos);
+if lo == hi
+    q = x(lo);
+else
+    q = x(lo) + (pos - lo) * (x(hi) - x(lo));
+end
+end
+
+function value = first_nonempty(varargin)
+value = [];
+for i = 1:nargin
+    candidate = varargin{i};
+    if ~isempty(candidate)
+        value = candidate;
+        return;
+    end
+end
+end
+
+function value = table_column_if_present(T, name)
+if istable(T) && ismember(name, T.Properties.VariableNames)
+    value = T.(name);
+else
+    value = [];
+end
+end
+
+function y = safe_fraction_vec_v9(num, den)
+y = num ./ den;
+y(den == 0) = NaN;
 end
