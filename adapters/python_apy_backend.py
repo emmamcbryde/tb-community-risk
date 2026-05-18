@@ -7,6 +7,7 @@ from typing import Any
 from adapters.backend import JsonDict
 from adapters.serialization import to_json_like
 from engine.apy.config import build_default_config
+from engine.apy.economics import calculate_economics
 from engine.apy.economics_config import (
     build_default_economics_config,
     build_economics_preset_kwab150,
@@ -124,24 +125,60 @@ class PythonApyBackend:
         return to_json_like(validate_economics_config(_matlab_empty_to_none(config)))
 
     def run_economics(self, results: JsonDict, economics_config: JsonDict) -> JsonDict:
-        raise NotImplementedError(PYTHON_ECONOMICS_UNSUPPORTED)
+        result_bundle = to_json_like(
+            _economics_result_bundle(_matlab_empty_to_none(results))
+        )
+        config = to_json_like(_matlab_empty_to_none(economics_config))
+        return to_json_like(calculate_economics(result_bundle, config))
 
     def run_economics_for_config(
         self,
         config: JsonDict,
         economics_config: JsonDict,
     ) -> JsonDict:
-        raise NotImplementedError(PYTHON_ECONOMICS_UNSUPPORTED)
+        results = run_scenario(_matlab_empty_to_none(config))
+        return self.run_economics(results, economics_config)
 
 
 def _matlab_empty_to_none(value):
-    if value == []:
-        return None
+    if isinstance(value, list):
+        if value == []:
+            return None
+        return [_matlab_empty_to_none(item) for item in value]
     if isinstance(value, dict):
         return {
             key: _matlab_empty_to_none(item)
             for key, item in value.items()
         }
-    if isinstance(value, list):
-        return [_matlab_empty_to_none(item) for item in value]
     return value
+
+
+def _economics_result_bundle(results: JsonDict) -> JsonDict:
+    if "results" in results:
+        return results
+
+    if "summary" in results and "interfaceConfig" in results:
+        return {
+            "metadata": {
+                "backend": results.get("backend", "python"),
+                "contractVersion": "apy_results_bundle_v9_python_port",
+                "modelVersion": results.get("modelVersion", "python_apy_v9_port"),
+            },
+            "results": {
+                "interfaceConfig": results["interfaceConfig"],
+                "summary": results["summary"],
+            },
+        }
+
+    if "technical" in results and "headline" in results:
+        technical = results["technical"]
+        headline = results["headline"]
+        return {
+            "metadata": results.get("metadata", {}),
+            "results": {
+                "interfaceConfig": technical.get("interfaceConfig", {}),
+                "summary": headline.get("summaryRows", []),
+            },
+        }
+
+    return results

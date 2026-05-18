@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import builtins
+import json
 import sys
 import unittest
 
 from adapters.paths import repo_root
-from adapters.python_apy_backend import (
-    PYTHON_ECONOMICS_UNSUPPORTED,
-    PythonApyBackend,
-)
+from adapters.python_apy_backend import PythonApyBackend
 
 
 class PythonApyBackendTests(unittest.TestCase):
@@ -107,28 +106,59 @@ class PythonApyBackendTests(unittest.TestCase):
             ],
         )
 
-    def test_full_economics_execution_methods_are_clear(self) -> None:
-        methods = [
-            lambda: self.backend.run_economics({}, {}),
-            lambda: self.backend.run_economics_for_config({}, {}),
-        ]
-        for method in methods:
-            with self.subTest(method=method):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    "does not yet include economics execution",
-                ):
-                    method()
+    def test_run_economics_returns_partial_json_payload(self) -> None:
+        config = self.backend.default_config()
+        config.update({"N": 50, "nReps": 1, "seed": 2})
+        results = self.backend.run_scenario(config)
 
-    def test_python_backend_does_not_import_matlab_engine(self) -> None:
-        sys.modules.pop("matlab.engine", None)
+        payload = self.backend.run_economics(
+            results,
+            self.backend.economics_preset_kwab150(),
+        )
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertIn("full", payload["message"].lower())
+        self.assertIn("not ported", payload["message"].lower())
+        self.assertEqual(payload["source"], "apy_python_minimal_economics")
+        self.assertEqual(payload["strategy"], {"testType": "IGRA", "regimen": "3HP"})
+        json.dumps(payload)
+
+    def test_run_economics_for_config_runs_python_scenario_then_economics(self) -> None:
         config = self.backend.default_config()
         config.update({"N": 50, "nReps": 1, "seed": 2})
 
-        self.backend.run_scenario_bundle(config)
+        payload = self.backend.run_economics_for_config(
+            config,
+            self.backend.economics_preset_kwab150(),
+        )
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertIn("not ported", payload["message"].lower())
+        self.assertGreaterEqual(payload["quantities"]["nScreened"], 0.0)
+        self.assertGreaterEqual(payload["costs"]["testingCost"], 0.0)
+        json.dumps(payload)
+
+    def test_python_backend_does_not_import_matlab_engine(self) -> None:
+        sys.modules.pop("matlab.engine", None)
+        original_import = builtins.__import__
+
+        def fail_on_matlab_engine_import(name, *args, **kwargs):
+            if name == "matlab.engine":
+                raise AssertionError("Python backend attempted to import matlab.engine")
+            return original_import(name, *args, **kwargs)
+
+        config = self.backend.default_config()
+        config.update({"N": 50, "nReps": 1, "seed": 2})
+        economics_config = self.backend.economics_preset_kwab150()
+
+        try:
+            builtins.__import__ = fail_on_matlab_engine_import
+            payload = self.backend.run_economics_for_config(config, economics_config)
+        finally:
+            builtins.__import__ = original_import
 
         self.assertNotIn("matlab.engine", sys.modules)
-        self.assertIn("economics", PYTHON_ECONOMICS_UNSUPPORTED)
+        self.assertEqual(payload["status"], "partial")
 
 
 if __name__ == "__main__":

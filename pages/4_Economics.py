@@ -26,14 +26,16 @@ backend = get_backend()
 backend_name = get_backend_name()
 
 st.title("Economics")
-st.caption("First economics workflow. Full economics execution is currently backed by MATLAB.")
+st.caption(
+    "First economics workflow. Python APY supports a partial economics subset; "
+    "the full economics model is currently backed by MATLAB."
+)
 
 if backend_name == "python_apy":
-    st.warning(
-        "The Python APY backend can load and validate economics assumptions, "
-        "but does not yet include full economics execution."
+    st.info(
+        "The supported economics subset runs in Python APY. "
+        "The full MATLAB economics model is not yet ported."
     )
-    st.info("Switch to the MATLAB v9 reference backend on the Scenario page to run economics.")
 
 ECONOMICS_WIDGET_KEYS = [
     "econ_currency_code",
@@ -208,6 +210,29 @@ def display_economics_config_issues(report: dict | None) -> bool:
         st.warning("Economics assumptions have validation warnings.")
         st.dataframe(arrow_safe_dataframe(warnings), width="stretch", hide_index=True)
     return bool(report.get("isValid", not errors))
+
+
+def economics_status_display(econ_results: dict) -> dict[str, object]:
+    status = econ_results.get("status", {})
+    display = {
+        "last_economics_run_at": st.session_state.get("last_economics_run_at"),
+        "source": econ_results.get("source"),
+        "message": econ_results.get("message"),
+    }
+    if isinstance(status, dict):
+        display.update(
+            {
+                "status": status.get("status"),
+                "isComplete": status.get("isComplete"),
+                "missingInputs": status.get("missingInputs"),
+                "notCalculated": status.get("notCalculated"),
+                "messages": status.get("messages"),
+                "partialCalculations": status.get("partialCalculations"),
+            }
+        )
+    else:
+        display["status"] = status
+    return display
 
 
 cols = st.columns(2)
@@ -399,17 +424,10 @@ if econ_results:
         st.info("No economics summary rows were returned.")
 
     st.subheader("Economics Status")
-    status = econ_results.get("status", {})
-    st.json(
-        {
-            "last_economics_run_at": st.session_state.get("last_economics_run_at"),
-            "isComplete": status.get("isComplete"),
-            "missingInputs": status.get("missingInputs"),
-            "notCalculated": status.get("notCalculated"),
-            "messages": status.get("messages"),
-            "partialCalculations": status.get("partialCalculations"),
-        },
-        expanded=False,
-    )
+    if econ_results.get("message"):
+        st.info(econ_results["message"])
+    if econ_results.get("source"):
+        st.caption(f"Source: {econ_results['source']}")
+    st.json(economics_status_display(econ_results), expanded=False)
 else:
     st.info("Run economics to enable the economics summary CSV download.")
