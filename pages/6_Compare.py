@@ -279,23 +279,36 @@ def bundle_metric_rows(bundle: dict | None) -> list[dict]:
     return headline.get("keyMetricsRows") or headline.get("summaryRows") or []
 
 
-def _index_metric_rows(rows: list[dict], value_column: str) -> tuple[dict[str, object], list[str], list[str], int]:
-    values: dict[str, object] = {}
+def _first_present(row: dict, fields: tuple[str, ...]) -> object:
+    for field in fields:
+        if field in row:
+            return row.get(field)
+    return None
+
+
+def _index_metric_rows(
+    rows: list[dict],
+    value_columns: tuple[str, ...],
+    key_fields: tuple[str, ...] = ("Metric",),
+    require_value: bool = True,
+) -> tuple[dict[str, dict[str, object]], list[str], list[str], int]:
+    values: dict[str, dict[str, object]] = {}
     order: list[str] = []
     duplicates: list[str] = []
     skipped = 0
     for row in rows:
-        if "Metric" not in row or value_column not in row:
-            skipped += 1
-            continue
-        metric = row.get("Metric")
-        if metric in (None, ""):
+        metric = _first_present(row, key_fields)
+        value = _first_present(row, value_columns)
+        if metric in (None, "") or (require_value and value is None):
             skipped += 1
             continue
         metric_key = str(metric)
         if metric_key not in values:
             order.append(metric_key)
-            values[metric_key] = row.get(value_column)
+            values[metric_key] = {
+                "value": value,
+                "row": row,
+            }
         else:
             duplicates.append(metric_key)
     return values, order, duplicates, skipped
@@ -304,15 +317,29 @@ def _index_metric_rows(rows: list[dict], value_column: str) -> tuple[dict[str, o
 def _compare_metric_rows(
     baseline_rows: list[dict],
     comparator_rows: list[dict],
-    value_column: str,
+    value_columns: tuple[str, ...],
+    key_fields: tuple[str, ...] = ("Metric",),
+    require_value: bool = True,
 ) -> tuple[list[dict[str, object]], list[str]]:
-    baseline, baseline_order, baseline_duplicates, baseline_skipped = _index_metric_rows(baseline_rows, value_column)
-    comparator, comparator_order, comparator_duplicates, comparator_skipped = _index_metric_rows(comparator_rows, value_column)
+    baseline, baseline_order, baseline_duplicates, baseline_skipped = _index_metric_rows(
+        baseline_rows,
+        value_columns,
+        key_fields,
+        require_value,
+    )
+    comparator, comparator_order, comparator_duplicates, comparator_skipped = _index_metric_rows(
+        comparator_rows,
+        value_columns,
+        key_fields,
+        require_value,
+    )
     ordered_metrics = baseline_order + [metric for metric in comparator_order if metric not in baseline]
     rows: list[dict[str, object]] = []
     for metric in ordered_metrics:
-        base_value = baseline.get(metric)
-        comp_value = comparator.get(metric)
+        baseline_item = baseline.get(metric, {})
+        comparator_item = comparator.get(metric, {})
+        base_value = baseline_item.get("value")
+        comp_value = comparator_item.get("value")
         base_num = coerce_number(base_value)
         comp_num = coerce_number(comp_value)
         abs_diff = None
@@ -321,15 +348,21 @@ def _compare_metric_rows(
             abs_diff = comp_num - base_num
             if base_num != 0:
                 rel_diff = abs_diff / base_num
-        rows.append(
-            {
-                "metric": metric,
-                "baseline": base_value,
-                "comparator": comp_value,
-                "absoluteDifference": abs_diff,
-                "relativeDifference": rel_diff,
-            }
-        )
+        diff_row = {
+            "metric": metric,
+            "baseline": base_value,
+            "comparator": comp_value,
+            "absoluteDifference": abs_diff,
+            "relativeDifference": rel_diff,
+        }
+        baseline_source = baseline_item.get("row")
+        comparator_source = comparator_item.get("row")
+        for metadata_field in ("category", "status", "includedInTotal"):
+            if isinstance(baseline_source, dict) and metadata_field in baseline_source:
+                diff_row[metadata_field] = baseline_source.get(metadata_field)
+            elif isinstance(comparator_source, dict) and metadata_field in comparator_source:
+                diff_row[metadata_field] = comparator_source.get(metadata_field)
+        rows.append(diff_row)
     warnings: list[str] = []
     duplicate_metrics = sorted(set(baseline_duplicates + comparator_duplicates))
     if duplicate_metrics:
@@ -338,19 +371,27 @@ def _compare_metric_rows(
             + ", ".join(duplicate_metrics)
         )
     if baseline_skipped or comparator_skipped:
+        value_column_label = "/".join(value_columns)
+        key_label = "/".join(key_fields)
         warnings.append(
-            f"Skipped rows missing Metric + {value_column}: "
+            f"Skipped rows missing {key_label} + {value_column_label}: "
             f"baseline={baseline_skipped}, comparator={comparator_skipped}."
         )
     return rows, warnings
 
 
 def compare_outcome_rows(baseline_rows: list[dict], comparator_rows: list[dict]) -> tuple[list[dict[str, object]], list[str]]:
-    return _compare_metric_rows(baseline_rows, comparator_rows, "Median")
+    return _compare_metric_rows(baseline_rows, comparator_rows, ("Median",))
 
 
 def compare_economics_rows(baseline_rows: list[dict], comparator_rows: list[dict]) -> tuple[list[dict[str, object]], list[str]]:
-    return _compare_metric_rows(baseline_rows, comparator_rows, "Value")
+    return _compare_metric_rows(
+        baseline_rows,
+        comparator_rows,
+        ("Value", "value"),
+        ("Metric", "metric", "component"),
+        require_value=False,
+    )
 
 
 def economics_rows(economics: dict | None) -> list[dict]:
