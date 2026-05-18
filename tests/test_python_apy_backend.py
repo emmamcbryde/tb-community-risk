@@ -123,6 +123,26 @@ class PythonApyBackendTests(unittest.TestCase):
         self.assertEqual(payload["strategy"], {"testType": "IGRA", "regimen": "3HP"})
         json.dumps(payload)
 
+    def test_run_economics_preserves_partial_status_and_coverage_map(self) -> None:
+        config = self.backend.default_config()
+        config.update({"N": 50, "nReps": 1, "seed": 2})
+        results = self.backend.run_scenario(config)
+
+        payload = self.backend.run_economics(
+            results,
+            self.backend.economics_preset_kwab150(),
+        )
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertIn("coverage", payload)
+        self.assertEqual(payload["coverage"]["status"], "partial")
+        self.assertIn("testingCost", payload["coverage"]["calculatedComponents"])
+        self.assertIn("treatmentCost", payload["coverage"]["calculatedComponents"])
+        self.assertIn("notCalculated", payload["coverage"])
+        self.assertIn("missingInputs", payload["coverage"])
+        self.assertIn("messages", payload["coverage"])
+        json.dumps(payload["coverage"])
+
     def test_run_economics_for_config_runs_python_scenario_then_economics(self) -> None:
         config = self.backend.default_config()
         config.update({"N": 50, "nReps": 1, "seed": 2})

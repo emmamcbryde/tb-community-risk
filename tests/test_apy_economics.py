@@ -20,6 +20,7 @@ EXPECTED_TOP_LEVEL_KEYS = [
     "costs",
     "costEffectiveness",
     "summaryRows",
+    "coverage",
     "status",
 ]
 
@@ -99,6 +100,130 @@ class ApyEconomicsTests(unittest.TestCase):
         self.assertEqual(payload["metadata"]["currencyCode"], "AUD")
         self.assertEqual(payload["inputs"], minimal_economics_config())
         json.dumps(payload)
+
+    def test_minimal_payload_reports_python_economics_coverage(self) -> None:
+        payload = calculate_economics(
+            minimal_result_bundle(),
+            minimal_economics_config(),
+        )
+
+        self.assertEqual(payload["status"], "partial")
+
+        coverage = payload["coverage"]
+        self.assertEqual(coverage["status"], "partial")
+        self.assertEqual(
+            coverage["calculatedComponents"],
+            ["testingCost", "treatmentCost"],
+        )
+        self.assertIn("unsupportedComponents", coverage)
+        self.assertIn("notCalculated", coverage)
+        self.assertIn("missingInputs", coverage)
+        self.assertIn("messages", coverage)
+        self.assertEqual(
+            coverage["missingInputs"],
+            [
+                "costs.programSetupTotal",
+                "costs.programRunningTotal",
+                "summary.nFalsePositiveTreated",
+                "costs.falsePositiveIncrementalPerPerson",
+            ],
+        )
+        self.assertIn("falsePositiveIncrementalCost", coverage["notCalculated"])
+        self.assertIn("programSetupCost", coverage["notCalculated"])
+        self.assertIn("programRunningCost", coverage["notCalculated"])
+        self.assertIn("totalProgramCost", coverage["notCalculated"])
+        self.assertIn("costPerTBCasePrevented", coverage["notCalculated"])
+        self.assertTrue(
+            all(
+                "not calculated" in item["message"].lower()
+                for item in coverage["unsupportedComponents"]
+            )
+        )
+        self.assertTrue(
+            any("not ported" in msg.lower() for msg in coverage["messages"])
+        )
+        json.dumps(coverage)
+
+    def test_direct_program_costs_are_calculated_when_inputs_are_present(self) -> None:
+        bundle = minimal_result_bundle()
+        bundle["results"]["summary"].append(
+            {"Metric": "nFalsePositiveTreated", "Median": 3.0}
+        )
+        config = minimal_economics_config()
+        config["costs"]["falsePositiveIncrementalPerPerson"] = 10.0
+        config["costs"]["programSetupTotal"] = 100.0
+        config["costs"]["programRunningTotal"] = 5.0
+
+        payload = calculate_economics(bundle, config)
+
+        testing_cost = 125.0 * 113.48
+        treatment_cost = 40.0 * 165.5072
+        false_positive_cost = 3.0 * 10.0
+        expected_total = (
+            testing_cost + treatment_cost + false_positive_cost + 100.0 + 5.0
+        )
+        self.assertEqual(payload["quantities"]["nFalsePositiveTreated"], 3.0)
+        self.assertEqual(
+            payload["unitCosts"]["falsePositiveIncrementalPerPerson"],
+            10.0,
+        )
+        self.assertEqual(payload["costs"]["falsePositiveIncrementalCost"], 30.0)
+        self.assertEqual(payload["costs"]["programSetupCost"], 100.0)
+        self.assertEqual(payload["costs"]["programRunningCost"], 5.0)
+        self.assertAlmostEqual(payload["costs"]["totalProgramCost"], expected_total)
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["coverage"]["missingInputs"], [])
+        for component in [
+            "falsePositiveIncrementalCost",
+            "programSetupCost",
+            "programRunningCost",
+            "totalProgramCost",
+        ]:
+            self.assertIn(component, payload["coverage"]["calculatedComponents"])
+            self.assertNotIn(component, payload["coverage"]["notCalculated"])
+            self.assertNotIn(
+                component,
+                [
+                    item["component"]
+                    for item in payload["coverage"]["unsupportedComponents"]
+                ],
+            )
+        self.assertEqual(
+            [row["metric"] for row in payload["summaryRows"]],
+            [
+                "testingCost",
+                "treatmentCost",
+                "programSetupCost",
+                "programRunningCost",
+                "falsePositiveIncrementalCost",
+                "totalProgramCost",
+            ],
+        )
+
+    def test_false_positive_cost_is_optional_and_missing_metric_does_not_raise(self) -> None:
+        config = minimal_economics_config()
+        config["costs"]["falsePositiveIncrementalPerPerson"] = 10.0
+        config["costs"]["programSetupTotal"] = 100.0
+        config["costs"]["programRunningTotal"] = 5.0
+
+        payload = calculate_economics(minimal_result_bundle(), config)
+
+        self.assertNotIn("nFalsePositiveTreated", payload["quantities"])
+        self.assertNotIn("falsePositiveIncrementalCost", payload["costs"])
+        self.assertNotIn("totalProgramCost", payload["costs"])
+        self.assertIn(
+            "summary.nFalsePositiveTreated",
+            payload["coverage"]["missingInputs"],
+        )
+        self.assertIn(
+            "falsePositiveIncrementalCost",
+            payload["coverage"]["notCalculated"],
+        )
+        self.assertIn("totalProgramCost", payload["coverage"]["notCalculated"])
+        self.assertIn("programSetupCost", payload["coverage"]["calculatedComponents"])
+        self.assertIn("programRunningCost", payload["coverage"]["calculatedComponents"])
+        self.assertNotIn("programSetupCost", payload["coverage"]["notCalculated"])
+        self.assertNotIn("programRunningCost", payload["coverage"]["notCalculated"])
 
     def test_missing_required_summary_metrics_raise_explicit_error(self) -> None:
         bundle = minimal_result_bundle()
