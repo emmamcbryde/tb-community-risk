@@ -143,6 +143,47 @@ class PythonApyBackendTests(unittest.TestCase):
         self.assertIn("messages", payload["coverage"])
         json.dumps(payload["coverage"])
 
+    def test_run_economics_exposes_summary_rows_contract(self) -> None:
+        config = self.backend.default_config()
+        config.update({"N": 50, "nReps": 1, "seed": 2})
+        results = self.backend.run_scenario(config)
+
+        payload = self.backend.run_economics(
+            results,
+            self.backend.economics_preset_kwab150(),
+        )
+
+        rows = payload["summaryRows"]
+        self.assertGreater(len(rows), 0)
+        json.dumps(rows)
+
+        for row in rows:
+            self.assertEqual(
+                set(row),
+                {
+                    "metric",
+                    "label",
+                    "value",
+                    "category",
+                    "status",
+                    "includedInTotal",
+                },
+            )
+
+        summary_by_metric = {row["metric"]: row for row in rows}
+        self.assertIn("totalImplementedCost", summary_by_metric)
+        self.assertAlmostEqual(
+            summary_by_metric["totalImplementedCost"]["value"],
+            sum(row["value"] for row in rows if row["includedInTotal"] is True),
+        )
+
+        unsupported_components = {
+            item["component"]
+            for item in payload["coverage"]["unsupportedComponents"]
+        }
+        self.assertGreater(len(unsupported_components), 0)
+        self.assertTrue(unsupported_components.isdisjoint(summary_by_metric))
+
     def test_run_economics_for_config_runs_python_scenario_then_economics(self) -> None:
         config = self.backend.default_config()
         config.update({"N": 50, "nReps": 1, "seed": 2})

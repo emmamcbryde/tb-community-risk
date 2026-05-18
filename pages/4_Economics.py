@@ -214,6 +214,7 @@ def display_economics_config_issues(report: dict | None) -> bool:
 
 def economics_status_display(econ_results: dict) -> dict[str, object]:
     status = econ_results.get("status", {})
+    coverage = econ_results.get("coverage")
     display = {
         "last_economics_run_at": st.session_state.get("last_economics_run_at"),
         "source": econ_results.get("source"),
@@ -232,7 +233,43 @@ def economics_status_display(econ_results: dict) -> dict[str, object]:
         )
     else:
         display["status"] = status
+    if isinstance(coverage, dict):
+        display["coverageStatus"] = coverage.get("status")
+        display["coverage"] = coverage
     return display
+
+
+def economics_summary_rows_for_display(
+    summary_rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    preferred_columns = [
+        "label",
+        "value",
+        "category",
+        "status",
+        "includedInTotal",
+        "metric",
+    ]
+    present_columns: list[str] = []
+    for column in preferred_columns:
+        if any(column in row for row in summary_rows):
+            present_columns.append(column)
+
+    extra_columns: list[str] = []
+    for row in summary_rows:
+        for column in row:
+            if column not in present_columns and column not in extra_columns:
+                extra_columns.append(column)
+
+    ordered_columns = present_columns + extra_columns
+    return [
+        {
+            column: row.get(column)
+            for column in ordered_columns
+            if column in row
+        }
+        for row in summary_rows
+    ]
 
 
 cols = st.columns(2)
@@ -412,11 +449,17 @@ if econ_results:
     st.subheader("Economics Summary")
     summary_rows = econ_results.get("summaryRows") or []
     if summary_rows:
-        st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
+        display_rows = economics_summary_rows_for_display(summary_rows)
+        st.dataframe(arrow_safe_dataframe(display_rows), width="stretch")
         st.markdown("Downloads")
         st.download_button(
             "Download economics summary CSV",
-            data=economics_summary_csv(econ_results),
+            data=economics_summary_csv(
+                {
+                    **econ_results,
+                    "summaryRows": display_rows,
+                }
+            ),
             file_name=f"{safe_download_stem(scenario_label, 'economics_summary')}.csv",
             mime="text/csv",
         )

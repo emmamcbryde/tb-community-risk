@@ -110,16 +110,16 @@ def calculate_economics(
     }
     coverage = _coverage_metadata()
     summary_rows = [
-        {
-            "metric": "testingCost",
-            "label": "Testing cost",
-            "value": testing_cost,
-        },
-        {
-            "metric": "treatmentCost",
-            "label": "Treatment cost",
-            "value": treatment_cost,
-        },
+        _implemented_direct_cost_row(
+            "testingCost",
+            "Testing cost",
+            testing_cost,
+        ),
+        _implemented_direct_cost_row(
+            "treatmentCost",
+            "Treatment cost",
+            treatment_cost,
+        ),
     ]
 
     if n_false_positive_treated is not None:
@@ -164,11 +164,11 @@ def calculate_economics(
         costs["falsePositiveIncrementalCost"] = false_positive_incremental_cost
         _mark_calculated(coverage, "falsePositiveIncrementalCost")
         summary_rows.append(
-            {
-                "metric": "falsePositiveIncrementalCost",
-                "label": "False-positive incremental cost",
-                "value": false_positive_incremental_cost,
-            }
+            _implemented_direct_cost_row(
+                "falsePositiveIncrementalCost",
+                "False-positive incremental cost",
+                false_positive_incremental_cost,
+            )
         )
 
     if all(component in costs for component in _TOTAL_PROGRAM_COST_COMPONENTS):
@@ -182,14 +182,18 @@ def calculate_economics(
         costs["totalProgramCost"] = total_program_cost
         _mark_calculated(coverage, "totalProgramCost")
         summary_rows.append(
-            {
-                "metric": "totalProgramCost",
-                "label": "Total program cost",
-                "value": total_program_cost,
-            }
+            _implemented_direct_cost_row(
+                "totalProgramCost",
+                "Total program cost",
+                total_program_cost,
+                category="directCostTotal",
+                included_in_total=False,
+            )
         )
     else:
         _mark_not_calculated(coverage, "totalProgramCost")
+
+    summary_rows.append(_total_implemented_cost_row(summary_rows))
 
     return {
         "available": True,
@@ -229,12 +233,42 @@ def _add_optional_direct_total_cost(
     costs[component] = value
     _mark_calculated(coverage, component)
     summary_rows.append(
-        {
-            "metric": component,
-            "label": label,
-            "value": value,
-        }
+        _implemented_direct_cost_row(component, label, value)
     )
+
+
+def _implemented_direct_cost_row(
+    metric: str,
+    label: str,
+    value: float,
+    *,
+    category: str = "directCost",
+    included_in_total: bool = True,
+) -> dict[str, Any]:
+    return {
+        "metric": metric,
+        "label": label,
+        "value": value,
+        "category": category,
+        "status": "implemented",
+        "includedInTotal": included_in_total,
+    }
+
+
+def _total_implemented_cost_row(summary_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    total = sum(
+        row["value"]
+        for row in summary_rows
+        if row.get("includedInTotal") is True
+    )
+    return {
+        "metric": "totalImplementedCost",
+        "label": "Total implemented cost",
+        "value": total,
+        "category": "directCostTotal",
+        "status": "implemented",
+        "includedInTotal": False,
+    }
 
 
 def _coverage_metadata() -> dict[str, Any]:

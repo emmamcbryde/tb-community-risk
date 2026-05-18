@@ -23,6 +23,14 @@ EXPECTED_TOP_LEVEL_KEYS = [
     "coverage",
     "status",
 ]
+EXPECTED_SUMMARY_ROW_KEYS = [
+    "metric",
+    "label",
+    "value",
+    "category",
+    "status",
+    "includedInTotal",
+]
 
 
 def minimal_result_bundle() -> dict:
@@ -99,7 +107,48 @@ class ApyEconomicsTests(unittest.TestCase):
         self.assertIn("not ported", payload["message"].lower())
         self.assertEqual(payload["metadata"]["currencyCode"], "AUD")
         self.assertEqual(payload["inputs"], minimal_economics_config())
+        for row in payload["summaryRows"]:
+            self.assertEqual(list(row.keys()), EXPECTED_SUMMARY_ROW_KEYS)
         json.dumps(payload)
+
+    def test_summary_rows_are_implemented_direct_cost_table(self) -> None:
+        payload = calculate_economics(
+            minimal_result_bundle(),
+            minimal_economics_config(),
+        )
+
+        rows = payload["summaryRows"]
+        self.assertEqual(
+            [row["metric"] for row in rows],
+            ["testingCost", "treatmentCost", "totalImplementedCost"],
+        )
+        for row in rows:
+            self.assertEqual(row["status"], "implemented")
+            self.assertNotIn(
+                row["metric"],
+                [
+                    item["component"]
+                    for item in payload["coverage"]["unsupportedComponents"]
+                ],
+            )
+
+        component_rows = [row for row in rows if row["includedInTotal"]]
+        self.assertEqual(
+            [row["metric"] for row in component_rows],
+            ["testingCost", "treatmentCost"],
+        )
+        self.assertTrue(
+            all(row["category"] == "directCost" for row in component_rows)
+        )
+
+        total_row = rows[-1]
+        self.assertEqual(total_row["metric"], "totalImplementedCost")
+        self.assertEqual(total_row["category"], "directCostTotal")
+        self.assertFalse(total_row["includedInTotal"])
+        self.assertAlmostEqual(
+            total_row["value"],
+            sum(row["value"] for row in component_rows),
+        )
 
     def test_minimal_payload_reports_python_economics_coverage(self) -> None:
         payload = calculate_economics(
@@ -197,7 +246,35 @@ class ApyEconomicsTests(unittest.TestCase):
                 "programRunningCost",
                 "falsePositiveIncrementalCost",
                 "totalProgramCost",
+                "totalImplementedCost",
             ],
+        )
+        summary_by_metric = {
+            row["metric"]: row
+            for row in payload["summaryRows"]
+        }
+        for component in [
+            "testingCost",
+            "treatmentCost",
+            "programSetupCost",
+            "programRunningCost",
+            "falsePositiveIncrementalCost",
+        ]:
+            self.assertEqual(summary_by_metric[component]["category"], "directCost")
+            self.assertEqual(summary_by_metric[component]["status"], "implemented")
+            self.assertTrue(summary_by_metric[component]["includedInTotal"])
+
+        self.assertFalse(summary_by_metric["totalProgramCost"]["includedInTotal"])
+        self.assertEqual(
+            summary_by_metric["totalProgramCost"]["category"],
+            "directCostTotal",
+        )
+        self.assertFalse(
+            summary_by_metric["totalImplementedCost"]["includedInTotal"]
+        )
+        self.assertAlmostEqual(
+            summary_by_metric["totalImplementedCost"]["value"],
+            expected_total,
         )
 
     def test_false_positive_cost_is_optional_and_missing_metric_does_not_raise(self) -> None:
