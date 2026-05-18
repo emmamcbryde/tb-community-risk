@@ -51,6 +51,9 @@ class MatlabBackend:
     def validate_config(self, config: JsonDict) -> JsonDict:
         return self._call_json("collect_validation_issues_json_v9", config)
 
+    def validate_economics_config(self, config: JsonDict) -> JsonDict:
+        return self._call("validate_economics_config_v9", config)
+
     def save_scenario(
         self,
         config: JsonDict,

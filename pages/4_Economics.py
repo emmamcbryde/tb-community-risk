@@ -26,15 +26,14 @@ backend = get_backend()
 backend_name = get_backend_name()
 
 st.title("Economics")
-st.caption("First economics workflow. Economics is currently backed by MATLAB.")
+st.caption("First economics workflow. Full economics execution is currently backed by MATLAB.")
 
 if backend_name == "python_apy":
     st.warning(
-        "Economics is currently available only through the MATLAB APY backend. "
-        "The Python APY backend does not yet include economics."
+        "The Python APY backend can load and validate economics assumptions, "
+        "but does not yet include full economics execution."
     )
     st.info("Switch to the MATLAB v9 reference backend on the Scenario page to run economics.")
-    st.stop()
 
 ECONOMICS_WIDGET_KEYS = [
     "econ_currency_code",
@@ -190,6 +189,27 @@ def economics_overview_rows(config: dict) -> list[dict[str, object]]:
     ]
 
 
+def validate_economics_config(config: dict) -> dict | None:
+    validator = getattr(backend, "validate_economics_config", None)
+    if not callable(validator):
+        return None
+    return validator(config)
+
+
+def display_economics_config_issues(report: dict | None) -> bool:
+    if not report:
+        return True
+    errors = report.get("errors") or []
+    warnings = report.get("warnings") or []
+    if errors:
+        st.error("Economics assumptions have validation errors.")
+        st.dataframe(arrow_safe_dataframe(errors), width="stretch", hide_index=True)
+    if warnings:
+        st.warning("Economics assumptions have validation warnings.")
+        st.dataframe(arrow_safe_dataframe(warnings), width="stretch", hide_index=True)
+    return bool(report.get("isValid", not errors))
+
+
 cols = st.columns(2)
 if cols[0].button("Load economics defaults", type="primary"):
     try:
@@ -318,6 +338,9 @@ if submitted:
     except ValueError as exc:
         st.error(f"Invalid economics number: {exc}")
 
+validation_report = validate_economics_config(econ_config)
+config_is_valid = display_economics_config_issues(validation_report)
+
 st.subheader("Current Assumptions")
 st.dataframe(
     arrow_safe_dataframe(economics_overview_rows(econ_config)),
@@ -331,13 +354,15 @@ st.download_button(
     mime="application/json",
 )
 
-can_run = bool(config and results_bundle and not st.session_state.get("results_stale"))
+can_run = bool(config_is_valid and config and results_bundle and not st.session_state.get("results_stale"))
 if not config:
     st.info("Load a scenario before running economics.")
 elif not results_bundle:
     st.info("Run the model before running economics.")
 elif st.session_state.get("results_stale"):
     st.warning("Rerun the model before running economics so the economics inputs match current results.")
+elif not config_is_valid:
+    st.warning("Fix economics assumption validation errors before running economics.")
 
 if st.button("Run economics", type="primary", disabled=not can_run):
     try:
@@ -346,6 +371,11 @@ if st.button("Run economics", type="primary", disabled=not can_run):
         mark_economics_completed()
         sync_backend_status(backend.status())
         st.success("Economics run completed.")
+    except NotImplementedError as exc:
+        message = str(exc)
+        sync_backend_status(backend.status())
+        record_message("error", message)
+        st.error(message)
     except Exception as exc:
         message = f"Economics run failed: {exc}"
         sync_backend_status(backend.status())

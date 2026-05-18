@@ -24,6 +24,9 @@ class Backend(Protocol):
     def validate_config(self, config: JsonDict) -> JsonDict:
         ...
 
+    def validate_economics_config(self, config: JsonDict) -> JsonDict:
+        ...
+
     def save_scenario(
         self,
         config: JsonDict,

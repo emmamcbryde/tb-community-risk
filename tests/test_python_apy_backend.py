@@ -50,10 +50,65 @@ class PythonApyBackendTests(unittest.TestCase):
             "doNothing.derived",
         )
 
-    def test_unsupported_economics_methods_are_clear(self) -> None:
+    def test_default_economics_config_returns_blank_matlab_shape(self) -> None:
+        config = self.backend.default_economics_config()
+
+        self.assertEqual(config["metadata"]["currencyCode"], "")
+        self.assertIsNone(config["metadata"]["priceYear"])
+        self.assertIsNone(config["costs"]["test"]["IGRA"])
+        self.assertIsNone(config["costs"]["regimen"]["x3HP"])
+        self.assertIsNone(config["costs"]["falsePositiveIncrementalPerPerson"])
+
+    def test_economics_preset_kwab150_returns_expected_values(self) -> None:
+        config = self.backend.economics_preset_kwab150()
+
+        self.assertEqual(config["metadata"]["currencyCode"], "AUD")
+        self.assertEqual(config["metadata"]["priceYear"], 2019)
+        self.assertEqual(config["metadata"]["locationLabel"], "Australia")
+        self.assertEqual(config["metadata"]["programCostBasis"], "total")
+        self.assertEqual(config["costs"]["test"]["IGRA"], 113.48)
+        self.assertEqual(config["costs"]["test"]["TST"], 116.07)
+        self.assertEqual(config["costs"]["regimen"]["x3HP"], 165.5072)
+        self.assertEqual(config["costs"]["activeTBDiseasePerCase"], 19079.6)
+        self.assertIsNone(config["costs"]["programSetupTotal"])
+
+    def test_validate_economics_config_accepts_default_and_preset(self) -> None:
+        default_report = self.backend.validate_economics_config(
+            self.backend.default_economics_config()
+        )
+        preset_report = self.backend.validate_economics_config(
+            self.backend.economics_preset_kwab150()
+        )
+
+        self.assertTrue(default_report["isValid"])
+        self.assertFalse(default_report["hasWarnings"])
+        self.assertEqual(default_report["errors"], [])
+        self.assertTrue(preset_report["isValid"])
+        self.assertEqual(preset_report["errors"], [])
+
+    def test_validate_economics_config_reports_failures(self) -> None:
+        config = self.backend.default_economics_config()
+        config["metadata"]["priceYear"] = "2019"
+        config["metadata"]["currencyCode"] = 123
+        config["costs"]["test"]["IGRA"] = -1
+        config["costs"]["regimen"] = "bad"
+
+        report = self.backend.validate_economics_config(config)
+
+        self.assertFalse(report["isValid"])
+        self.assertFalse(report["hasWarnings"])
+        self.assertEqual(
+            [issue["field"] for issue in report["errors"]],
+            [
+                "metadata.currencyCode",
+                "metadata.priceYear",
+                "costs.test.IGRA",
+                "costs.regimen",
+            ],
+        )
+
+    def test_full_economics_execution_methods_are_clear(self) -> None:
         methods = [
-            lambda: self.backend.default_economics_config(),
-            lambda: self.backend.economics_preset_kwab150(),
             lambda: self.backend.run_economics({}, {}),
             lambda: self.backend.run_economics_for_config({}, {}),
         ]
@@ -61,7 +116,7 @@ class PythonApyBackendTests(unittest.TestCase):
             with self.subTest(method=method):
                 with self.assertRaisesRegex(
                     NotImplementedError,
-                    "does not yet include economics",
+                    "does not yet include economics execution",
                 ):
                     method()
 
