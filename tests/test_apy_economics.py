@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import unittest
+from pathlib import Path
 
 from engine.apy.economics import calculate_economics
 
@@ -31,6 +32,11 @@ EXPECTED_SUMMARY_ROW_KEYS = [
     "status",
     "includedInTotal",
 ]
+EXPECTED_SOURCE = "apy_python_partial_economics"
+EXPECTED_CONTRACT_VERSION = "apy_economics_partial_v1"
+EXPECTED_LEGACY_SOURCE = "apy_python_minimal_economics"
+EXPECTED_LEGACY_CONTRACT_VERSION = "apy_economics_minimal_v1"
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 
 def minimal_result_bundle() -> dict:
@@ -81,8 +87,52 @@ def minimal_economics_config() -> dict:
     }
 
 
+def _load_hand_check_fixture() -> dict:
+    fixture_path = FIXTURE_DIR / "apy_economics_hand_check_fixture.json"
+    with fixture_path.open(encoding="utf-8") as fixture_file:
+        return json.load(fixture_file)
+
+
+def _supported_economics_subset(payload: dict) -> dict:
+    supported_costs = [
+        "testingCost",
+        "treatmentCost",
+        "falsePositiveIncrementalCost",
+        "programSetupCost",
+        "programRunningCost",
+        "totalProgramCost",
+        "baselineTBDiseaseCost",
+        "interventionTBDiseaseCost",
+        "tbDiseaseCostsAverted",
+        "netCostVsBaseline",
+    ]
+    supported_ratios = [
+        "costPerInfectionCured",
+        "costPerTBCasePrevented",
+    ]
+    return {
+        "costs": {metric: payload["costs"][metric] for metric in supported_costs},
+        "costEffectiveness": {
+            metric: payload["costEffectiveness"][metric]
+            for metric in supported_ratios
+        },
+    }
+
+
+def test_hand_checkable_python_economics_fixture_matches_supported_subset() -> None:
+    fixture = _load_hand_check_fixture()
+    payload = calculate_economics(
+        fixture["resultBundle"],
+        fixture["economicsConfig"],
+    )
+
+    assert fixture["source"] == "Python unit-test fixture, not MATLAB-exported"
+    assert _supported_economics_subset(payload) == fixture["expectedSupportedSubset"]
+    assert "results.dynamicComparison" not in payload["coverage"]["missingInputs"]
+
+
 class ApyEconomicsTests(unittest.TestCase):
-    def test_minimal_bundle_computes_supported_screening_and_treatment_costs(self) -> None:
+    def test_partial_bundle_computes_supported_screening_and_treatment_costs(self) -> None:
         payload = calculate_economics(
             minimal_result_bundle(),
             minimal_economics_config(),
@@ -96,16 +146,29 @@ class ApyEconomicsTests(unittest.TestCase):
         self.assertAlmostEqual(payload["costs"]["testingCost"], 125.0 * 113.48)
         self.assertAlmostEqual(payload["costs"]["treatmentCost"], 40.0 * 165.5072)
 
-    def test_minimal_payload_has_stable_json_contract_and_not_ported_message(self) -> None:
+    def test_partial_payload_has_stable_json_contract_and_not_ported_message(self) -> None:
         payload = calculate_economics(
             minimal_result_bundle(),
             minimal_economics_config(),
         )
 
         self.assertEqual(list(payload.keys()), EXPECTED_TOP_LEVEL_KEYS)
+        self.assertEqual(payload["source"], EXPECTED_SOURCE)
+        self.assertEqual(payload["contractVersion"], EXPECTED_CONTRACT_VERSION)
+        self.assertNotIn("legacySource", payload)
+        self.assertNotIn("legacyContractVersion", payload)
+        self.assertIn("partial", payload["message"].lower())
+        self.assertNotIn("minimal", payload["message"].lower())
         self.assertIn("full", payload["message"].lower())
         self.assertIn("not ported", payload["message"].lower())
         self.assertEqual(payload["metadata"]["currencyCode"], "AUD")
+        self.assertEqual(
+            payload["metadata"]["legacyIdentifiers"],
+            {
+                "source": EXPECTED_LEGACY_SOURCE,
+                "contractVersion": EXPECTED_LEGACY_CONTRACT_VERSION,
+            },
+        )
         self.assertEqual(payload["inputs"], minimal_economics_config())
         for row in payload["summaryRows"]:
             self.assertEqual(list(row.keys()), EXPECTED_SUMMARY_ROW_KEYS)
@@ -150,13 +213,15 @@ class ApyEconomicsTests(unittest.TestCase):
             sum(row["value"] for row in component_rows),
         )
 
-    def test_minimal_payload_reports_python_economics_coverage(self) -> None:
+    def test_partial_payload_reports_python_economics_coverage(self) -> None:
         payload = calculate_economics(
             minimal_result_bundle(),
             minimal_economics_config(),
         )
 
         self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["source"], EXPECTED_SOURCE)
+        self.assertEqual(payload["contractVersion"], EXPECTED_CONTRACT_VERSION)
 
         coverage = payload["coverage"]
         self.assertEqual(coverage["status"], "partial")
@@ -193,6 +258,9 @@ class ApyEconomicsTests(unittest.TestCase):
         )
         self.assertTrue(
             any("not ported" in msg.lower() for msg in coverage["messages"])
+        )
+        self.assertTrue(
+            all("minimal" not in msg.lower() for msg in coverage["messages"])
         )
         json.dumps(coverage)
 
@@ -414,13 +482,62 @@ class ApyEconomicsTests(unittest.TestCase):
 
         self.assertNotIn("baselineTBDiseaseCost", payload["costs"])
         self.assertNotIn("interventionTBDiseaseCost", payload["costs"])
+        self.assertNotIn(
+            "baselineTBDiseaseCost",
+            [row["metric"] for row in payload["summaryRows"]],
+        )
+        self.assertNotIn(
+            "interventionTBDiseaseCost",
+            [row["metric"] for row in payload["summaryRows"]],
+        )
         self.assertEqual(payload["costs"]["tbDiseaseCostsAverted"], 2000.0)
+        self.assertEqual(payload["costEffectiveness"], {})
         self.assertIn("results.dynamicComparison", payload["coverage"]["missingInputs"])
         self.assertIn("baselineTBDiseaseCost", payload["coverage"]["notCalculated"])
         self.assertIn("interventionTBDiseaseCost", payload["coverage"]["notCalculated"])
+        self.assertIn("netCostVsBaseline", payload["coverage"]["notCalculated"])
+        self.assertIn("costPerInfectionCured", payload["coverage"]["notCalculated"])
+        self.assertIn("costPerTBCasePrevented", payload["coverage"]["notCalculated"])
         self.assertTrue(
             any(
                 "dynamiccomparison is missing" in message.lower()
+                for message in payload["coverage"]["messages"]
+            )
+        )
+        json.dumps(payload)
+
+    def test_absent_ratio_denominator_is_explicitly_missing_and_not_calculated(self) -> None:
+        bundle = minimal_result_bundle()
+        bundle["results"]["summary"].extend(
+            [
+                {"Metric": "nFalsePositiveTreated", "Median": 3.0},
+                {"Metric": "nPreventedActiveTB", "Median": 2.0},
+            ]
+        )
+        bundle["results"]["dynamicComparison"] = {
+            "cumulative_baseline_active_tb_cases": 10.0,
+            "cumulative_intervention_active_tb_cases": 8.0,
+        }
+        config = minimal_economics_config()
+        config["costs"]["falsePositiveIncrementalPerPerson"] = 10.0
+        config["costs"]["programSetupTotal"] = 100.0
+        config["costs"]["programRunningTotal"] = 5.0
+        config["costs"]["activeTBDiseasePerCase"] = 1000.0
+
+        payload = calculate_economics(bundle, config)
+
+        self.assertIn("netCostVsBaseline", payload["costs"])
+        self.assertIn("costPerTBCasePrevented", payload["costEffectiveness"])
+        self.assertNotIn("costPerInfectionCured", payload["costEffectiveness"])
+        self.assertIn("summary.nCuredInfection", payload["coverage"]["missingInputs"])
+        self.assertIn("costPerInfectionCured", payload["coverage"]["notCalculated"])
+        self.assertNotIn(
+            "costPerInfectionCured",
+            [row["metric"] for row in payload["summaryRows"]],
+        )
+        self.assertTrue(
+            any(
+                "summary.ncuredinfection is missing" in message.lower()
                 for message in payload["coverage"]["messages"]
             )
         )
@@ -451,6 +568,14 @@ class ApyEconomicsTests(unittest.TestCase):
         self.assertEqual(payload["costEffectiveness"], {})
         self.assertIn("costPerInfectionCured", payload["coverage"]["notCalculated"])
         self.assertIn("costPerTBCasePrevented", payload["coverage"]["notCalculated"])
+        self.assertNotIn(
+            "costPerInfectionCured",
+            [row["metric"] for row in payload["summaryRows"]],
+        )
+        self.assertNotIn(
+            "costPerTBCasePrevented",
+            [row["metric"] for row in payload["summaryRows"]],
+        )
         self.assertTrue(
             any(
                 "summary.ncuredinfection is not positive" in message.lower()

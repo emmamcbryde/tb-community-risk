@@ -1,7 +1,8 @@
 # Manual Smoke Test: Experimental Python APY Backend
 
 MATLAB remains the APY v9 reference backend. The Python APY backend is
-experimental and currently excludes economics and attributable-risk add-ons.
+experimental and currently supports a partial economics subset while excluding
+attributable-risk add-ons.
 
 1. Start the app:
 
@@ -33,8 +34,8 @@ experimental and currently excludes economics and attributable-risk add-ons.
 
 9. Open Dynamic + ABM Compare and confirm it can read the latest APY bundle.
 
-10. Open Economics and confirm it warns that Python economics is not yet
-    available.
+10. Open Economics and confirm it explains that Python APY supports a partial
+    economics subset and that the full economics model remains MATLAB-backed.
 
 11. Return to Scenario and switch `APY backend` back to `MATLAB v9 reference`.
 

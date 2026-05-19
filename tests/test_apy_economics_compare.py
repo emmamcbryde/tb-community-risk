@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from engine.apy.economics import calculate_economics
 from engine.apy.economics_compare import compare_economics_rows, economics_rows
 
 
@@ -165,6 +166,73 @@ class ApyEconomicsCompareTests(unittest.TestCase):
         self.assertEqual(by_metric["falsePositiveIncrementalCost"]["status"], "missing")
         self.assertEqual(by_metric["falsePositiveIncrementalCost"]["category"], "directCost")
         self.assertTrue(by_metric["falsePositiveIncrementalCost"]["includedInTotal"])
+
+    def test_compare_helper_consumes_calculated_summary_rows_with_metadata(self) -> None:
+        baseline = calculate_economics(
+            _minimal_result_bundle(n_screened=100.0, n_started=20.0),
+            _minimal_economics_config(),
+        )
+        comparator = calculate_economics(
+            _minimal_result_bundle(n_screened=125.0, n_started=30.0),
+            _minimal_economics_config(),
+        )
+
+        rows, warnings = compare_economics_rows(
+            economics_rows(baseline),
+            economics_rows(comparator),
+        )
+
+        self.assertEqual(warnings, [])
+        by_metric = {row["metric"]: row for row in rows}
+        self.assertEqual(by_metric["testingCost"]["status"], "implemented")
+        self.assertTrue(by_metric["testingCost"]["includedInTotal"])
+        self.assertEqual(by_metric["treatmentCost"]["status"], "implemented")
+        self.assertTrue(by_metric["treatmentCost"]["includedInTotal"])
+        self.assertEqual(by_metric["totalImplementedCost"]["status"], "implemented")
+        self.assertFalse(by_metric["totalImplementedCost"]["includedInTotal"])
+
+
+def _minimal_result_bundle(*, n_screened: float, n_started: float) -> dict:
+    return {
+        "metadata": {
+            "backend": "python",
+            "contractVersion": "apy_results_bundle_v9_python_port",
+        },
+        "results": {
+            "interfaceConfig": {
+                "testType": "IGRA",
+                "regimen": "3HP",
+            },
+            "summary": [
+                {"Metric": "nScreened", "Median": n_screened},
+                {"Metric": "nTotalCoursesStarted", "Median": n_started},
+            ],
+        },
+    }
+
+
+def _minimal_economics_config() -> dict:
+    return {
+        "metadata": {
+            "currencyCode": "AUD",
+            "priceYear": 2019,
+            "locationLabel": "Australia",
+            "sourceNotes": "unit-test fixture",
+            "programCostBasis": "unit",
+        },
+        "costs": {
+            "test": {
+                "IGRA": 100.0,
+            },
+            "regimen": {
+                "x3HP": 200.0,
+            },
+            "falsePositiveIncrementalPerPerson": None,
+            "activeTBDiseasePerCase": None,
+            "programSetupTotal": None,
+            "programRunningTotal": None,
+        },
+    }
 
 
 if __name__ == "__main__":

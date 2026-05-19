@@ -155,7 +155,7 @@ Current implementation status:
 - Deterministic data loading, age distribution, regimen, summary, calibration, and cohort primitives are implemented.
 - Single-cohort simulation is implemented in `engine.apy.simulation`.
 - The replicate runner is implemented in `engine.apy.runner`.
-- A minimal Python result bundle is implemented in `engine.apy.results_bundle`.
+- A partial Python result bundle is implemented in `engine.apy.results_bundle`.
 - Do-nothing/natural-history summary support is implemented in `engine.apy.natural_history`.
 - Python bundles can produce a complete `technical.dynamicComparison` block when supplied with do-nothing derived rows.
 - A stochastic summary parity diagnostic helper is implemented in `engine.apy.parity`.

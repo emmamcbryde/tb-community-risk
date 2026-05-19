@@ -7,12 +7,14 @@ from typing import Any
 
 
 _NOT_PORTED_MESSAGE = (
-    "Only the tested minimal APY economics subset is implemented; the full "
+    "Only the tested partial APY economics subset is implemented; the full "
     "APY health-economics model is not ported to Python."
 )
 
-_CONTRACT_VERSION = "apy_economics_minimal_v1"
-_SOURCE = "apy_python_minimal_economics"
+_CONTRACT_VERSION = "apy_economics_partial_v1"
+_SOURCE = "apy_python_partial_economics"
+_LEGACY_CONTRACT_VERSION = "apy_economics_minimal_v1"
+_LEGACY_SOURCE = "apy_python_minimal_economics"
 _CALCULATED_COMPONENTS = [
     "testingCost",
     "treatmentCost",
@@ -42,7 +44,7 @@ _TOTAL_PROGRAM_COST_COMPONENTS = (
 )
 _UNSUPPORTED_COMPONENT_MESSAGE = (
     "Known MATLAB APY v9 economics component; not calculated by the current "
-    "minimal Python economics port."
+    "partial Python economics port."
 )
 
 
@@ -50,7 +52,7 @@ def calculate_economics(
     result_bundle: Mapping[str, Any],
     economics_config: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Return the supported minimal APY economics payload."""
+    """Return the supported partial APY economics payload."""
     _validate_result_bundle(result_bundle)
     _validate_economics_config(economics_config)
 
@@ -371,7 +373,7 @@ def calculate_economics(
         "source": _SOURCE,
         "contractVersion": _CONTRACT_VERSION,
         "message": _NOT_PORTED_MESSAGE,
-        "metadata": _json_like_copy(economics_config["metadata"]),
+        "metadata": _economics_metadata(economics_config["metadata"]),
         "inputs": _json_like_copy(economics_config),
         "strategy": {
             "testType": test_type,
@@ -513,6 +515,15 @@ def _coverage_metadata() -> dict[str, Any]:
     }
 
 
+def _economics_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    payload_metadata = _json_like_copy(metadata)
+    payload_metadata["legacyIdentifiers"] = {
+        "source": _LEGACY_SOURCE,
+        "contractVersion": _LEGACY_CONTRACT_VERSION,
+    }
+    return payload_metadata
+
+
 def _mark_calculated(coverage: dict[str, Any], component: str) -> None:
     if component not in coverage["calculatedComponents"]:
         coverage["calculatedComponents"].append(component)
@@ -650,7 +661,7 @@ def _require_unit_cost(
     path: str,
 ) -> float:
     if key not in costs or costs[key] is None:
-        raise ValueError(f"{path} is required for minimal APY economics.")
+        raise ValueError(f"{path} is required for partial APY economics.")
     return _as_float(costs[key], path)
 
 

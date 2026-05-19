@@ -26,6 +26,7 @@ abm/output/*
 *.asv
 abm/app_code.txt
 *.json
+!tests/fixtures/apy_economics_hand_check_fixture.json
 !validation/matlab_reference/scenario_suite_v1.json
 !validation/matlab_reference/**/scenario_config.json
 !validation/matlab_reference/**/matlab_dynamic_comparison.json

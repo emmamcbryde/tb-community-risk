@@ -119,7 +119,15 @@ class PythonApyBackendTests(unittest.TestCase):
         self.assertEqual(payload["status"], "partial")
         self.assertIn("full", payload["message"].lower())
         self.assertIn("not ported", payload["message"].lower())
-        self.assertEqual(payload["source"], "apy_python_minimal_economics")
+        self.assertEqual(payload["source"], "apy_python_partial_economics")
+        self.assertEqual(payload["contractVersion"], "apy_economics_partial_v1")
+        self.assertEqual(
+            payload["metadata"]["legacyIdentifiers"],
+            {
+                "source": "apy_python_minimal_economics",
+                "contractVersion": "apy_economics_minimal_v1",
+            },
+        )
         self.assertEqual(payload["strategy"], {"testType": "IGRA", "regimen": "3HP"})
         json.dumps(payload)
 
