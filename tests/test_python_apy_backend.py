@@ -177,12 +177,46 @@ class PythonApyBackendTests(unittest.TestCase):
             sum(row["value"] for row in rows if row["includedInTotal"] is True),
         )
 
-        unsupported_components = {
-            item["component"]
-            for item in payload["coverage"]["unsupportedComponents"]
-        }
-        self.assertGreater(len(unsupported_components), 0)
-        self.assertTrue(unsupported_components.isdisjoint(summary_by_metric))
+        self.assertEqual(payload["status"], "partial")
+        coverage = payload["coverage"]
+        json.dumps(coverage)
+        self.assertTrue(
+            coverage["unsupportedComponents"]
+            or coverage["notCalculated"]
+            or coverage["missingInputs"]
+        )
+
+    def test_run_economics_uses_app_bundle_dynamic_comparison_for_tb_disease_costs(self) -> None:
+        config = self.backend.default_config()
+        config.update({"N": 50, "nReps": 1, "seed": 2})
+        bundle = self.backend.run_scenario_bundle(config)
+
+        payload = self.backend.run_economics(
+            bundle,
+            self.backend.economics_preset_kwab150(),
+        )
+
+        summary_by_metric = {row["metric"]: row for row in payload["summaryRows"]}
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertIn("baselineTBDiseaseCost", payload["costs"])
+        self.assertIn("interventionTBDiseaseCost", payload["costs"])
+        self.assertIn("baselineTBDiseaseCost", summary_by_metric)
+        self.assertIn("interventionTBDiseaseCost", summary_by_metric)
+        self.assertEqual(
+            summary_by_metric["baselineTBDiseaseCost"]["category"],
+            "benefitCost",
+        )
+        self.assertEqual(
+            summary_by_metric["interventionTBDiseaseCost"]["category"],
+            "benefitCost",
+        )
+        self.assertFalse(summary_by_metric["baselineTBDiseaseCost"]["includedInTotal"])
+        self.assertFalse(
+            summary_by_metric["interventionTBDiseaseCost"]["includedInTotal"]
+        )
+        self.assertNotIn("results.dynamicComparison", payload["coverage"]["missingInputs"])
+        json.dumps(payload)
 
     def test_run_economics_for_config_runs_python_scenario_then_economics(self) -> None:
         config = self.backend.default_config()

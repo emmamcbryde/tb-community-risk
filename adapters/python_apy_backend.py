@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -173,12 +174,16 @@ def _economics_result_bundle(results: JsonDict) -> JsonDict:
     if "technical" in results and "headline" in results:
         technical = results["technical"]
         headline = results["headline"]
+        economics_results = {
+            "interfaceConfig": technical.get("interfaceConfig", {}),
+            "summary": headline.get("summaryRows", []),
+        }
+        dynamic_comparison = technical.get("dynamicComparison")
+        if isinstance(dynamic_comparison, Mapping):
+            economics_results["dynamicComparison"] = dynamic_comparison
         return {
             "metadata": results.get("metadata", {}),
-            "results": {
-                "interfaceConfig": technical.get("interfaceConfig", {}),
-                "summary": headline.get("summaryRows", []),
-            },
+            "results": economics_results,
         }
 
     return results

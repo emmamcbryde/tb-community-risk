@@ -18,18 +18,20 @@ _CALCULATED_COMPONENTS = [
     "treatmentCost",
 ]
 _UNSUPPORTED_COMPONENTS = [
-    "baselineTBDiseaseCost",
-    "interventionTBDiseaseCost",
-    "tbDiseaseCostsAverted",
-    "netCostVsBaseline",
-    "costPerInfectionCured",
-    "costPerTBCasePrevented",
 ]
 _OPTIONAL_DIRECT_COMPONENTS = [
     "falsePositiveIncrementalCost",
     "programSetupCost",
     "programRunningCost",
     "totalProgramCost",
+]
+_OPTIONAL_BENEFIT_COMPONENTS = [
+    "baselineTBDiseaseCost",
+    "interventionTBDiseaseCost",
+    "tbDiseaseCostsAverted",
+    "netCostVsBaseline",
+    "costPerInfectionCured",
+    "costPerTBCasePrevented",
 ]
 _TOTAL_PROGRAM_COST_COMPONENTS = (
     "testingCost",
@@ -65,6 +67,14 @@ def calculate_economics(
         summary,
         "nFalsePositiveTreated",
     )
+    n_prevented_active_tb = _optional_summary_median(
+        summary,
+        "nPreventedActiveTB",
+    )
+    n_cured_infection = _optional_summary_median(
+        summary,
+        "nCuredInfection",
+    )
 
     costs_config = economics_config["costs"]
     test_cost = _require_unit_cost(
@@ -92,6 +102,11 @@ def calculate_economics(
         costs_config,
         "programRunningTotal",
         "costs.programRunningTotal",
+    )
+    active_tb_disease_per_case = _optional_cost(
+        costs_config,
+        "activeTBDiseasePerCase",
+        "costs.activeTBDiseasePerCase",
     )
 
     testing_cost = n_screened * test_cost
@@ -126,6 +141,12 @@ def calculate_economics(
         quantities["nFalsePositiveTreated"] = n_false_positive_treated
     if false_positive_unit_cost is not None:
         unit_costs["falsePositiveIncrementalPerPerson"] = false_positive_unit_cost
+    if active_tb_disease_per_case is not None:
+        unit_costs["activeTBDiseasePerCase"] = active_tb_disease_per_case
+    if n_prevented_active_tb is not None:
+        quantities["nPreventedActiveTB"] = n_prevented_active_tb
+    if n_cured_infection is not None:
+        quantities["nCuredInfection"] = n_cured_infection
     _add_optional_direct_total_cost(
         costs,
         coverage,
@@ -193,6 +214,156 @@ def calculate_economics(
     else:
         _mark_not_calculated(coverage, "totalProgramCost")
 
+    dynamic_comparison = _optional_dynamic_comparison(results)
+    if dynamic_comparison is None:
+        _add_coverage_message(
+            coverage,
+            "dynamicComparison is missing; baseline/intervention TB disease "
+            "costs were not calculated.",
+        )
+        _mark_missing(
+            coverage,
+            "baselineTBDiseaseCost",
+            "results.dynamicComparison",
+        )
+        _mark_missing(
+            coverage,
+            "interventionTBDiseaseCost",
+            "results.dynamicComparison",
+        )
+    elif active_tb_disease_per_case is not None:
+        baseline_cases = _optional_numeric_value(
+            dynamic_comparison,
+            "cumulative_baseline_active_tb_cases",
+            "results.dynamicComparison.cumulative_baseline_active_tb_cases",
+        )
+        intervention_cases = _optional_numeric_value(
+            dynamic_comparison,
+            "cumulative_intervention_active_tb_cases",
+            "results.dynamicComparison.cumulative_intervention_active_tb_cases",
+        )
+        if baseline_cases is not None:
+            quantities["cumulativeBaselineActiveTBCases"] = baseline_cases
+            baseline_tb_disease_cost = baseline_cases * active_tb_disease_per_case
+            costs["baselineTBDiseaseCost"] = baseline_tb_disease_cost
+            _mark_calculated(coverage, "baselineTBDiseaseCost")
+            summary_rows.append(
+                _implemented_direct_cost_row(
+                    "baselineTBDiseaseCost",
+                    "Baseline TB disease cost",
+                    baseline_tb_disease_cost,
+                    category="benefitCost",
+                    included_in_total=False,
+                )
+            )
+        else:
+            _mark_missing(
+                coverage,
+                "baselineTBDiseaseCost",
+                "results.dynamicComparison.cumulative_baseline_active_tb_cases",
+            )
+        if intervention_cases is not None:
+            quantities["cumulativeInterventionActiveTBCases"] = intervention_cases
+            intervention_tb_disease_cost = (
+                intervention_cases * active_tb_disease_per_case
+            )
+            costs["interventionTBDiseaseCost"] = intervention_tb_disease_cost
+            _mark_calculated(coverage, "interventionTBDiseaseCost")
+            summary_rows.append(
+                _implemented_direct_cost_row(
+                    "interventionTBDiseaseCost",
+                    "Intervention TB disease cost",
+                    intervention_tb_disease_cost,
+                    category="benefitCost",
+                    included_in_total=False,
+                )
+            )
+        else:
+            _mark_missing(
+                coverage,
+                "interventionTBDiseaseCost",
+                "results.dynamicComparison.cumulative_intervention_active_tb_cases",
+            )
+    else:
+        _mark_missing(
+            coverage,
+            "baselineTBDiseaseCost",
+            "costs.activeTBDiseasePerCase",
+        )
+        _mark_missing(
+            coverage,
+            "interventionTBDiseaseCost",
+            "costs.activeTBDiseasePerCase",
+        )
+
+    if active_tb_disease_per_case is None:
+        _mark_missing(
+            coverage,
+            "tbDiseaseCostsAverted",
+            "costs.activeTBDiseasePerCase",
+        )
+    if n_prevented_active_tb is None:
+        _mark_missing(
+            coverage,
+            "tbDiseaseCostsAverted",
+            "summary.nPreventedActiveTB",
+        )
+    if active_tb_disease_per_case is not None and n_prevented_active_tb is not None:
+        tb_disease_costs_averted = (
+            n_prevented_active_tb * active_tb_disease_per_case
+        )
+        costs["tbDiseaseCostsAverted"] = tb_disease_costs_averted
+        _mark_calculated(coverage, "tbDiseaseCostsAverted")
+        summary_rows.append(
+            _implemented_direct_cost_row(
+                "tbDiseaseCostsAverted",
+                "TB disease costs averted",
+                tb_disease_costs_averted,
+                category="benefitCost",
+                included_in_total=False,
+            )
+        )
+
+    if "totalProgramCost" in costs and "tbDiseaseCostsAverted" in costs:
+        net_cost_vs_baseline = (
+            costs["totalProgramCost"] - costs["tbDiseaseCostsAverted"]
+        )
+        costs["netCostVsBaseline"] = net_cost_vs_baseline
+        _mark_calculated(coverage, "netCostVsBaseline")
+        summary_rows.append(
+            _implemented_direct_cost_row(
+                "netCostVsBaseline",
+                "Net cost vs baseline",
+                net_cost_vs_baseline,
+                category="netCost",
+                included_in_total=False,
+            )
+        )
+    else:
+        _mark_not_calculated(coverage, "netCostVsBaseline")
+
+    cost_effectiveness: dict[str, float] = {}
+    _add_simple_ratio(
+        cost_effectiveness,
+        coverage,
+        summary_rows,
+        metric="costPerInfectionCured",
+        label="Cost per infection cured",
+        net_cost=costs.get("netCostVsBaseline"),
+        denominator=n_cured_infection,
+        denominator_input="summary.nCuredInfection",
+    )
+    _add_simple_ratio(
+        cost_effectiveness,
+        coverage,
+        summary_rows,
+        metric="costPerTBCasePrevented",
+        label="Cost per TB case prevented",
+        net_cost=costs.get("netCostVsBaseline"),
+        denominator=n_prevented_active_tb,
+        denominator_input="summary.nPreventedActiveTB",
+    )
+
     summary_rows.append(_total_implemented_cost_row(summary_rows))
 
     return {
@@ -209,7 +380,7 @@ def calculate_economics(
         "quantities": quantities,
         "unitCosts": unit_costs,
         "costs": costs,
-        "costEffectiveness": {},
+        "costEffectiveness": cost_effectiveness,
         "summaryRows": summary_rows,
         "coverage": coverage,
         "status": "partial",
@@ -234,6 +405,53 @@ def _add_optional_direct_total_cost(
     _mark_calculated(coverage, component)
     summary_rows.append(
         _implemented_direct_cost_row(component, label, value)
+    )
+
+
+def _add_simple_ratio(
+    cost_effectiveness: dict[str, float],
+    coverage: dict[str, Any],
+    summary_rows: list[dict[str, Any]],
+    *,
+    metric: str,
+    label: str,
+    net_cost: float | None,
+    denominator: float | None,
+    denominator_input: str,
+) -> None:
+    if net_cost is None:
+        _add_coverage_message(
+            coverage,
+            f"{metric} was not calculated because netCostVsBaseline is unavailable.",
+        )
+        _mark_not_calculated(coverage, metric)
+        return
+    if denominator is None:
+        _add_coverage_message(
+            coverage,
+            f"{metric} was not calculated because {denominator_input} is missing.",
+        )
+        _mark_missing(coverage, metric, denominator_input)
+        return
+    if denominator <= 0:
+        _add_coverage_message(
+            coverage,
+            f"{metric} was not calculated because {denominator_input} is not positive.",
+        )
+        _mark_not_calculated(coverage, metric)
+        return
+
+    value = net_cost / denominator
+    cost_effectiveness[metric] = value
+    _mark_calculated(coverage, metric)
+    summary_rows.append(
+        _implemented_direct_cost_row(
+            metric,
+            label,
+            value,
+            category="costEffectiveness",
+            included_in_total=False,
+        )
     )
 
 
@@ -285,6 +503,7 @@ def _coverage_metadata() -> dict[str, Any]:
         "unsupportedComponents": unsupported,
         "notCalculated": (
             list(_OPTIONAL_DIRECT_COMPONENTS) + list(_UNSUPPORTED_COMPONENTS)
+            + list(_OPTIONAL_BENEFIT_COMPONENTS)
         ),
         "missingInputs": [],
         "messages": [
@@ -314,6 +533,11 @@ def _mark_missing(
     if input_name not in coverage["missingInputs"]:
         coverage["missingInputs"].append(input_name)
     _mark_not_calculated(coverage, component)
+
+
+def _add_coverage_message(coverage: dict[str, Any], message: str) -> None:
+    if message not in coverage["messages"]:
+        coverage["messages"].append(message)
 
 
 def _validate_result_bundle(result_bundle: Mapping[str, Any]) -> None:
@@ -438,6 +662,24 @@ def _optional_cost(
     if key not in costs or costs[key] is None:
         return None
     return _as_float(costs[key], path)
+
+
+def _optional_dynamic_comparison(results: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    if "dynamicComparison" not in results or results["dynamicComparison"] is None:
+        return None
+    if not isinstance(results["dynamicComparison"], Mapping):
+        raise ValueError("result_bundle.results.dynamicComparison must be a mapping.")
+    return results["dynamicComparison"]
+
+
+def _optional_numeric_value(
+    mapping: Mapping[str, Any],
+    key: str,
+    path: str,
+) -> float | None:
+    if key not in mapping or mapping[key] is None:
+        return None
+    return _as_float(mapping[key], path)
 
 
 def _as_float(value: Any, label: str) -> float:

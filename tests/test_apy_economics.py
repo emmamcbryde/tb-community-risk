@@ -175,6 +175,9 @@ class ApyEconomicsTests(unittest.TestCase):
                 "costs.programRunningTotal",
                 "summary.nFalsePositiveTreated",
                 "costs.falsePositiveIncrementalPerPerson",
+                "results.dynamicComparison",
+                "costs.activeTBDiseasePerCase",
+                "summary.nPreventedActiveTB",
             ],
         )
         self.assertIn("falsePositiveIncrementalCost", coverage["notCalculated"])
@@ -221,7 +224,22 @@ class ApyEconomicsTests(unittest.TestCase):
         self.assertEqual(payload["costs"]["programRunningCost"], 5.0)
         self.assertAlmostEqual(payload["costs"]["totalProgramCost"], expected_total)
         self.assertEqual(payload["status"], "partial")
-        self.assertEqual(payload["coverage"]["missingInputs"], [])
+        self.assertNotIn(
+            "summary.nFalsePositiveTreated",
+            payload["coverage"]["missingInputs"],
+        )
+        self.assertNotIn(
+            "costs.falsePositiveIncrementalPerPerson",
+            payload["coverage"]["missingInputs"],
+        )
+        self.assertNotIn(
+            "costs.programSetupTotal",
+            payload["coverage"]["missingInputs"],
+        )
+        self.assertNotIn(
+            "costs.programRunningTotal",
+            payload["coverage"]["missingInputs"],
+        )
         for component in [
             "falsePositiveIncrementalCost",
             "programSetupCost",
@@ -301,6 +319,153 @@ class ApyEconomicsTests(unittest.TestCase):
         self.assertIn("programRunningCost", payload["coverage"]["calculatedComponents"])
         self.assertNotIn("programSetupCost", payload["coverage"]["notCalculated"])
         self.assertNotIn("programRunningCost", payload["coverage"]["notCalculated"])
+
+    def test_tb_disease_benefit_costs_are_calculated_when_explicit_inputs_are_present(self) -> None:
+        bundle = minimal_result_bundle()
+        bundle["results"]["summary"].extend(
+            [
+                {"Metric": "nFalsePositiveTreated", "Median": 3.0},
+                {"Metric": "nPreventedActiveTB", "Median": 2.0},
+                {"Metric": "nCuredInfection", "Median": 8.0},
+            ]
+        )
+        bundle["results"]["dynamicComparison"] = {
+            "cumulative_baseline_active_tb_cases": 10.0,
+            "cumulative_intervention_active_tb_cases": 8.0,
+        }
+        config = minimal_economics_config()
+        config["costs"]["falsePositiveIncrementalPerPerson"] = 10.0
+        config["costs"]["programSetupTotal"] = 100.0
+        config["costs"]["programRunningTotal"] = 5.0
+        config["costs"]["activeTBDiseasePerCase"] = 1000.0
+
+        payload = calculate_economics(bundle, config)
+
+        total_program_cost = (
+            125.0 * 113.48
+            + 40.0 * 165.5072
+            + 3.0 * 10.0
+            + 100.0
+            + 5.0
+        )
+        expected_net_cost = total_program_cost - 2.0 * 1000.0
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["unitCosts"]["activeTBDiseasePerCase"], 1000.0)
+        self.assertEqual(payload["quantities"]["nPreventedActiveTB"], 2.0)
+        self.assertEqual(payload["quantities"]["nCuredInfection"], 8.0)
+        self.assertEqual(payload["quantities"]["cumulativeBaselineActiveTBCases"], 10.0)
+        self.assertEqual(
+            payload["quantities"]["cumulativeInterventionActiveTBCases"],
+            8.0,
+        )
+        self.assertEqual(payload["costs"]["baselineTBDiseaseCost"], 10000.0)
+        self.assertEqual(payload["costs"]["interventionTBDiseaseCost"], 8000.0)
+        self.assertEqual(payload["costs"]["tbDiseaseCostsAverted"], 2000.0)
+        self.assertAlmostEqual(payload["costs"]["netCostVsBaseline"], expected_net_cost)
+        self.assertAlmostEqual(
+            payload["costEffectiveness"]["costPerInfectionCured"],
+            expected_net_cost / 8.0,
+        )
+        self.assertAlmostEqual(
+            payload["costEffectiveness"]["costPerTBCasePrevented"],
+            expected_net_cost / 2.0,
+        )
+
+        for component in [
+            "baselineTBDiseaseCost",
+            "interventionTBDiseaseCost",
+            "tbDiseaseCostsAverted",
+            "netCostVsBaseline",
+            "costPerInfectionCured",
+            "costPerTBCasePrevented",
+        ]:
+            self.assertIn(component, payload["coverage"]["calculatedComponents"])
+            self.assertNotIn(component, payload["coverage"]["notCalculated"])
+        self.assertNotIn("results.dynamicComparison", payload["coverage"]["missingInputs"])
+        self.assertEqual(payload["coverage"]["unsupportedComponents"], [])
+
+        summary_by_metric = {
+            row["metric"]: row
+            for row in payload["summaryRows"]
+        }
+        for component in [
+            "baselineTBDiseaseCost",
+            "interventionTBDiseaseCost",
+            "tbDiseaseCostsAverted",
+        ]:
+            self.assertEqual(summary_by_metric[component]["category"], "benefitCost")
+            self.assertFalse(summary_by_metric[component]["includedInTotal"])
+        self.assertEqual(summary_by_metric["netCostVsBaseline"]["category"], "netCost")
+        self.assertEqual(
+            summary_by_metric["costPerTBCasePrevented"]["category"],
+            "costEffectiveness",
+        )
+        json.dumps(payload)
+
+    def test_missing_dynamic_comparison_leaves_tb_case_costs_not_calculated(self) -> None:
+        bundle = minimal_result_bundle()
+        bundle["results"]["summary"].append(
+            {"Metric": "nPreventedActiveTB", "Median": 2.0}
+        )
+        config = minimal_economics_config()
+        config["costs"]["activeTBDiseasePerCase"] = 1000.0
+
+        payload = calculate_economics(bundle, config)
+
+        self.assertNotIn("baselineTBDiseaseCost", payload["costs"])
+        self.assertNotIn("interventionTBDiseaseCost", payload["costs"])
+        self.assertEqual(payload["costs"]["tbDiseaseCostsAverted"], 2000.0)
+        self.assertIn("results.dynamicComparison", payload["coverage"]["missingInputs"])
+        self.assertIn("baselineTBDiseaseCost", payload["coverage"]["notCalculated"])
+        self.assertIn("interventionTBDiseaseCost", payload["coverage"]["notCalculated"])
+        self.assertTrue(
+            any(
+                "dynamiccomparison is missing" in message.lower()
+                for message in payload["coverage"]["messages"]
+            )
+        )
+        json.dumps(payload)
+
+    def test_simple_ratios_require_net_cost_and_positive_denominators(self) -> None:
+        bundle = minimal_result_bundle()
+        bundle["results"]["summary"].extend(
+            [
+                {"Metric": "nFalsePositiveTreated", "Median": 3.0},
+                {"Metric": "nPreventedActiveTB", "Median": 0.0},
+                {"Metric": "nCuredInfection", "Median": 0.0},
+            ]
+        )
+        bundle["results"]["dynamicComparison"] = {
+            "cumulative_baseline_active_tb_cases": 10.0,
+            "cumulative_intervention_active_tb_cases": 10.0,
+        }
+        config = minimal_economics_config()
+        config["costs"]["falsePositiveIncrementalPerPerson"] = 10.0
+        config["costs"]["programSetupTotal"] = 100.0
+        config["costs"]["programRunningTotal"] = 5.0
+        config["costs"]["activeTBDiseasePerCase"] = 1000.0
+
+        payload = calculate_economics(bundle, config)
+
+        self.assertIn("netCostVsBaseline", payload["costs"])
+        self.assertEqual(payload["costEffectiveness"], {})
+        self.assertIn("costPerInfectionCured", payload["coverage"]["notCalculated"])
+        self.assertIn("costPerTBCasePrevented", payload["coverage"]["notCalculated"])
+        self.assertTrue(
+            any(
+                "summary.ncuredinfection is not positive" in message.lower()
+                for message in payload["coverage"]["messages"]
+            )
+        )
+        self.assertTrue(
+            any(
+                "summary.npreventedactivetb is not positive" in message.lower()
+                for message in payload["coverage"]["messages"]
+            )
+        )
+        self.assertNotIn("summary.nCuredInfection", payload["coverage"]["missingInputs"])
+        self.assertNotIn("summary.nPreventedActiveTB", payload["coverage"]["missingInputs"])
+        json.dumps(payload)
 
     def test_missing_required_summary_metrics_raise_explicit_error(self) -> None:
         bundle = minimal_result_bundle()
