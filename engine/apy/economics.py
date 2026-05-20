@@ -20,6 +20,10 @@ _CALCULATED_COMPONENTS = [
     "treatmentCost",
 ]
 _UNSUPPORTED_COMPONENTS = [
+    "DALYs",
+    "QALYs",
+    "discounting",
+    "ICERs",
 ]
 _OPTIONAL_DIRECT_COMPONENTS = [
     "falsePositiveIncrementalCost",

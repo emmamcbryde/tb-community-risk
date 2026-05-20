@@ -1,18 +1,22 @@
 {
-  "fixtureName": "hand-checkable Python APY economics fixture",
-  "source": "Python unit-test fixture, not MATLAB-exported",
-  "purpose": "Small round-number fixture for the supported calculate_economics subset.",
+  "fixtureName": "apy economics supported subset parity hand-check",
+  "metadata": {
+    "alignment": "MATLAB-formula-aligned, not MATLAB-exported",
+    "source": "Python unit-test fixture built from deterministic expected values in tests/test_apy_economics.py",
+    "scope": "Currently supported Python economics metrics only; formulas follow the APY v9 MATLAB economics engine."
+  },
+  "purpose": "Fixture scaffold for parity-oriented assertions of the supported calculate_economics subset.",
   "handChecks": [
-    "testingCost = 10 screened * 20 per IGRA = 200",
-    "treatmentCost = 4 courses started * 50 per 3HP = 200",
-    "falsePositiveIncrementalCost = 1 false-positive treated * 30 = 30",
-    "totalProgramCost = 200 + 200 + 30 + 100 setup + 70 running = 600",
-    "baselineTBDiseaseCost = 12 baseline TB cases * 1000 = 12000",
-    "interventionTBDiseaseCost = 10 intervention TB cases * 1000 = 10000",
-    "tbDiseaseCostsAverted = 2 prevented TB cases * 1000 = 2000",
-    "netCostVsBaseline = 600 total program cost - 2000 costs averted = -1400",
-    "costPerInfectionCured = -1400 / 5 cured infections = -280",
-    "costPerTBCasePrevented = -1400 / 2 prevented TB cases = -700"
+    "testingCost = 125 screened * 113.48 per IGRA = 14185.0",
+    "treatmentCost = 40 courses started * 165.5072 per 3HP = 6620.288",
+    "falsePositiveIncrementalCost = 3 false-positive treated * 10.0 = 30.0",
+    "totalProgramCost = 14185.0 + 6620.288 + 30.0 + 100.0 setup + 5.0 running = 20940.288",
+    "baselineTBDiseaseCost = 10 baseline TB cases * 1000.0 = 10000.0",
+    "interventionTBDiseaseCost = 8 intervention TB cases * 1000.0 = 8000.0",
+    "tbDiseaseCostsAverted = (10 - 8) TB cases * 1000.0 = 2000.0",
+    "netCostVsBaseline = 20940.288 total program cost - 2000.0 costs averted = 18940.288",
+    "costPerInfectionCured = 18940.288 / 8 cured infections = 2367.536",
+    "costPerTBCasePrevented = 18940.288 / 2 prevented TB cases = 9470.144"
   ],
   "resultBundle": {
     "metadata": {
@@ -27,15 +31,15 @@
       "summary": [
         {
           "Metric": "nScreened",
-          "Median": 10.0
+          "Median": 125.0
         },
         {
           "Metric": "nTotalCoursesStarted",
-          "Median": 4.0
+          "Median": 40.0
         },
         {
           "Metric": "nFalsePositiveTreated",
-          "Median": 1.0
+          "Median": 3.0
         },
         {
           "Metric": "nPreventedActiveTB",
@@ -43,12 +47,12 @@
         },
         {
           "Metric": "nCuredInfection",
-          "Median": 5.0
+          "Median": 8.0
         }
       ],
       "dynamicComparison": {
-        "cumulative_baseline_active_tb_cases": 12.0,
-        "cumulative_intervention_active_tb_cases": 10.0
+        "cumulative_baseline_active_tb_cases": 10.0,
+        "cumulative_intervention_active_tb_cases": 8.0
       }
     }
   },
@@ -62,38 +66,38 @@
     },
     "costs": {
       "test": {
-        "IGRA": 20.0,
+        "IGRA": 113.48,
         "TST": null
       },
       "regimen": {
-        "x3HP": 50.0,
+        "x3HP": 165.5072,
         "x4R": null,
         "x3HR": null,
         "x6H": null,
         "x9H": null
       },
-      "falsePositiveIncrementalPerPerson": 30.0,
+      "falsePositiveIncrementalPerPerson": 10.0,
       "activeTBDiseasePerCase": 1000.0,
       "programSetupTotal": 100.0,
-      "programRunningTotal": 70.0
+      "programRunningTotal": 5.0
     }
   },
   "expectedSupportedSubset": {
     "costs": {
-      "testingCost": 200.0,
-      "treatmentCost": 200.0,
+      "testingCost": 14185.0,
+      "treatmentCost": 6620.288,
       "falsePositiveIncrementalCost": 30.0,
       "programSetupCost": 100.0,
-      "programRunningCost": 70.0,
-      "totalProgramCost": 600.0,
-      "baselineTBDiseaseCost": 12000.0,
-      "interventionTBDiseaseCost": 10000.0,
+      "programRunningCost": 5.0,
+      "totalProgramCost": 20940.288,
+      "baselineTBDiseaseCost": 10000.0,
+      "interventionTBDiseaseCost": 8000.0,
       "tbDiseaseCostsAverted": 2000.0,
-      "netCostVsBaseline": -1400.0
+      "netCostVsBaseline": 18940.288
     },
     "costEffectiveness": {
-      "costPerInfectionCured": -280.0,
-      "costPerTBCasePrevented": -700.0
+      "costPerInfectionCured": 2367.536,
+      "costPerTBCasePrevented": 9470.144
     }
   }
 }

@@ -117,6 +117,10 @@ class PythonApyBackendTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["status"], "partial")
+        self.assertNotIn(
+            "does not include economics execution",
+            payload["message"].lower(),
+        )
         self.assertIn("full", payload["message"].lower())
         self.assertIn("not ported", payload["message"].lower())
         self.assertEqual(payload["source"], "apy_python_partial_economics")

@@ -20,8 +20,8 @@ from engine.apy.validation import collect_validation_issues
 
 
 PYTHON_ECONOMICS_UNSUPPORTED = (
-    "Python APY backend does not yet include economics execution. Use the "
-    "MATLAB backend to run economics until the Python economics port is complete."
+    "Python APY backend provides a partial Python APY economics subset. Use "
+    "the MATLAB backend when full APY health-economics parity is required."
 )
 
 

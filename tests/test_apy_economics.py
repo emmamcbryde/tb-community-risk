@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import unittest
 from pathlib import Path
 
@@ -119,6 +120,20 @@ def _supported_economics_subset(payload: dict) -> dict:
     }
 
 
+def _assert_supported_subset_matches_fixture(actual: dict, expected: dict) -> None:
+    assert actual.keys() == expected.keys()
+    for section, expected_values in expected.items():
+        assert actual[section].keys() == expected_values.keys()
+        for metric, expected_value in expected_values.items():
+            actual_value = actual[section][metric]
+            assert math.isclose(actual_value, expected_value, rel_tol=0.0, abs_tol=1e-9), (
+                section,
+                metric,
+                actual_value,
+                expected_value,
+            )
+
+
 def test_hand_checkable_python_economics_fixture_matches_supported_subset() -> None:
     fixture = _load_hand_check_fixture()
     payload = calculate_economics(
@@ -126,8 +141,11 @@ def test_hand_checkable_python_economics_fixture_matches_supported_subset() -> N
         fixture["economicsConfig"],
     )
 
-    assert fixture["source"] == "Python unit-test fixture, not MATLAB-exported"
-    assert _supported_economics_subset(payload) == fixture["expectedSupportedSubset"]
+    assert fixture["metadata"]["alignment"] == "MATLAB-formula-aligned, not MATLAB-exported"
+    _assert_supported_subset_matches_fixture(
+        _supported_economics_subset(payload),
+        fixture["expectedSupportedSubset"],
+    )
     assert "results.dynamicComparison" not in payload["coverage"]["missingInputs"]
 
 
@@ -250,6 +268,10 @@ class ApyEconomicsTests(unittest.TestCase):
         self.assertIn("programRunningCost", coverage["notCalculated"])
         self.assertIn("totalProgramCost", coverage["notCalculated"])
         self.assertIn("costPerTBCasePrevented", coverage["notCalculated"])
+        self.assertEqual(
+            [item["component"] for item in coverage["unsupportedComponents"]],
+            ["DALYs", "QALYs", "discounting", "ICERs"],
+        )
         self.assertTrue(
             all(
                 "not calculated" in item["message"].lower()
@@ -262,7 +284,7 @@ class ApyEconomicsTests(unittest.TestCase):
         self.assertTrue(
             all("minimal" not in msg.lower() for msg in coverage["messages"])
         )
-        json.dumps(coverage)
+        json.dumps(payload)
 
     def test_direct_program_costs_are_calculated_when_inputs_are_present(self) -> None:
         bundle = minimal_result_bundle()
@@ -450,7 +472,10 @@ class ApyEconomicsTests(unittest.TestCase):
             self.assertIn(component, payload["coverage"]["calculatedComponents"])
             self.assertNotIn(component, payload["coverage"]["notCalculated"])
         self.assertNotIn("results.dynamicComparison", payload["coverage"]["missingInputs"])
-        self.assertEqual(payload["coverage"]["unsupportedComponents"], [])
+        self.assertEqual(
+            [item["component"] for item in payload["coverage"]["unsupportedComponents"]],
+            ["DALYs", "QALYs", "discounting", "ICERs"],
+        )
 
         summary_by_metric = {
             row["metric"]: row
