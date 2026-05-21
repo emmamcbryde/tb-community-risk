@@ -4,6 +4,7 @@ import builtins
 import json
 import sys
 import unittest
+from unittest.mock import patch
 
 from adapters.paths import repo_root
 from adapters.python_apy_backend import PythonApyBackend
@@ -49,6 +50,14 @@ class PythonApyBackendTests(unittest.TestCase):
             bundle["technical"]["dynamicComparison"]["source"],
             "doNothing.derived",
         )
+        self.assertIn("naturalHistoryAddons", bundle)
+        addons = bundle["naturalHistoryAddons"]
+        self.assertIn("summaryRows", addons["doNothing"])
+        self.assertEqual(addons["doNothing"]["status"], "available")
+        self.assertEqual(addons["doNothing"]["summaryRows"], addons["summaryRows"])
+        self.assertGreater(len(addons["doNothing"]["summaryRows"]), 0)
+        self.assertIn("attributableRisk", addons)
+        json.dumps(bundle, allow_nan=False, sort_keys=True)
 
     def test_compare_targeting_result_bundles_uses_existing_bundles(self) -> None:
         baseline = {
@@ -141,6 +150,117 @@ class PythonApyBackendTests(unittest.TestCase):
         self.assertEqual(payload["status"], "missing-input")
         self.assertEqual(payload["missingInputs"][0]["field"], "technical.dynamicComparison")
         self.assertEqual(payload["calculatedRows"], [])
+        json.dumps(payload, allow_nan=False, sort_keys=True)
+
+    def test_run_natural_history_addons_accepts_direct_bundle_do_nothing_rows(
+        self,
+    ) -> None:
+        bundle = {
+            "technical": {"dynamicComparison": {"available": True}},
+            "doNothing": {
+                "summaryRows": [{"Metric": "Active TB cases", "Median": 2.0}],
+                "derivedRows": [{"nActiveBy20y_DoNothing": 3.0}],
+            },
+        }
+
+        payload = self.backend.run_natural_history_addons(
+            bundle,
+            requested_attributable_metrics=[],
+        )
+
+        self.assertEqual(payload["status"], "available")
+        self.assertEqual(
+            payload["summaryRows"],
+            [{"Metric": "Active TB cases", "Median": 2}],
+        )
+        self.assertEqual(payload["doNothing"]["status"], "available")
+        self.assertEqual(
+            payload["doNothing"]["derivedRows"],
+            [{"nActiveBy20y_DoNothing": 3}],
+        )
+        json.dumps(payload, allow_nan=False, sort_keys=True)
+
+    def test_run_natural_history_addons_accepts_runner_style_output(self) -> None:
+        runner_output = {
+            "bundle": {"technical": {"dynamicComparison": {"available": True}}},
+            "doNothing": {
+                "summary": [{"Metric": "LTBI prevalence", "Median": 0.1}],
+                "derived": [{"ltbiPrev_DoNothing": 0.1}],
+            },
+        }
+
+        payload = self.backend.run_natural_history_addons(
+            runner_output,
+            requested_attributable_metrics=[],
+        )
+
+        self.assertEqual(payload["status"], "available")
+        self.assertEqual(
+            payload["summaryRows"],
+            [{"Metric": "LTBI prevalence", "Median": 0.1}],
+        )
+        self.assertEqual(payload["missingInputs"], [])
+        json.dumps(payload, allow_nan=False, sort_keys=True)
+
+    def test_run_natural_history_addons_delegates_extracted_inputs(self) -> None:
+        runner_output = {
+            "bundle": {"technical": {"dynamicComparison": {"available": True}}},
+            "doNothing": {"summary": [{"Metric": "x"}], "derived": []},
+        }
+        expected = {
+            "status": "available",
+            "source": "test",
+            "summaryRows": [],
+            "doNothing": {},
+            "attributableRisk": {},
+            "missingInputs": [],
+            "unsupportedMetrics": [],
+            "messages": [],
+        }
+
+        with patch(
+            "adapters.python_apy_backend._build_natural_history_addon_report",
+            return_value=expected,
+        ) as build_report:
+            payload = self.backend.run_natural_history_addons(
+                runner_output,
+                requested_attributable_metrics=[
+                    "ExpectedActiveCases20y_Per1500_DoNothing"
+                ],
+            )
+
+        self.assertEqual(payload, expected)
+        build_report.assert_called_once_with(
+            {"technical": {"dynamicComparison": {"available": True}}},
+            do_nothing={"summary": [{"Metric": "x"}], "derived": None},
+            requested_attributable_metrics=[
+                "ExpectedActiveCases20y_Per1500_DoNothing"
+            ],
+        )
+        json.dumps(payload, allow_nan=False, sort_keys=True)
+
+    def test_run_natural_history_addons_does_not_import_matlab_engine(self) -> None:
+        sys.modules.pop("matlab.engine", None)
+        original_import = builtins.__import__
+
+        def fail_on_matlab_engine_import(name, *args, **kwargs):
+            if name == "matlab.engine":
+                raise AssertionError(
+                    "PythonApyBackend.run_natural_history_addons imported matlab.engine"
+                )
+            return original_import(name, *args, **kwargs)
+
+        try:
+            builtins.__import__ = fail_on_matlab_engine_import
+            payload = self.backend.run_natural_history_addons(
+                {"technical": {"dynamicComparison": {"available": True}}},
+                requested_attributable_metrics=[],
+            )
+        finally:
+            builtins.__import__ = original_import
+
+        self.assertNotIn("matlab.engine", sys.modules)
+        self.assertEqual(payload["status"], "missing-input")
         json.dumps(payload, allow_nan=False, sort_keys=True)
 
     def test_export_wrappers_return_stable_json_without_matlab(self) -> None:

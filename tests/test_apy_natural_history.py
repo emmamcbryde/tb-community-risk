@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import math
+import json
 import unittest
 
 import numpy as np
 import pandas as pd
 
-from engine.apy.natural_history import run_do_nothing_summary, safe_fraction_vector
+from engine.apy.natural_history import (
+    build_natural_history_addon_report,
+    run_do_nothing_summary,
+    safe_fraction_vector,
+)
+from engine.apy.results_bundle import build_results_bundle
 from engine.apy.runner import run_replicates
 
 
@@ -97,6 +103,103 @@ class ApyNaturalHistoryTests(unittest.TestCase):
         self.assertIn(
             "NNS to cure one infection (current strategy)",
             metrics,
+        )
+
+    def test_addon_report_contract_is_json_serialisable(self) -> None:
+        bundle = build_results_bundle(self.results, do_nothing=self.do_nothing)
+        payload = build_natural_history_addon_report(
+            bundle,
+            do_nothing=self.do_nothing,
+            requested_attributable_metrics=[],
+        )
+
+        self.assertEqual(
+            list(payload),
+            [
+                "status",
+                "source",
+                "summaryRows",
+                "doNothing",
+                "attributableRisk",
+                "missingInputs",
+                "unsupportedMetrics",
+                "messages",
+            ],
+        )
+        self.assertEqual(payload["status"], "available")
+        json.dumps(payload, allow_nan=False, sort_keys=True)
+
+    def test_addon_report_converts_do_nothing_dataframes_to_rows(self) -> None:
+        bundle = build_results_bundle(self.results, do_nothing=self.do_nothing)
+        payload = build_natural_history_addon_report(
+            bundle,
+            do_nothing=self.do_nothing,
+            requested_attributable_metrics=[],
+        )
+
+        expected_summary = self.do_nothing["summary"].to_dict(orient="records")
+        expected_derived_columns = list(self.do_nothing["derived"].columns)
+
+        self.assertEqual(payload["summaryRows"], expected_summary)
+        self.assertEqual(payload["doNothing"]["summaryRows"], expected_summary)
+        self.assertEqual(
+            len(payload["doNothing"]["derivedRows"]),
+            len(self.do_nothing["derived"]),
+        )
+        self.assertEqual(
+            list(payload["doNothing"]["derivedRows"][0]),
+            expected_derived_columns,
+        )
+        self.assertTrue(
+            any(
+                row["NNS_preventActiveTB"] is None
+                for row in payload["doNothing"]["derivedRows"]
+            )
+        )
+
+    def test_addon_report_reports_missing_do_nothing_input(self) -> None:
+        bundle = build_results_bundle(self.results, do_nothing=self.do_nothing)
+        payload = build_natural_history_addon_report(
+            bundle,
+            requested_attributable_metrics=[],
+        )
+
+        self.assertEqual(payload["status"], "missing-input")
+        self.assertEqual(payload["summaryRows"], [])
+        self.assertEqual(payload["doNothing"]["status"], "missing-input")
+        self.assertIn(
+            {
+                "field": "doNothing",
+                "message": (
+                    "Do-nothing natural-history summary was not provided; "
+                    "run_do_nothing_summary output is required for these rows."
+                ),
+            },
+            payload["missingInputs"],
+        )
+        json.dumps(payload, allow_nan=False, sort_keys=True)
+
+    def test_addon_report_preserves_attributable_risk_missing_and_unsupported_status(
+        self,
+    ) -> None:
+        payload = build_natural_history_addon_report(
+            {"technical": {}},
+            do_nothing=self.do_nothing,
+            requested_attributable_metrics=["ExpectedAttributableCases20y_Per1500"],
+        )
+
+        self.assertEqual(payload["status"], "missing-input")
+        self.assertEqual(
+            payload["attributableRisk"]["status"],
+            "missing-input",
+        )
+        self.assertEqual(
+            [row["field"] for row in payload["missingInputs"]],
+            ["technical.dynamicComparison"],
+        )
+        self.assertEqual(
+            [row["metric"] for row in payload["unsupportedMetrics"]],
+            ["ExpectedAttributableCases20y_Per1500"],
         )
 
 

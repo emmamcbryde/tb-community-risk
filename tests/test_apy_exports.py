@@ -39,6 +39,115 @@ class ApyExportTests(unittest.TestCase):
         self.assertIsNone(payload["headline"]["summaryRows"][0]["Low95"])
         json.dumps(payload)
 
+    def test_natural_history_addons_export_and_display_helpers_are_json_safe(
+        self,
+    ) -> None:
+        bundle = {
+            "headline": {
+                "keyMetricsRows": [
+                    {
+                        "Metric": "nScreened",
+                        "Median": np.float64(10.0),
+                        "Low95": 8.0,
+                        "High95": 12.0,
+                    }
+                ],
+                "summaryRows": [
+                    {
+                        "Metric": "nPreventedActiveTB",
+                        "Median": 2.0,
+                        "Low95": 1.0,
+                        "High95": 3.0,
+                    }
+                ],
+            },
+            "naturalHistoryAddons": {
+                "status": "available",
+                "source": "apy_python_natural_history_addon_report",
+                "summaryRows": [
+                    {
+                        "Metric": "Relative reduction in 20-year active TB burden",
+                        "Median": np.float64(0.25),
+                        "Low95": float("-inf"),
+                        "High95": math.inf,
+                        "DisplayScale": "proportion",
+                    }
+                ],
+                "doNothing": {
+                    "status": "available",
+                    "source": "run_do_nothing_summary",
+                    "summaryRows": [
+                        {
+                            "Metric": "Active TB cases by 20 years (do nothing)",
+                            "Median": 5.0,
+                            "Low95": np.float64("nan"),
+                            "High95": 7.0,
+                            "DisplayScale": "count",
+                        }
+                    ],
+                    "derivedRows": [
+                        {
+                            "nInfected": np.int64(20),
+                            "nActiveBy20y_DoNothing": 5.0,
+                            "nActiveBy20y_AfterStrategy": 4.0,
+                            "nActiveBy20y_Prevented": 1.0,
+                            "relReduction20y": np.float64("nan"),
+                        }
+                    ],
+                },
+                "attributableRisk": {
+                    "status": "available",
+                    "calculatedRows": [
+                        {
+                            "Metric": "ExpectedAttributableCases20y",
+                            "Median": np.float64(1.5),
+                            "Low95": 1.0,
+                            "High95": 2.0,
+                        }
+                    ],
+                    "missingInputs": [],
+                    "unsupportedMetrics": [],
+                    "messages": ["Attributable-risk rows were included."],
+                },
+                "missingInputs": [],
+                "unsupportedMetrics": [],
+                "messages": ["Do-nothing natural-history rows were included."],
+            },
+        }
+
+        payload = json_export_payload(bundle)
+
+        addons = payload["naturalHistoryAddons"]
+        self.assertEqual(addons["status"], "available")
+        self.assertEqual(
+            addons["source"],
+            "apy_python_natural_history_addon_report",
+        )
+        self.assertIsNone(addons["summaryRows"][0]["Low95"])
+        self.assertIsNone(addons["summaryRows"][0]["High95"])
+        self.assertIsNone(addons["doNothing"]["summaryRows"][0]["Low95"])
+        self.assertEqual(addons["doNothing"]["derivedRows"][0]["nInfected"], 20)
+        self.assertIsNone(addons["doNothing"]["derivedRows"][0]["relReduction20y"])
+        self.assertEqual(
+            addons["attributableRisk"]["calculatedRows"][0]["Metric"],
+            "ExpectedAttributableCases20y",
+        )
+        json.dumps(payload, allow_nan=False, sort_keys=True)
+
+        tables = headline_display_tables(bundle)
+
+        self.assertTrue(tables["keyMetricsRows"]["available"])
+        self.assertEqual(
+            tables["keyMetricsRows"]["rows"][0]["Metric"],
+            "nScreened",
+        )
+        self.assertTrue(tables["summaryRows"]["available"])
+        self.assertEqual(
+            tables["summaryRows"]["rows"][0]["Metric"],
+            "nPreventedActiveTB",
+        )
+        json.dumps(tables, allow_nan=False, sort_keys=True)
+
     def test_summary_rows_for_csv_are_stable_and_csv_ready(self) -> None:
         bundle = {
             "headline": {

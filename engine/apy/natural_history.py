@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from engine.apy.attributable_risk import run_attributable_risk
 from engine.apy.summary import empirical_quantile
 
 
@@ -76,6 +78,8 @@ REQUIRED_RAW_COLUMNS = [
     "NNS_cureInfection",
 ]
 
+_ADDON_REPORT_SOURCE = "apy_python_natural_history_addon_report"
+
 
 def run_do_nothing_summary(results: dict[str, Any]) -> dict[str, Any]:
     raw = _require_raw_dataframe(results)
@@ -122,6 +126,67 @@ def run_do_nothing_summary(results: dict[str, Any]) -> dict[str, Any]:
         "summary": summary,
         "derived": derived,
         "resultsUsed": results,
+    }
+
+
+def build_natural_history_addon_report(
+    results: Mapping[str, Any],
+    do_nothing: Mapping[str, Any] | None = None,
+    requested_attributable_metrics: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """Build a JSON-safe natural-history add-on report contract."""
+    missing_inputs: list[dict[str, str]] = []
+    messages: list[str] = []
+
+    if do_nothing is None:
+        summary_rows: list[dict[str, Any]] = []
+        do_nothing_payload = {
+            "status": "missing-input",
+            "source": None,
+            "summaryRows": [],
+            "derivedRows": [],
+        }
+        missing_inputs.append(
+            {
+                "field": "doNothing",
+                "message": (
+                    "Do-nothing natural-history summary was not provided; "
+                    "run_do_nothing_summary output is required for these rows."
+                ),
+            }
+        )
+        messages.append("Missing do-nothing natural-history summary.")
+    else:
+        summary_rows = _rows(do_nothing.get("summary"))
+        do_nothing_payload = {
+            "status": "available",
+            "source": "run_do_nothing_summary",
+            "summaryRows": summary_rows,
+            "derivedRows": _rows(do_nothing.get("derived")),
+        }
+        messages.append("Do-nothing natural-history rows were included.")
+
+    attributable_risk = run_attributable_risk(
+        results,
+        requested_metrics=requested_attributable_metrics,
+    )
+    attributable_missing = _json_like(attributable_risk.get("missingInputs", []))
+    unsupported_metrics = _json_like(attributable_risk.get("unsupportedMetrics", []))
+    missing_inputs.extend(attributable_missing)
+    messages.extend(_json_like(attributable_risk.get("messages", [])))
+
+    if unsupported_metrics:
+        messages.append("Some attributable-risk metrics are unsupported.")
+
+    return {
+        "status": _addon_report_status(missing_inputs, unsupported_metrics),
+        "source": _ADDON_REPORT_SOURCE,
+        "summaryRows": summary_rows,
+        "doNothing": do_nothing_payload,
+        "attributableRisk": _json_like(attributable_risk),
+        "missingInputs": missing_inputs,
+        "unsupportedMetrics": unsupported_metrics,
+        "messages": messages,
     }
 
 
@@ -177,3 +242,40 @@ def _population_size(results: dict[str, Any]) -> float:
     if "N" not in cfg:
         raise ValueError("Results must contain interfaceConfig.N.")
     return float(cfg["N"])
+
+
+def _rows(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, pd.DataFrame):
+        return _json_like(value.to_dict(orient="records"))
+    if isinstance(value, list):
+        return _json_like(value)
+    return []
+
+
+def _json_like(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_like(item) for key, item in value.items()}
+    if isinstance(value, pd.DataFrame):
+        return _json_like(value.to_dict(orient="records"))
+    if isinstance(value, pd.Series):
+        return _json_like(value.tolist())
+    if isinstance(value, tuple):
+        return [_json_like(item) for item in value]
+    if isinstance(value, list):
+        return [_json_like(item) for item in value]
+    if isinstance(value, np.generic):
+        return _json_like(value.item())
+    if isinstance(value, float) and not np.isfinite(value):
+        return None
+    return value
+
+
+def _addon_report_status(
+    missing_inputs: list[dict[str, str]],
+    unsupported_metrics: list[Any],
+) -> str:
+    if missing_inputs:
+        return "missing-input"
+    if unsupported_metrics:
+        return "unsupported"
+    return "available"

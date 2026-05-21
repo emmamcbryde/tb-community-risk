@@ -21,6 +21,9 @@ from engine.apy.exports import (
     json_export_payload as _json_export_payload,
     summary_csv_export as _summary_csv_export,
 )
+from engine.apy.natural_history import (
+    build_natural_history_addon_report as _build_natural_history_addon_report,
+)
 from engine.apy.results_bundle import build_results_bundle
 from engine.apy.runner import run_scenario, run_scenario_with_do_nothing
 from engine.apy.targeting import compare_targeting_result_bundles
@@ -82,9 +85,15 @@ class PythonApyBackend:
     ) -> JsonDict:
         out = run_scenario_with_do_nothing(_matlab_empty_to_none(config))
         bundle = out["bundle"]
+        do_nothing = out["doNothing"]
+        bundle["naturalHistoryAddons"] = _build_natural_history_addon_report(
+            bundle,
+            do_nothing=do_nothing,
+            requested_attributable_metrics=[],
+        )
         if validation_report is not None:
             bundle["validation"] = {"report": validation_report}
-        return to_json_like(bundle)
+        return _json_export_payload(bundle)
 
     def json_export_payload(self, bundle: JsonDict) -> JsonDict:
         return to_json_like(_json_export_payload(bundle))
@@ -121,6 +130,21 @@ class PythonApyBackend:
             _run_attributable_risk(
                 _matlab_empty_to_none(results),
                 requested_metrics=requested_metrics,
+            )
+        )
+
+    def run_natural_history_addons(
+        self,
+        results: JsonDict,
+        do_nothing: JsonDict | None = None,
+        requested_attributable_metrics: list[str] | None = None,
+    ) -> JsonDict:
+        bundle, extracted_do_nothing = _natural_history_inputs(results, do_nothing)
+        return _json_export_payload(
+            _build_natural_history_addon_report(
+                _matlab_empty_to_none(bundle),
+                do_nothing=_matlab_empty_to_none(extracted_do_nothing),
+                requested_attributable_metrics=requested_attributable_metrics,
             )
         )
 
@@ -233,3 +257,39 @@ def _economics_result_bundle(results: JsonDict) -> JsonDict:
         }
 
     return results
+
+
+def _natural_history_inputs(
+    results: JsonDict,
+    do_nothing: JsonDict | None,
+) -> tuple[JsonDict, JsonDict | None]:
+    if isinstance(results, Mapping) and isinstance(results.get("bundle"), Mapping):
+        bundle = results["bundle"]
+        candidate_do_nothing = results.get("doNothing")
+    else:
+        bundle = results
+        candidate_do_nothing = (
+            results.get("doNothing") if isinstance(results, Mapping) else None
+        )
+
+    if do_nothing is not None:
+        candidate_do_nothing = do_nothing
+
+    return bundle, _normalise_do_nothing_payload(candidate_do_nothing)
+
+
+def _normalise_do_nothing_payload(value: Any) -> JsonDict | None:
+    if not isinstance(value, Mapping):
+        return None
+    if "summary" in value or "derived" in value:
+        return value
+
+    normalised: dict[str, Any] = {}
+    if "summaryRows" in value:
+        normalised["summary"] = value.get("summaryRows")
+    if "derivedRows" in value:
+        normalised["derived"] = value.get("derivedRows")
+    if "resultsUsed" in value:
+        normalised["resultsUsed"] = value.get("resultsUsed")
+
+    return normalised or None
