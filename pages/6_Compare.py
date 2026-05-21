@@ -158,6 +158,68 @@ def json_safe_for_export(value: object) -> object:
     return value
 
 
+def attributable_risk_payload_for_bundle(backend_obj: object, bundle: dict | None) -> dict[str, object]:
+    """Return a JSON/CSV-safe attributable-risk payload for one result bundle."""
+    run_attributable_risk = getattr(backend_obj, "run_attributable_risk", None)
+    if not callable(run_attributable_risk):
+        return {
+            "status": "unsupported",
+            "source": "compare_page_backend_capability_check",
+            "calculatedRows": [],
+            "missingInputs": [],
+            "unsupportedMetrics": [
+                {
+                    "metric": "attributableRisk",
+                    "reason": (
+                        "The selected backend does not expose "
+                        "run_attributable_risk."
+                    ),
+                    "backendCapability": "run_attributable_risk",
+                }
+            ],
+            "messages": [
+                (
+                    "Attributable-risk comparison is unsupported for the "
+                    "selected backend because it does not expose "
+                    "run_attributable_risk."
+                )
+            ],
+        }
+
+    payload = run_attributable_risk(bundle or {})
+    if isinstance(payload, dict):
+        return json_safe_for_export(payload)
+    return {
+        "status": "unsupported",
+        "source": "compare_page_backend_capability_check",
+        "calculatedRows": [],
+        "missingInputs": [],
+        "unsupportedMetrics": [
+            {
+                "metric": "attributableRisk",
+                "reason": "Backend run_attributable_risk did not return a dict payload.",
+                "backendCapability": "run_attributable_risk",
+            }
+        ],
+        "messages": [
+            "Attributable-risk comparison is unsupported because the backend returned an invalid payload."
+        ],
+    }
+
+
+def store_attributable_risk_compare_payloads(
+    backend_obj: object,
+    baseline_bundle: dict | None,
+    comparator_bundle: dict | None,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Store baseline/comparator attributable-risk payloads for Compare display."""
+    baseline_payload = attributable_risk_payload_for_bundle(backend_obj, baseline_bundle)
+    comparator_payload = attributable_risk_payload_for_bundle(backend_obj, comparator_bundle)
+    st.session_state["compare_baseline_attributable_risk_payload"] = baseline_payload
+    st.session_state["compare_comparator_attributable_risk_payload"] = comparator_payload
+    return baseline_payload, comparator_payload
+
+
 def mark_compare_dirty() -> None:
     st.session_state["compare_dirty"] = True
     if has_compare_outputs():
@@ -170,6 +232,8 @@ def has_compare_outputs() -> bool:
         or st.session_state.get("compare_comparator_bundle")
         or st.session_state.get("compare_baseline_economics_results")
         or st.session_state.get("compare_comparator_economics_results")
+        or st.session_state.get("compare_baseline_attributable_risk_payload")
+        or st.session_state.get("compare_comparator_attributable_risk_payload")
     )
 
 
@@ -179,6 +243,8 @@ def reset_compare_outputs(outputs_cleared: bool = False) -> None:
     st.session_state["compare_economics_config"] = None
     st.session_state["compare_baseline_economics_results"] = None
     st.session_state["compare_comparator_economics_results"] = None
+    st.session_state["compare_baseline_attributable_risk_payload"] = None
+    st.session_state["compare_comparator_attributable_risk_payload"] = None
     st.session_state["compare_baseline_validation_report"] = None
     st.session_state["compare_comparator_validation_report"] = None
     st.session_state["compare_results_stale"] = False
@@ -394,6 +460,54 @@ def compare_economics_rows(baseline_rows: list[dict], comparator_rows: list[dict
     )
 
 
+def attributable_risk_compare_rows(payload: dict | None) -> list[dict[str, object]]:
+    """Flatten one attributable-risk payload into export-friendly Compare rows."""
+    if not isinstance(payload, dict):
+        payload = {}
+
+    payload_status = payload.get("status")
+    rows: list[dict[str, object]] = [
+        {
+            "payloadField": "status",
+            "rowIndex": None,
+            "status": payload_status,
+            "empty": False,
+            "itemJson": None,
+        }
+    ]
+
+    for field in ("calculatedRows", "missingInputs", "unsupportedMetrics", "messages"):
+        items = payload.get(field)
+        if not isinstance(items, list):
+            items = []
+        if not items:
+            rows.append(
+                {
+                    "payloadField": field,
+                    "rowIndex": None,
+                    "status": payload_status,
+                    "empty": True,
+                    "itemJson": None,
+                }
+            )
+            continue
+        for index, item in enumerate(items):
+            row = {
+                "payloadField": field,
+                "rowIndex": index,
+                "status": payload_status,
+                "empty": False,
+                "itemJson": json.dumps(json_safe_for_export(item), sort_keys=True),
+            }
+            if isinstance(item, dict):
+                row.update(json_safe_for_export(item))
+            else:
+                row["message"] = item
+            rows.append(row)
+
+    return rows
+
+
 def economics_rows(economics: dict | None) -> list[dict]:
     if not economics:
         return []
@@ -568,8 +682,11 @@ if run_cols[0].button("Validate both"):
 
 if run_cols[1].button("Run comparison", type="primary"):
     try:
-        st.session_state["compare_baseline_bundle"] = backend.run_scenario_bundle(baseline_config)
-        st.session_state["compare_comparator_bundle"] = backend.run_scenario_bundle(comparator_config)
+        baseline_run_bundle = backend.run_scenario_bundle(baseline_config)
+        comparator_run_bundle = backend.run_scenario_bundle(comparator_config)
+        st.session_state["compare_baseline_bundle"] = baseline_run_bundle
+        st.session_state["compare_comparator_bundle"] = comparator_run_bundle
+        store_attributable_risk_compare_payloads(backend, baseline_run_bundle, comparator_run_bundle)
         st.session_state["compare_economics_config"] = clone_config(st.session_state.get("economics_config"))
         st.session_state["compare_baseline_economics_results"] = None
         st.session_state["compare_comparator_economics_results"] = None
@@ -650,6 +767,43 @@ elif outcome_diff:
         st.altair_chart(chart, width="stretch")
 else:
     st.info("Run comparison to show outcome differences.")
+
+baseline_attributable_risk = st.session_state.get("compare_baseline_attributable_risk_payload")
+comparator_attributable_risk = st.session_state.get("compare_comparator_attributable_risk_payload")
+
+st.subheader("Attributable Risk (partial)")
+st.caption("Partial Compare support: unsupported or missing-input payloads are shown without blocking the comparison.")
+if st.session_state.get("compare_results_stale"):
+    st.info("Rerun comparison to show current attributable-risk payloads.")
+elif baseline_attributable_risk or comparator_attributable_risk:
+    status_rows = []
+    detail_rows = []
+    for label, payload in (
+        ("Baseline", baseline_attributable_risk),
+        ("Comparator", comparator_attributable_risk),
+    ):
+        if not isinstance(payload, dict):
+            continue
+        messages = payload.get("messages")
+        if not isinstance(messages, list):
+            messages = []
+        status_rows.append(
+            {
+                "scenario": label,
+                "status": payload.get("status"),
+                "messages": " | ".join(str(message) for message in messages),
+            }
+        )
+        detail_rows.extend(
+            {"scenario": label, **row}
+            for row in attributable_risk_compare_rows(payload)
+        )
+
+    st.dataframe(arrow_safe_dataframe(status_rows), width="stretch", hide_index=True)
+    with st.expander("Flattened attributable-risk payload rows", expanded=False):
+        st.dataframe(arrow_safe_dataframe(detail_rows), width="stretch", hide_index=True)
+else:
+    st.info("Run comparison to show attributable-risk payload status.")
 
 base_econ = st.session_state.get("compare_baseline_economics_results")
 comp_econ = st.session_state.get("compare_comparator_economics_results")

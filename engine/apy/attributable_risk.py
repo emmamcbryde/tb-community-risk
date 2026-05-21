@@ -50,6 +50,7 @@ def run_attributable_risk(
         )
 
     metrics = _metrics_to_report(requested_metrics)
+    calculated_rows, rows_source = _precomputed_rows(results)
     unsupported_metrics = [
         {
             "metric": metric,
@@ -68,10 +69,15 @@ def run_attributable_risk(
             "in this Python scaffold."
         )
 
+    if calculated_rows:
+        messages.append(
+            f"Precomputed attributable-risk rows were passed through from {rows_source}."
+        )
+
     return {
-        "status": "missing-input" if missing_inputs else "unsupported",
+        "status": _status(missing_inputs, calculated_rows),
         "source": _SOURCE,
-        "calculatedRows": [],
+        "calculatedRows": calculated_rows,
         "missingInputs": missing_inputs,
         "unsupportedMetrics": unsupported_metrics,
         "messages": messages,
@@ -89,3 +95,39 @@ def _metrics_to_report(requested_metrics: Sequence[str] | None) -> list[str]:
     if requested_metrics is None:
         return list(KNOWN_MATLAB_ATTRIBUTABLE_METRICS)
     return [str(metric) for metric in requested_metrics]
+
+
+def _precomputed_rows(results: Mapping[str, Any]) -> tuple[list[Any], str | None]:
+    attributable_risk = results.get("attributableRisk")
+    if not isinstance(attributable_risk, Mapping):
+        return [], None
+
+    for field in ("calculatedRows", "attributableRows"):
+        rows = attributable_risk.get(field)
+        if isinstance(rows, list) and rows:
+            return [_json_like(row) for row in rows], f"attributableRisk.{field}"
+
+    for field in ("calculatedRows", "attributableRows"):
+        rows = attributable_risk.get(field)
+        if isinstance(rows, list):
+            return [], f"attributableRisk.{field}"
+
+    return [], None
+
+
+def _json_like(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_like(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_json_like(item) for item in value]
+    if isinstance(value, list):
+        return [_json_like(item) for item in value]
+    return value
+
+
+def _status(missing_inputs: list[dict[str, str]], calculated_rows: list[Any]) -> str:
+    if missing_inputs:
+        return "missing-input"
+    if calculated_rows:
+        return "partial"
+    return "unsupported"

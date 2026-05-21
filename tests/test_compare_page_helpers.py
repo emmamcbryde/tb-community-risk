@@ -214,3 +214,241 @@ def test_compare_outcome_rows_still_skips_rows_without_values(monkeypatch) -> No
     assert warnings == [
         "Skipped rows missing Metric + Median: baseline=1, comparator=0."
     ]
+
+
+def test_attributable_risk_payload_for_bundle_calls_backend_and_json_safes(monkeypatch) -> None:
+    module = load_compare_page_module(monkeypatch)
+    bundle = {"technical": {"dynamicComparison": {"activeTbCases": 4}}}
+
+    class FakeBackend:
+        def __init__(self) -> None:
+            self.seen_bundle = None
+
+        def run_attributable_risk(self, result_bundle):
+            self.seen_bundle = result_bundle
+            return {
+                "status": "ok",
+                "calculatedRows": [
+                    {
+                        "metric": "ExpectedAttributableCases20y_Per1500",
+                        "value": float("inf"),
+                    }
+                ],
+                "missingInputs": (),
+                "unsupportedMetrics": [],
+                "messages": ["calculated"],
+            }
+
+    backend = FakeBackend()
+
+    payload = module.attributable_risk_payload_for_bundle(backend, bundle)
+
+    assert backend.seen_bundle is bundle
+    assert payload == {
+        "status": "ok",
+        "calculatedRows": [
+            {
+                "metric": "ExpectedAttributableCases20y_Per1500",
+                "value": None,
+            }
+        ],
+        "missingInputs": [],
+        "unsupportedMetrics": [],
+        "messages": ["calculated"],
+    }
+
+
+def test_attributable_risk_payload_for_bundle_reports_unsupported_backend(monkeypatch) -> None:
+    module = load_compare_page_module(monkeypatch)
+
+    payload = module.attributable_risk_payload_for_bundle(types.SimpleNamespace(), {"id": "bundle"})
+
+    assert payload["status"] == "unsupported"
+    assert payload["source"] == "compare_page_backend_capability_check"
+    assert payload["calculatedRows"] == []
+    assert payload["missingInputs"] == []
+    assert payload["unsupportedMetrics"] == [
+        {
+            "metric": "attributableRisk",
+            "reason": "The selected backend does not expose run_attributable_risk.",
+            "backendCapability": "run_attributable_risk",
+        }
+    ]
+    assert payload["messages"] == [
+        (
+            "Attributable-risk comparison is unsupported for the selected "
+            "backend because it does not expose run_attributable_risk."
+        )
+    ]
+
+
+def test_store_attributable_risk_compare_payloads_writes_session_state(monkeypatch) -> None:
+    module = load_compare_page_module(monkeypatch)
+    baseline_bundle = {"scenarioLabel": "baseline"}
+    comparator_bundle = {"scenarioLabel": "comparator"}
+
+    class FakeBackend:
+        def run_attributable_risk(self, result_bundle):
+            return {
+                "status": "ok",
+                "calculatedRows": [
+                    {"metric": result_bundle["scenarioLabel"], "value": 1.0}
+                ],
+                "missingInputs": [],
+                "unsupportedMetrics": [],
+                "messages": [result_bundle["scenarioLabel"]],
+            }
+
+    baseline_payload, comparator_payload = module.store_attributable_risk_compare_payloads(
+        FakeBackend(),
+        baseline_bundle,
+        comparator_bundle,
+    )
+
+    assert baseline_payload["messages"] == ["baseline"]
+    assert comparator_payload["messages"] == ["comparator"]
+    assert (
+        module.st.session_state["compare_baseline_attributable_risk_payload"]
+        is baseline_payload
+    )
+    assert (
+        module.st.session_state["compare_comparator_attributable_risk_payload"]
+        is comparator_payload
+    )
+
+
+def test_reset_compare_outputs_clears_attributable_risk_payloads(monkeypatch) -> None:
+    module = load_compare_page_module(monkeypatch)
+    module.st.session_state["compare_baseline_attributable_risk_payload"] = {
+        "status": "ok"
+    }
+    module.st.session_state["compare_comparator_attributable_risk_payload"] = {
+        "status": "unsupported"
+    }
+
+    assert module.has_compare_outputs() is True
+
+    module.reset_compare_outputs(outputs_cleared=True)
+
+    assert module.st.session_state["compare_baseline_attributable_risk_payload"] is None
+    assert module.st.session_state["compare_comparator_attributable_risk_payload"] is None
+    assert module.st.session_state["compare_outputs_cleared"] is True
+
+
+def test_attributable_risk_compare_rows_preserves_missing_input_status(monkeypatch) -> None:
+    module = load_compare_page_module(monkeypatch)
+    payload = {
+        "status": "missing-input",
+        "calculatedRows": [],
+        "missingInputs": [
+            {
+                "field": "technical.dynamicComparison",
+                "message": "technical.dynamicComparison is required.",
+            }
+        ],
+        "unsupportedMetrics": [],
+        "messages": ["Missing technical.dynamicComparison."],
+    }
+
+    rows = module.attributable_risk_compare_rows(payload)
+
+    by_field = {}
+    for row in rows:
+        by_field.setdefault(row["payloadField"], []).append(row)
+    assert by_field["status"] == [
+        {
+            "payloadField": "status",
+            "rowIndex": None,
+            "status": "missing-input",
+            "empty": False,
+            "itemJson": None,
+        }
+    ]
+    assert by_field["calculatedRows"][0]["empty"] is True
+    assert by_field["missingInputs"][0]["status"] == "missing-input"
+    assert by_field["missingInputs"][0]["field"] == "technical.dynamicComparison"
+    assert by_field["missingInputs"][0]["message"] == "technical.dynamicComparison is required."
+    assert by_field["unsupportedMetrics"][0]["empty"] is True
+    assert by_field["messages"][0]["message"] == "Missing technical.dynamicComparison."
+
+
+def test_attributable_risk_compare_rows_preserves_unsupported_metrics(monkeypatch) -> None:
+    module = load_compare_page_module(monkeypatch)
+    payload = {
+        "status": "unsupported",
+        "calculatedRows": [],
+        "missingInputs": [],
+        "unsupportedMetrics": [
+            {
+                "metric": "PopulationAttributableFraction20y_ReactivationOnly",
+                "reason": "Not implemented in the Python APY port yet.",
+                "matlabSource": "run_tb_screening_reactivation_attributable_v9",
+            }
+        ],
+        "messages": ["Reactivation attributable-risk metrics are unsupported."],
+    }
+
+    rows = module.attributable_risk_compare_rows(payload)
+
+    unsupported_rows = [
+        row for row in rows if row["payloadField"] == "unsupportedMetrics"
+    ]
+    assert unsupported_rows == [
+        {
+            "payloadField": "unsupportedMetrics",
+            "rowIndex": 0,
+            "status": "unsupported",
+            "empty": False,
+            "itemJson": (
+                '{"matlabSource": "run_tb_screening_reactivation_attributable_v9", '
+                '"metric": "PopulationAttributableFraction20y_ReactivationOnly", '
+                '"reason": "Not implemented in the Python APY port yet."}'
+            ),
+            "metric": "PopulationAttributableFraction20y_ReactivationOnly",
+            "reason": "Not implemented in the Python APY port yet.",
+            "matlabSource": "run_tb_screening_reactivation_attributable_v9",
+        }
+    ]
+
+
+def test_attributable_risk_compare_rows_preserves_future_calculated_rows(monkeypatch) -> None:
+    module = load_compare_page_module(monkeypatch)
+    payload = {
+        "status": "ok",
+        "calculatedRows": [
+            {
+                "metric": "ExpectedAttributableCases20y_Per1500",
+                "value": 12.5,
+                "units": "cases per 1500",
+            }
+        ],
+        "missingInputs": [],
+        "unsupportedMetrics": [],
+        "messages": [],
+    }
+
+    rows = module.attributable_risk_compare_rows(payload)
+
+    calculated_rows = [row for row in rows if row["payloadField"] == "calculatedRows"]
+    assert calculated_rows == [
+        {
+            "payloadField": "calculatedRows",
+            "rowIndex": 0,
+            "status": "ok",
+            "empty": False,
+            "itemJson": (
+                '{"metric": "ExpectedAttributableCases20y_Per1500", '
+                '"units": "cases per 1500", "value": 12.5}'
+            ),
+            "metric": "ExpectedAttributableCases20y_Per1500",
+            "value": 12.5,
+            "units": "cases per 1500",
+        }
+    ]
+    empty_fields = {
+        row["payloadField"]
+        for row in rows
+        if row["payloadField"] in {"missingInputs", "unsupportedMetrics", "messages"}
+        and row["empty"]
+    }
+    assert empty_fields == {"missingInputs", "unsupportedMetrics", "messages"}
