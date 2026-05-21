@@ -26,6 +26,10 @@ def init_session_state() -> None:
         "load_info": None,
         "save_info": None,
         "results_bundle": None,
+        "apy_json_export_payload": None,
+        "apy_summary_csv_export": None,
+        "apy_headline_display_tables": None,
+        "apy_chart_numeric_series": None,
         "economics_results": None,
         "dirty_config": False,
         "dirty_economics": False,
@@ -79,6 +83,7 @@ def set_backend_name(name: str) -> None:
 def clear_apy_outputs_for_backend_switch() -> None:
     st.session_state["validation_report"] = None
     st.session_state["results_bundle"] = None
+    clear_apy_export_outputs()
     st.session_state["economics_results"] = None
     st.session_state["dirty_config"] = False
     st.session_state["dirty_economics"] = False
@@ -134,8 +139,16 @@ def mark_config_changed() -> None:
     st.session_state["validation_report"] = None
     if st.session_state.get("results_bundle"):
         st.session_state["results_stale"] = True
+        clear_apy_export_outputs()
     if st.session_state.get("economics_results"):
         st.session_state["dirty_economics"] = True
+
+
+def clear_apy_export_outputs() -> None:
+    st.session_state["apy_json_export_payload"] = None
+    st.session_state["apy_summary_csv_export"] = None
+    st.session_state["apy_headline_display_tables"] = None
+    st.session_state["apy_chart_numeric_series"] = None
 
 
 def mark_economics_changed() -> None:

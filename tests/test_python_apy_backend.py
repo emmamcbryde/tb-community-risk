@@ -143,6 +143,73 @@ class PythonApyBackendTests(unittest.TestCase):
         self.assertEqual(payload["calculatedRows"], [])
         json.dumps(payload, allow_nan=False, sort_keys=True)
 
+    def test_export_wrappers_return_stable_json_without_matlab(self) -> None:
+        sys.modules.pop("matlab.engine", None)
+        original_import = builtins.__import__
+
+        def fail_on_matlab_engine_import(name, *args, **kwargs):
+            if name == "matlab.engine":
+                raise AssertionError("Python backend attempted to import matlab.engine")
+            return original_import(name, *args, **kwargs)
+
+        bundle = {
+            "metadata": {"scenarioLabel": "Example"},
+            "headline": {
+                "keyMetricsRows": [
+                    {
+                        "Metric": "nScreened",
+                        "Median": 10.0,
+                        "Low95": 7.0,
+                        "High95": 13.0,
+                        "Notes": "screened",
+                    }
+                ],
+                "summaryRows": [
+                    {
+                        "High95": 3.0,
+                        "Metric": "nPreventedActiveTB",
+                        "Median": 2.0,
+                        "Low95": 1.0,
+                    }
+                ],
+            },
+            "charts": {
+                "plotDataRows": [
+                    {
+                        "screeningStrategy": "cure",
+                        "screenCoverage": 0.1,
+                        "meanCuredInfection": 5.0,
+                    }
+                ]
+            },
+        }
+
+        try:
+            builtins.__import__ = fail_on_matlab_engine_import
+            json_payload = self.backend.json_export_payload(bundle)
+            csv_export = self.backend.summary_csv_export(bundle)
+            tables = self.backend.headline_display_tables(bundle)
+            chart_series = self.backend.chart_numeric_series(bundle)
+        finally:
+            builtins.__import__ = original_import
+
+        self.assertNotIn("matlab.engine", sys.modules)
+        self.assertEqual(json_payload["metadata"]["scenarioLabel"], "Example")
+        self.assertEqual(
+            csv_export["columns"],
+            ["Metric", "Median", "Low95", "High95"],
+        )
+        self.assertEqual(
+            tables["keyMetricsRows"]["columns"],
+            ["Metric", "Median", "Low95", "High95", "Notes"],
+        )
+        self.assertEqual(chart_series["series"][0]["name"], "meanCuredInfection")
+
+        json.dumps(json_payload, allow_nan=False, sort_keys=True)
+        json.dumps(csv_export, allow_nan=False, sort_keys=True)
+        json.dumps(tables, allow_nan=False, sort_keys=True)
+        json.dumps(chart_series, allow_nan=False, sort_keys=True)
+
     def test_run_attributable_risk_does_not_import_matlab_engine(self) -> None:
         sys.modules.pop("matlab.engine", None)
         original_import = builtins.__import__

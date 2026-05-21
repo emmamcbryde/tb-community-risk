@@ -13,6 +13,40 @@ from app.state import (
 )
 
 
+APY_EXPORT_SESSION_KEYS = {
+    "json_export_payload": "apy_json_export_payload",
+    "summary_csv_export": "apy_summary_csv_export",
+    "headline_display_tables": "apy_headline_display_tables",
+    "chart_numeric_series": "apy_chart_numeric_series",
+}
+
+
+def store_python_apy_export_helpers(session_state, backend, bundle, backend_name: str):
+    """Store deterministic Python APY export-helper outputs for the latest bundle."""
+    if backend_name != "python_apy":
+        for key in APY_EXPORT_SESSION_KEYS.values():
+            session_state[key] = None
+        return {}
+
+    exports = {
+        APY_EXPORT_SESSION_KEYS["json_export_payload"]: backend.json_export_payload(
+            bundle
+        ),
+        APY_EXPORT_SESSION_KEYS["summary_csv_export"]: backend.summary_csv_export(
+            bundle
+        ),
+        APY_EXPORT_SESSION_KEYS[
+            "headline_display_tables"
+        ]: backend.headline_display_tables(bundle),
+        APY_EXPORT_SESSION_KEYS["chart_numeric_series"]: backend.chart_numeric_series(
+            bundle
+        ),
+    }
+    for key, value in exports.items():
+        session_state[key] = value
+    return exports
+
+
 init_session_state()
 backend = get_backend()
 backend_name = get_backend_name()
@@ -84,6 +118,7 @@ if st.button(run_label, type="primary"):
             validation_report=st.session_state.get("validation_report"),
         )
         st.session_state["results_bundle"] = bundle
+        store_python_apy_export_helpers(st.session_state, backend, bundle, backend_name)
         validation = bundle.get("validation", {})
         if isinstance(validation, dict) and isinstance(validation.get("report"), dict):
             st.session_state["validation_report"] = validation["report"]

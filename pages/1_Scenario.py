@@ -7,6 +7,7 @@ import streamlit as st
 
 from app.display import arrow_safe_dataframe, display_string
 from app.state import (
+    clear_apy_export_outputs,
     get_backend,
     get_backend_name,
     init_session_state,
@@ -128,6 +129,7 @@ def choice_index(value: object, options: list[str], fallback: int = 0) -> int:
 def reset_run_state() -> None:
     st.session_state["validation_report"] = None
     st.session_state["results_bundle"] = None
+    clear_apy_export_outputs()
     st.session_state["results_stale"] = False
     st.session_state["dirty_config"] = False
 
@@ -328,6 +330,7 @@ if config:
                 "scenarioLabel": payload.get("scenarioLabel", ""),
             }
             st.session_state["results_bundle"] = None
+            clear_apy_export_outputs()
             st.session_state["results_stale"] = False
             st.session_state["dirty_config"] = True
             sync_backend_status(backend.status())

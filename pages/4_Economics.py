@@ -7,7 +7,9 @@ import streamlit as st
 from app.display import (
     arrow_safe_dataframe,
     economics_assumptions_json,
+    economics_assumptions_rows,
     economics_summary_csv,
+    economics_summary_rows,
     safe_download_stem,
 )
 from app.state import (
@@ -162,35 +164,6 @@ def nested_get(config: dict, path: tuple[str, ...]) -> object:
     return current
 
 
-def economics_overview_rows(config: dict) -> list[dict[str, object]]:
-    metadata = config.get("metadata", {})
-    costs = config.get("costs", {})
-    test_costs = costs.get("test", {})
-    regimen_costs = costs.get("regimen", {})
-    return [
-        {"field": "currencyCode", "value": metadata.get("currencyCode")},
-        {"field": "priceYear", "value": metadata.get("priceYear")},
-        {"field": "locationLabel", "value": metadata.get("locationLabel")},
-        {"field": "test.IGRA", "value": test_costs.get("IGRA")},
-        {"field": "test.TST", "value": test_costs.get("TST")},
-        {"field": "regimen.3HP", "value": regimen_costs.get("x3HP")},
-        {"field": "regimen.4R", "value": regimen_costs.get("x4R")},
-        {"field": "regimen.3HR", "value": regimen_costs.get("x3HR")},
-        {"field": "regimen.6H", "value": regimen_costs.get("x6H")},
-        {"field": "regimen.9H", "value": regimen_costs.get("x9H")},
-        {
-            "field": "falsePositiveIncrementalPerPerson",
-            "value": costs.get("falsePositiveIncrementalPerPerson"),
-        },
-        {
-            "field": "activeTBDiseasePerCase",
-            "value": costs.get("activeTBDiseasePerCase"),
-        },
-        {"field": "programSetupTotal", "value": costs.get("programSetupTotal")},
-        {"field": "programRunningTotal", "value": costs.get("programRunningTotal")},
-    ]
-
-
 def validate_economics_config(config: dict) -> dict | None:
     validator = getattr(backend, "validate_economics_config", None)
     if not callable(validator):
@@ -237,39 +210,6 @@ def economics_status_display(econ_results: dict) -> dict[str, object]:
         display["coverageStatus"] = coverage.get("status")
         display["coverage"] = coverage
     return display
-
-
-def economics_summary_rows_for_display(
-    summary_rows: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    preferred_columns = [
-        "label",
-        "value",
-        "category",
-        "status",
-        "includedInTotal",
-        "metric",
-    ]
-    present_columns: list[str] = []
-    for column in preferred_columns:
-        if any(column in row for row in summary_rows):
-            present_columns.append(column)
-
-    extra_columns: list[str] = []
-    for row in summary_rows:
-        for column in row:
-            if column not in present_columns and column not in extra_columns:
-                extra_columns.append(column)
-
-    ordered_columns = present_columns + extra_columns
-    return [
-        {
-            column: row.get(column)
-            for column in ordered_columns
-            if column in row
-        }
-        for row in summary_rows
-    ]
 
 
 cols = st.columns(2)
@@ -405,7 +345,7 @@ config_is_valid = display_economics_config_issues(validation_report)
 
 st.subheader("Current Assumptions")
 st.dataframe(
-    arrow_safe_dataframe(economics_overview_rows(econ_config)),
+    arrow_safe_dataframe(economics_assumptions_rows(econ_config)),
     width="content",
     hide_index=True,
 )
@@ -447,19 +387,13 @@ if st.button("Run economics", type="primary", disabled=not can_run):
 econ_results = st.session_state.get("economics_results")
 if econ_results:
     st.subheader("Economics Summary")
-    summary_rows = econ_results.get("summaryRows") or []
+    summary_rows = economics_summary_rows(econ_results)
     if summary_rows:
-        display_rows = economics_summary_rows_for_display(summary_rows)
-        st.dataframe(arrow_safe_dataframe(display_rows), width="stretch")
+        st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
         st.markdown("Downloads")
         st.download_button(
             "Download economics summary CSV",
-            data=economics_summary_csv(
-                {
-                    **econ_results,
-                    "summaryRows": display_rows,
-                }
-            ),
+            data=economics_summary_csv(summary_rows),
             file_name=f"{safe_download_stem(scenario_label, 'economics_summary')}.csv",
             mime="text/csv",
         )

@@ -15,6 +15,12 @@ from engine.apy.economics_config import (
     build_economics_preset_kwab150,
     validate_economics_config,
 )
+from engine.apy.exports import (
+    chart_numeric_series as _chart_numeric_series,
+    headline_display_tables as _headline_display_tables,
+    json_export_payload as _json_export_payload,
+    summary_csv_export as _summary_csv_export,
+)
 from engine.apy.results_bundle import build_results_bundle
 from engine.apy.runner import run_scenario, run_scenario_with_do_nothing
 from engine.apy.targeting import compare_targeting_result_bundles
@@ -79,6 +85,18 @@ class PythonApyBackend:
         if validation_report is not None:
             bundle["validation"] = {"report": validation_report}
         return to_json_like(bundle)
+
+    def json_export_payload(self, bundle: JsonDict) -> JsonDict:
+        return to_json_like(_json_export_payload(bundle))
+
+    def summary_csv_export(self, bundle: JsonDict) -> JsonDict:
+        return to_json_like(_summary_csv_export(bundle))
+
+    def headline_display_tables(self, bundle: JsonDict) -> JsonDict:
+        return to_json_like(_headline_display_tables(bundle))
+
+    def chart_numeric_series(self, bundle: JsonDict) -> JsonDict:
+        return to_json_like(_chart_numeric_series(bundle))
 
     def compare_targeting_result_bundles(
         self,
