@@ -7,6 +7,7 @@ import unittest
 
 from adapters.paths import repo_root
 from adapters.python_apy_backend import PythonApyBackend
+from engine.apy.attributable_risk import run_attributable_risk
 
 
 class PythonApyBackendTests(unittest.TestCase):
@@ -121,6 +122,44 @@ class PythonApyBackendTests(unittest.TestCase):
 
         self.assertNotIn("matlab.engine", sys.modules)
         self.assertEqual(rows[0]["absoluteDifference"], 2.0)
+
+    def test_run_attributable_risk_exists_and_delegates_contract(self) -> None:
+        results = {"technical": {"dynamicComparison": {"available": True}}}
+        requested_metrics = ["ExpectedAttributableCases20y_Per1500"]
+
+        payload = self.backend.run_attributable_risk(results, requested_metrics)
+
+        self.assertEqual(
+            payload,
+            run_attributable_risk(results, requested_metrics=requested_metrics),
+        )
+        json.dumps(payload, allow_nan=False, sort_keys=True)
+
+    def test_run_attributable_risk_reports_missing_inputs(self) -> None:
+        payload = self.backend.run_attributable_risk({"technical": {}})
+
+        self.assertEqual(payload["status"], "missing-input")
+        self.assertEqual(payload["missingInputs"][0]["field"], "technical.dynamicComparison")
+        self.assertEqual(payload["calculatedRows"], [])
+        json.dumps(payload, allow_nan=False, sort_keys=True)
+
+    def test_run_attributable_risk_does_not_import_matlab_engine(self) -> None:
+        sys.modules.pop("matlab.engine", None)
+        original_import = builtins.__import__
+
+        def fail_on_matlab_engine_import(name, *args, **kwargs):
+            if name == "matlab.engine":
+                raise AssertionError("Python backend attempted to import matlab.engine")
+            return original_import(name, *args, **kwargs)
+
+        try:
+            builtins.__import__ = fail_on_matlab_engine_import
+            payload = self.backend.run_attributable_risk({})
+        finally:
+            builtins.__import__ = original_import
+
+        self.assertNotIn("matlab.engine", sys.modules)
+        self.assertEqual(payload["status"], "missing-input")
 
     def test_default_economics_config_returns_blank_matlab_shape(self) -> None:
         config = self.backend.default_economics_config()

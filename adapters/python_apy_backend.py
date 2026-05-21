@@ -7,6 +7,7 @@ from typing import Any
 
 from adapters.backend import JsonDict
 from adapters.serialization import to_json_like
+from engine.apy.attributable_risk import run_attributable_risk as _run_attributable_risk
 from engine.apy.config import build_default_config
 from engine.apy.economics import calculate_economics
 from engine.apy.economics_config import (
@@ -90,6 +91,18 @@ class PythonApyBackend:
                 baseline_result_bundle,
                 comparator_result_bundles,
                 metrics,
+            )
+        )
+
+    def run_attributable_risk(
+        self,
+        results: JsonDict,
+        requested_metrics: list[str] | None = None,
+    ) -> JsonDict:
+        return to_json_like(
+            _run_attributable_risk(
+                _matlab_empty_to_none(results),
+                requested_metrics=requested_metrics,
             )
         )
 
