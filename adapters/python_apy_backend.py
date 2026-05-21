@@ -16,6 +16,7 @@ from engine.apy.economics_config import (
 )
 from engine.apy.results_bundle import build_results_bundle
 from engine.apy.runner import run_scenario, run_scenario_with_do_nothing
+from engine.apy.targeting import compare_targeting_result_bundles
 from engine.apy.validation import collect_validation_issues
 
 
@@ -77,6 +78,20 @@ class PythonApyBackend:
         if validation_report is not None:
             bundle["validation"] = {"report": validation_report}
         return to_json_like(bundle)
+
+    def compare_targeting_result_bundles(
+        self,
+        baseline_result_bundle: JsonDict,
+        comparator_result_bundles: list[JsonDict],
+        metrics: list[str],
+    ) -> list[JsonDict]:
+        return to_json_like(
+            compare_targeting_result_bundles(
+                baseline_result_bundle,
+                comparator_result_bundles,
+                metrics,
+            )
+        )
 
     def save_scenario(
         self,

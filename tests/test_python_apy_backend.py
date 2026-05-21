@@ -49,6 +49,79 @@ class PythonApyBackendTests(unittest.TestCase):
             "doNothing.derived",
         )
 
+    def test_compare_targeting_result_bundles_uses_existing_bundles(self) -> None:
+        baseline = {
+            "headline": {
+                "strategy": {"strategyLabel": "baseline"},
+                "summaryRows": [
+                    {"Metric": "nScreened", "Median": 100},
+                    {"Metric": "nPreventedActiveTB", "Median": 0},
+                ],
+            },
+        }
+        comparator = {
+            "headline": {
+                "strategy": {"strategyLabel": "high-risk"},
+                "summaryRows": [
+                    {"Metric": "nScreened", "Median": 125},
+                    {"Metric": "nPreventedActiveTB", "Median": 5},
+                ],
+            },
+        }
+
+        rows = self.backend.compare_targeting_result_bundles(
+            baseline,
+            [comparator],
+            ["nScreened", "nPreventedActiveTB"],
+        )
+
+        rows_by_metric = {row["metric"]: row for row in rows}
+        self.assertEqual(rows_by_metric["nScreened"]["baselineStrategy"], "baseline")
+        self.assertEqual(rows_by_metric["nScreened"]["comparatorStrategy"], "high-risk")
+        self.assertEqual(rows_by_metric["nScreened"]["absoluteDifference"], 25.0)
+        self.assertEqual(rows_by_metric["nScreened"]["relativeDifference"], 0.25)
+        self.assertEqual(
+            rows_by_metric["nPreventedActiveTB"]["absoluteDifference"],
+            5.0,
+        )
+        self.assertIsNone(rows_by_metric["nPreventedActiveTB"]["relativeDifference"])
+        json.dumps(rows, allow_nan=False, sort_keys=True)
+
+    def test_compare_targeting_result_bundles_does_not_import_matlab_engine(self) -> None:
+        sys.modules.pop("matlab.engine", None)
+        original_import = builtins.__import__
+
+        def fail_on_matlab_engine_import(name, *args, **kwargs):
+            if name == "matlab.engine":
+                raise AssertionError("Python backend attempted to import matlab.engine")
+            return original_import(name, *args, **kwargs)
+
+        baseline = {
+            "results": {
+                "strategy": {"strategyLabel": "baseline"},
+                "summary": [{"Metric": "nScreened", "Median": 10}],
+            },
+        }
+        comparator = {
+            "results": {
+                "strategy": {"strategyLabel": "comparator"},
+                "summary": [{"Metric": "nScreened", "Median": 12}],
+            },
+        }
+
+        try:
+            builtins.__import__ = fail_on_matlab_engine_import
+            rows = self.backend.compare_targeting_result_bundles(
+                baseline,
+                [comparator],
+                ["nScreened"],
+            )
+        finally:
+            builtins.__import__ = original_import
+
+        self.assertNotIn("matlab.engine", sys.modules)
+        self.assertEqual(rows[0]["absoluteDifference"], 2.0)
+
     def test_default_economics_config_returns_blank_matlab_shape(self) -> None:
         config = self.backend.default_economics_config()
 
