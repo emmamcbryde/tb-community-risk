@@ -23,6 +23,31 @@ class PythonApyBackendTests(unittest.TestCase):
         self.assertTrue(status["experimental"])
         self.assertFalse(status["matlabRequired"])
 
+    def test_capabilities_reports_json_contract_without_matlab(self) -> None:
+        sys.modules.pop("matlab.engine", None)
+        original_import = builtins.__import__
+
+        def fail_on_matlab_engine_import(name, *args, **kwargs):
+            if name == "matlab.engine":
+                raise AssertionError("PythonApyBackend.capabilities imported matlab.engine")
+            return original_import(name, *args, **kwargs)
+
+        try:
+            builtins.__import__ = fail_on_matlab_engine_import
+            capabilities = self.backend.capabilities()
+        finally:
+            builtins.__import__ = original_import
+
+        self.assertNotIn("matlab.engine", sys.modules)
+        self.assertEqual(
+            capabilities["contractVersion"],
+            "apy_python_migration_capabilities_v1",
+        )
+        self.assertEqual(capabilities["backend"], "python_apy")
+        self.assertFalse(capabilities["matlabRequired"])
+        self.assertIn("components", capabilities)
+        json.dumps(capabilities, allow_nan=False, sort_keys=True)
+
     def test_default_config_returns_dict(self) -> None:
         config = self.backend.default_config()
 

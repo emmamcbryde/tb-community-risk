@@ -8,6 +8,7 @@ from typing import Any
 from adapters.backend import JsonDict
 from adapters.serialization import to_json_like
 from engine.apy.attributable_risk import run_attributable_risk as _run_attributable_risk
+from engine.apy.capabilities import get_apy_capabilities
 from engine.apy.config import build_default_config
 from engine.apy.economics import calculate_economics
 from engine.apy.economics_config import (
@@ -55,6 +56,9 @@ class PythonApyBackend:
             "experimental": True,
             "matlabRequired": False,
         }
+
+    def capabilities(self) -> JsonDict:
+        return to_json_like(get_apy_capabilities())
 
     def default_config(self) -> JsonDict:
         return to_json_like(build_default_config())

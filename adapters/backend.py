@@ -12,6 +12,9 @@ class Backend(Protocol):
     def status(self) -> JsonDict:
         ...
 
+    def capabilities(self) -> JsonDict:
+        ...
+
     def default_config(self) -> JsonDict:
         ...
 
