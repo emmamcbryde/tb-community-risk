@@ -5,6 +5,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from textwrap import dedent
 from unittest.mock import patch
 
 from engine.apy.capabilities import (
@@ -30,6 +31,59 @@ class ApyReferenceCoverageTests(unittest.TestCase):
         self.assertEqual(report["contractVersion"], CONTRACT_VERSION)
         self.assertFalse(report["matlabRequired"])
         json.dumps(report, allow_nan=False, sort_keys=True)
+
+    def test_python_backend_reference_coverage_matches_direct_helper_without_matlab(self) -> None:
+        code = dedent(
+            """
+            import builtins
+            import json
+            import sys
+
+            sys.modules.pop("matlab", None)
+            sys.modules.pop("matlab.engine", None)
+            original_import = builtins.__import__
+
+            def fail_on_matlab_import(name, *args, **kwargs):
+                if name in {"matlab", "matlab.engine"}:
+                    raise AssertionError("reference_coverage imported MATLAB")
+                return original_import(name, *args, **kwargs)
+
+            builtins.__import__ = fail_on_matlab_import
+            try:
+                from adapters.paths import repo_root
+                from adapters.python_apy_backend import PythonApyBackend
+                from engine.apy.reference_coverage import get_reference_coverage
+
+                backend_report = PythonApyBackend(repo_root()).reference_coverage()
+                direct_report = get_reference_coverage()
+            finally:
+                builtins.__import__ = original_import
+
+            print(json.dumps({
+                "matlab_imported": "matlab" in sys.modules,
+                "matlab_engine_imported": "matlab.engine" in sys.modules,
+                "backend_components": [
+                    row["component"] for row in backend_report["components"]
+                ],
+                "direct_components": [
+                    row["component"] for row in direct_report["components"]
+                ],
+                "backend_report": backend_report,
+            }, allow_nan=False, sort_keys=True))
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", code],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        result = json.loads(completed.stdout)
+
+        self.assertFalse(result["matlab_imported"])
+        self.assertFalse(result["matlab_engine_imported"])
+        self.assertEqual(result["backend_components"], result["direct_components"])
+        json.dumps(result["backend_report"], allow_nan=False, sort_keys=True)
 
     def test_every_capability_component_appears_exactly_once(self) -> None:
         report = get_reference_coverage()

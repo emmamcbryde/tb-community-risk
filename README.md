@@ -188,6 +188,8 @@ The MATLAB adapter starts MATLAB and adds the `abm/` folder to the MATLAB path w
 
 If MATLAB is not available, the default Python APY workflow and the Python dynamic/static components should remain runnable. Only actions that explicitly select and call the MATLAB backend require MATLAB.
 
+The Python APY reference coverage helper is available as `engine.apy.reference_coverage.get_reference_coverage()` and through `PythonApyBackend.reference_coverage()`.
+
 ---
 
 ## Streamlit Cloud deployment

@@ -25,6 +25,7 @@ from engine.apy.exports import (
 from engine.apy.natural_history import (
     build_natural_history_addon_report as _build_natural_history_addon_report,
 )
+from engine.apy.reference_coverage import get_reference_coverage
 from engine.apy.results_bundle import build_results_bundle
 from engine.apy.runner import run_scenario, run_scenario_with_do_nothing
 from engine.apy.targeting import compare_targeting_result_bundles
@@ -59,6 +60,9 @@ class PythonApyBackend:
 
     def capabilities(self) -> JsonDict:
         return to_json_like(get_apy_capabilities())
+
+    def reference_coverage(self) -> JsonDict:
+        return to_json_like(get_reference_coverage())
 
     def default_config(self) -> JsonDict:
         return to_json_like(build_default_config())

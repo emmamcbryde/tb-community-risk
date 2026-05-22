@@ -159,7 +159,8 @@ Current implementation status:
 - Do-nothing/natural-history summary support is implemented in `engine.apy.natural_history`.
 - Python bundles can produce a complete `technical.dynamicComparison` block when supplied with do-nothing derived rows.
 - A stochastic summary parity diagnostic helper is implemented in `engine.apy.parity`.
-- Economics, attributable-risk add-ons, and the Streamlit Python-backend switch are still pending.
+- A MATLAB-free reference coverage report is implemented in `engine.apy.reference_coverage`.
+- Economics, targeting, attributable-risk, and export parity remain partial unless covered by MATLAB reference fixtures and tests.
 - The Python ABM does not yet claim MATLAB distributional parity for full scenario summaries.
 
 ## Validation Strategy
@@ -174,6 +175,7 @@ P0 validation should be MATLAB-free by default and use stored reference fixtures
 - Dynamic-comparison parity: compare `technical.dynamicComparison` fields for stored MATLAB reference runs.
 - Statistical output parity: for fixed seeds and small `N`/`nReps`, compare medians and intervals within pre-agreed tolerances rather than exact row-by-row identity unless random streams are intentionally matched.
 - Regression fixtures: store compact MATLAB reference bundles for at least default APY, IGRA vs TST, 3HP vs 4R, low vs high coverage, and cascade-improvement scenarios.
+- Economics, targeting, attributable-risk, and export parity should stay marked partial until MATLAB fixtures and tests cover the relevant outputs.
 
 Manual MATLAB validation remains useful during development but should not be required for ordinary Python CI.
 
