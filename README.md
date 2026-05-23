@@ -401,6 +401,14 @@ When editing this branch:
 
 ## Recommended validation after changes
 
+For the local Python-only APY migration gate:
+
+```bash
+python scripts/check_python_apy_migration.py
+```
+
+This checks MATLAB-free `PythonApyBackend` import behavior and JSON-serialisable Python APY capability/reference-coverage payloads. It does not require or validate MATLAB, OpenAI/Codex, secrets, full MATLAB parity, or MATLAB reference workflows. When `pytest` is installed, `python -m pytest tests -q` can be run separately; GitHub Actions/CI for this gate is intentionally deferred until the repo has a clear Python version and dependency contract.
+
 For Python/Streamlit syntax checks:
 
 ```powershell

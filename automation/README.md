@@ -43,6 +43,20 @@ A good first goal is:
 Inspect this repository and summarize the structure. Do not edit files.
 ```
 
+## Local Python APY migration gate
+
+From the repository root, run:
+
+```powershell
+python scripts\check_python_apy_migration.py
+```
+
+This is a local Python-only gate for APY migration hygiene. It checks that `PythonApyBackend` can be imported without loading MATLAB modules, and that the Python APY capability and reference-coverage payloads are JSON-serialisable.
+
+It does not require or validate MATLAB, OpenAI/Codex, API keys, secrets, full MATLAB parity, or MATLAB reference workflows. Use the separate MATLAB/reference validation flow when parity or fixture/reference behavior is the question.
+
+When `pytest` is installed, `python -m pytest tests -q` can be run separately. GitHub Actions/CI for this gate is intentionally deferred until the repo has a clear Python version and dependency contract.
+
 ## Normal cautious run
 
 From the repository root:
