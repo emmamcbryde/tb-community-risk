@@ -1,8 +1,16 @@
-# Manual Smoke Test: Experimental Python APY Backend
+# Manual Smoke Test: Python APY Backend
 
-MATLAB remains the APY v9 reference backend. The Python APY backend is
-experimental and currently supports a partial economics subset while excluding
-attributable-risk add-ons.
+Use this smoke path for the normal Python-first APY workflow. MATLAB remains
+the APY v9 reference engine, but it is only needed here for optional reference
+checks or for generating fixtures.
+
+Current conservative status:
+
+- Python APY is the normal backend for this smoke test.
+- Economics support is partial in Python; full parity with MATLAB economics is
+  not assumed.
+- Targeting and dynamic/ABM compare support are partial.
+- Attributable-risk support and chart/export parity are partial.
 
 1. Start the app:
 
@@ -24,20 +32,25 @@ attributable-risk add-ons.
 
 6. Validate the scenario.
 
-7. Open Run Model and run the Python APY model.
+7. Open Run Model and run the Python APY model. MATLAB is not required for this
+   normal Python APY smoke run.
 
 8. Open Results and confirm:
 
    - metadata shows backend `python`;
    - key metrics are displayed;
-   - `technical.dynamicComparison` is available from `doNothing.derived`.
+   - any attributable-risk, chart, or export outputs are treated as partial
+     parity checks, not complete parity evidence.
 
 9. Open Dynamic + ABM Compare and confirm it can read the latest APY bundle.
+   Treat this as a partial compare smoke check.
 
 10. Open Economics and confirm it explains that Python APY supports a partial
-    economics subset and that the full economics model remains MATLAB-backed.
+    economics subset; do not treat economics parity as complete.
 
-11. Return to Scenario and switch `APY backend` back to `MATLAB v9 reference`.
+11. Optional/reference only: return to Scenario and switch `APY backend` to
+    `MATLAB v9 reference`.
 
-12. If MATLAB is available, confirm the MATLAB backend still loads defaults,
-    validates, and runs as before.
+12. If MATLAB is available, optionally confirm the MATLAB backend still loads
+    defaults, validates, and runs as before, or use it to generate reference
+    fixtures.

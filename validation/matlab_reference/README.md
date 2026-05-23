@@ -2,10 +2,11 @@
 
 MATLAB APY v9 remains the reference implementation while the Python-native APY ABM port is developed.
 
-Reference outputs in this folder are intended for Python validation. They should be compact, portable, and committed only when they are useful as stable test fixtures.
+Reference outputs in this folder are intended for Python validation. They are committed reference-validation inputs, not runtime requirements for the normal Python APY Streamlit workflow. They should be compact, portable, and committed only when they are useful as stable test fixtures.
 
-The Python APY port must match MATLAB reference outputs within documented tolerances.
+The Python APY port should match MATLAB reference outputs within documented tolerances for fixture- and test-covered components.
 Exact individual-level equality is not expected because MATLAB and NumPy random streams differ.
+Parity claims are limited to the components covered by committed fixtures and tests. Economics, targeting and strategy comparison, attributable-risk calculations, and chart or export behavior remain partial unless the relevant component is covered by a fixture and validation test.
 
 Validation should focus on:
 
@@ -16,7 +17,7 @@ Validation should focus on:
 - compact deterministic parameter snapshots where available;
 - scenario configuration compatibility.
 
-Generated reference outputs should not be treated as general model outputs.
+Generated reference outputs should not be treated as general model outputs or as files needed by routine Streamlit runs.
 Keep ordinary generated APY files in `abm/output/`, and only commit reference files here when they are intentionally small and useful for tests.
 
 ## Scenario Suite

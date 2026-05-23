@@ -22,7 +22,12 @@ if str(REPO_ROOT) not in sys.path:
 # ---------------------------------------------------------------------
 # App imports
 # ---------------------------------------------------------------------
-from app.state import get_backend, init_session_state, sync_backend_status
+from app.state import (
+    get_apy_status_rows,
+    get_backend,
+    init_session_state,
+    sync_backend_status,
+)
 
 # ---------------------------------------------------------------------
 # Page config (must come before any UI)
@@ -53,6 +58,8 @@ with st.sidebar:
         st.error(status["error"])
     else:
         st.markdown("**Status:** ready")
+    with st.expander("APY capability/reference status"):
+        st.dataframe(get_apy_status_rows(), hide_index=True, use_container_width=True)
 
 # ---------------------------------------------------------------------
 # Navigation structure

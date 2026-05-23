@@ -1,7 +1,14 @@
-# APY Python vs MATLAB Distributional Validation
+# APY Python / MATLAB Distributional Validation
 
-This note records the current diagnostic comparison between the Python APY port
-and the committed MATLAB APY v9 compact reference fixture:
+This note records fixture-backed diagnostic comparisons between the Python APY
+implementation and committed MATLAB APY v9 compact reference fixtures. Under
+the conservative migration contract, MATLAB remains the reference backend and
+the source of compact validation fixtures. Python APY is the normal Streamlit
+workflow, with parity claims limited to behaviours covered by committed
+fixtures and automated validation tests.
+
+The initial comparison uses the committed MATLAB APY v9 compact reference
+fixture:
 
 `validation/matlab_reference/default_random_igra_3hp_N1500_seed1/`
 
@@ -18,13 +25,16 @@ The comparison uses the same scenario controls as the fixture:
 
 The helper intentionally uses generous initial tolerances because exact
 replicate-level equality is not expected between MATLAB and NumPy random
-streams. This is a diagnostic parity check, not yet a strict release gate.
+streams. This is a diagnostic check of covered distributional summaries, not a
+claim of complete Python/MATLAB parity and not yet a strict release gate.
 
 ## Current Result
 
 Run date: 2026-05-15
 
-All 22 compared metrics passed the current initial tolerance rule.
+All 22 compared fixture metrics passed the current initial tolerance rule.
+This result supports parity only for the listed scenario controls and compared
+summary metrics.
 
 | Metric | PythonMedian | MatlabMedian | AbsoluteDifference | RelativeDifference | Pass |
 | --- | ---: | ---: | ---: | ---: | --- |
@@ -57,20 +67,25 @@ All 22 compared metrics passed the current initial tolerance rule.
   exact replicate-level equality is not expected.
 - Median summaries can still agree closely even when individual replicate rows
   differ.
-- Small differences in treatment-start and prevention-derived ratios are
-  expected until broader distributional validation is run across multiple
+- Small differences in treatment-start and prevention-derived ratios remain
+  possible until broader fixture-backed validation is run across multiple
   scenarios and seeds.
 - The current fixture is one scenario only; it does not validate every strategy,
   test type, regimen, targeting mode, or edge case.
 
 ## Current Limitations
 
-- This is not a full distributional validation suite yet.
+- This is not a full distributional validation suite and should not be read as
+  complete Python/MATLAB parity.
 - Tolerances are intentionally broad and should be tightened after more MATLAB
   reference fixtures are added.
-- Do-nothing and `technical.dynamicComparison` parity are now covered for this
-  fixture, but economics, attributable-risk add-ons, and Streamlit Python
-  backend switching remain pending.
+- Do-nothing and `technical.dynamicComparison` behaviour are covered only where
+  fixture/test-backed.
+- Economics, targeting, attributable-risk add-ons, chart export, and other
+  workflow surfaces remain partial unless a committed fixture or automated test
+  explicitly covers the claim.
+- Python APY is the normal Streamlit workflow, but MATLAB remains the reference
+  backend for fixture generation and conservative migration decisions.
 
 ## Scenario Suite V1
 
@@ -92,7 +107,11 @@ summary rather than causing the validator to fail.
 
 Batch run date: 2026-05-16
 
-All eight scenarios passed the current diagnostic tolerances.
+All eight committed compact scenarios passed the current diagnostic tolerances
+for the compared metrics. These results broaden fixture-backed confidence in
+covered paths, but they do not establish complete parity for economics,
+targeting, attributable-risk calculations, chart export, or untested Streamlit
+workflow branches.
 
 | Scenario | Metrics | Passed | Failed | Pass rate | Max absolute relative difference |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -107,7 +126,7 @@ All eight scenarios passed the current diagnostic tolerances.
 
 ## Generating MATLAB Compact Fixtures
 
-From MATLAB, run:
+MATLAB is the reference fixture source. From MATLAB, run:
 
 ```matlab
 clear functions
@@ -131,7 +150,8 @@ Large raw/bundle files should remain ignored.
 
 ## Running Python Batch Validation
 
-Run the suite against whatever MATLAB fixtures are currently present:
+Run the Python APY validation suite against whatever MATLAB fixtures are
+currently present:
 
 ```powershell
 python scripts/run_apy_distributional_validation.py `
@@ -161,7 +181,7 @@ The output directory is generated data and should not be committed by default.
 ## Future Tolerance Tightening
 
 Current tolerances are broad diagnostic tolerances. They should be tightened
-after:
+and parity claims should remain fixture/test-backed after:
 
 - multiple MATLAB fixtures are committed;
 - random, targeted, TST, regimen, zero-coverage, and high-coverage scenarios
@@ -169,3 +189,8 @@ after:
 - failures are triaged as stochastic variation, known model-port gap, or
   genuine implementation bug;
 - repeated validation runs show stable median-level agreement.
+
+Until those conditions are met, migration language should describe Python APY
+as the normal Streamlit workflow with MATLAB retained as the reference backend
+and fixture source, not as a fully equivalent replacement for every MATLAB v9
+analysis surface.

@@ -2,7 +2,7 @@
 
 This repository contains community-level tuberculosis (TB) risk models for planning, prioritisation, and scenario comparison.
 
-The current `model-split` branch separates the user interface, Python modelling code, MATLAB APY v9 agent-based model, adapters, and shared app state. The Streamlit app entry point for this branch is:
+The current `model-split` branch separates the user interface, Python modelling code, the MATLAB APY v9 reference model, adapters, and shared app state. The Streamlit app entry point for this branch is:
 
 ```bash
 streamlit run streamlit_app.py
@@ -16,16 +16,20 @@ The model is intended to support public health planning and sequencing. It is no
 
 ### 1. APY v9 agent-based model
 
-The APY v9 workflow supports LTBI screening and preventive treatment scenarios. The normal Streamlit run path uses the Python APY backend by default; the MATLAB APY v9 implementation remains available as an optional/reference backend for parity checks and economics workflows where applicable.
+The APY v9 workflow supports LTBI screening and preventive treatment scenarios. The normal Streamlit APY run path is Python-first and uses the Python APY backend by default. The MATLAB APY v9 implementation remains the reference engine and fixture source, and is available as an optional backend for local reference checks where a MATLAB-capable environment is configured.
 
 The APY workflow includes:
 
 - scenario setup and validation;
 - Python APY model execution by default;
 - results display;
-- health economics inputs and summaries;
-- baseline vs comparator scenario comparison;
-- downloadable summaries and comparison outputs.
+- partial Python health economics inputs and summaries;
+- partial targeting and baseline-vs-comparator strategy comparison;
+- partial attributable-risk reporting;
+- partial chart/export helpers and downloadable summaries;
+- MATLAB reference fixtures and optional MATLAB-backed checks.
+
+Python APY coverage is still being expanded. Treat MATLAB as the reference backend for parity validation and fixture generation, not as a requirement for the normal Streamlit APY workflow.
 
 The core MATLAB simulation engine is:
 
@@ -83,20 +87,20 @@ ui/static_ui.py
 │   └── display.py
 │
 ├── adapters/                     # Python adapters around external/model backends
-│   ├── matlab_backend.py
+│   ├── matlab_backend.py        # Optional MATLAB/reference backend adapter
 │   ├── paths.py
 │   └── serialization.py
 │
 ├── pages/                        # Multipage Streamlit workflow
 │   ├── 1_Scenario.py             # APY scenario setup, defaults, validation, save/load
-│   ├── 2_Run_Model.py            # Run APY v9 backend
+│   ├── 2_Run_Model.py            # Run Python APY by default; optional MATLAB/reference backend
 │   ├── 3_Results.py              # Display portable results bundle
-│   ├── 4_Economics.py            # Economics assumptions and outputs
+│   ├── 4_Economics.py            # Partial Python economics assumptions and outputs
 │   ├── 5_Dynamic_Model.py        # Dynamic model workflow page
-│   ├── 6_Compare.py              # APY baseline vs comparator comparison
+│   ├── 6_Compare.py              # Partial APY baseline vs comparator comparison
 │   └── 7_Dynamic_ABM_Compare.py  # Dynamic model + APY ABM comparison
 │
-├── abm/                          # MATLAB APY v9 ABM and related files
+├── abm/                          # MATLAB APY v9 reference engine and fixture source
 │   ├── tb_screening_mc_model_v9.m
 │   ├── run_scenario_v9.m
 │   ├── run_scenario_bundle_json_v9.m
@@ -106,7 +110,8 @@ ui/static_ui.py
 │   ├── scenarios/
 │   └── output/
 │
-├── engine/                       # Python dynamic/static model code
+├── engine/                       # Python APY, dynamic, static, and integration code
+│   ├── apy/
 │   ├── dynamic/
 │   ├── integration/
 │   ├── static/
@@ -177,7 +182,7 @@ http://localhost:8501
 
 The normal APY v9 workflow in the Streamlit app uses the Python APY backend by default and should run with the Python requirements installed above.
 
-MATLAB is only required when selecting and running the optional MATLAB/reference APY backend. For MATLAB-backed parity checks or economics workflows where applicable, the local environment needs:
+MATLAB is only required when selecting and running the optional MATLAB/reference APY backend. For MATLAB-backed reference checks, fixture generation, or workflows that explicitly need the MATLAB reference implementation, the local environment needs:
 
 - MATLAB installed;
 - the MATLAB Engine API for Python installed in the same Python environment used by Streamlit;
@@ -208,7 +213,7 @@ ui/app.py
 
 That file is retained from the earlier shared dynamic/static app structure, but it is not the main entry point for the current multipage `model-split` branch.
 
-Important deployment note: Streamlit Cloud should not be assumed to have MATLAB installed. The hosted normal run path should use the Python APY backend. MATLAB-backed APY execution is primarily a local or separately configured MATLAB-capable backend workflow.
+Important deployment note: Streamlit Cloud should not be assumed to have MATLAB installed. The hosted normal run path should use the Python APY backend. MATLAB-backed APY execution is primarily a local or separately configured MATLAB-capable reference workflow.
 
 ---
 
@@ -253,7 +258,7 @@ Use the Results page to:
 - view metadata;
 - view headline and summary outputs;
 - inspect technical details;
-- download available CSV outputs;
+- download available partial CSV/JSON outputs;
 - check whether economics outputs are current or stale.
 
 ### Economics
@@ -263,12 +268,14 @@ Use the Economics page to:
 - load default economics assumptions;
 - load the KWAB150 economics preset;
 - edit test, regimen, program, and active TB cost assumptions;
-- run economics against the current model results;
+- run the partial Python economics subset against the current model results;
 - download economics summaries and assumptions.
+
+The Python economics implementation is partial. Use MATLAB-backed reference outputs where full APY health-economics parity is required.
 
 ### Compare
 
-Use the Compare page to compare a baseline APY scenario with a comparator APY scenario.
+Use the Compare page to compare a baseline APY scenario with a comparator APY scenario. This is a partial Python strategy-comparison workflow, not a complete port of all MATLAB targeting and strategy add-ons.
 
 The Compare page supports:
 
@@ -278,8 +285,8 @@ The Compare page supports:
 - applying named stress-test presets;
 - editing comparator assumptions;
 - running baseline and comparator scenarios;
-- running economics comparisons;
-- displaying assumption, outcome, and economics differences;
+- running partial economics comparisons;
+- displaying assumption, outcome, partial attributable-risk, and partial economics differences where supported;
 - downloading comparison CSV/JSON outputs.
 
 If assumptions change after comparison outputs have been generated, old comparison outputs are cleared and the page asks the user to rerun the comparison before showing current outputs.
@@ -312,7 +319,7 @@ The comparison layer:
 - flags missing and structurally non-comparable metrics instead of forcing equivalence;
 - exposes debug panels for the dynamic bundle and APY bundle.
 
-Current aligned metrics include horizon, population, cumulative cases averted, and, when APY `technical.dynamicComparison` is available, cumulative baseline/intervention active TB cases and relative reduction.
+Current aligned metrics include horizon, population, cumulative cases averted, and, when APY `technical.dynamicComparison` is available, cumulative baseline/intervention active TB cases and relative reduction. This comparison is intentionally partial and conservative.
 
 ---
 
@@ -371,9 +378,9 @@ The app may also expose downloadable CSV or JSON outputs from Streamlit session 
 
 - APY summary CSVs;
 - key metrics CSVs;
-- economics summary CSVs;
+- partial economics summary CSVs;
 - assumptions JSON files;
-- comparison diff CSVs;
+- partial comparison diff CSVs;
 - comparison JSON bundles.
 
 ---
@@ -422,7 +429,7 @@ which run_scenario_v9 -all
 
 ## Troubleshooting
 
-### The app opens but APY scenario actions fail
+### Optional MATLAB/reference APY actions fail
 
 Likely causes:
 
@@ -431,7 +438,7 @@ Likely causes:
 - MATLAB cannot find the `abm/` folder;
 - the app is running in a hosted environment without MATLAB.
 
-Check the backend status shown in the Streamlit sidebar and on the Scenario page.
+Check the backend status shown in the Streamlit sidebar and on the Scenario page. These issues should only block actions that explicitly use the MATLAB/reference backend; the normal Python APY run path should not require MATLAB.
 
 ### The app does not open locally
 
@@ -474,9 +481,19 @@ ui/app.py
 
 ---
 
-## Current integration status
+## Current APY integration status
 
-The branch includes a thin dynamic-ABM comparison layer:
+The APY migration status is conservative:
+
+- Normal APY Streamlit workflow: Python-first, using `PythonApyBackend` by default.
+- MATLAB APY v9: reference backend and fixture source, with `tb_screening_mc_model_v9.m` treated as the reference engine.
+- Python economics: partial subset, not full MATLAB health-economics parity.
+- Targeting and strategy comparison: partial baseline/comparator support, not a complete port of all MATLAB targeting add-ons.
+- Attributable-risk reporting: partial reporting and pass-through/status handling, not complete reactivation attributable-risk parity.
+- Chart/export parity: partial JSON/CSV/chart-series helpers, not full MATLAB chart/export parity.
+- MATLAB App Designer helper files: documentation/reference inventory only for the Streamlit migration unless explicitly revived; normal APY Streamlit behavior should come from Python/Streamlit code.
+
+The branch also includes a thin dynamic-ABM comparison layer:
 
 ```text
 engine/integration/risk_factor_crosswalk_v9.csv

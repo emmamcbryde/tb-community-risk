@@ -47,9 +47,8 @@ if selected_backend_name != current_backend_name:
 backend = get_backend()
 
 st.caption(
-    "Python APY is the default backend for normal simulation. MATLAB remains optional "
-    "as the v9 reference engine and is required for economics; attributable-risk "
-    "add-ons are not yet ported."
+    "Python APY is the normal experimental Python-first backend. Economics support "
+    "is partial in Python; MATLAB remains the reference/full-parity backend."
 )
 
 
@@ -68,8 +67,8 @@ def display_backend_status() -> None:
     cols[2].metric("Adapter", "error" if status.get("error") else "ready")
     if status.get("experimental"):
         st.warning(
-            "Python APY is the default for normal simulations. MATLAB remains optional "
-            "as the v9 reference and is required for economics."
+            "Python APY is the normal experimental Python-first backend. Economics "
+            "support is partial in Python; MATLAB remains the reference/full-parity backend."
         )
     if status.get("abm_path"):
         st.caption(f"ABM path: {status.get('abm_path', '')}")

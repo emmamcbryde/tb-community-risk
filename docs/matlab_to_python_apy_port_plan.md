@@ -3,10 +3,11 @@
 ## Scope
 
 This inventory covers the MATLAB files in `abm/` on the `model-split` branch.
-The Python port should preserve `abm/tb_screening_mc_model_v9.m` as the reference implementation until validation passes.
+The Python-first Streamlit APY workflow is now the normal user path.
+The migration should preserve `abm/tb_screening_mc_model_v9.m` as the reference engine and fixture source for conservative validation.
 This plan does not propose changes to the MATLAB engine, the Python dynamic model equations, or the current Streamlit behavior.
 
-The first Python-native APY target is a backend MVP that can run APY scenarios without MATLAB and produce the same JSON-like results contract used by the existing Streamlit APY Results and Dynamic + APY ABM Compare pages.
+The current Python-native APY target is conservative operation: run normal APY scenarios from Streamlit without requiring MATLAB, keep outputs JSON-like at the backend boundary, and continue using MATLAB reference fixtures to check behavior where parity is claimed.
 
 ## Recommended Python Package Layout
 
@@ -19,9 +20,9 @@ engine/apy/
   scenario.py                # save/load helpers
   results.py                 # summary rows and results bundle contract
   do_nothing.py              # natural-history/do-nothing comparator
-  economics.py               # later health economics backend
-  targeting.py               # later targeted/random strategy add-ons
-  attributable_risk.py       # later attributable-risk add-on
+  economics.py               # partial Python health economics support
+  targeting.py               # partial targeted/random strategy comparison support
+  attributable_risk.py       # partial attributable-risk reporting support
   data/
     default_data.csv
     default_age_distribution.csv
@@ -34,7 +35,7 @@ tests/apy/
   test_matlab_reference_parity.py
 ```
 
-Keep the existing MATLAB-backed adapter while the Python backend is introduced. The future switch should be an adapter choice, not a Streamlit page rewrite.
+Keep MATLAB-facing helpers available for reference fixture generation and spot checks. User-facing APY behavior should stay Python-first in Streamlit, with any backend selection kept behind adapters rather than page rewrites.
 
 ## Inventory Table
 
@@ -44,51 +45,51 @@ Keep the existing MATLAB-backed adapter while the Python backend is introduced. 
 | `app_apply_ui_state_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Existing Streamlit Scenario page remains source of UI behavior | App Designer component writer only. |
 | `app_collect_ui_state_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Existing Streamlit state helpers cover this role | App Designer component reader only. |
 | `app_economics_input_changed_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Streamlit economics dirty/stale state | UI-state orchestration, not model runtime. |
-| `app_export_v9.m` | MATLAB App Designer/UI callback | `engine.apy.results` later, if needed | P3 | Compare output files against MATLAB exports if export parity is needed | App wrapper around export. Python downloads currently handle most Streamlit needs. |
+| `app_export_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Documentation/reference only | App Designer wrapper around export. Python downloads cover current Streamlit needs; chart/export parity remains partial. |
 | `app_has_fresh_results_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Streamlit session-state stale flags | UI state helper. |
 | `app_input_changed_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Streamlit dirty/stale state | UI orchestration. |
 | `app_load_economics_preset_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Streamlit economics preset behavior | UI wrapper around economics preset. |
 | `app_load_scenario_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Streamlit scenario load flow | UI wrapper around scenario load. |
 | `app_refresh_bundle_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Python bundle builder tests | UI state wrapper around bundle construction. |
-| `app_run_attributable_risk_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Add-on parity later through `engine.apy.attributable_risk` | UI wrapper around add-on. |
-| `app_run_charts_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Chart parity only if MATLAB chart exports remain required | UI wrapper around chart add-on. |
+| `app_run_attributable_risk_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Documentation/reference only | App Designer wrapper around an add-on. Python attributable-risk reporting is partial and should be validated through reference fixtures. |
+| `app_run_charts_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Documentation/reference only | App Designer wrapper around chart add-ons. Python chart/export parity remains partial. |
 | `app_run_do_nothing_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Do-nothing parity covered by Python `do_nothing.py` | UI wrapper around do-nothing add-on. |
-| `app_run_economics_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Economics parity covered later by `engine.apy.economics` | UI wrapper around economics backend. |
-| `app_run_targeted_vs_random_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Targeting parity later through `engine.apy.targeting` | UI wrapper around targeting add-ons. |
+| `app_run_economics_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Documentation/reference only | App Designer wrapper around economics backend. Python economics is partial and fixture-validated only where covered. |
+| `app_run_targeted_vs_random_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Documentation/reference only | App Designer wrapper around targeting add-ons. Python targeting/strategy comparison is partial. |
 | `app_run_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Python adapter-level smoke tests | UI wrapper around validate/run/bundle. |
 | `app_save_scenario_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Streamlit scenario save flow | UI wrapper around scenario save. |
 | `app_startup_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Streamlit app startup state | App Designer startup only. |
 | `app_validate_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Streamlit validation flow | UI wrapper around validation. |
 | `build_default_config_v9.m` | config/defaults | `engine.apy.config` | P0 | Python default config equals MATLAB JSON-normalized default except portable paths/table representation | Canonical APY scenario defaults. |
-| `build_default_economics_config_v9.m` | health economics | `engine.apy.economics` | P1 | Default economics config parity | Needed for Python economics page after core MVP. |
-| `build_economics_preset_kwab150_v9.m` | health economics | `engine.apy.economics` | P1 | KWAB150 preset parity | Preserve visible economics preset values. |
+| `build_default_economics_config_v9.m` | health economics | `engine.apy.economics` | P1 | Default economics config parity where Python coverage exists | Supports the partial Python economics workflow. |
+| `build_economics_preset_kwab150_v9.m` | health economics | `engine.apy.economics` | P1 | KWAB150 preset parity where Python coverage exists | Preserve visible economics preset values for the partial economics workflow. |
 | `build_results_bundle_v9.m` | result bundle/output contract | `engine.apy.results` | P0 | JSON bundle schema and summary rows match MATLAB reference bundles | Includes `technical.dynamicComparison`; essential for existing Results and integrated compare pages. |
 | `build_ui_schema_v9.m` | MATLAB App Designer/UI callback | none, or `app/schema.py` later | P3 | Field mapping smoke tests only if schema-driven Streamlit forms are added | Current Streamlit forms are hand-built. |
 | `collect_validation_issues_json_v9.m` | validation | none | do-not-port | MATLAB adapter bridge remains until Python backend replaces MATLAB | JSON wrapper for MATLAB Engine boundary, not Python runtime logic. |
 | `collect_validation_issues_v9.m` | validation | `engine.apy.validation` | P0 | Validation report parity for valid defaults and representative invalid configs | Structured warnings/errors are required before Python runs. |
 | `config_to_ui_state_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Existing Streamlit widget sync tests | UI conversion helper. |
-| `configs_substantively_equal_v9.m` | validation | `engine.apy.validation` or `app/state.py` if needed | P2 | Dirty/stale equivalence tests if Python backend needs MATLAB-equivalent comparison | Useful but not required for backend MVP. |
+| `configs_substantively_equal_v9.m` | validation | `engine.apy.validation` or `app/state.py` if needed | P2 | Dirty/stale equivalence tests if Python state handling needs MATLAB-equivalent comparison | Useful only if Streamlit stale-state behavior needs stricter MATLAB-equivalent checks. |
 | `economics_config_to_ui_state_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Streamlit economics widget sync | UI conversion helper. |
-| `export_results_v9.m` | charts/export helper | `engine.apy.results` or `app/downloads.py` | P2 | CSV export parity for summary/key metrics | Python Streamlit already has simple downloads; full export parity can wait. |
+| `export_results_v9.m` | charts/export helper | `engine.apy.results` or `app/downloads.py` | P2 | CSV export parity for summary/key metrics where covered | Python Streamlit has downloads; full chart/export parity remains partial. |
 | `get_output_dir_v9.m` | charts/export helper | `engine.apy.paths` | P2 | Path resolves to `abm/output/` without hard-coded local paths | Needed only for file-output parity. |
 | `initialise_app_state_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Streamlit `app/state.py` coverage | App Designer state initializer. |
 | `just_for_executing_codex_checks.m` | legacy/test/generated/ignore | none | do-not-port | None | Temporary check file; do not port. |
-| `load_scenario_v9.m` | scenario save/load | `engine.apy.scenario` | P1 | Round-trip saved scenario JSON with MATLAB examples | Useful immediately after core MVP. |
+| `load_scenario_v9.m` | scenario save/load | `engine.apy.scenario` | P1 | Round-trip saved scenario JSON with MATLAB examples | Supports the normal Streamlit scenario workflow. |
 | `regimen_cost_field_v9.m` | health economics | `engine.apy.economics` | P1 | Regimen cost field mapping parity | Small helper for economics assumptions. |
 | `results_bundle_to_display_v9.m` | result bundle/output contract | `app/display.py` or `engine.apy.results` | P2 | Existing Streamlit displays continue to consume bundle directly | Mostly MATLAB display shaping; not needed if bundle contract is Python-native. |
-| `run_health_economics_json_v9.m` | health economics | none | do-not-port | MATLAB adapter bridge remains until Python economics is ported | JSON wrapper for MATLAB Engine boundary. |
-| `run_health_economics_v9.m` | health economics | `engine.apy.economics` | P1 | Economics summary rows and totals match MATLAB reference bundles | Important after epidemiologic MVP. |
-| `run_scenario_bundle_json_v9.m` | core simulation engine | none | do-not-port | MATLAB adapter bridge remains during transition | JSON wrapper for MATLAB Engine boundary. |
+| `run_health_economics_json_v9.m` | health economics | none | do-not-port | MATLAB reference fixture bridge if needed | JSON wrapper for MATLAB Engine boundary. Python economics is partially implemented. |
+| `run_health_economics_v9.m` | health economics | `engine.apy.economics` | P1 | Economics summary rows and totals match MATLAB reference bundles where covered | Continue expanding fixture coverage for the partial Python economics workflow. |
+| `run_scenario_bundle_json_v9.m` | core simulation engine | none | do-not-port | MATLAB reference fixture bridge if needed | JSON wrapper for MATLAB Engine boundary; normal Streamlit APY runs are Python-first. |
 | `run_scenario_v9.m` | core simulation engine | `engine.apy.simulation` | P0 | Python run resolves config defaults and raw outputs like MATLAB wrapper | Thin but important config-to-engine adapter. |
-| `run_tb_screening_compare_strategies_v9.m` | targeting/strategy add-on | `engine.apy.targeting` | P2 | Strategy-comparison output parity | Not required for first single-scenario MVP. |
+| `run_tb_screening_compare_strategies_v9.m` | targeting/strategy add-on | `engine.apy.targeting` | P2 | Strategy-comparison output parity where covered | Python targeting/strategy comparison is partial. |
 | `run_tb_screening_do_nothing_v9.m` | natural-history/do-nothing add-on | `engine.apy.do_nothing` | P0 | `technical.dynamicComparison` source values match MATLAB reference | Needed to expose baseline/intervention cumulative active TB metrics conservatively. |
-| `run_tb_screening_igra_addons_v9.m` | charts/export helper | `engine.apy.results` later | P3 | Add-on output parity only if retained | Chart/report add-on; not needed for MVP. |
-| `run_tb_screening_igra_charts_v9.m` | charts/export helper | `engine.apy.results` or visualization layer later | P3 | Chart data parity only if retained | MATLAB chart export helper, not backend MVP. |
+| `run_tb_screening_igra_addons_v9.m` | charts/export helper | `engine.apy.results` or visualization layer | P3 | Add-on output parity where retained | Chart/report add-on; Python chart/export parity remains partial. |
+| `run_tb_screening_igra_charts_v9.m` | charts/export helper | `engine.apy.results` or visualization layer | P3 | Chart data parity where retained | MATLAB chart export helper; Python chart/export parity remains partial. |
 | `run_tb_screening_natural_history_addons_v9.m` | natural-history/do-nothing add-on | `engine.apy.do_nothing` later | P2 | Natural-history add-on table parity | Broader add-on; do-nothing subset is P0. |
-| `run_tb_screening_reactivation_attributable_v9.m` | attributable-risk add-on | `engine.apy.attributable_risk` | P2 | Attributable-risk table parity | Useful analytical output, but not required for first Python run. |
-| `run_tb_screening_targeted_gradient_v9.m` | targeting/strategy add-on | `engine.apy.targeting` | P2 | Targeting gradient parity | Later targeted strategy exploration. |
-| `run_tb_screening_targeting_optima_v9.m` | targeting/strategy add-on | `engine.apy.targeting` | P2 | Targeting optima parity | Later targeted strategy exploration. |
-| `run_tb_screening_targeting_profile_v9.m` | targeting/strategy add-on | `engine.apy.targeting` | P2 | Targeting profile parity | Later targeted strategy exploration. |
+| `run_tb_screening_reactivation_attributable_v9.m` | attributable-risk add-on | `engine.apy.attributable_risk` | P2 | Attributable-risk table parity where covered | Python attributable-risk reporting is partial. |
+| `run_tb_screening_targeted_gradient_v9.m` | targeting/strategy add-on | `engine.apy.targeting` | P2 | Targeting gradient parity where covered | Python targeting support is partial. |
+| `run_tb_screening_targeting_optima_v9.m` | targeting/strategy add-on | `engine.apy.targeting` | P2 | Targeting optima parity where covered | Python targeting support is partial. |
+| `run_tb_screening_targeting_profile_v9.m` | targeting/strategy add-on | `engine.apy.targeting` | P2 | Targeting profile parity where covered | Python targeting support is partial. |
 | `run_tb_screening_user_options_v9.m` | config/defaults | `engine.apy.config` examples/docs | P1 | Compatibility examples reproduce user-options defaults | Preserve compatibility, but do not make it the Python engine entry point. |
 | `save_scenario_v9.m` | scenario save/load | `engine.apy.scenario` | P1 | Scenario JSON round-trip parity | Needed for full Streamlit scenario workflow. |
 | `schema_component_name_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | None unless schema-driven UI is revived | App Designer naming helper. |
@@ -113,11 +114,27 @@ The P0 port should also treat these files as runtime fixtures or reference artif
 | `abm/default_age_distribution.xlsx` | Alternate age distribution source | P2 only; CSV should be preferred for Python MVP. |
 | `abm/*scenario*.json`, `abm/scenarios/*.json` | Scenario fixtures | Use as P1 scenario load/save and config compatibility fixtures. |
 | `abm/output/*.csv` | Generated/reference outputs | Do not treat as canonical unless explicitly captured as reference fixtures. Keep generated APY outputs in `abm/output/`. |
-| `abm/APYV9WebApp.mlapp`, `abm/app_code.txt` | Frozen MATLAB UI artifacts | Do not port; useful only as historical UI reference. |
+| `abm/APYV9WebApp.mlapp`, `abm/app_code.txt` | Frozen MATLAB UI artifacts | Do not port; documentation/reference only. |
 
-## Minimum P0 Set for Python ABM MVP
+## Conservative Python-First APY State
 
-The minimum Python-native APY MVP should port:
+The normal APY workflow is Python-first in Streamlit. MATLAB remains important, but as the reference backend and fixture source rather than the default user-facing runtime.
+
+The conservative Python state includes:
+
+- config/default/validation support in Python;
+- normal APY scenario execution from Streamlit without requiring MATLAB;
+- Python result bundles that preserve the JSON-like Streamlit contract;
+- do-nothing/natural-history support sufficient to populate dynamic-comparison reporting where the bundle has the needed rows;
+- partial Python health economics support;
+- partial targeting and strategy-comparison support;
+- partial attributable-risk reporting;
+- partial chart/export parity;
+- MATLAB App Designer helpers retained only as documentation/reference, not port targets.
+
+## P0 Reference Set
+
+The core Python-first APY workflow was built from this P0 reference set:
 
 - `build_default_config_v9.m`
 - `validate_config_v9.m`
@@ -140,14 +157,14 @@ This P0 set is enough to:
 
 ## Suggested Port Order
 
-1. Port `engine.apy.config` and `engine.apy.validation` first.
-2. Add MATLAB reference fixtures by running small scenarios through the existing MATLAB JSON wrappers and committing only compact JSON bundles under tests or docs fixtures.
-3. Port deterministic helpers from `tb_screening_mc_model_v9.m`: regimen library, safe math, age distribution loading, discrete draws, test performance, and summary helpers.
-4. Port `simulate_one_cohort` and the replicate runner in `tb_screening_mc_model_v9.m`.
-5. Port `run_scenario_v9.m` as the Python adapter from config to simulation args.
-6. Port `summarise_results_v9.m` and `build_results_bundle_v9.m`.
-7. Port `run_tb_screening_do_nothing_v9.m` sufficiently to produce `technical.dynamicComparison`.
-8. Add a Python backend adapter behind the existing Streamlit backend interface, but keep MATLAB as the default until parity is acceptable.
+1. Maintain `engine.apy.config` and `engine.apy.validation` against MATLAB reference fixtures.
+2. Expand compact MATLAB reference bundles under tests or docs fixtures only where parity claims need evidence.
+3. Maintain deterministic helpers from `tb_screening_mc_model_v9.m`: regimen library, safe math, age distribution loading, discrete draws, test performance, and summary helpers.
+4. Continue validating `simulate_one_cohort` and the replicate runner in the Python APY engine.
+5. Keep `run_scenario_v9.m` semantics reflected in the Python config-to-simulation adapter.
+6. Maintain summary/result bundle contract parity for Streamlit consumers.
+7. Preserve do-nothing/natural-history support sufficient to produce `technical.dynamicComparison`.
+8. Incrementally expand partial economics, targeting, attributable-risk, chart, and export parity only behind fixtures and tests.
 
 Current implementation status:
 
@@ -160,12 +177,15 @@ Current implementation status:
 - Python bundles can produce a complete `technical.dynamicComparison` block when supplied with do-nothing derived rows.
 - A stochastic summary parity diagnostic helper is implemented in `engine.apy.parity`.
 - A MATLAB-free reference coverage report is implemented in `engine.apy.reference_coverage`.
-- Economics, targeting, attributable-risk, and export parity remain partial unless covered by MATLAB reference fixtures and tests.
+- Economics support is partial in Python.
+- Targeting and strategy-comparison support is partial in Python.
+- Attributable-risk reporting is partial in Python.
+- Chart/export parity is partial in Python.
 - The Python ABM does not yet claim MATLAB distributional parity for full scenario summaries.
 
 ## Validation Strategy
 
-Use MATLAB v9 as the reference until explicitly retired.
+Use MATLAB v9 as the reference engine and fixture source until explicitly retired.
 
 P0 validation should be MATLAB-free by default and use stored reference fixtures:
 
@@ -259,7 +279,7 @@ Manual MATLAB validation remains useful during development but should not be req
 
 ## Remaining Planning Notes
 
-- The Python port should keep APY outputs JSON-like at the backend boundary. Raw numpy/pandas objects should not be stored in Streamlit session state.
+- The Python-first APY workflow should keep outputs JSON-like at the backend boundary. Raw numpy/pandas objects should not be stored in Streamlit session state.
 - Randomness parity should be defined explicitly. Exact MATLAB/Python RNG matching may not be worth the complexity; distributional and fixed-fixture parity is the pragmatic target.
 - Path handling should remain portable. Python should resolve bundled data relative to the package/repo root and continue writing generated APY outputs under `abm/output/` only when file export is requested.
 - The model must remain framed as a planning and prioritisation tool, not a tool for denying care.

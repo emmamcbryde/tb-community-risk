@@ -9,6 +9,7 @@ import streamlit as st
 from adapters.matlab_backend import MatlabBackend
 from adapters.paths import repo_root
 from adapters.python_apy_backend import PythonApyBackend
+from engine.apy.reference_coverage import get_reference_coverage
 
 
 def init_session_state() -> None:
@@ -121,6 +122,32 @@ def get_backend() -> MatlabBackend | PythonApyBackend:
     if get_backend_name() == "python_apy":
         return get_python_apy_backend(root)
     return get_matlab_backend(root)
+
+
+def get_apy_status_rows() -> list[dict[str, str | bool]]:
+    """Return APY capability/reference rows suitable for JSON and tables."""
+    coverage = get_reference_coverage(repo_root())
+    rows: list[dict[str, str | bool]] = []
+    for component in coverage.get("components", []):
+        if not isinstance(component, dict):
+            continue
+        rows.append(
+            {
+                "Component": str(component.get("label", component.get("component", ""))),
+                "Migration status": str(component.get("migrationStatus", "")),
+                "Coverage status": str(component.get("coverageStatus", "")),
+                "MATLAB reference": str(component.get("matlabReference", "")),
+                "Reference fixtures": bool(
+                    component.get("matlabReferenceFixturesExist", False)
+                ),
+                "Parity tests": bool(component.get("parityTestsExist", False)),
+                "Distributional tests": bool(
+                    component.get("distributionalTestsExist", False)
+                ),
+                "Python tests": bool(component.get("pythonOnlyTestsExist", False)),
+            }
+        )
+    return rows
 
 
 def mark_run_completed() -> None:
