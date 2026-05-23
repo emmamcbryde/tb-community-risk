@@ -142,6 +142,8 @@ git checkout model-split
 
 ### 2. Create and activate a Python environment
 
+Python 3.11 is the recommended local development and test version for this branch. Local checks have also passed on Python 3.12.4.
+
 On macOS/Linux:
 
 ```bash
@@ -158,11 +160,19 @@ python -m venv .venv
 
 ### 3. Install Python requirements
 
+For runtime use:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-The main Python requirements are Streamlit, pandas, numpy, Altair, matplotlib, and scipy.
+For local development and tests:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+The main Python requirements are Streamlit, pandas, numpy, Altair, matplotlib, scipy, and requests.
 
 ### 4. Run the Streamlit app
 
@@ -214,6 +224,8 @@ ui/app.py
 That file is retained from the earlier shared dynamic/static app structure, but it is not the main entry point for the current multipage `model-split` branch.
 
 Important deployment note: Streamlit Cloud should not be assumed to have MATLAB installed. The hosted normal run path should use the Python APY backend. MATLAB-backed APY execution is primarily a local or separately configured MATLAB-capable reference workflow.
+
+GitHub Actions setup for the local APY migration gate is intentionally deferred. The malformed `runtime.txt` deployment contract is also a deployment follow-up and is not fixed here.
 
 ---
 
@@ -407,7 +419,9 @@ For the local Python-only APY migration gate:
 python scripts/check_python_apy_migration.py
 ```
 
-This checks MATLAB-free `PythonApyBackend` import behavior and JSON-serialisable Python APY capability/reference-coverage payloads. It does not require or validate MATLAB, OpenAI/Codex, secrets, full MATLAB parity, or MATLAB reference workflows. When `pytest` is installed, `python -m pytest tests -q` can be run separately; GitHub Actions/CI for this gate is intentionally deferred until the repo has a clear Python version and dependency contract.
+This checks MATLAB-free `PythonApyBackend` import behavior and JSON-serialisable Python APY capability/reference-coverage payloads. It does not require or validate MATLAB, OpenAI/Codex, secrets, full MATLAB parity, or MATLAB reference workflows. When `pytest` is installed, `python -m pytest tests -q` can be run separately; GitHub Actions/CI for this gate is intentionally deferred.
+
+The local migration check is MATLAB-free, Codex-free, OpenAI-key-free, internet-free, and secret-free.
 
 For Python/Streamlit syntax checks:
 
@@ -416,10 +430,10 @@ $files = @('streamlit_app.py') + (Get-ChildItem app,adapters,engine,pages,ui -Re
 python -m py_compile @files
 ```
 
-For broader Python checks, add or run tests when available:
+For broader Python checks, run pytest from the development/test environment:
 
 ```bash
-python -m unittest discover -s tests
+python -m pytest tests -q
 ```
 
 For MATLAB-backed changes, use lightweight MATLAB validation only when MATLAB is available. At minimum, check that the relevant APY v9 functions are on the MATLAB path and that generated outputs are written to the expected output folder.

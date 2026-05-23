@@ -8,9 +8,10 @@ This folder contains local automation for connecting an OpenAI API supervisor lo
 
 ## Requirements
 
-Run from an activated Python environment with:
+Run from an activated Python environment. Python 3.11 is the recommended local development and test version for this branch. Local checks have also passed on Python 3.12.4.
 
 ```powershell
+python -m pip install -r requirements-dev.txt
 python -m pip install --upgrade openai
 ```
 
@@ -53,9 +54,9 @@ python scripts\check_python_apy_migration.py
 
 This is a local Python-only gate for APY migration hygiene. It checks that `PythonApyBackend` can be imported without loading MATLAB modules, and that the Python APY capability and reference-coverage payloads are JSON-serialisable.
 
-It does not require or validate MATLAB, OpenAI/Codex, API keys, secrets, full MATLAB parity, or MATLAB reference workflows. Use the separate MATLAB/reference validation flow when parity or fixture/reference behavior is the question.
+It does not require or validate MATLAB, Codex, OpenAI API keys, internet access, secrets, full MATLAB parity, or MATLAB reference workflows. Use the separate MATLAB/reference validation flow when parity or fixture/reference behavior is the question.
 
-When `pytest` is installed, `python -m pytest tests -q` can be run separately. GitHub Actions/CI for this gate is intentionally deferred until the repo has a clear Python version and dependency contract.
+Use `pip install -r requirements.txt` for runtime dependencies, or `pip install -r requirements-dev.txt` for local development and tests. Then run `python -m pytest tests -q` separately. GitHub Actions/CI for this gate is intentionally deferred. The malformed `runtime.txt` deployment contract is a deployment follow-up and is not fixed here.
 
 ## Normal cautious run
 
