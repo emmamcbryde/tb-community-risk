@@ -1,0 +1,28 @@
+name: Python APY migration
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python-apy-migration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Check Python APY migration
+        run: python scripts/check_python_apy_migration.py
+
+      - name: Run tests
+        run: python -m pytest tests -q

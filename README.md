@@ -225,7 +225,7 @@ That file is retained from the earlier shared dynamic/static app structure, but 
 
 Important deployment note: Streamlit Cloud should not be assumed to have MATLAB installed. The hosted normal run path should use the Python APY backend. MATLAB-backed APY execution is primarily a local or separately configured MATLAB-capable reference workflow.
 
-GitHub Actions setup for the local APY migration gate is intentionally deferred. The malformed `runtime.txt` deployment contract is also a deployment follow-up and is not fixed here.
+The Python-only APY migration gate also runs in GitHub Actions via `.github/workflows/python-apy-migration.yml`. The workflow mirrors the documented local checks by running `python scripts/check_python_apy_migration.py` and `python -m pytest tests -q`. It does not cover full MATLAB parity or MATLAB-only reference workflows. The malformed `runtime.txt` deployment contract is a deployment follow-up and is not fixed here.
 
 ---
 
@@ -419,7 +419,9 @@ For the local Python-only APY migration gate:
 python scripts/check_python_apy_migration.py
 ```
 
-This checks MATLAB-free `PythonApyBackend` import behavior and JSON-serialisable Python APY capability/reference-coverage payloads. It does not require or validate MATLAB, OpenAI/Codex, secrets, full MATLAB parity, or MATLAB reference workflows. When `pytest` is installed, `python -m pytest tests -q` can be run separately; GitHub Actions/CI for this gate is intentionally deferred.
+This checks MATLAB-free `PythonApyBackend` import behavior and JSON-serialisable Python APY capability/reference-coverage payloads. It does not require or validate MATLAB, OpenAI/Codex, secrets, full MATLAB parity, or MATLAB-only reference workflows. When `pytest` is installed, run `python -m pytest tests -q` separately.
+
+The Python-only APY migration CI check in `.github/workflows/python-apy-migration.yml` mirrors those local checks by running `python scripts/check_python_apy_migration.py` and `python -m pytest tests -q`. It does not cover full MATLAB parity or MATLAB-only reference workflows.
 
 The local migration check is MATLAB-free, Codex-free, OpenAI-key-free, internet-free, and secret-free.
 

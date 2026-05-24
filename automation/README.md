@@ -56,7 +56,7 @@ This is a local Python-only gate for APY migration hygiene. It checks that `Pyth
 
 It does not require or validate MATLAB, Codex, OpenAI API keys, internet access, secrets, full MATLAB parity, or MATLAB reference workflows. Use the separate MATLAB/reference validation flow when parity or fixture/reference behavior is the question.
 
-Use `pip install -r requirements.txt` for runtime dependencies, or `pip install -r requirements-dev.txt` for local development and tests. Then run `python -m pytest tests -q` separately. GitHub Actions/CI for this gate is intentionally deferred. The malformed `runtime.txt` deployment contract is a deployment follow-up and is not fixed here.
+Use `pip install -r requirements.txt` for runtime dependencies, or `pip install -r requirements-dev.txt` for local development and tests. Then run `python -m pytest tests -q` separately. The Python-only APY migration CI check in `.github/workflows/python-apy-migration.yml` mirrors these local checks by running `python scripts/check_python_apy_migration.py` and `python -m pytest tests -q`. It does not cover full MATLAB parity or MATLAB-only reference workflows. The malformed `runtime.txt` deployment contract is a deployment follow-up and is not fixed here.
 
 ## Normal cautious run
 
