@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from engine.apy.age_distribution import (
     broad_age_group_from_years,
     expand_age_distribution_table,
     parse_age_band,
 )
-from engine.apy.config import build_default_config
+from engine.apy.config import REPO_ROOT, build_default_config, resolve_repo_path
 from engine.apy.data import (
     apply_disease_or_overrides,
     apply_risk_prevalence_overrides,
@@ -16,9 +17,32 @@ from engine.apy.data import (
     load_tb_csv,
     resolve_age_distribution_file,
 )
+from engine.apy.reference_loader import load_reference_scenario_config
 
 
 class ApyDataLoadingTests(unittest.TestCase):
+    def test_stale_windows_absolute_csv_file_resolves_to_repo_local_data(self) -> None:
+        stale_csv = r"C:\stale\checkout\tb-community-risk\abm\default_data.csv"
+
+        resolved = resolve_repo_path(stale_csv)
+        pars = load_tb_csv(stale_csv)
+
+        self.assertEqual(resolved, REPO_ROOT / "abm" / "default_data.csv")
+        self.assertEqual(pars["ageNames"], ["0-4", "5-14", ">=15"])
+
+    def test_unresolved_stale_windows_absolute_csv_file_raises(self) -> None:
+        stale_csv = r"C:\stale\checkout\tb-community-risk\abm\definitely_missing.csv"
+
+        with self.assertRaisesRegex(FileNotFoundError, "definitely_missing.csv"):
+            load_tb_csv(stale_csv)
+
+    def test_repo_relative_csv_file_still_resolves_to_repo_local_data(self) -> None:
+        resolved = resolve_repo_path("abm/default_data.csv")
+        pars = load_tb_csv("abm/default_data.csv")
+
+        self.assertEqual(resolved, REPO_ROOT / "abm" / "default_data.csv")
+        self.assertEqual(pars["popFrac"], [0.09, 0.17, 0.74])
+
     def test_default_apy_data_loads_expected_values(self) -> None:
         pars = load_tb_csv("abm/default_data.csv")
 
@@ -96,6 +120,21 @@ class ApyDataLoadingTests(unittest.TestCase):
         self.assertAlmostEqual(sum(pars["popFrac"]), 1.0)
         self.assertAlmostEqual(pars["totalFemalePrev"], 0.56)
         self.assertAlmostEqual(pars["totalBCGPrev"], 0.68)
+
+    def test_committed_reference_configs_csv_file_can_be_consumed(self) -> None:
+        reference_root = Path("validation") / "matlab_reference"
+        config_paths = sorted(reference_root.glob("*/scenario_config.json"))
+        if not config_paths:
+            self.skipTest("MATLAB reference scenario configs are unavailable.")
+
+        for config_path in config_paths:
+            with self.subTest(config_path=config_path):
+                cfg = load_reference_scenario_config(config_path)
+                resolved = resolve_repo_path(cfg["csvFile"])
+                pars = load_tb_csv(cfg["csvFile"])
+
+                self.assertEqual(resolved, REPO_ROOT / "abm" / "default_data.csv")
+                self.assertEqual(pars["ageNames"], ["0-4", "5-14", ">=15"])
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 
@@ -108,8 +108,30 @@ def strip_empty_fields(d: dict[str, Any]) -> dict[str, Any]:
 def resolve_repo_path(path: str | Path) -> Path:
     path_value = Path(path)
     if path_value.is_absolute():
+        if not path_value.exists():
+            repo_local_path = _repo_local_suffix_path(PureWindowsPath(str(path)))
+            if repo_local_path is not None:
+                return repo_local_path
         return path_value
+    windows_path = PureWindowsPath(str(path))
+    if windows_path.is_absolute():
+        repo_local_path = _repo_local_suffix_path(windows_path)
+        if repo_local_path is not None:
+            return repo_local_path
     return REPO_ROOT / path_value
+
+
+def _repo_local_suffix_path(path: PureWindowsPath) -> Path | None:
+    parts = [
+        part
+        for part in path.parts
+        if part not in {path.drive, path.root, path.anchor}
+    ]
+    for i in range(len(parts)):
+        candidate = REPO_ROOT.joinpath(*parts[i:])
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _deep_update(base: dict[str, Any], overrides: dict[str, Any]) -> None:
