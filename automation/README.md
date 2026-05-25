@@ -10,8 +10,21 @@ This folder contains local automation for connecting an OpenAI API supervisor lo
 
 Run from an activated Python environment. Python 3.11 is the recommended local development and test version for this branch. Local checks have also passed on Python 3.12.4.
 
+For repository runtime dependencies:
+
 ```powershell
-python -m pip install -r requirements-dev.txt
+pip install -r requirements.txt
+```
+
+For repository local development and tests:
+
+```powershell
+pip install -r requirements-dev.txt
+```
+
+The optional supervisor loop also needs the OpenAI client package:
+
+```powershell
 python -m pip install --upgrade openai
 ```
 
@@ -49,14 +62,20 @@ Inspect this repository and summarize the structure. Do not edit files.
 From the repository root, run:
 
 ```powershell
-python scripts\check_python_apy_migration.py
+python scripts/check_python_apy_migration.py
 ```
 
 This is a local Python-only gate for APY migration hygiene. It checks that `PythonApyBackend` can be imported without loading MATLAB modules, and that the Python APY capability and reference-coverage payloads are JSON-serialisable.
 
-It does not require or validate MATLAB, Codex, OpenAI API keys, internet access, secrets, full MATLAB parity, or MATLAB reference workflows. Use the separate MATLAB/reference validation flow when parity or fixture/reference behavior is the question.
+It does not require or validate MATLAB, MATLAB Engine for Python, Codex, OpenAI API keys, internet access, secrets, full MATLAB parity, or MATLAB reference workflows. Use the separate MATLAB/reference validation flow when parity or fixture/reference behavior is the question.
 
-Use `pip install -r requirements.txt` for runtime dependencies, or `pip install -r requirements-dev.txt` for local development and tests. Then run `python -m pytest tests -q` separately. The Python-only APY migration CI check in `.github/workflows/python-apy-migration.yml` mirrors these local checks by running `python scripts/check_python_apy_migration.py` and `python -m pytest tests -q`. It does not cover full MATLAB parity or MATLAB-only reference workflows. The malformed `runtime.txt` deployment contract is a deployment follow-up and is not fixed here.
+Run local tests from the development/test environment:
+
+```powershell
+python -m pytest tests -q
+```
+
+GitHub Actions now includes a minimal Python-only APY migration check in `.github/workflows/python-apy-migration.yml`. The workflow mirrors these local checks by running `python scripts/check_python_apy_migration.py` and `python -m pytest tests -q`. The local checks are internet-free after dependencies are installed. The local checks and workflow are MATLAB-free, MATLAB Engine-free, Codex-free, OpenAI API key-free, and secret-free. They do not cover full MATLAB parity or MATLAB-only reference workflows. The malformed `runtime.txt` deployment contract is a deployment follow-up and is not fixed here.
 
 ## Normal cautious run
 

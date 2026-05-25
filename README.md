@@ -225,7 +225,7 @@ That file is retained from the earlier shared dynamic/static app structure, but 
 
 Important deployment note: Streamlit Cloud should not be assumed to have MATLAB installed. The hosted normal run path should use the Python APY backend. MATLAB-backed APY execution is primarily a local or separately configured MATLAB-capable reference workflow.
 
-The Python-only APY migration gate also runs in GitHub Actions via `.github/workflows/python-apy-migration.yml`. The workflow mirrors the documented local checks by running `python scripts/check_python_apy_migration.py` and `python -m pytest tests -q`. It does not cover full MATLAB parity or MATLAB-only reference workflows. The malformed `runtime.txt` deployment contract is a deployment follow-up and is not fixed here.
+GitHub Actions now includes a minimal Python-only APY migration check in `.github/workflows/python-apy-migration.yml`. The workflow mirrors the documented local checks by running `python scripts/check_python_apy_migration.py` and `python -m pytest tests -q`. It is MATLAB-free, MATLAB Engine-free, Codex-free, OpenAI API key-free, and secret-free. It does not cover full MATLAB parity or MATLAB-only reference workflows. The malformed `runtime.txt` deployment contract is a deployment follow-up and is not fixed here.
 
 ---
 
@@ -419,11 +419,17 @@ For the local Python-only APY migration gate:
 python scripts/check_python_apy_migration.py
 ```
 
-This checks MATLAB-free `PythonApyBackend` import behavior and JSON-serialisable Python APY capability/reference-coverage payloads. It does not require or validate MATLAB, OpenAI/Codex, secrets, full MATLAB parity, or MATLAB-only reference workflows. When `pytest` is installed, run `python -m pytest tests -q` separately.
+This checks MATLAB-free `PythonApyBackend` import behavior and JSON-serialisable Python APY capability/reference-coverage payloads. It does not require or validate MATLAB, MATLAB Engine for Python, Codex, OpenAI API keys, secrets, full MATLAB parity, or MATLAB-only reference workflows.
 
-The Python-only APY migration CI check in `.github/workflows/python-apy-migration.yml` mirrors those local checks by running `python scripts/check_python_apy_migration.py` and `python -m pytest tests -q`. It does not cover full MATLAB parity or MATLAB-only reference workflows.
+Run the test suite from the development/test environment:
 
-The local migration check is MATLAB-free, Codex-free, OpenAI-key-free, internet-free, and secret-free.
+```bash
+python -m pytest tests -q
+```
+
+The Python-only APY migration CI check in `.github/workflows/python-apy-migration.yml` mirrors those local checks by running `python scripts/check_python_apy_migration.py` and `python -m pytest tests -q`. It is MATLAB-free, MATLAB Engine-free, Codex-free, OpenAI API key-free, and secret-free. It does not cover full MATLAB parity or MATLAB-only reference workflows.
+
+The local checks are internet-free after dependencies are installed. The local checks and the GitHub Actions workflow are MATLAB-free, MATLAB Engine-free, Codex-free, OpenAI API key-free, and secret-free.
 
 For Python/Streamlit syntax checks:
 
@@ -432,11 +438,7 @@ $files = @('streamlit_app.py') + (Get-ChildItem app,adapters,engine,pages,ui -Re
 python -m py_compile @files
 ```
 
-For broader Python checks, run pytest from the development/test environment:
-
-```bash
-python -m pytest tests -q
-```
+For broader Python checks, use the pytest command above from the development/test environment.
 
 For MATLAB-backed changes, use lightweight MATLAB validation only when MATLAB is available. At minimum, check that the relevant APY v9 functions are on the MATLAB path and that generated outputs are written to the expected output folder.
 
