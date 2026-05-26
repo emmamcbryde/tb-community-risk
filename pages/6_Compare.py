@@ -11,6 +11,7 @@ import streamlit as st
 
 from app.display import arrow_safe_dataframe, safe_download_stem
 from app.state import get_backend, init_session_state, record_message, sync_backend_status
+from engine.apy.regimen import default_regimen_library, get_regimen_from_library
 
 
 init_session_state()
@@ -278,6 +279,39 @@ def bundle_strategy(bundle: dict | None) -> dict:
 
 def is_blank_default_value(value: object) -> bool:
     return value is None or value == "" or value == []
+
+
+def default_resolved_compare_value(config: dict, field: str) -> object:
+    """Return UI-only default values for blank fields resolved by the backend."""
+    if field == "pStartTPT":
+        return 0.85
+    regimen_field = STRATEGY_FIELD_MAP.get(field)
+    if not regimen_field:
+        return config.get(field)
+    try:
+        regimen = get_regimen_from_library(
+            str(config.get("regimen", "3HP")),
+            default_regimen_library(str(config.get("partialShortCourseMode") or "threshold80")),
+        )
+    except Exception:
+        return config.get(field)
+    return regimen.get(regimen_field, config.get(field))
+
+
+def editable_compare_value(config: dict, field: str) -> object:
+    raw_value = config.get(field)
+    if field in DEFAULT_RESOLVED_FIELDS and is_blank_default_value(raw_value):
+        return default_resolved_compare_value(config, field)
+    return raw_value
+
+
+def populate_editable_compare_defaults(config: dict) -> dict:
+    """Fill blank backend-default fields so comparator controls visibly populate."""
+    updated = clone_config(config) or {}
+    for field in DEFAULT_RESOLVED_FIELDS:
+        if is_blank_default_value(updated.get(field)):
+            updated[field] = default_resolved_compare_value(updated, field)
+    return updated
 
 
 def value_from_dict_case_insensitive(data: dict, field: str) -> object:
@@ -562,6 +596,7 @@ if cols[1].button("Use current scenario"):
 if cols[2].button("Copy baseline to comparator"):
     baseline = clone_config(st.session_state.get("compare_baseline_config"))
     if baseline:
+        baseline = populate_editable_compare_defaults(baseline)
         baseline["scenarioLabel"] = f"{baseline.get('scenarioLabel', 'APY scenario')} comparator"
         st.session_state["compare_comparator_config"] = baseline
         mark_compare_dirty()
@@ -645,10 +680,22 @@ with st.form("compare_comparator_edits"):
         value=float(edited.get("screenCoverage", 0.0)),
         step=0.05,
     )
-    p_start = st.text_input("Treatment start probability", value=optional_text(edited.get("pStartTPT")))
-    p_complete = st.text_input("Regimen completion probability", value=optional_text(edited.get("regimenPComplete")))
-    p_adr = st.text_input("ADR stop probability", value=optional_text(edited.get("regimenADRstop")))
-    p_eff = st.text_input("Full-course efficacy", value=optional_text(edited.get("regimenEffFull")))
+    p_start = st.text_input(
+        "Treatment start probability",
+        value=optional_text(editable_compare_value(edited, "pStartTPT")),
+    )
+    p_complete = st.text_input(
+        "Regimen completion probability",
+        value=optional_text(editable_compare_value(edited, "regimenPComplete")),
+    )
+    p_adr = st.text_input(
+        "ADR stop probability",
+        value=optional_text(editable_compare_value(edited, "regimenADRstop")),
+    )
+    p_eff = st.text_input(
+        "Full-course efficacy",
+        value=optional_text(editable_compare_value(edited, "regimenEffFull")),
+    )
     submitted = st.form_submit_button("Apply comparator edits")
 
 if submitted:

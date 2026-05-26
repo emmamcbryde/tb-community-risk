@@ -99,6 +99,40 @@ def test_compare_economics_rows_accepts_python_lowercase_summary_rows(monkeypatc
     assert by_metric["totalImplementedCost"]["includedInTotal"] is False
 
 
+def test_populate_editable_compare_defaults_fills_backend_default_fields(monkeypatch) -> None:
+    module = load_compare_page_module(monkeypatch)
+    config = {
+        "scenarioLabel": "baseline",
+        "regimen": "3HP",
+        "pStartTPT": None,
+        "regimenPComplete": [],
+        "regimenADRstop": "",
+        "regimenEffFull": None,
+    }
+
+    updated = module.populate_editable_compare_defaults(config)
+
+    assert updated["pStartTPT"] == 0.85
+    assert updated["regimenPComplete"] == 0.80
+    assert updated["regimenADRstop"] == 0.05
+    assert updated["regimenEffFull"] == 0.85
+    assert config["pStartTPT"] is None
+
+
+def test_editable_compare_value_uses_regimen_specific_defaults(monkeypatch) -> None:
+    module = load_compare_page_module(monkeypatch)
+    config = {
+        "regimen": "4R",
+        "regimenPComplete": None,
+        "regimenADRstop": None,
+        "regimenEffFull": None,
+    }
+
+    assert module.editable_compare_value(config, "regimenPComplete") == 0.78
+    assert module.editable_compare_value(config, "regimenADRstop") == 0.02
+    assert module.editable_compare_value(config, "regimenEffFull") == 0.85
+
+
 def test_compare_economics_rows_can_key_by_component(monkeypatch) -> None:
     module = load_compare_page_module(monkeypatch)
     baseline_rows = [

@@ -193,42 +193,44 @@ if config:
             index=choice_index(config.get("regimen"), regimen_options),
         )
         screening_strategy = st.selectbox(
-            "Screening strategy",
+            "Screen strategy",
             strategy_options,
             index=choice_index(config.get("screeningStrategy"), strategy_options, 3),
         )
-        with st.expander("Advanced / run controls"):
-            st.caption("Technical run controls for stress testing and reproducibility.")
-            population_size = st.number_input(
-                "N",
-                min_value=1,
-                value=int(config.get("N", 1)),
-                step=100,
-            )
-            n_reps = st.number_input(
-                "Simulation replicates",
-                min_value=1,
-                value=int(config.get("nReps", 1)),
-                step=10,
-            )
-            seed = st.number_input(
-                "Random seed",
-                min_value=0,
-                value=int(config.get("seed", 1)),
-                step=1,
-            )
-            screen_window = st.number_input(
-                "Screen window",
-                min_value=0.01,
-                value=float(config.get("screenWindow", 2.0)),
-                step=0.5,
-            )
-            follow_horizon = st.number_input(
-                "Follow-up horizon",
-                min_value=0.01,
-                value=float(config.get("followHorizon", 20.0)),
-                step=1.0,
-            )
+        st.markdown("**Run controls**")
+        st.caption("Technical run controls for stress testing and reproducibility.")
+        control_cols = st.columns(3)
+        population_size = control_cols[0].number_input(
+            "N",
+            min_value=1,
+            value=int(config.get("N", 1)),
+            step=100,
+        )
+        n_reps = control_cols[1].number_input(
+            "nReps",
+            min_value=1,
+            value=int(config.get("nReps", 1)),
+            step=10,
+        )
+        seed = control_cols[2].number_input(
+            "Seed",
+            min_value=0,
+            value=int(config.get("seed", 1)),
+            step=1,
+        )
+        horizon_cols = st.columns(2)
+        screen_window = horizon_cols[0].number_input(
+            "screenWindow",
+            min_value=0.01,
+            value=float(config.get("screenWindow", 2.0)),
+            step=0.5,
+        )
+        follow_horizon = horizon_cols[1].number_input(
+            "followHorizon",
+            min_value=0.01,
+            value=float(config.get("followHorizon", 20.0)),
+            step=1.0,
+        )
         submitted = st.form_submit_button("Apply edits")
 
     if submitted:
@@ -254,6 +256,7 @@ if config:
             st.info("No scenario fields changed.")
 
     st.subheader("Current Config")
+    st.caption("Read-only JSON/config view. Use Edit Scenario above or Load scenario JSON to change values.")
     st.dataframe(
         arrow_safe_dataframe(config_overview_rows(config)),
         width="content",

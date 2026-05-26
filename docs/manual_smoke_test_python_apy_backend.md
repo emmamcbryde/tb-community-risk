@@ -24,11 +24,14 @@ Current conservative status:
 
 4. Click `Load backend defaults`.
 
-5. In `Advanced / run controls`, set a small smoke-test run:
+5. In `Edit Scenario`, set a small smoke-test run using the visible run
+   controls:
 
    - `N = 100` or `500`
-   - `Simulation replicates = 5` or `20`
-   - `Random seed = 1`
+   - `nReps = 5` or `20`
+   - `Seed = 1`
+   - confirm `Screen coverage`, `screenWindow`, `followHorizon`, and
+     `Screen strategy` remain editable
 
 6. Validate the scenario.
 
