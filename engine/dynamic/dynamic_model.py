@@ -7,6 +7,7 @@ def build_two_epoch_beta_diagnostics(
     calibration_years,
     recent_years=10,
     projection_start_year=None,
+    beta_bounds=None,
 ):
     """Build JSON-serialisable two-epoch beta diagnostics."""
     if not isinstance(recent_years, (int, np.integer)) or isinstance(
@@ -22,6 +23,12 @@ def build_two_epoch_beta_diagnostics(
 
     beta_historical_float = float(beta_historical)
     beta_recent_float = float(beta_recent)
+    if beta_bounds is not None:
+        beta_lower_bound = float(beta_bounds[0])
+        beta_upper_bound = float(beta_bounds[1])
+    else:
+        beta_lower_bound = None
+        beta_upper_bound = None
 
     if projection_start_year is None:
         if recent_years > len(years):
@@ -30,8 +37,10 @@ def build_two_epoch_beta_diagnostics(
             )
         beta_change_index = len(years) - recent_years
         beta_recent_start_year = years[beta_change_index]
+        projection_start_year_int = None
     else:
-        beta_recent_start_year = int(projection_start_year) - recent_years
+        projection_start_year_int = int(projection_start_year)
+        beta_recent_start_year = projection_start_year_int - recent_years
         beta_change_index = len(years)
         for idx, year in enumerate(years):
             if year >= beta_recent_start_year:
@@ -40,6 +49,12 @@ def build_two_epoch_beta_diagnostics(
 
     beta_historical_years = years[:beta_change_index]
     beta_recent_years = years[beta_change_index:]
+    beta_historical_index_start = 0 if beta_historical_years else None
+    beta_historical_index_end = (
+        beta_change_index - 1 if beta_historical_years else None
+    )
+    beta_recent_index_start = beta_change_index if beta_recent_years else None
+    beta_recent_index_end = len(years) - 1 if beta_recent_years else None
     beta_series = [
         beta_historical_float if idx < beta_change_index else beta_recent_float
         for idx in range(len(years))
@@ -49,11 +64,52 @@ def build_two_epoch_beta_diagnostics(
         "beta_series": beta_series,
         "calibration_years": years,
         "beta_change_index": int(beta_change_index),
+        "beta_change_year": (
+            int(beta_recent_years[0]) if beta_recent_years else None
+        ),
+        "projection_start_year": projection_start_year_int,
         "beta_historical_years": beta_historical_years,
         "beta_recent_years": beta_recent_years,
         "beta_recent_start_year": int(beta_recent_start_year),
+        "beta_recent_end_year": (
+            int(beta_recent_years[-1]) if beta_recent_years else None
+        ),
+        "beta_historical_start_year": (
+            int(beta_historical_years[0]) if beta_historical_years else None
+        ),
+        "beta_historical_end_year": (
+            int(beta_historical_years[-1]) if beta_historical_years else None
+        ),
+        "beta_historical_index_start": beta_historical_index_start,
+        "beta_historical_index_end": beta_historical_index_end,
+        "beta_recent_index_start": beta_recent_index_start,
+        "beta_recent_index_end": beta_recent_index_end,
+        "beta1": beta_historical_float,
+        "beta2": beta_recent_float,
         "beta_historical": beta_historical_float,
         "beta_recent": beta_recent_float,
+        "beta_lower_bound": beta_lower_bound,
+        "beta_upper_bound": beta_upper_bound,
+        "beta_historical_lower_bound_hit": (
+            bool(np.isclose(beta_historical_float, beta_lower_bound))
+            if beta_lower_bound is not None
+            else False
+        ),
+        "beta_recent_lower_bound_hit": (
+            bool(np.isclose(beta_recent_float, beta_lower_bound))
+            if beta_lower_bound is not None
+            else False
+        ),
+        "beta_historical_upper_bound_hit": (
+            bool(np.isclose(beta_historical_float, beta_upper_bound))
+            if beta_upper_bound is not None
+            else False
+        ),
+        "beta_recent_upper_bound_hit": (
+            bool(np.isclose(beta_recent_float, beta_upper_bound))
+            if beta_upper_bound is not None
+            else False
+        ),
         "beta_ratio_recent_to_historical": (
             beta_recent_float / beta_historical_float
             if beta_historical_float != 0.0

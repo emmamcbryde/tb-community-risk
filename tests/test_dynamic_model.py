@@ -74,6 +74,36 @@ class BuildTwoEpochBetaDiagnosticsTests(unittest.TestCase):
         self.assertEqual(diagnostics["beta_recent_start_year"], 2015)
         self.assertEqual(diagnostics["beta_change_index"], 5)
         self.assertEqual(diagnostics["beta_recent_years"], list(range(2015, 2025)))
+        self.assertEqual(diagnostics["beta_recent_end_year"], 2024)
+        self.assertEqual(diagnostics["beta_change_year"], 2015)
+        self.assertEqual(diagnostics["beta_historical_index_start"], 0)
+        self.assertEqual(diagnostics["beta_historical_index_end"], 4)
+        self.assertEqual(diagnostics["beta_recent_index_start"], 5)
+        self.assertEqual(diagnostics["beta_recent_index_end"], 14)
+        self.assertEqual(diagnostics["projection_start_year"], 2025)
+
+    def test_projection_start_year_2025_recent_10_uses_2015_to_2024_recent_beta(
+        self,
+    ) -> None:
+        diagnostics = build_two_epoch_beta_diagnostics(
+            beta_historical=0.2,
+            beta_recent=0.5,
+            calibration_years=list(range(2015, 2025)),
+            recent_years=10,
+            projection_start_year=2025,
+        )
+
+        self.assertEqual(diagnostics["beta_recent_start_year"], 2015)
+        self.assertEqual(diagnostics["beta_recent_end_year"], 2024)
+        self.assertEqual(diagnostics["beta_change_index"], 0)
+        self.assertEqual(diagnostics["beta_change_year"], 2015)
+        self.assertEqual(diagnostics["beta_historical_years"], [])
+        self.assertEqual(diagnostics["beta_recent_years"], list(range(2015, 2025)))
+        self.assertEqual(diagnostics["beta_historical_index_start"], None)
+        self.assertEqual(diagnostics["beta_historical_index_end"], None)
+        self.assertEqual(diagnostics["beta_recent_index_start"], 0)
+        self.assertEqual(diagnostics["beta_recent_index_end"], 9)
+        self.assertEqual(diagnostics["beta_series"], [0.5] * 10)
 
     def test_beta_series_matches_projection_start_split(self) -> None:
         diagnostics = build_two_epoch_beta_diagnostics(
@@ -82,12 +112,17 @@ class BuildTwoEpochBetaDiagnosticsTests(unittest.TestCase):
             calibration_years=[2020, 2021, 2022, 2023, 2024],
             recent_years=2,
             projection_start_year=2024,
+            beta_bounds=(0.01, 50.0),
         )
 
         self.assertEqual(diagnostics["beta_historical_years"], [2020, 2021])
         self.assertEqual(diagnostics["beta_recent_years"], [2022, 2023, 2024])
         self.assertEqual(diagnostics["beta_series"], [1.0, 1.0, 2.0, 2.0, 2.0])
+        self.assertEqual(diagnostics["beta1"], diagnostics["beta_historical"])
+        self.assertEqual(diagnostics["beta2"], diagnostics["beta_recent"])
         self.assertEqual(diagnostics["beta_ratio_recent_to_historical"], 2.0)
+        self.assertEqual(diagnostics["beta_lower_bound"], 0.01)
+        self.assertEqual(diagnostics["beta_upper_bound"], 50.0)
 
     def test_without_projection_start_year_uses_last_recent_years(self) -> None:
         diagnostics = build_two_epoch_beta_diagnostics(
@@ -110,9 +145,24 @@ class BuildTwoEpochBetaDiagnosticsTests(unittest.TestCase):
             beta_recent=np.float64(0.8),
             calibration_years=np.arange(2020, 2023),
             recent_years=1,
+            beta_bounds=(np.float64(0.01), np.float64(50.0)),
         )
 
-        json.dumps(diagnostics)
+        json.dumps(diagnostics, allow_nan=False)
+
+    def test_bound_hit_flags_use_beta_bounds(self) -> None:
+        diagnostics = build_two_epoch_beta_diagnostics(
+            beta_historical=np.float64(0.01),
+            beta_recent=np.float64(50.0),
+            calibration_years=[2021, 2022],
+            recent_years=1,
+            beta_bounds=(0.01, 50.0),
+        )
+
+        self.assertIs(diagnostics["beta_historical_lower_bound_hit"], True)
+        self.assertIs(diagnostics["beta_recent_lower_bound_hit"], False)
+        self.assertIs(diagnostics["beta_historical_upper_bound_hit"], False)
+        self.assertIs(diagnostics["beta_recent_upper_bound_hit"], True)
 
 
 class SimulateDynamicBetaSeriesTests(unittest.TestCase):

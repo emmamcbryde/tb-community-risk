@@ -135,6 +135,8 @@ def _json_safe_metadata_value(value):
         return [_json_safe_metadata_value(item) for item in value]
     if isinstance(value, np.integer):
         return int(value)
+    if isinstance(value, np.bool_):
+        return bool(value)
     if isinstance(value, np.floating):
         value = float(value)
     if isinstance(value, float):
@@ -156,6 +158,41 @@ def _scalar_metadata(metadata):
     return scalar
 
 
+def calibration_success_text(
+    cal_mode,
+    beta_series_hat,
+    beta_forward,
+    ari_adj_hat,
+    rmse_rw,
+    calibration_metadata=None,
+):
+    beta_series_hat = np.asarray(beta_series_hat, dtype=float)
+    prefix = (
+        f"Calibrated over {CALIB_YEARS_FIT} years "
+        f"(showing last {CALIB_YEARS_SHOW}). "
+    )
+    suffix = f"ARI adjustment={ari_adj_hat:.2f}. RMSE={rmse_rw:.2f} per 100k."
+
+    if cal_mode == CAL_MODE_TWO_EPOCH and calibration_metadata:
+        beta_historical = calibration_metadata.get("beta_historical")
+        beta_recent = calibration_metadata.get("beta_recent")
+        if beta_historical is not None and beta_recent is not None:
+            return (
+                prefix
+                + f"β1 / historical beta={float(beta_historical):.2f}. "
+                + f"β2 / recent beta={float(beta_recent):.2f}. "
+                + f"Using β2 / recent beta={float(beta_recent):.2f} for projections. "
+                + suffix
+            )
+
+    return (
+        prefix
+        + f"β(t) range {beta_series_hat.min():.2f}–{beta_series_hat.max():.2f}. "
+        + f"Using β={beta_forward:.2f} for projections. "
+        + suffix
+    )
+
+
 def two_epoch_diagnostics_display_tables(calibration_metadata):
     if not calibration_metadata:
         return None
@@ -168,53 +205,117 @@ def two_epoch_diagnostics_display_tables(calibration_metadata):
         "beta_ratio_recent_to_historical",
         calibration_metadata.get("beta_ratio"),
     )
+    beta_lower_bound = calibration_metadata.get("beta_lower_bound")
+    beta_upper_bound = calibration_metadata.get("beta_upper_bound")
+    historical_years = calibration_metadata.get("beta_historical_years") or []
+    recent_year_values = calibration_metadata.get("beta_recent_years") or []
 
     summary_rows = [
-        ("beta_historical", beta_historical),
-        ("beta_recent", beta_recent),
-        ("beta_recent/beta_historical", beta_ratio),
-        ("beta_recent_start_year", calibration_metadata.get("beta_recent_start_year")),
-        ("recent_years", calibration_metadata.get("recent_years")),
-        ("rmse_overall", calibration_metadata.get("rmse_overall")),
-        ("rmse_recent", calibration_metadata.get("rmse_recent")),
+        ("Beta 1 / historical beta", beta_historical),
+        ("Beta 2 / recent beta", beta_recent),
+        ("Beta 2 / Beta 1 ratio", beta_ratio),
+        ("Recent beta start year", calibration_metadata.get("beta_recent_start_year")),
+        ("Recent window length", calibration_metadata.get("recent_years")),
+        ("Beta lower bound", beta_lower_bound),
+        ("Beta upper bound", beta_upper_bound),
+        (
+            "Beta 1 lower bound hit",
+            calibration_metadata.get("beta_historical_lower_bound_hit"),
+        ),
+        (
+            "Beta 2 lower bound hit",
+            calibration_metadata.get("beta_recent_lower_bound_hit"),
+        ),
+        (
+            "Beta 1 upper bound hit",
+            calibration_metadata.get("beta_historical_upper_bound_hit"),
+        ),
+        (
+            "Beta 2 upper bound hit",
+            calibration_metadata.get("beta_recent_upper_bound_hit"),
+        ),
+        ("RMSE overall", calibration_metadata.get("rmse_overall")),
+        ("RMSE historical", calibration_metadata.get("rmse_historical")),
+        ("RMSE recent", calibration_metadata.get("rmse_recent")),
     ]
+    if "beta_change_index" in calibration_metadata:
+        summary_rows.append(
+            ("Beta change index", calibration_metadata.get("beta_change_index"))
+        )
+    if "beta_change_year" in calibration_metadata:
+        summary_rows.append(
+            ("Beta change year", calibration_metadata.get("beta_change_year"))
+        )
     summary_df = pd.DataFrame(summary_rows, columns=["Metric", "Value"])
 
-    calibration_years = calibration_metadata.get("calibration_years")
-    beta_series = calibration_metadata.get("beta_series")
-    calibration_years = [] if calibration_years is None else list(calibration_years)
-    beta_series = [] if beta_series is None else list(beta_series)
-    if len(calibration_years) == len(beta_series) and len(beta_series) > 0:
-        recent_year_set = set(calibration_metadata.get("beta_recent_years") or [])
-        preview_df = pd.DataFrame(
+    preview_df = pd.DataFrame(
+        [
             {
-                "Year": calibration_years,
-                "Epoch": [
-                    ("recent" if year in recent_year_set else "historical")
-                    for year in calibration_years
-                ],
-                "Beta": beta_series,
-            }
-        )
-    else:
-        historical_years = calibration_metadata.get("beta_historical_years") or []
-        recent_year_values = calibration_metadata.get("beta_recent_years") or []
-        preview_df = pd.DataFrame(
-            [
-                {
-                    "Epoch": "historical",
-                    "Years": _format_year_span(historical_years),
-                    "Beta": beta_historical,
-                },
-                {
-                    "Epoch": "recent",
-                    "Years": _format_year_span(recent_year_values),
-                    "Beta": beta_recent,
-                },
-            ]
-        )
+                "Epoch": "Beta 1 / historical",
+                "Years": _format_year_span(historical_years),
+                "Start year": _first_year_or_none(historical_years),
+                "Start index": calibration_metadata.get(
+                    "beta_historical_index_start"
+                ),
+                "End index": calibration_metadata.get("beta_historical_index_end"),
+                "Window length": len(historical_years),
+                "Beta": beta_historical,
+                "RMSE": calibration_metadata.get("rmse_historical"),
+                "Lower bound hit": calibration_metadata.get(
+                    "beta_historical_lower_bound_hit"
+                ),
+                "Upper bound hit": calibration_metadata.get(
+                    "beta_historical_upper_bound_hit"
+                ),
+            },
+            {
+                "Epoch": "Beta 2 / recent",
+                "Years": _format_year_span(recent_year_values),
+                "Start year": calibration_metadata.get("beta_recent_start_year"),
+                "Start index": calibration_metadata.get("beta_recent_index_start"),
+                "End index": calibration_metadata.get("beta_recent_index_end"),
+                "Window length": len(recent_year_values),
+                "Beta": beta_recent,
+                "RMSE": calibration_metadata.get("rmse_recent"),
+                "Lower bound hit": calibration_metadata.get(
+                    "beta_recent_lower_bound_hit"
+                ),
+                "Upper bound hit": calibration_metadata.get(
+                    "beta_recent_upper_bound_hit"
+                ),
+            },
+        ]
+    )
 
     return summary_df, preview_df
+
+
+def _first_year_or_none(years):
+    if not years:
+        return None
+    return int(years[0])
+
+
+def two_epoch_lower_bound_warning(calibration_metadata):
+    if not calibration_metadata:
+        return None
+    if calibration_metadata.get("calibration_mode") != CAL_MODE_TWO_EPOCH:
+        return None
+    if (
+        _metadata_flag_is_true(
+            calibration_metadata.get("beta_historical_lower_bound_hit")
+        )
+        and _metadata_flag_is_true(calibration_metadata.get("beta_recent_lower_bound_hit"))
+    ):
+        return (
+            "Both beta estimates are at the lower bound; calibration may be "
+            "constrained by beta bounds rather than data fit."
+        )
+    return None
+
+
+def _metadata_flag_is_true(value):
+    return bool(value) if isinstance(value, (bool, np.bool_)) else False
 
 
 def _format_year_span(years):
@@ -232,9 +333,16 @@ def _render_two_epoch_diagnostics(calibration_metadata):
         return
 
     summary_df, preview_df = tables
-    with st.expander("Two-epoch beta diagnostics"):
-        st.dataframe(summary_df, use_container_width=True)
-        st.dataframe(preview_df, use_container_width=True)
+    warning = two_epoch_lower_bound_warning(calibration_metadata)
+    if warning:
+        st.warning(warning)
+
+    st.subheader("Two-epoch beta diagnostics")
+    st.caption(
+        "Calibration uses Beta 1 for the historical epoch and Beta 2 for the recent epoch."
+    )
+    st.dataframe(summary_df, use_container_width=True)
+    st.dataframe(preview_df, use_container_width=True)
 
 
 # =====================================================
@@ -526,6 +634,7 @@ def calibrate_beta_two_epoch(
         calibration_years=calibration_years,
         recent_years=recent_years,
         projection_start_year=projection_start_year,
+        beta_bounds=beta_bounds,
     )
     recent_years = int(recent_years)
 
@@ -569,6 +678,7 @@ def calibrate_beta_two_epoch(
                 calibration_years=calibration_years,
                 recent_years=recent_years,
                 projection_start_year=projection_start_year,
+                beta_bounds=beta_bounds,
             )
             beta_series = diagnostics["beta_series"]
             p = dict(base_params)
@@ -624,6 +734,7 @@ def calibrate_beta_two_epoch(
         calibration_years=calibration_years,
         recent_years=recent_years,
         projection_start_year=projection_start_year,
+        beta_bounds=beta_bounds,
     )
     fit_incidence = np.asarray(best["fit_incidence"], dtype=float)
     residuals = fit_incidence - obs
@@ -1161,10 +1272,14 @@ def render_dynamic_ui():
 
         st.subheader("🧪 Calibration results")
         st.success(
-            f"Calibrated over {CALIB_YEARS_FIT} years (showing last {CALIB_YEARS_SHOW}). "
-            f"β(t) range {beta_series_hat.min():.2f}–{beta_series_hat.max():.2f}. "
-            f"Using β={beta_forward:.2f} for projections. "
-            f"ARI adjustment={ari_adj_hat:.2f}. RMSE={rmse_rw:.2f} per 100k."
+            calibration_success_text(
+                cal_mode_used,
+                beta_series_hat,
+                beta_forward,
+                ari_adj_hat,
+                rmse_rw,
+                two_epoch_metadata,
+            )
         )
 
         if cal_mode_used == CAL_MODE_TWO_EPOCH:

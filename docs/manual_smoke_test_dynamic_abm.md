@@ -12,8 +12,8 @@ streamlit run streamlit_app.py
 
 1. Open **Dynamic Model > Dynamic Workflow**.
 2. Run **1) Calibrate**.
-   - If using dynamic calibration mode **Two-epoch beta: historical + recent 10 years**, confirm calibration completes with separate `beta_historical` and `beta_recent` fits. `beta_historical` applies before the recent window; `beta_recent` applies to the last 10 years before projection start/today and is also the future scalar beta unless another scenario overrides it.
-   - Check the diagnostics table/JSON for beta values, switch year/window, beta series, fitted vs target incidence, residuals, and RMSEs when diagnosing poor fits in falling epidemics.
+   - If using dynamic calibration mode **Two-epoch beta: historical + recent 10 years**, confirm calibration completes with separate `beta_historical`/`beta1` and `beta_recent`/`beta2` fits. `beta1` applies before the recent period, `beta2` applies for the final `recent_years` before projection start/today, `recent_years` currently defaults to 10, and `beta2` is used for projections unless another scenario overrides it.
+   - Check the diagnostics table/JSON for beta bounds, RMSE by epoch, year/index split, fitted vs target incidence, residuals, and whether either beta hit a lower or upper bound.
    - This mode may be useful when recent incidence is falling, but it is not guaranteed to solve all declining-epidemic calibration issues.
 3. Run **2) Simulate**.
 4. Confirm the simulation table and projection chart render.
