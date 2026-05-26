@@ -23,6 +23,7 @@ from app.import_bootstrap import ensure_repo_root
 
 ensure_repo_root(REPO_ROOT)
 from engine.dynamic.exec_dynamic import run_dynamic_model
+from engine.dynamic.dynamic_model import build_two_epoch_beta_series
 from engine.integration.dynamic_output_contract_v9 import build_dynamic_results_bundle_v9
 from engine.infection_backcast import (
     calc_ari_from_incidence,
@@ -44,6 +45,8 @@ ARI_FLOOR = 1e-6
 
 CALIB_YEARS_FIT = 20  # fit window length
 CALIB_YEARS_SHOW = 10  # show only last 10 years
+CAL_MODE_RANDOM_WALK = "Random-walk beta"
+CAL_MODE_TWO_EPOCH = "Two-epoch beta: historical + recent 10 years"
 
 # Random-walk beta calibration (hard-coded; no UI controls)
 BETA_RW_PCT = 10
@@ -88,8 +91,10 @@ def clear_calibration():
     for k in [
         "cal_done",
         "cal_sig",
+        "cal_mode",
         "cal_beta_forward",
         "cal_beta_series",
+        "cal_two_epoch_metadata",
         "cal_ari_adj",
         "cal_rmse_rw",
         "cal_obs_inc",
@@ -108,6 +113,22 @@ def clear_simulation():
     for k in ["sim_sig", "sim_df_future"]:
         st.session_state.pop(k, None)
     clear_dynamic_outputs()
+
+
+def _scalar_metadata(metadata):
+    if metadata is None:
+        return None
+    scalar = {}
+    for key, value in metadata.items():
+        if key == "beta_series":
+            continue
+        if isinstance(value, np.integer):
+            scalar[key] = int(value)
+        elif isinstance(value, np.floating):
+            scalar[key] = float(value)
+        else:
+            scalar[key] = value
+    return scalar
 
 
 # =====================================================
@@ -353,6 +374,159 @@ def calibrate_beta_and_ltbi_scale(
     return float(best["beta"]), float(best["adj"]), float(best["rmse"]), obs
 
 
+def calibrate_beta_two_epoch(
+    age_counts,
+    ages,
+    inc_hist,
+    calib_years,
+    risk_inputs,
+    pre_det_months,
+    delta_pre,
+    beta_bounds=BETA_BOUNDS,
+    adj_bounds=ARI_ADJ_BOUNDS,
+    adj_grid_points=ARI_ADJ_GRID_POINTS,
+    recent_years=10,
+):
+    """
+    Calibrate a two-epoch beta series with a historical and recent value.
+
+    This mirrors the scalar calibration window and ARI-adjustment grid search, but
+    optimises log(beta_historical) and log(beta_recent). The scalar/future beta is
+    beta_recent, with beta_series carrying the piecewise calibration history.
+    """
+    total_pop = float(sum(age_counts.values()))
+
+    obs = np.array(
+        [inc_hist[-k] for k in range(calib_years - 1, -1, -1)], dtype=float
+    )
+    inc0 = float(inc_hist.get(-calib_years, obs[0]))
+
+    beta_min, beta_max = float(beta_bounds[0]), float(beta_bounds[1])
+    if beta_min <= 0 or beta_max <= 0:
+        raise ValueError("beta_bounds must be positive for log-beta calibration")
+
+    # Validate the epoch split once up front using neutral beta values.
+    build_two_epoch_beta_series(
+        beta_historical=1.0,
+        beta_recent=1.0,
+        calib_years=calib_years,
+        recent_years=recent_years,
+    )
+    recent_years = int(recent_years)
+    change_year_index = int(calib_years) - recent_years
+
+    best = {
+        "rmse": float("inf"),
+        "adj": None,
+        "beta_historical": None,
+        "beta_recent": None,
+        "beta_series": None,
+    }
+    adj_values = np.linspace(adj_bounds[0], adj_bounds[1], adj_grid_points)
+    log_bounds = [(np.log(beta_min), np.log(beta_max))] * 2
+    x0 = np.full(2, np.log(np.sqrt(beta_min * beta_max)), dtype=float)
+
+    for adj in adj_values:
+        ltbi_ever0, ltbi_recent0, _ = compute_ltbi_from_inc_hist(
+            ages, inc_hist, shift_years=calib_years, ari_adjustment=float(adj)
+        )
+
+        base_params = {
+            "age_counts": age_counts,
+            "ltbi_ever": ltbi_ever0,
+            "ltbi_recent": ltbi_recent0,
+            "initial_incidence_per_100k": inc0,
+            "pre_det_months": float(pre_det_months),
+            "delta_pre": float(delta_pre),
+            "delta_post": float(delta_pre),
+            "ltbi_coverage": 0.0,
+            "rollout_years": 0,
+            "treatment_method": "None",
+            "testing_method": "None",
+        }
+        base_params.update(risk_inputs)
+
+        def simulate_from_log_beta(x):
+            beta_historical, beta_recent = np.exp(np.asarray(x, dtype=float))
+            beta_series = build_two_epoch_beta_series(
+                beta_historical=beta_historical,
+                beta_recent=beta_recent,
+                calib_years=calib_years,
+                recent_years=recent_years,
+            )
+            p = dict(base_params)
+            p["beta"] = float(beta_recent)
+            p["beta_series"] = np.asarray(beta_series, dtype=float)
+            sim = run_dynamic_model(p, years=calib_years, intervention=False)
+            pred = (
+                np.array(sim["annual_incidence"], dtype=float) * 100000.0 / total_pop
+            )
+            return pred, beta_series
+
+        def rmse_for_log_beta(x):
+            pred, _ = simulate_from_log_beta(x)
+            err = pred - obs
+            return float(np.sqrt(np.mean(err**2)))
+
+        if SCIPY_AVAILABLE and minimize is not None:
+            res = minimize(
+                rmse_for_log_beta,
+                x0,
+                method="L-BFGS-B",
+                bounds=log_bounds,
+                options={"maxiter": 120},
+            )
+            x_hat = np.asarray(res.x, dtype=float)
+            rmse = float(res.fun)
+        else:
+            log_grid = np.linspace(np.log(beta_min), np.log(beta_max), 25)
+            candidates = [(a, b) for a in log_grid for b in log_grid]
+            vals = [rmse_for_log_beta(x) for x in candidates]
+            j = int(np.argmin(vals))
+            x_hat = np.asarray(candidates[j], dtype=float)
+            rmse = float(vals[j])
+
+        beta_historical, beta_recent = np.exp(x_hat)
+        beta_series = build_two_epoch_beta_series(
+            beta_historical=beta_historical,
+            beta_recent=beta_recent,
+            calib_years=calib_years,
+            recent_years=recent_years,
+        )
+
+        if rmse < best["rmse"]:
+            best.update(
+                {
+                    "rmse": rmse,
+                    "adj": float(adj),
+                    "beta_historical": float(beta_historical),
+                    "beta_recent": float(beta_recent),
+                    "beta_series": np.asarray(beta_series, dtype=float),
+                }
+            )
+
+    metadata = {
+        "beta_historical": float(best["beta_historical"]),
+        "beta_recent": float(best["beta_recent"]),
+        "recent_years": int(recent_years),
+        "change_year_index": int(change_year_index),
+        "beta_ratio_recent_to_historical": float(
+            best["beta_recent"] / best["beta_historical"]
+        ),
+        "beta_series": np.asarray(best["beta_series"], dtype=float),
+        "beta_forward": float(best["beta_recent"]),
+        "rmse": float(best["rmse"]),
+    }
+
+    return (
+        float(best["beta_recent"]),
+        float(best["adj"]),
+        float(best["rmse"]),
+        obs,
+        metadata,
+    )
+
+
 def refine_beta_random_walk(
     age_counts,
     ages,
@@ -522,6 +696,10 @@ def render_dynamic_ui():
             "Upload CSV (year, incidence)",
         ],
     )
+    cal_mode = st.sidebar.selectbox(
+        "Calibration mode",
+        [CAL_MODE_RANDOM_WALK, CAL_MODE_TWO_EPOCH],
+    )
 
     uploaded_inc_df = None
     ref_year = None
@@ -681,6 +859,7 @@ def render_dynamic_ui():
         (country or ""),
         age_upload_hash,
         manual_age_hash,
+        cal_mode,
         tuple(sorted((k, float(v)) for k, v in risk_inputs.items())),
     )
 
@@ -699,30 +878,49 @@ def render_dynamic_ui():
         pre_det_months = BASELINE_DIAG_MONTHS
         delta_pre = 12.0 / pre_det_months
 
-        # 1) coarse: beta + ARI adjustment
-        beta_hat, ari_adj_hat, _, obs_inc = calibrate_beta_and_ltbi_scale(
-            age_counts=age_counts,
-            ages=ages,
-            inc_hist=inc_hist,
-            calib_years=CALIB_YEARS_FIT,
-            risk_inputs=risk_inputs,
-            pre_det_months=pre_det_months,
-            delta_pre=delta_pre,
-        )
+        two_epoch_metadata = None
+        if cal_mode == CAL_MODE_TWO_EPOCH:
+            beta_forward, ari_adj_hat, _, obs_inc, two_epoch_metadata = (
+                calibrate_beta_two_epoch(
+                    age_counts=age_counts,
+                    ages=ages,
+                    inc_hist=inc_hist,
+                    calib_years=CALIB_YEARS_FIT,
+                    risk_inputs=risk_inputs,
+                    pre_det_months=pre_det_months,
+                    delta_pre=delta_pre,
+                    recent_years=10,
+                )
+            )
+            beta_series_hat = np.asarray(
+                two_epoch_metadata["beta_series"], dtype=float
+            )
+            beta_forward = float(two_epoch_metadata["beta_recent"])
+        else:
+            # 1) coarse: beta + ARI adjustment
+            beta_hat, ari_adj_hat, _, obs_inc = calibrate_beta_and_ltbi_scale(
+                age_counts=age_counts,
+                ages=ages,
+                inc_hist=inc_hist,
+                calib_years=CALIB_YEARS_FIT,
+                risk_inputs=risk_inputs,
+                pre_det_months=pre_det_months,
+                delta_pre=delta_pre,
+            )
 
-        # 2) refine: beta(t) random walk
-        beta_series_hat, _fit_inc_tmp = refine_beta_random_walk(
-            age_counts=age_counts,
-            ages=ages,
-            inc_hist=inc_hist,
-            calib_years=CALIB_YEARS_FIT,
-            risk_inputs=risk_inputs,
-            pre_det_months=pre_det_months,
-            delta_pre=delta_pre,
-            ari_adjustment=ari_adj_hat,
-            beta_init=beta_hat,
-        )
-        beta_forward = float(beta_series_hat[-1])
+            # 2) refine: beta(t) random walk
+            beta_series_hat, _fit_inc_tmp = refine_beta_random_walk(
+                age_counts=age_counts,
+                ages=ages,
+                inc_hist=inc_hist,
+                calib_years=CALIB_YEARS_FIT,
+                risk_inputs=risk_inputs,
+                pre_det_months=pre_det_months,
+                delta_pre=delta_pre,
+                ari_adjustment=ari_adj_hat,
+                beta_init=beta_hat,
+            )
+            beta_forward = float(beta_series_hat[-1])
 
         # 3) IMPORTANT: re-run one clean backcast with the final beta_series_hat,
         #    and store the *final state* as the projection initial condition.
@@ -783,8 +981,12 @@ def render_dynamic_ui():
 
         st.session_state["cal_done"] = True
         st.session_state["cal_sig"] = cal_sig
+        st.session_state["cal_mode"] = cal_mode
         st.session_state["cal_beta_forward"] = beta_forward
         st.session_state["cal_beta_series"] = np.asarray(beta_series_hat, dtype=float)
+        st.session_state["cal_two_epoch_metadata"] = _scalar_metadata(
+            two_epoch_metadata
+        )
         st.session_state["cal_ari_adj"] = float(ari_adj_hat)
         st.session_state["cal_rmse_rw"] = rmse_rw
         st.session_state["cal_obs_inc"] = np.asarray(obs_inc, dtype=float)
@@ -809,6 +1011,8 @@ def render_dynamic_ui():
         fit_inc = np.asarray(st.session_state["cal_fit_inc"], dtype=float)
         ref_year_used = st.session_state.get("cal_ref_year", None)
         jitter_enabled = not bool(st.session_state.get("cal_has_user_incidence", False))
+        cal_mode_used = st.session_state.get("cal_mode", CAL_MODE_RANDOM_WALK)
+        two_epoch_metadata = st.session_state.get("cal_two_epoch_metadata")
 
         st.subheader("🧪 Calibration results")
         st.success(
@@ -817,6 +1021,17 @@ def render_dynamic_ui():
             f"Using β={beta_forward:.2f} for projections. "
             f"ARI adjustment={ari_adj_hat:.2f}. RMSE={rmse_rw:.2f} per 100k."
         )
+
+        if cal_mode_used == CAL_MODE_TWO_EPOCH and two_epoch_metadata:
+            st.caption(
+                f"{CAL_MODE_TWO_EPOCH}: "
+                f"beta_historical={float(two_epoch_metadata['beta_historical']):.2f}, "
+                f"beta_recent={float(two_epoch_metadata['beta_recent']):.2f}, "
+                f"ratio={float(two_epoch_metadata['beta_ratio_recent_to_historical']):.2f}, "
+                f"recent_years={int(two_epoch_metadata['recent_years'])}, "
+                f"change_year_index={int(two_epoch_metadata['change_year_index'])}, "
+                f"RMSE={float(two_epoch_metadata['rmse']):.2f} per 100k."
+            )
 
         show_years = min(CALIB_YEARS_SHOW, CALIB_YEARS_FIT)
         obs_show = obs_inc[-show_years:]
@@ -1119,16 +1334,21 @@ def render_dynamic_ui():
 
             st.session_state["sim_sig"] = sim_sig
             st.session_state["sim_df_future"] = df_future
+            calibration_metadata = {
+                "cal_mode": st.session_state.get("cal_mode", CAL_MODE_RANDOM_WALK),
+                "beta_forward": beta_forward,
+                "ari_adjustment": st.session_state.get("cal_ari_adj"),
+                "rmse": st.session_state.get("cal_rmse_rw"),
+                "ref_year": st.session_state.get("cal_ref_year"),
+            }
+            two_epoch_metadata = st.session_state.get("cal_two_epoch_metadata")
+            if two_epoch_metadata:
+                calibration_metadata.update(two_epoch_metadata)
             st.session_state["dynamic_results_bundle"] = build_dynamic_results_bundle_v9(
                 df_future=df_future,
                 params_base=params_base,
                 params_intervention=params_int,
-                calibration={
-                    "beta_forward": beta_forward,
-                    "ari_adjustment": st.session_state.get("cal_ari_adj"),
-                    "rmse": st.session_state.get("cal_rmse_rw"),
-                    "ref_year": st.session_state.get("cal_ref_year"),
-                },
+                calibration=calibration_metadata,
                 metadata={
                     "population": total_pop,
                     "time_horizon": int(time_horizon),

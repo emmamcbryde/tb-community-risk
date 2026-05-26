@@ -314,8 +314,11 @@ The Python dynamic model is retained for continuous-time LTBI-to-TB modelling wi
 - LTBI back-calculation by age;
 - progression risk-factor multipliers;
 - calibration of transmission parameters;
+  - including dynamic calibration mode **Two-epoch beta: historical + recent 10 years**, which fits separate historical and recent transmission betas and uses the recent beta for projection;
 - baseline and intervention projection;
 - annual incidence and cases-averted outputs.
+
+The two-epoch beta mode may be useful when recent incidence is falling, but it is not guaranteed to solve all declining-epidemic calibration issues.
 
 ---
 

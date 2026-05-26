@@ -12,6 +12,8 @@ streamlit run streamlit_app.py
 
 1. Open **Dynamic Model > Dynamic Workflow**.
 2. Run **1) Calibrate**.
+   - If using dynamic calibration mode **Two-epoch beta: historical + recent 10 years**, confirm calibration completes with separate historical and recent transmission beta fits. The projection uses the recent beta.
+   - This mode may be useful when recent incidence is falling, but it is not guaranteed to solve all declining-epidemic calibration issues.
 3. Run **2) Simulate**.
 4. Confirm the simulation table and projection chart render.
 5. Confirm `st.session_state["dynamic_results_bundle"]` exists.

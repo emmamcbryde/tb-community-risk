@@ -1,6 +1,28 @@
 import numpy as np
 
 
+def build_two_epoch_beta_series(
+    beta_historical, beta_recent, calib_years, recent_years=10
+):
+    """Build a calibration beta series with historical then recent values."""
+    if not isinstance(calib_years, (int, np.integer)) or isinstance(calib_years, bool):
+        raise ValueError("calib_years must be a positive integer")
+    if not isinstance(recent_years, (int, np.integer)) or isinstance(recent_years, bool):
+        raise ValueError("recent_years must be a positive integer")
+    if calib_years <= 0:
+        raise ValueError("calib_years must be a positive integer")
+    if recent_years <= 0:
+        raise ValueError("recent_years must be a positive integer")
+    if recent_years > calib_years:
+        raise ValueError("recent_years must be less than or equal to calib_years")
+
+    historical_years = calib_years - recent_years
+    beta_series = np.empty(calib_years, dtype=float)
+    beta_series[:historical_years] = float(beta_historical)
+    beta_series[historical_years:] = float(beta_recent)
+    return beta_series
+
+
 def simulate_dynamic(params, years, intervention=True):
     """
     Dynamic TB model with:
