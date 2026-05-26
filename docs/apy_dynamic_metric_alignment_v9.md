@@ -55,6 +55,8 @@ Current dynamic projection rows are stored at:
 
 - `projection.annualRows`
 
+For two-epoch beta calibration, `beta_historical` is used before the recent window and `beta_recent` is used for the last 10 years before projection start/today. `beta_recent` also becomes the future scalar beta unless another scenario overrides it. The calibration diagnostics table/JSON preserves the beta values, switch year/window, beta series, fitted vs target incidence, residuals, and overall/historical/recent RMSEs so poor fits in falling epidemics can be reviewed.
+
 Rows use these dataframe columns when available:
 
 - `Year`

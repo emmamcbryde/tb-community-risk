@@ -1,6 +1,67 @@
 import numpy as np
 
 
+def build_two_epoch_beta_diagnostics(
+    beta_historical,
+    beta_recent,
+    calibration_years,
+    recent_years=10,
+    projection_start_year=None,
+):
+    """Build JSON-serialisable two-epoch beta diagnostics."""
+    if not isinstance(recent_years, (int, np.integer)) or isinstance(
+        recent_years, bool
+    ):
+        raise ValueError("recent_years must be a positive integer")
+    if recent_years <= 0:
+        raise ValueError("recent_years must be a positive integer")
+
+    years = [int(year) for year in calibration_years]
+    if not years:
+        raise ValueError("calibration_years must not be empty")
+
+    beta_historical_float = float(beta_historical)
+    beta_recent_float = float(beta_recent)
+
+    if projection_start_year is None:
+        if recent_years > len(years):
+            raise ValueError(
+                "recent_years must be less than or equal to calibration years"
+            )
+        beta_change_index = len(years) - recent_years
+        beta_recent_start_year = years[beta_change_index]
+    else:
+        beta_recent_start_year = int(projection_start_year) - recent_years
+        beta_change_index = len(years)
+        for idx, year in enumerate(years):
+            if year >= beta_recent_start_year:
+                beta_change_index = idx
+                break
+
+    beta_historical_years = years[:beta_change_index]
+    beta_recent_years = years[beta_change_index:]
+    beta_series = [
+        beta_historical_float if idx < beta_change_index else beta_recent_float
+        for idx in range(len(years))
+    ]
+
+    return {
+        "beta_series": beta_series,
+        "calibration_years": years,
+        "beta_change_index": int(beta_change_index),
+        "beta_historical_years": beta_historical_years,
+        "beta_recent_years": beta_recent_years,
+        "beta_recent_start_year": int(beta_recent_start_year),
+        "beta_historical": beta_historical_float,
+        "beta_recent": beta_recent_float,
+        "beta_ratio_recent_to_historical": (
+            beta_recent_float / beta_historical_float
+            if beta_historical_float != 0.0
+            else None
+        ),
+    }
+
+
 def build_two_epoch_beta_series(
     beta_historical, beta_recent, calib_years, recent_years=10
 ):

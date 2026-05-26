@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 import numpy as np
@@ -51,6 +52,48 @@ class DynamicOutputContractV9Tests(unittest.TestCase):
 
         self.assertEqual(bundle["projection"]["annualRows"], [])
         self.assertEqual(bundle["headline"]["keyMetricsRows"], [])
+
+    def test_two_epoch_calibration_diagnostics_are_preserved_json_safe(self) -> None:
+        df_future = pd.DataFrame(
+            {
+                "Year": [1],
+                "Baseline_cum_count": [10.0],
+                "Intervention_cum_count": [8.0],
+            }
+        )
+        calibration = {
+            "calibration_mode": "Two-epoch beta: historical + recent 10 years",
+            "beta_historical": np.float64(2.0),
+            "beta_recent": np.float64(1.0),
+            "beta_forward": np.float64(1.0),
+            "beta_series": [2.0, 2.0, 1.0, 1.0],
+            "calibration_years": [2021, 2022, 2023, 2024],
+            "beta_historical_years": [2021, 2022],
+            "beta_recent_years": [2023, 2024],
+            "fitted_incidence": [30.0, 28.0, 20.0, 18.0],
+            "target_incidence": [31.0, 27.0, 21.0, 17.0],
+            "residuals": [-1.0, 1.0, -1.0, 1.0],
+        }
+
+        bundle = build_dynamic_results_bundle_v9(df_future, calibration=calibration)
+        technical_calibration = bundle["technical"]["calibration"]
+
+        for key in [
+            "beta_series",
+            "calibration_years",
+            "beta_historical_years",
+            "beta_recent_years",
+            "fitted_incidence",
+            "target_incidence",
+            "residuals",
+        ]:
+            self.assertIn(key, technical_calibration)
+
+        self.assertEqual(technical_calibration["beta_series"], [2.0, 2.0, 1.0, 1.0])
+        self.assertEqual(
+            technical_calibration["calibration_years"], [2021, 2022, 2023, 2024]
+        )
+        json.dumps(bundle, allow_nan=False)
 
 
 if __name__ == "__main__":

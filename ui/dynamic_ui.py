@@ -23,7 +23,9 @@ from app.import_bootstrap import ensure_repo_root
 
 ensure_repo_root(REPO_ROOT)
 from engine.dynamic.exec_dynamic import run_dynamic_model
-from engine.dynamic.dynamic_model import build_two_epoch_beta_series
+from engine.dynamic.dynamic_model import (
+    build_two_epoch_beta_diagnostics,
+)
 from engine.integration.dynamic_output_contract_v9 import build_dynamic_results_bundle_v9
 from engine.infection_backcast import (
     calc_ari_from_incidence,
@@ -115,20 +117,124 @@ def clear_simulation():
     clear_dynamic_outputs()
 
 
+_TWO_EPOCH_DIAGNOSTIC_SEQUENCE_KEYS = {
+    "beta_series",
+    "calibration_years",
+    "beta_historical_years",
+    "beta_recent_years",
+    "fitted_incidence",
+    "target_incidence",
+    "residuals",
+}
+
+
+def _json_safe_metadata_value(value):
+    if isinstance(value, np.ndarray):
+        return [_json_safe_metadata_value(item) for item in value.tolist()]
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_metadata_value(item) for item in value]
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        value = float(value)
+    if isinstance(value, float):
+        return value if np.isfinite(value) else None
+    return value
+
+
 def _scalar_metadata(metadata):
     if metadata is None:
         return None
     scalar = {}
     for key, value in metadata.items():
-        if key == "beta_series":
+        if isinstance(value, np.ndarray) and key not in _TWO_EPOCH_DIAGNOSTIC_SEQUENCE_KEYS:
             continue
-        if isinstance(value, np.integer):
-            scalar[key] = int(value)
-        elif isinstance(value, np.floating):
-            scalar[key] = float(value)
+        if key in _TWO_EPOCH_DIAGNOSTIC_SEQUENCE_KEYS:
+            scalar[key] = _json_safe_metadata_value(value)
         else:
-            scalar[key] = value
+            scalar[key] = _json_safe_metadata_value(value)
     return scalar
+
+
+def two_epoch_diagnostics_display_tables(calibration_metadata):
+    if not calibration_metadata:
+        return None
+    if calibration_metadata.get("calibration_mode") != CAL_MODE_TWO_EPOCH:
+        return None
+
+    beta_historical = calibration_metadata.get("beta_historical")
+    beta_recent = calibration_metadata.get("beta_recent")
+    beta_ratio = calibration_metadata.get(
+        "beta_ratio_recent_to_historical",
+        calibration_metadata.get("beta_ratio"),
+    )
+
+    summary_rows = [
+        ("beta_historical", beta_historical),
+        ("beta_recent", beta_recent),
+        ("beta_recent/beta_historical", beta_ratio),
+        ("beta_recent_start_year", calibration_metadata.get("beta_recent_start_year")),
+        ("recent_years", calibration_metadata.get("recent_years")),
+        ("rmse_overall", calibration_metadata.get("rmse_overall")),
+        ("rmse_recent", calibration_metadata.get("rmse_recent")),
+    ]
+    summary_df = pd.DataFrame(summary_rows, columns=["Metric", "Value"])
+
+    calibration_years = calibration_metadata.get("calibration_years")
+    beta_series = calibration_metadata.get("beta_series")
+    calibration_years = [] if calibration_years is None else list(calibration_years)
+    beta_series = [] if beta_series is None else list(beta_series)
+    if len(calibration_years) == len(beta_series) and len(beta_series) > 0:
+        recent_year_set = set(calibration_metadata.get("beta_recent_years") or [])
+        preview_df = pd.DataFrame(
+            {
+                "Year": calibration_years,
+                "Epoch": [
+                    ("recent" if year in recent_year_set else "historical")
+                    for year in calibration_years
+                ],
+                "Beta": beta_series,
+            }
+        )
+    else:
+        historical_years = calibration_metadata.get("beta_historical_years") or []
+        recent_year_values = calibration_metadata.get("beta_recent_years") or []
+        preview_df = pd.DataFrame(
+            [
+                {
+                    "Epoch": "historical",
+                    "Years": _format_year_span(historical_years),
+                    "Beta": beta_historical,
+                },
+                {
+                    "Epoch": "recent",
+                    "Years": _format_year_span(recent_year_values),
+                    "Beta": beta_recent,
+                },
+            ]
+        )
+
+    return summary_df, preview_df
+
+
+def _format_year_span(years):
+    if not years:
+        return ""
+    years = [int(year) for year in years]
+    if len(years) == 1:
+        return str(years[0])
+    return f"{years[0]}-{years[-1]}"
+
+
+def _render_two_epoch_diagnostics(calibration_metadata):
+    tables = two_epoch_diagnostics_display_tables(calibration_metadata)
+    if tables is None:
+        return
+
+    summary_df, preview_df = tables
+    with st.expander("Two-epoch beta diagnostics"):
+        st.dataframe(summary_df, use_container_width=True)
+        st.dataframe(preview_df, use_container_width=True)
 
 
 # =====================================================
@@ -386,6 +492,7 @@ def calibrate_beta_two_epoch(
     adj_bounds=ARI_ADJ_BOUNDS,
     adj_grid_points=ARI_ADJ_GRID_POINTS,
     recent_years=10,
+    projection_start_year=None,
 ):
     """
     Calibrate a two-epoch beta series with a historical and recent value.
@@ -400,20 +507,27 @@ def calibrate_beta_two_epoch(
         [inc_hist[-k] for k in range(calib_years - 1, -1, -1)], dtype=float
     )
     inc0 = float(inc_hist.get(-calib_years, obs[0]))
+    if projection_start_year is None:
+        calibration_years = list(range(-int(calib_years) + 1, 1))
+    else:
+        projection_start_year = int(projection_start_year)
+        calibration_years = list(
+            range(projection_start_year - int(calib_years), projection_start_year)
+        )
 
     beta_min, beta_max = float(beta_bounds[0]), float(beta_bounds[1])
     if beta_min <= 0 or beta_max <= 0:
         raise ValueError("beta_bounds must be positive for log-beta calibration")
 
     # Validate the epoch split once up front using neutral beta values.
-    build_two_epoch_beta_series(
+    build_two_epoch_beta_diagnostics(
         beta_historical=1.0,
         beta_recent=1.0,
-        calib_years=calib_years,
+        calibration_years=calibration_years,
         recent_years=recent_years,
+        projection_start_year=projection_start_year,
     )
     recent_years = int(recent_years)
-    change_year_index = int(calib_years) - recent_years
 
     best = {
         "rmse": float("inf"),
@@ -421,6 +535,7 @@ def calibrate_beta_two_epoch(
         "beta_historical": None,
         "beta_recent": None,
         "beta_series": None,
+        "fit_incidence": None,
     }
     adj_values = np.linspace(adj_bounds[0], adj_bounds[1], adj_grid_points)
     log_bounds = [(np.log(beta_min), np.log(beta_max))] * 2
@@ -448,12 +563,14 @@ def calibrate_beta_two_epoch(
 
         def simulate_from_log_beta(x):
             beta_historical, beta_recent = np.exp(np.asarray(x, dtype=float))
-            beta_series = build_two_epoch_beta_series(
+            diagnostics = build_two_epoch_beta_diagnostics(
                 beta_historical=beta_historical,
                 beta_recent=beta_recent,
-                calib_years=calib_years,
+                calibration_years=calibration_years,
                 recent_years=recent_years,
+                projection_start_year=projection_start_year,
             )
+            beta_series = diagnostics["beta_series"]
             p = dict(base_params)
             p["beta"] = float(beta_recent)
             p["beta_series"] = np.asarray(beta_series, dtype=float)
@@ -487,12 +604,7 @@ def calibrate_beta_two_epoch(
             rmse = float(vals[j])
 
         beta_historical, beta_recent = np.exp(x_hat)
-        beta_series = build_two_epoch_beta_series(
-            beta_historical=beta_historical,
-            beta_recent=beta_recent,
-            calib_years=calib_years,
-            recent_years=recent_years,
-        )
+        pred, beta_series = simulate_from_log_beta(x_hat)
 
         if rmse < best["rmse"]:
             best.update(
@@ -502,21 +614,51 @@ def calibrate_beta_two_epoch(
                     "beta_historical": float(beta_historical),
                     "beta_recent": float(beta_recent),
                     "beta_series": np.asarray(beta_series, dtype=float),
+                    "fit_incidence": np.asarray(pred, dtype=float),
                 }
             )
 
-    metadata = {
-        "beta_historical": float(best["beta_historical"]),
-        "beta_recent": float(best["beta_recent"]),
-        "recent_years": int(recent_years),
-        "change_year_index": int(change_year_index),
-        "beta_ratio_recent_to_historical": float(
-            best["beta_recent"] / best["beta_historical"]
-        ),
-        "beta_series": np.asarray(best["beta_series"], dtype=float),
-        "beta_forward": float(best["beta_recent"]),
-        "rmse": float(best["rmse"]),
-    }
+    metadata = build_two_epoch_beta_diagnostics(
+        beta_historical=best["beta_historical"],
+        beta_recent=best["beta_recent"],
+        calibration_years=calibration_years,
+        recent_years=recent_years,
+        projection_start_year=projection_start_year,
+    )
+    fit_incidence = np.asarray(best["fit_incidence"], dtype=float)
+    residuals = fit_incidence - obs
+    change_index = int(metadata["beta_change_index"])
+    historical_residuals = residuals[:change_index]
+    recent_residuals = residuals[change_index:]
+    metadata.update(
+        {
+            "calibration_mode": CAL_MODE_TWO_EPOCH,
+            "recent_years": int(recent_years),
+            "projection_start_year": (
+                int(projection_start_year)
+                if projection_start_year is not None
+                else None
+            ),
+            "beta_ratio": metadata["beta_ratio_recent_to_historical"],
+            "change_year_index": change_index,
+            "target_incidence": obs.astype(float).tolist(),
+            "fitted_incidence": fit_incidence.astype(float).tolist(),
+            "residuals": residuals.astype(float).tolist(),
+            "rmse": float(best["rmse"]),
+            "rmse_overall": float(best["rmse"]),
+            "rmse_historical": (
+                float(np.sqrt(np.mean(historical_residuals**2)))
+                if historical_residuals.size
+                else None
+            ),
+            "rmse_recent": (
+                float(np.sqrt(np.mean(recent_residuals**2)))
+                if recent_residuals.size
+                else None
+            ),
+            "beta_forward": float(best["beta_recent"]),
+        }
+    )
 
     return (
         float(best["beta_recent"]),
@@ -890,6 +1032,9 @@ def render_dynamic_ui():
                     pre_det_months=pre_det_months,
                     delta_pre=delta_pre,
                     recent_years=10,
+                    projection_start_year=(
+                        int(ref_year) + 1 if ref_year is not None else None
+                    ),
                 )
             )
             beta_series_hat = np.asarray(
@@ -1022,16 +1167,8 @@ def render_dynamic_ui():
             f"ARI adjustment={ari_adj_hat:.2f}. RMSE={rmse_rw:.2f} per 100k."
         )
 
-        if cal_mode_used == CAL_MODE_TWO_EPOCH and two_epoch_metadata:
-            st.caption(
-                f"{CAL_MODE_TWO_EPOCH}: "
-                f"beta_historical={float(two_epoch_metadata['beta_historical']):.2f}, "
-                f"beta_recent={float(two_epoch_metadata['beta_recent']):.2f}, "
-                f"ratio={float(two_epoch_metadata['beta_ratio_recent_to_historical']):.2f}, "
-                f"recent_years={int(two_epoch_metadata['recent_years'])}, "
-                f"change_year_index={int(two_epoch_metadata['change_year_index'])}, "
-                f"RMSE={float(two_epoch_metadata['rmse']):.2f} per 100k."
-            )
+        if cal_mode_used == CAL_MODE_TWO_EPOCH:
+            _render_two_epoch_diagnostics(two_epoch_metadata)
 
         show_years = min(CALIB_YEARS_SHOW, CALIB_YEARS_FIT)
         obs_show = obs_inc[-show_years:]
@@ -1558,6 +1695,12 @@ def render_dynamic_ui():
             ],
             use_container_width=True,
         )
+
+        dynamic_bundle = st.session_state.get("dynamic_results_bundle") or {}
+        calibration_metadata = (
+            (dynamic_bundle.get("technical") or {}).get("calibration") or {}
+        )
+        _render_two_epoch_diagnostics(calibration_metadata)
 
         with st.expander("Confidence intervals (projections)"):
             st.caption("Confidence intervals.")
