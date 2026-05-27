@@ -140,6 +140,107 @@ def build_two_epoch_beta_series(
     return beta_series
 
 
+def compute_annual_secular_decline_multiplier(
+    year,
+    secular_decline_rate_annual=0.0,
+    secular_decline_start_year=None,
+    future_secular_trend_policy="hold",
+    future_secular_decline_cap_annual=0.01,
+    projection_start_year=None,
+):
+    """Return the progression/reactivation hazard multiplier for a calendar year."""
+    rate = float(secular_decline_rate_annual or 0.0)
+    if rate == 0.0 or secular_decline_start_year is None:
+        return 1.0
+
+    current_year = int(np.floor(float(year)))
+    start_year = int(secular_decline_start_year)
+    if current_year <= start_year:
+        return 1.0
+
+    policy = str(future_secular_trend_policy or "hold").strip().lower()
+    projection_year = (
+        None if projection_start_year is None else int(projection_start_year)
+    )
+
+    if policy == "hold" and projection_year is not None:
+        elapsed = max(0, min(current_year, projection_year) - start_year)
+        return float(np.exp(-rate * elapsed))
+
+    if policy == "continue_capped" and projection_year is not None:
+        pre_projection_elapsed = max(
+            0, min(current_year, projection_year) - start_year
+        )
+        post_projection_elapsed = max(
+            0, current_year - max(projection_year, start_year)
+        )
+        cap_limit = (
+            0.01
+            if future_secular_decline_cap_annual is None
+            else float(future_secular_decline_cap_annual)
+        )
+        cap = min(rate, cap_limit)
+        return float(
+            np.exp(-rate * pre_projection_elapsed)
+            * np.exp(-cap * post_projection_elapsed)
+        )
+
+    elapsed = current_year - start_year
+    return float(np.exp(-rate * elapsed))
+
+
+def build_secular_multiplier_series(params, years):
+    """Build JSON-serialisable annual secular multipliers for a model run."""
+    secular_decline_rate_annual = float(
+        params.get("secular_decline_rate_annual", 0.0) or 0.0
+    )
+    secular_decline_start_year = params.get("secular_decline_start_year", None)
+    future_secular_trend_policy = params.get(
+        "future_secular_trend_policy", "hold"
+    )
+    future_secular_decline_cap_annual = params.get(
+        "future_secular_decline_cap_annual", 0.01
+    )
+    projection_start_year = params.get("projection_start_year", None)
+    secular_projection_boundary_year = params.get(
+        "secular_projection_boundary_year", projection_start_year
+    )
+    simulation_start_year = params.get(
+        "simulation_start_year", params.get("calendar_start_year", None)
+    )
+
+    secular_multiplier_series = []
+    for year_idx in range(int(years)):
+        if simulation_start_year is not None:
+            calendar_year = float(simulation_start_year) + year_idx
+        else:
+            calendar_year = (
+                year_idx
+                if secular_projection_boundary_year is None
+                else float(secular_projection_boundary_year) + year_idx
+            )
+        secular_multiplier_series.append(
+            float(
+                compute_annual_secular_decline_multiplier(
+                    calendar_year,
+                    secular_decline_rate_annual=secular_decline_rate_annual,
+                    secular_decline_start_year=secular_decline_start_year,
+                    future_secular_trend_policy=future_secular_trend_policy,
+                    future_secular_decline_cap_annual=(
+                        future_secular_decline_cap_annual
+                    ),
+                    projection_start_year=secular_projection_boundary_year,
+                )
+            )
+        )
+    return secular_multiplier_series
+
+
+def build_annual_secular_multiplier_series(params, years):
+    """Backward-compatible alias for annual secular multiplier diagnostics."""
+    return build_secular_multiplier_series(params, years)
+
+
 def simulate_dynamic(params, years, intervention=True):
     """
     Dynamic TB model with:
@@ -257,8 +358,26 @@ def simulate_dynamic(params, years, intervention=True):
     for k in RR:
         risk_multiplier *= (1.0 - p[k]) + p[k] * RR[k]
 
-    sigma_fast_eff = sigma_fast * risk_multiplier
-    sigma_slow_eff = sigma_slow * risk_multiplier
+    sigma_fast_eff_base = sigma_fast * risk_multiplier
+    sigma_slow_eff_base = sigma_slow * risk_multiplier
+
+    secular_decline_rate_annual = float(
+        params.get("secular_decline_rate_annual", 0.0) or 0.0
+    )
+    secular_decline_start_year = params.get("secular_decline_start_year", None)
+    future_secular_trend_policy = params.get(
+        "future_secular_trend_policy", "hold"
+    )
+    future_secular_decline_cap_annual = params.get(
+        "future_secular_decline_cap_annual", 0.01
+    )
+    projection_start_year = params.get("projection_start_year", None)
+    secular_projection_boundary_year = params.get(
+        "secular_projection_boundary_year", projection_start_year
+    )
+    simulation_start_year = params.get(
+        "simulation_start_year", params.get("calendar_start_year", None)
+    )
 
     # ---------------------------
     # LTBI regimen efficacy
@@ -392,6 +511,24 @@ def simulate_dynamic(params, years, intervention=True):
         lambda_t = beta_now * I[i - 1] / N
         tau_now = tau_at_time(time_prev)
         gamma_now = gamma_at_time(time_prev)
+        if simulation_start_year is not None:
+            calendar_year = float(simulation_start_year) + time_prev
+        else:
+            calendar_year = (
+                time_prev
+                if secular_projection_boundary_year is None
+                else float(secular_projection_boundary_year) + time_prev
+            )
+        secular_multiplier = compute_annual_secular_decline_multiplier(
+            calendar_year,
+            secular_decline_rate_annual=secular_decline_rate_annual,
+            secular_decline_start_year=secular_decline_start_year,
+            future_secular_trend_policy=future_secular_trend_policy,
+            future_secular_decline_cap_annual=future_secular_decline_cap_annual,
+            projection_start_year=secular_projection_boundary_year,
+        )
+        sigma_fast_eff = sigma_fast_eff_base * secular_multiplier
+        sigma_slow_eff = sigma_slow_eff_base * secular_multiplier
 
         # New TB cases (incidence flow) this instant
         new_cases_rate = sigma_fast_eff * L_fast[i - 1] + sigma_slow_eff * L_slow[i - 1]

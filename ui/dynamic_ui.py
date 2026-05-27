@@ -25,6 +25,7 @@ ensure_repo_root(REPO_ROOT)
 from engine.dynamic.exec_dynamic import run_dynamic_model
 from engine.dynamic.dynamic_model import (
     build_two_epoch_beta_diagnostics,
+    build_secular_multiplier_series,
 )
 from engine.integration.dynamic_output_contract_v9 import build_dynamic_results_bundle_v9
 from engine.infection_backcast import (
@@ -49,6 +50,11 @@ CALIB_YEARS_FIT = 20  # fit window length
 CALIB_YEARS_SHOW = 10  # show only last 10 years
 CAL_MODE_RANDOM_WALK = "Random-walk beta"
 CAL_MODE_TWO_EPOCH = "Two-epoch beta: historical + recent 10 years"
+CAL_MODE_TWO_EPOCH_SECULAR = "Two-epoch beta + recent secular decline"
+SECULAR_TREND_POLICY_HOLD = "hold"
+SECULAR_TREND_POLICY_CONTINUE_CAPPED = "continue_capped"
+SECULAR_TREND_POLICY_CONTINUE_FITTED = "continue_fitted"
+DEFAULT_FUTURE_SECULAR_DECLINE_CAP_ANNUAL = 0.01
 
 # Random-walk beta calibration (hard-coded; no UI controls)
 BETA_RW_PCT = 10
@@ -122,6 +128,7 @@ _TWO_EPOCH_DIAGNOSTIC_SEQUENCE_KEYS = {
     "calibration_years",
     "beta_historical_years",
     "beta_recent_years",
+    "secular_multiplier_series",
     "fitted_incidence",
     "target_incidence",
     "residuals",
@@ -177,15 +184,22 @@ def calibration_success_text(
     )
     suffix = f"ARI adjustment={ari_adj_hat:.2f}. RMSE={rmse_rw:.2f} per 100k."
 
-    if cal_mode == CAL_MODE_TWO_EPOCH and calibration_metadata:
+    if cal_mode in (CAL_MODE_TWO_EPOCH, CAL_MODE_TWO_EPOCH_SECULAR) and calibration_metadata:
         beta_historical = calibration_metadata.get("beta_historical")
         beta_recent = calibration_metadata.get("beta_recent")
         if beta_historical is not None and beta_recent is not None:
+            secular_text = ""
+            secular_rate = calibration_metadata.get("secular_decline_rate_annual")
+            if cal_mode == CAL_MODE_TWO_EPOCH_SECULAR and secular_rate is not None:
+                secular_text = (
+                    f"Secular decline={100.0 * float(secular_rate):.2f}%/year. "
+                )
             return (
                 prefix
                 + f"β1 / historical beta={float(beta_historical):.2f}. "
                 + f"β2 / recent beta={float(beta_recent):.2f}. "
                 + f"Using β2 / recent beta={float(beta_recent):.2f} for projections. "
+                + secular_text
                 + suffix
             )
 
@@ -242,10 +256,66 @@ def two_epoch_diagnostics_display_tables(calibration_metadata):
             "beta_recent_upper_bound_hit",
             calibration_metadata.get("beta_recent_upper_bound_hit"),
         ),
+        (
+            "beta_historical_near_lower_bound",
+            calibration_metadata.get("beta_historical_near_lower_bound"),
+        ),
+        (
+            "beta_recent_near_lower_bound",
+            calibration_metadata.get("beta_recent_near_lower_bound"),
+        ),
+        (
+            "beta_historical_near_upper_bound",
+            calibration_metadata.get("beta_historical_near_upper_bound"),
+        ),
+        (
+            "beta_recent_near_upper_bound",
+            calibration_metadata.get("beta_recent_near_upper_bound"),
+        ),
         ("RMSE overall", calibration_metadata.get("rmse_overall")),
         ("RMSE historical", calibration_metadata.get("rmse_historical")),
         ("RMSE recent", calibration_metadata.get("rmse_recent")),
     ]
+    if (
+        "secular_decline_rate_percent_annual" in calibration_metadata
+        or "secular_decline_rate_annual" in calibration_metadata
+    ):
+        summary_rows.extend(
+            [
+                (
+                    "secular_decline_rate_percent_annual (background calibration trend, %/year)",
+                    _secular_decline_percent_annual(calibration_metadata),
+                ),
+                (
+                    "secular_decline_start_year (background trend start year)",
+                    calibration_metadata.get("secular_decline_start_year"),
+                ),
+                (
+                    "future_secular_trend_policy (background trend policy)",
+                    calibration_metadata.get("future_secular_trend_policy"),
+                ),
+                (
+                    "future_secular_decline_cap_annual (background trend cap)",
+                    calibration_metadata.get("future_secular_decline_cap_annual"),
+                ),
+                (
+                    "secular_decline_rate_lower_bound",
+                    calibration_metadata.get("secular_decline_rate_lower_bound"),
+                ),
+                (
+                    "secular_decline_rate_upper_bound",
+                    calibration_metadata.get("secular_decline_rate_upper_bound"),
+                ),
+                (
+                    "secular_decline_rate_lower_bound_hit",
+                    calibration_metadata.get("secular_decline_rate_lower_bound_hit"),
+                ),
+                (
+                    "secular_decline_rate_upper_bound_hit",
+                    calibration_metadata.get("secular_decline_rate_upper_bound_hit"),
+                ),
+            ]
+        )
     if "beta_change_index" in calibration_metadata:
         summary_rows.append(
             ("Beta change index", calibration_metadata.get("beta_change_index"))
@@ -275,6 +345,12 @@ def two_epoch_diagnostics_display_tables(calibration_metadata):
                 "Upper bound hit": calibration_metadata.get(
                     "beta_historical_upper_bound_hit"
                 ),
+                "Near lower bound": calibration_metadata.get(
+                    "beta_historical_near_lower_bound"
+                ),
+                "Near upper bound": calibration_metadata.get(
+                    "beta_historical_near_upper_bound"
+                ),
             },
             {
                 "Epoch": "Beta 2 / recent",
@@ -291,11 +367,26 @@ def two_epoch_diagnostics_display_tables(calibration_metadata):
                 "Upper bound hit": calibration_metadata.get(
                     "beta_recent_upper_bound_hit"
                 ),
+                "Near lower bound": calibration_metadata.get(
+                    "beta_recent_near_lower_bound"
+                ),
+                "Near upper bound": calibration_metadata.get(
+                    "beta_recent_near_upper_bound"
+                ),
             },
         ]
     )
 
     return summary_df, preview_df
+
+
+def _secular_decline_percent_annual(calibration_metadata):
+    if calibration_metadata.get("secular_decline_rate_percent_annual") is not None:
+        return calibration_metadata.get("secular_decline_rate_percent_annual")
+    try:
+        return 100.0 * float(calibration_metadata.get("secular_decline_rate_annual"))
+    except (TypeError, ValueError):
+        return None
 
 
 def _first_year_or_none(years):
@@ -334,6 +425,79 @@ def two_epoch_lower_bound_warning(calibration_metadata):
             "constrained by beta bounds rather than data fit."
         )
     return None
+
+
+def two_epoch_diagnostic_warnings(calibration_metadata):
+    warnings = []
+    lower_bound_warning = two_epoch_lower_bound_warning(calibration_metadata)
+    if lower_bound_warning:
+        warnings.append(lower_bound_warning)
+
+    for key in ("parameter_bound_warnings", "bound_warnings"):
+        for warning in _metadata_warning_messages(calibration_metadata.get(key)):
+            if warning not in warnings:
+                warnings.append(warning)
+
+    secular_warning = _positive_secular_decline_with_low_beta_warning(
+        calibration_metadata
+    )
+    if secular_warning and secular_warning not in warnings:
+        warnings.append(secular_warning)
+    return warnings
+
+
+def _metadata_warning_messages(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value if item]
+    return [str(value)] if value else []
+
+
+def _positive_secular_decline_with_low_beta_warning(calibration_metadata):
+    if not calibration_metadata:
+        return None
+    try:
+        secular_rate = float(
+            calibration_metadata.get("secular_decline_rate_annual", 0.0)
+        )
+    except (TypeError, ValueError):
+        return None
+    if secular_rate <= 0.005:
+        return None
+
+    beta_lower_bound = calibration_metadata.get("beta_lower_bound")
+    historical_low = (
+        _metadata_flag_is_true(
+            calibration_metadata.get("beta_historical_lower_bound_hit")
+        )
+        or _metadata_flag_is_true(
+            calibration_metadata.get("beta_historical_near_lower_bound")
+        )
+        or _metadata_value_matches_lower_bound(
+            calibration_metadata.get("beta_historical"), beta_lower_bound
+        )
+    )
+    recent_low = (
+        _metadata_flag_is_true(calibration_metadata.get("beta_recent_lower_bound_hit"))
+        or _metadata_flag_is_true(
+            calibration_metadata.get("beta_recent_near_lower_bound")
+        )
+        or _metadata_value_matches_lower_bound(
+            calibration_metadata.get("beta_recent"), beta_lower_bound
+        )
+    )
+    if not (historical_low or recent_low):
+        return None
+
+    return (
+        "Background calibration trend warning: secular_decline_rate_annual is "
+        f"{100.0 * secular_rate:.2f}%/year while at least one beta estimate is "
+        "at or near the lower bound. This secular decline is a background "
+        "calibration trend, not an intervention effect."
+    )
 
 
 def _is_two_epoch_diagnostics_metadata(calibration_metadata):
@@ -377,8 +541,7 @@ def _render_two_epoch_diagnostics(calibration_metadata):
         return
 
     summary_df, preview_df = tables
-    warning = two_epoch_lower_bound_warning(calibration_metadata)
-    if warning:
+    for warning in two_epoch_diagnostic_warnings(calibration_metadata):
         st.warning(warning)
 
     st.subheader("Two-epoch beta diagnostics")
@@ -824,6 +987,344 @@ def calibrate_beta_two_epoch(
     )
 
 
+def calibrate_beta_two_epoch_with_secular_decline(
+    age_counts,
+    ages,
+    inc_hist,
+    calib_years,
+    risk_inputs,
+    pre_det_months,
+    delta_pre,
+    beta_bounds=BETA_BOUNDS,
+    adj_bounds=ARI_ADJ_BOUNDS,
+    adj_grid_points=ARI_ADJ_GRID_POINTS,
+    recent_years=10,
+    projection_start_year=None,
+    secular_decline_start_year=None,
+    secular_decline_rate_bounds=(0.0, 0.10),
+    future_secular_trend_policy="hold",
+    future_secular_decline_cap_annual=0.01,
+):
+    """
+    Calibrate two beta epochs plus an annual secular decline rate.
+
+    The return tuple matches calibrate_beta_two_epoch:
+      beta_forward, ari_adjustment, rmse, observed_incidence, metadata
+    """
+    total_pop = float(sum(age_counts.values()))
+
+    obs = np.array(
+        [inc_hist[-k] for k in range(calib_years - 1, -1, -1)], dtype=float
+    )
+    inc0 = float(inc_hist.get(-calib_years, obs[0]))
+    if projection_start_year is None:
+        simulation_start_year = -int(calib_years) + 1
+        calibration_years = list(range(simulation_start_year, 1))
+    else:
+        projection_start_year = int(projection_start_year)
+        simulation_start_year = projection_start_year - int(calib_years)
+        calibration_years = list(range(simulation_start_year, projection_start_year))
+    secular_projection_boundary_year = (
+        int(projection_start_year) if projection_start_year is not None else 1
+    )
+
+    if secular_decline_start_year is None:
+        secular_decline_start_year = secular_projection_boundary_year - int(
+            recent_years
+        )
+    secular_decline_start_year = (
+        None
+        if secular_decline_start_year is None
+        else int(secular_decline_start_year)
+    )
+
+    beta_min, beta_max = float(beta_bounds[0]), float(beta_bounds[1])
+    if beta_min <= 0 or beta_max <= 0:
+        raise ValueError("beta_bounds must be positive for log-beta calibration")
+    rate_min, rate_max = (
+        float(secular_decline_rate_bounds[0]),
+        float(secular_decline_rate_bounds[1]),
+    )
+    if rate_min < 0 or rate_max < rate_min:
+        raise ValueError("secular_decline_rate_bounds must be non-negative ascending")
+
+    build_two_epoch_beta_diagnostics(
+        beta_historical=1.0,
+        beta_recent=1.0,
+        calibration_years=calibration_years,
+        recent_years=recent_years,
+        projection_start_year=projection_start_year,
+        beta_bounds=beta_bounds,
+    )
+    recent_years = int(recent_years)
+
+    best = {
+        "rmse": float("inf"),
+        "adj": None,
+        "beta_historical": None,
+        "beta_recent": None,
+        "secular_decline_rate_annual": None,
+        "beta_series": None,
+        "secular_multiplier_series": None,
+        "fit_incidence": None,
+    }
+    adj_values = np.linspace(adj_bounds[0], adj_bounds[1], adj_grid_points)
+    log_bounds = [(np.log(beta_min), np.log(beta_max))] * 2
+    opt_bounds = log_bounds + [(rate_min, rate_max)]
+    x0 = np.array(
+        [
+            np.log(np.sqrt(beta_min * beta_max)),
+            np.log(np.sqrt(beta_min * beta_max)),
+            0.5 * (rate_min + rate_max),
+        ],
+        dtype=float,
+    )
+
+    for adj in adj_values:
+        ltbi_ever0, ltbi_recent0, _ = compute_ltbi_from_inc_hist(
+            ages, inc_hist, shift_years=calib_years, ari_adjustment=float(adj)
+        )
+
+        base_params = {
+            "age_counts": age_counts,
+            "ltbi_ever": ltbi_ever0,
+            "ltbi_recent": ltbi_recent0,
+            "initial_incidence_per_100k": inc0,
+            "pre_det_months": float(pre_det_months),
+            "delta_pre": float(delta_pre),
+            "delta_post": float(delta_pre),
+            "ltbi_coverage": 0.0,
+            "rollout_years": 0,
+            "treatment_method": "None",
+            "testing_method": "None",
+        }
+        base_params.update(risk_inputs)
+
+        def simulate_from_x(x):
+            beta_historical, beta_recent = np.exp(np.asarray(x[:2], dtype=float))
+            secular_rate = float(x[2])
+            diagnostics = build_two_epoch_beta_diagnostics(
+                beta_historical=beta_historical,
+                beta_recent=beta_recent,
+                calibration_years=calibration_years,
+                recent_years=recent_years,
+                projection_start_year=projection_start_year,
+                beta_bounds=beta_bounds,
+            )
+            beta_series = diagnostics["beta_series"]
+            p = dict(base_params)
+            p.update(
+                {
+                    "beta": float(beta_recent),
+                    "beta_series": np.asarray(beta_series, dtype=float),
+                    "secular_decline_rate_annual": secular_rate,
+                    "secular_decline_start_year": secular_decline_start_year,
+                    "future_secular_trend_policy": future_secular_trend_policy,
+                    "future_secular_decline_cap_annual": (
+                        future_secular_decline_cap_annual
+                    ),
+                    "projection_start_year": projection_start_year,
+                    "secular_projection_boundary_year": (
+                        secular_projection_boundary_year
+                    ),
+                    "simulation_start_year": simulation_start_year,
+                }
+            )
+            sim = run_dynamic_model(p, years=calib_years, intervention=False)
+            pred = (
+                np.array(sim["annual_incidence"], dtype=float) * 100000.0 / total_pop
+            )
+            secular_series = build_secular_multiplier_series(p, calib_years)
+            return pred, beta_series, secular_series
+
+        def rmse_for_x(x):
+            pred, _, _ = simulate_from_x(x)
+            err = pred - obs
+            return float(np.sqrt(np.mean(err**2)))
+
+        if SCIPY_AVAILABLE and minimize is not None:
+            res = minimize(
+                rmse_for_x,
+                x0,
+                method="L-BFGS-B",
+                bounds=opt_bounds,
+                options={"maxiter": 160},
+            )
+            x_hat = np.asarray(res.x, dtype=float)
+            rmse = float(res.fun)
+        else:
+            log_grid = np.linspace(np.log(beta_min), np.log(beta_max), 15)
+            rate_grid = np.linspace(rate_min, rate_max, 11)
+            candidates = [
+                (a, b, r) for a in log_grid for b in log_grid for r in rate_grid
+            ]
+            vals = [rmse_for_x(x) for x in candidates]
+            j = int(np.argmin(vals))
+            x_hat = np.asarray(candidates[j], dtype=float)
+            rmse = float(vals[j])
+
+        beta_historical, beta_recent = np.exp(x_hat[:2])
+        secular_rate = float(x_hat[2])
+        pred, beta_series, secular_series = simulate_from_x(x_hat)
+
+        if rmse < best["rmse"]:
+            best.update(
+                {
+                    "rmse": rmse,
+                    "adj": float(adj),
+                    "beta_historical": float(beta_historical),
+                    "beta_recent": float(beta_recent),
+                    "secular_decline_rate_annual": secular_rate,
+                    "beta_series": np.asarray(beta_series, dtype=float),
+                    "secular_multiplier_series": [
+                        float(v) for v in secular_series
+                    ],
+                    "fit_incidence": np.asarray(pred, dtype=float),
+                }
+            )
+
+    metadata = build_two_epoch_beta_diagnostics(
+        beta_historical=best["beta_historical"],
+        beta_recent=best["beta_recent"],
+        calibration_years=calibration_years,
+        recent_years=recent_years,
+        projection_start_year=projection_start_year,
+        beta_bounds=beta_bounds,
+    )
+    fit_incidence = np.asarray(best["fit_incidence"], dtype=float)
+    residuals = fit_incidence - obs
+    change_index = int(metadata["beta_change_index"])
+    historical_residuals = residuals[:change_index]
+    recent_residuals = residuals[change_index:]
+
+    beta_bound_tolerance = max(1e-8, 1e-4 * max(abs(beta_min), abs(beta_max)))
+    rate_bound_tolerance = max(1e-8, 1e-4 * max(abs(rate_min), abs(rate_max), 1.0))
+    beta_historical_near_lower = bool(
+        best["beta_historical"] <= beta_min + beta_bound_tolerance
+    )
+    beta_recent_near_lower = bool(
+        best["beta_recent"] <= beta_min + beta_bound_tolerance
+    )
+    beta_historical_near_upper = bool(
+        best["beta_historical"] >= beta_max - beta_bound_tolerance
+    )
+    beta_recent_near_upper = bool(
+        best["beta_recent"] >= beta_max - beta_bound_tolerance
+    )
+    secular_rate_lower_hit = bool(
+        best["secular_decline_rate_annual"] <= rate_min + rate_bound_tolerance
+    )
+    secular_rate_upper_hit = bool(
+        best["secular_decline_rate_annual"] >= rate_max - rate_bound_tolerance
+    )
+
+    bound_warnings = []
+    if beta_historical_near_lower or beta_recent_near_lower:
+        bound_warnings.append("One or more beta estimates are at or near the lower bound.")
+    if beta_historical_near_upper or beta_recent_near_upper:
+        bound_warnings.append("One or more beta estimates are at or near the upper bound.")
+    if secular_rate_lower_hit:
+        bound_warnings.append("Secular decline rate is at or near the lower bound.")
+    if secular_rate_upper_hit:
+        bound_warnings.append("Secular decline rate is at or near the upper bound.")
+
+    messages = [
+        "Calibrated beta_historical, beta_recent, and secular_decline_rate_annual."
+    ]
+    if bound_warnings:
+        messages.extend(bound_warnings)
+
+    metadata.update(
+        {
+            "calibration_mode": (
+                "Two-epoch beta with secular decline: "
+                f"historical + recent {int(recent_years)} years"
+            ),
+            "recent_years": int(recent_years),
+            "projection_start_year": (
+                int(projection_start_year)
+                if projection_start_year is not None
+                else None
+            ),
+            "simulation_start_year": (
+                int(simulation_start_year)
+                if simulation_start_year is not None
+                else None
+            ),
+            "secular_projection_boundary_year": int(
+                secular_projection_boundary_year
+            ),
+            "beta_ratio": metadata["beta_ratio_recent_to_historical"],
+            "change_year_index": change_index,
+            "target_incidence": obs.astype(float).tolist(),
+            "fitted_incidence": fit_incidence.astype(float).tolist(),
+            "residuals": residuals.astype(float).tolist(),
+            "rmse": float(best["rmse"]),
+            "rmse_overall": float(best["rmse"]),
+            "rmse_historical": (
+                float(np.sqrt(np.mean(historical_residuals**2)))
+                if historical_residuals.size
+                else None
+            ),
+            "rmse_recent": (
+                float(np.sqrt(np.mean(recent_residuals**2)))
+                if recent_residuals.size
+                else None
+            ),
+            "beta_forward": float(best["beta_recent"]),
+            "beta_historical_near_lower_bound": beta_historical_near_lower,
+            "beta_recent_near_lower_bound": beta_recent_near_lower,
+            "beta_historical_near_upper_bound": beta_historical_near_upper,
+            "beta_recent_near_upper_bound": beta_recent_near_upper,
+            "secular_decline_rate_annual": float(
+                best["secular_decline_rate_annual"]
+            ),
+            "secular_decline_rate_percent_annual": float(
+                100.0 * best["secular_decline_rate_annual"]
+            ),
+            "secular_decline_percent_annual": float(
+                100.0 * best["secular_decline_rate_annual"]
+            ),
+            "secular_decline_rate_lower_bound": rate_min,
+            "secular_decline_rate_upper_bound": rate_max,
+            "secular_decline_rate_lower_bound_hit": secular_rate_lower_hit,
+            "secular_decline_rate_upper_bound_hit": secular_rate_upper_hit,
+            "secular_decline_start_year": secular_decline_start_year,
+            "future_secular_trend_policy": future_secular_trend_policy,
+            "future_secular_decline_cap_annual": (
+                None
+                if future_secular_decline_cap_annual is None
+                else float(future_secular_decline_cap_annual)
+            ),
+            "secular_multiplier_series": best["secular_multiplier_series"],
+            "bound_warnings": bound_warnings,
+            "parameter_bound_warnings": bound_warnings,
+            "messages": messages,
+        }
+    )
+
+    return (
+        float(best["beta_recent"]),
+        float(best["adj"]),
+        float(best["rmse"]),
+        obs,
+        metadata,
+    )
+
+
+def _secular_projection_run_years(two_epoch_metadata):
+    projection_year = two_epoch_metadata.get("projection_start_year")
+    secular_projection_boundary_year = two_epoch_metadata.get(
+        "secular_projection_boundary_year", projection_year
+    )
+    simulation_start_year = (
+        projection_year
+        if projection_year is not None
+        else secular_projection_boundary_year
+    )
+    return projection_year, secular_projection_boundary_year, simulation_start_year
+
+
 def refine_beta_random_walk(
     age_counts,
     ages,
@@ -995,8 +1496,34 @@ def render_dynamic_ui():
     )
     cal_mode = st.sidebar.selectbox(
         "Calibration mode",
-        [CAL_MODE_RANDOM_WALK, CAL_MODE_TWO_EPOCH],
+        [CAL_MODE_RANDOM_WALK, CAL_MODE_TWO_EPOCH, CAL_MODE_TWO_EPOCH_SECULAR],
     )
+    future_secular_trend_policy = SECULAR_TREND_POLICY_HOLD
+    future_secular_decline_cap_annual = DEFAULT_FUTURE_SECULAR_DECLINE_CAP_ANNUAL
+    if cal_mode == CAL_MODE_TWO_EPOCH_SECULAR:
+        st.sidebar.caption(
+            "Fits a background secular decline in progression risk during calibration; "
+            "this is not an intervention effect."
+        )
+        future_secular_trend_policy = st.sidebar.selectbox(
+            "Future secular trend policy",
+            [
+                SECULAR_TREND_POLICY_HOLD,
+                SECULAR_TREND_POLICY_CONTINUE_CAPPED,
+                SECULAR_TREND_POLICY_CONTINUE_FITTED,
+            ],
+        )
+        if future_secular_trend_policy == SECULAR_TREND_POLICY_CONTINUE_CAPPED:
+            future_secular_decline_cap_annual = (
+                st.sidebar.number_input(
+                    "Future secular decline cap (%/year)",
+                    min_value=0.0,
+                    max_value=10.0,
+                    value=100.0 * DEFAULT_FUTURE_SECULAR_DECLINE_CAP_ANNUAL,
+                    step=0.1,
+                )
+                / 100.0
+            )
 
     uploaded_inc_df = None
     ref_year = None
@@ -1146,6 +1673,7 @@ def render_dynamic_ui():
         if uploaded_inc_df is not None
         else None
     )
+    projection_start_year = int(ref_year) + 1 if ref_year is not None else None
 
     cal_sig = (
         int(population),
@@ -1157,6 +1685,8 @@ def render_dynamic_ui():
         age_upload_hash,
         manual_age_hash,
         cal_mode,
+        future_secular_trend_policy,
+        float(future_secular_decline_cap_annual),
         tuple(sorted((k, float(v)) for k, v in risk_inputs.items())),
     )
 
@@ -1176,9 +1706,22 @@ def render_dynamic_ui():
         delta_pre = 12.0 / pre_det_months
 
         two_epoch_metadata = None
-        if cal_mode == CAL_MODE_TWO_EPOCH:
+        if cal_mode in (CAL_MODE_TWO_EPOCH, CAL_MODE_TWO_EPOCH_SECULAR):
+            calibrator = (
+                calibrate_beta_two_epoch_with_secular_decline
+                if cal_mode == CAL_MODE_TWO_EPOCH_SECULAR
+                else calibrate_beta_two_epoch
+            )
+            secular_kwargs = {}
+            if cal_mode == CAL_MODE_TWO_EPOCH_SECULAR:
+                secular_kwargs = {
+                    "future_secular_trend_policy": future_secular_trend_policy,
+                    "future_secular_decline_cap_annual": (
+                        future_secular_decline_cap_annual
+                    ),
+                }
             beta_forward, ari_adj_hat, _, obs_inc, two_epoch_metadata = (
-                calibrate_beta_two_epoch(
+                calibrator(
                     age_counts=age_counts,
                     ages=ages,
                     inc_hist=inc_hist,
@@ -1187,9 +1730,8 @@ def render_dynamic_ui():
                     pre_det_months=pre_det_months,
                     delta_pre=delta_pre,
                     recent_years=10,
-                    projection_start_year=(
-                        int(ref_year) + 1 if ref_year is not None else None
-                    ),
+                    projection_start_year=projection_start_year,
+                    **secular_kwargs,
                 )
             )
             beta_series_hat = np.asarray(
@@ -1247,6 +1789,35 @@ def render_dynamic_ui():
             "treatment_method": "None",
             "testing_method": "None",
         }
+        if cal_mode == CAL_MODE_TWO_EPOCH_SECULAR and two_epoch_metadata:
+            params_backcast.update(
+                {
+                    "secular_decline_rate_annual": float(
+                        two_epoch_metadata["secular_decline_rate_annual"]
+                    ),
+                    "secular_decline_start_year": two_epoch_metadata.get(
+                        "secular_decline_start_year"
+                    ),
+                    "future_secular_trend_policy": two_epoch_metadata.get(
+                        "future_secular_trend_policy",
+                        SECULAR_TREND_POLICY_HOLD,
+                    ),
+                    "future_secular_decline_cap_annual": two_epoch_metadata.get(
+                        "future_secular_decline_cap_annual",
+                        DEFAULT_FUTURE_SECULAR_DECLINE_CAP_ANNUAL,
+                    ),
+                    "projection_start_year": two_epoch_metadata.get(
+                        "projection_start_year"
+                    ),
+                    "secular_projection_boundary_year": two_epoch_metadata.get(
+                        "secular_projection_boundary_year",
+                        two_epoch_metadata.get("projection_start_year"),
+                    ),
+                    "simulation_start_year": two_epoch_metadata.get(
+                        "simulation_start_year"
+                    ),
+                }
+            )
         params_backcast.update(risk_inputs)
 
         sim_backcast = run_dynamic_model(
@@ -1507,6 +2078,8 @@ def render_dynamic_ui():
             beta_forward = float(st.session_state["cal_beta_forward"])
             ltbi_ever_now = st.session_state["cal_ltbi_ever_now"]
             ltbi_recent_now = st.session_state["cal_ltbi_recent_now"]
+            cal_mode_run = st.session_state.get("cal_mode", CAL_MODE_RANDOM_WALK)
+            two_epoch_metadata = st.session_state.get("cal_two_epoch_metadata") or {}
 
             # Critical: use the calibrated END-STATE as the projection initial state
             state_present = dict(st.session_state["cal_state_present"])
@@ -1542,6 +2115,39 @@ def render_dynamic_ui():
                 p["initial_incidence_per_100k"] = float(
                     fit0_per100k
                 )  # backward compatible seeding if engine ignores initial_state
+                if cal_mode_run == CAL_MODE_TWO_EPOCH_SECULAR:
+                    (
+                        projection_year,
+                        secular_projection_boundary_year,
+                        simulation_start_year,
+                    ) = _secular_projection_run_years(
+                        two_epoch_metadata
+                    )
+                    p.update(
+                        {
+                            "secular_decline_rate_annual": float(
+                                two_epoch_metadata["secular_decline_rate_annual"]
+                            ),
+                            "secular_decline_start_year": two_epoch_metadata.get(
+                                "secular_decline_start_year"
+                            ),
+                            "future_secular_trend_policy": two_epoch_metadata.get(
+                                "future_secular_trend_policy",
+                                SECULAR_TREND_POLICY_HOLD,
+                            ),
+                            "future_secular_decline_cap_annual": (
+                                two_epoch_metadata.get(
+                                    "future_secular_decline_cap_annual",
+                                    DEFAULT_FUTURE_SECULAR_DECLINE_CAP_ANNUAL,
+                                )
+                            ),
+                            "projection_start_year": projection_year,
+                            "secular_projection_boundary_year": (
+                                secular_projection_boundary_year
+                            ),
+                            "simulation_start_year": simulation_start_year,
+                        }
+                    )
 
             # baseline = no intervention
             params_base["treatment_method"] = "None"

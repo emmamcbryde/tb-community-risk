@@ -32,8 +32,11 @@ from ui.dynamic_ui import (
     CAL_MODE_RANDOM_WALK,
     CAL_MODE_TWO_EPOCH,
     _scalar_metadata,
+    _secular_projection_run_years,
     calibrate_beta_two_epoch,
+    calibrate_beta_two_epoch_with_secular_decline,
     calibration_success_text,
+    two_epoch_diagnostic_warnings,
     two_epoch_diagnostics_display_tables,
     two_epoch_lower_bound_warning,
 )
@@ -126,6 +129,19 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
             "beta_recent_lower_bound_hit": False,
             "beta_historical_upper_bound_hit": False,
             "beta_recent_upper_bound_hit": False,
+            "beta_historical_near_lower_bound": False,
+            "beta_recent_near_lower_bound": False,
+            "beta_historical_near_upper_bound": False,
+            "beta_recent_near_upper_bound": False,
+            "secular_decline_rate_annual": 0.012,
+            "secular_decline_rate_percent_annual": 1.2,
+            "secular_decline_start_year": 2023,
+            "future_secular_trend_policy": "hold",
+            "future_secular_decline_cap_annual": 0.01,
+            "secular_decline_rate_lower_bound": 0.0,
+            "secular_decline_rate_upper_bound": 0.10,
+            "secular_decline_rate_lower_bound_hit": False,
+            "secular_decline_rate_upper_bound_hit": False,
             "rmse_overall": 3.0,
             "rmse_historical": 4.0,
             "rmse_recent": 1.5,
@@ -152,6 +168,19 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
             "beta_upper_bound",
             "beta_forward",
             "projection beta",
+            "secular_decline_rate_percent_annual",
+            "background calibration trend",
+            "secular_decline_start_year",
+            "future_secular_trend_policy",
+            "future_secular_decline_cap_annual",
+            "secular_decline_rate_lower_bound",
+            "secular_decline_rate_upper_bound",
+            "secular_decline_rate_lower_bound_hit",
+            "secular_decline_rate_upper_bound_hit",
+            "beta_historical_near_lower_bound",
+            "beta_recent_near_lower_bound",
+            "beta_historical_near_upper_bound",
+            "beta_recent_near_upper_bound",
         ):
             self.assertIn(field_name, metric_text)
 
@@ -171,6 +200,32 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
         self.assertIs(summary["beta_recent_lower_bound_hit"], False)
         self.assertIs(summary["beta_historical_upper_bound_hit"], False)
         self.assertIs(summary["beta_recent_upper_bound_hit"], False)
+        self.assertIs(summary["beta_historical_near_lower_bound"], False)
+        self.assertIs(summary["beta_recent_near_lower_bound"], False)
+        self.assertIs(summary["beta_historical_near_upper_bound"], False)
+        self.assertIs(summary["beta_recent_near_upper_bound"], False)
+        self.assertEqual(
+            summary[
+                "secular_decline_rate_percent_annual (background calibration trend, %/year)"
+            ],
+            1.2,
+        )
+        self.assertEqual(
+            summary["secular_decline_start_year (background trend start year)"],
+            2023,
+        )
+        self.assertEqual(
+            summary["future_secular_trend_policy (background trend policy)"],
+            "hold",
+        )
+        self.assertEqual(
+            summary["future_secular_decline_cap_annual (background trend cap)"],
+            0.01,
+        )
+        self.assertEqual(summary["secular_decline_rate_lower_bound"], 0.0)
+        self.assertEqual(summary["secular_decline_rate_upper_bound"], 0.10)
+        self.assertIs(summary["secular_decline_rate_lower_bound_hit"], False)
+        self.assertIs(summary["secular_decline_rate_upper_bound_hit"], False)
         self.assertEqual(summary["RMSE overall"], 3.0)
         self.assertEqual(summary["RMSE historical"], 4.0)
         self.assertEqual(summary["RMSE recent"], 1.5)
@@ -188,6 +243,8 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
         self.assertEqual(preview_df["RMSE"].tolist(), [4.0, 1.5])
         self.assertEqual(preview_df["Lower bound hit"].tolist(), [False, False])
         self.assertEqual(preview_df["Upper bound hit"].tolist(), [False, False])
+        self.assertEqual(preview_df["Near lower bound"].tolist(), [False, False])
+        self.assertEqual(preview_df["Near upper bound"].tolist(), [False, False])
 
     def test_two_epoch_display_tables_accept_beta_fields_without_mode(self) -> None:
         metadata = {
@@ -283,6 +340,53 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
             two_epoch_lower_bound_warning(metadata),
             "Both beta estimates are at the lower bound. Calibration may be "
             "constrained by beta bounds rather than data fit.",
+        )
+
+    def test_two_epoch_diagnostic_warnings_include_bound_lists_and_secular_context(
+        self,
+    ) -> None:
+        metadata = {
+            "calibration_mode": CAL_MODE_TWO_EPOCH,
+            "beta_historical": 1.0,
+            "beta_recent": 2.0,
+            "beta_lower_bound": 1.0,
+            "beta_historical_near_lower_bound": True,
+            "secular_decline_rate_annual": 0.006,
+            "parameter_bound_warnings": [
+                "One or more beta estimates are at or near the lower bound."
+            ],
+            "bound_warnings": [
+                "One or more beta estimates are at or near the lower bound.",
+                "Secular decline rate is at or near the upper bound.",
+            ],
+        }
+
+        warnings = two_epoch_diagnostic_warnings(metadata)
+
+        self.assertEqual(
+            warnings.count(
+                "One or more beta estimates are at or near the lower bound."
+            ),
+            1,
+        )
+        self.assertIn("Secular decline rate is at or near the upper bound.", warnings)
+        secular_warnings = [
+            warning for warning in warnings if "Background calibration trend" in warning
+        ]
+        self.assertEqual(len(secular_warnings), 1)
+        self.assertIn("not an intervention effect", secular_warnings[0])
+
+    def test_two_epoch_diagnostic_warnings_ignore_small_secular_decline(self) -> None:
+        metadata = {
+            "calibration_mode": CAL_MODE_TWO_EPOCH,
+            "beta_historical_near_lower_bound": True,
+            "secular_decline_rate_annual": 0.005,
+        }
+
+        warnings = two_epoch_diagnostic_warnings(metadata)
+
+        self.assertFalse(
+            any("Background calibration trend" in warning for warning in warnings)
         )
 
     def test_two_epoch_display_tables_ignore_other_modes(self) -> None:
@@ -662,6 +766,340 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
         self.assertIs(metadata["beta_recent_lower_bound_hit"], False)
         self.assertIs(metadata["beta_historical_upper_bound_hit"], False)
         self.assertIs(metadata["beta_recent_upper_bound_hit"], True)
+        json.dumps(metadata, allow_nan=False)
+
+    def test_two_epoch_secular_metadata_is_json_serialisable(self) -> None:
+        age_counts = {"all": 100000.0}
+        ages = list(age_counts)
+        inc_hist = {-3: 12.0, -2: 12.0, -1: 6.0, 0: 6.0}
+        risk_inputs = {
+            "smoker_pct": 0.0,
+            "alcohol_pct": 0.0,
+            "diabetes_pct": 0.0,
+            "renal_pct": 0.0,
+            "HIV_treated_pct": 0.0,
+            "HIV_untreated_pct": 0.0,
+        }
+
+        def fake_ltbi_from_inc_hist(ages, inc_hist, shift_years=0, ari_adjustment=1.0):
+            return (
+                {age: 0.10 for age in ages},
+                {age: 0.02 for age in ages},
+                {"ari_adjustment": ari_adjustment, "shift_years": shift_years},
+            )
+
+        def fake_run_dynamic_model(params, years, intervention=True):
+            beta_series = np.asarray(params["beta_series"], dtype=float)
+            rate = float(params.get("secular_decline_rate_annual", 0.0))
+            start_year = int(params["secular_decline_start_year"])
+            sim_start = int(params["simulation_start_year"])
+            multipliers = np.array(
+                [
+                    np.exp(-rate * max(0, sim_start + idx - start_year))
+                    for idx in range(years)
+                ],
+                dtype=float,
+            )
+            return {"annual_incidence": beta_series * multipliers}
+
+        with patch(
+            "ui.dynamic_ui.compute_ltbi_from_inc_hist",
+            side_effect=fake_ltbi_from_inc_hist,
+        ), patch(
+            "ui.dynamic_ui.run_dynamic_model",
+            side_effect=fake_run_dynamic_model,
+        ):
+            _, _, _, _, metadata = calibrate_beta_two_epoch_with_secular_decline(
+                age_counts=age_counts,
+                ages=ages,
+                inc_hist=inc_hist,
+                calib_years=4,
+                risk_inputs=risk_inputs,
+                pre_det_months=12.0,
+                delta_pre=0.0,
+                beta_bounds=(1.0, 20.0),
+                adj_bounds=(1.0, 1.0),
+                adj_grid_points=1,
+                recent_years=2,
+                projection_start_year=2025,
+            )
+
+        for key in [
+            "calibration_mode",
+            "beta_historical",
+            "beta_recent",
+            "beta_ratio",
+            "beta_lower_bound",
+            "beta_upper_bound",
+            "beta_historical_lower_bound_hit",
+            "beta_recent_lower_bound_hit",
+            "beta_ratio_recent_to_historical",
+            "secular_decline_rate_annual",
+            "secular_decline_rate_percent_annual",
+            "secular_decline_percent_annual",
+            "secular_decline_start_year",
+            "recent_years",
+            "future_secular_trend_policy",
+            "future_secular_decline_cap_annual",
+            "secular_multiplier_series",
+            "beta_series",
+            "calibration_years",
+            "fitted_incidence",
+            "target_incidence",
+            "residuals",
+            "rmse_overall",
+            "rmse_historical",
+            "rmse_recent",
+            "bound_warnings",
+            "parameter_bound_warnings",
+            "messages",
+        ]:
+            self.assertIn(key, metadata)
+
+        self.assertEqual(
+            metadata["calibration_mode"],
+            "Two-epoch beta with secular decline: historical + recent 2 years",
+        )
+        self.assertEqual(metadata["projection_start_year"], 2025)
+        self.assertEqual(metadata["simulation_start_year"], 2021)
+        self.assertEqual(metadata["secular_projection_boundary_year"], 2025)
+        self.assertEqual(metadata["secular_decline_start_year"], 2023)
+        self.assertEqual(metadata["future_secular_trend_policy"], "hold")
+        self.assertEqual(metadata["future_secular_decline_cap_annual"], 0.01)
+        self.assertEqual(
+            metadata["secular_decline_percent_annual"],
+            metadata["secular_decline_rate_percent_annual"],
+        )
+        self.assertIs(metadata["parameter_bound_warnings"], metadata["bound_warnings"])
+        self.assertEqual(len(metadata["secular_multiplier_series"]), 4)
+        json.dumps(metadata, allow_nan=False)
+
+    def test_two_epoch_secular_defaults_relative_recent_start_without_projection_year(
+        self,
+    ) -> None:
+        age_counts = {"all": 100000.0}
+        ages = list(age_counts)
+        inc_hist = {offset: 12.0 for offset in range(-11, 1)}
+        risk_inputs = {
+            "smoker_pct": 0.0,
+            "alcohol_pct": 0.0,
+            "diabetes_pct": 0.0,
+            "renal_pct": 0.0,
+            "HIV_treated_pct": 0.0,
+            "HIV_untreated_pct": 0.0,
+        }
+
+        def fake_ltbi_from_inc_hist(ages, inc_hist, shift_years=0, ari_adjustment=1.0):
+            return (
+                {age: 0.10 for age in ages},
+                {age: 0.02 for age in ages},
+                {"ari_adjustment": ari_adjustment, "shift_years": shift_years},
+            )
+
+        seen_model_params = []
+
+        def fake_run_dynamic_model(params, years, intervention=True):
+            seen_model_params.append(dict(params))
+            beta_series = np.asarray(params["beta_series"], dtype=float)
+            rate = float(params.get("secular_decline_rate_annual", 0.0))
+            start_year = int(params["secular_decline_start_year"])
+            sim_start = int(params["simulation_start_year"])
+            multipliers = np.array(
+                [
+                    np.exp(-rate * max(0, sim_start + idx - start_year))
+                    for idx in range(years)
+                ],
+                dtype=float,
+            )
+            return {"annual_incidence": beta_series * multipliers}
+
+        with patch(
+            "ui.dynamic_ui.compute_ltbi_from_inc_hist",
+            side_effect=fake_ltbi_from_inc_hist,
+        ), patch(
+            "ui.dynamic_ui.run_dynamic_model",
+            side_effect=fake_run_dynamic_model,
+        ):
+            _, _, _, _, metadata = calibrate_beta_two_epoch_with_secular_decline(
+                age_counts=age_counts,
+                ages=ages,
+                inc_hist=inc_hist,
+                calib_years=12,
+                risk_inputs=risk_inputs,
+                pre_det_months=12.0,
+                delta_pre=0.0,
+                beta_bounds=(1.0, 1.0),
+                adj_bounds=(1.0, 1.0),
+                adj_grid_points=1,
+                recent_years=10,
+                projection_start_year=None,
+                secular_decline_rate_bounds=(0.02, 0.02),
+            )
+
+        self.assertIsNone(metadata["projection_start_year"])
+        self.assertEqual(metadata["simulation_start_year"], -11)
+        self.assertEqual(metadata["secular_projection_boundary_year"], 1)
+        self.assertTrue(seen_model_params)
+        self.assertTrue(
+            all(params["projection_start_year"] is None for params in seen_model_params)
+        )
+        self.assertEqual(
+            {params["secular_projection_boundary_year"] for params in seen_model_params},
+            {1},
+        )
+        self.assertEqual(metadata["calibration_years"], list(range(-11, 1)))
+        self.assertEqual(metadata["beta_recent_years"], list(range(-9, 1)))
+        self.assertEqual(metadata["secular_decline_start_year"], -9)
+        self.assertEqual(len(metadata["secular_multiplier_series"]), 12)
+        np.testing.assert_allclose(
+            metadata["secular_multiplier_series"][:3],
+            np.ones(3),
+        )
+        self.assertLess(metadata["secular_multiplier_series"][3], 1.0)
+        self.assertLess(
+            metadata["secular_multiplier_series"][-1],
+            metadata["secular_multiplier_series"][3],
+        )
+
+    def test_secular_projection_run_years_use_relative_boundary_without_projection_year(
+        self,
+    ) -> None:
+        projection_year, boundary_year, simulation_start_year = (
+            _secular_projection_run_years(
+                {
+                    "projection_start_year": None,
+                    "secular_projection_boundary_year": 1,
+                }
+            )
+        )
+
+        self.assertIsNone(projection_year)
+        self.assertEqual(boundary_year, 1)
+        self.assertEqual(simulation_start_year, 1)
+
+    def test_zero_secular_rate_reproduces_two_epoch_constant_target(self) -> None:
+        age_counts = {"all": 100000.0}
+        ages = list(age_counts)
+        inc_hist = {offset: 12.0 for offset in range(-4, 1)}
+        risk_inputs = {
+            "smoker_pct": 0.0,
+            "alcohol_pct": 0.0,
+            "diabetes_pct": 0.0,
+            "renal_pct": 0.0,
+            "HIV_treated_pct": 0.0,
+            "HIV_untreated_pct": 0.0,
+        }
+
+        def fake_ltbi_from_inc_hist(ages, inc_hist, shift_years=0, ari_adjustment=1.0):
+            return (
+                {age: 0.10 for age in ages},
+                {age: 0.02 for age in ages},
+                {"ari_adjustment": ari_adjustment, "shift_years": shift_years},
+            )
+
+        def fake_run_dynamic_model(params, years, intervention=True):
+            self.assertEqual(params["simulation_start_year"], 2021)
+            return {"annual_incidence": np.asarray(params["beta_series"], dtype=float)}
+
+        with patch(
+            "ui.dynamic_ui.compute_ltbi_from_inc_hist",
+            side_effect=fake_ltbi_from_inc_hist,
+        ), patch(
+            "ui.dynamic_ui.run_dynamic_model",
+            side_effect=fake_run_dynamic_model,
+        ):
+            beta_forward, adj, rmse, obs, metadata = (
+                calibrate_beta_two_epoch_with_secular_decline(
+                    age_counts=age_counts,
+                    ages=ages,
+                    inc_hist=inc_hist,
+                    calib_years=4,
+                    risk_inputs=risk_inputs,
+                    pre_det_months=12.0,
+                    delta_pre=0.0,
+                    beta_bounds=(1.0, 20.0),
+                    adj_bounds=(1.0, 1.0),
+                    adj_grid_points=1,
+                    recent_years=2,
+                    projection_start_year=2025,
+                    secular_decline_rate_bounds=(0.0, 0.0),
+                )
+            )
+
+        self.assertEqual(adj, 1.0)
+        self.assertLess(rmse, 1e-5)
+        self.assertEqual(beta_forward, metadata["beta_recent"])
+        self.assertEqual(metadata["secular_decline_rate_annual"], 0.0)
+        np.testing.assert_allclose(metadata["secular_multiplier_series"], np.ones(4))
+        np.testing.assert_allclose(metadata["beta_series"], np.full(4, 12.0), atol=1e-5)
+        np.testing.assert_array_equal(obs, np.full(4, 12.0))
+
+    def test_falling_target_estimates_positive_secular_decline_when_beta_lower_bound(
+        self,
+    ) -> None:
+        age_counts = {"all": 100000.0}
+        ages = list(age_counts)
+        inc_hist = {-4: 10.0, -3: 10.0, -2: 8.0, -1: 6.5, 0: 5.5}
+        risk_inputs = {
+            "smoker_pct": 0.0,
+            "alcohol_pct": 0.0,
+            "diabetes_pct": 0.0,
+            "renal_pct": 0.0,
+            "HIV_treated_pct": 0.0,
+            "HIV_untreated_pct": 0.0,
+        }
+
+        def fake_ltbi_from_inc_hist(ages, inc_hist, shift_years=0, ari_adjustment=1.0):
+            return (
+                {age: 0.10 for age in ages},
+                {age: 0.02 for age in ages},
+                {"ari_adjustment": ari_adjustment, "shift_years": shift_years},
+            )
+
+        def fake_run_dynamic_model(params, years, intervention=True):
+            beta_series = np.asarray(params["beta_series"], dtype=float)
+            rate = float(params.get("secular_decline_rate_annual", 0.0))
+            start_year = int(params["secular_decline_start_year"])
+            sim_start = int(params["simulation_start_year"])
+            multipliers = np.array(
+                [
+                    np.exp(-rate * max(0, sim_start + idx - start_year))
+                    for idx in range(years)
+                ],
+                dtype=float,
+            )
+            return {"annual_incidence": beta_series * multipliers}
+
+        with patch(
+            "ui.dynamic_ui.compute_ltbi_from_inc_hist",
+            side_effect=fake_ltbi_from_inc_hist,
+        ), patch(
+            "ui.dynamic_ui.run_dynamic_model",
+            side_effect=fake_run_dynamic_model,
+        ):
+            _, _, _, _, metadata = calibrate_beta_two_epoch_with_secular_decline(
+                age_counts=age_counts,
+                ages=ages,
+                inc_hist=inc_hist,
+                calib_years=4,
+                risk_inputs=risk_inputs,
+                pre_det_months=12.0,
+                delta_pre=0.0,
+                beta_bounds=(10.0, 50.0),
+                adj_bounds=(1.0, 1.0),
+                adj_grid_points=1,
+                recent_years=4,
+                projection_start_year=2025,
+                secular_decline_start_year=2021,
+                secular_decline_rate_bounds=(0.0, 0.20),
+            )
+
+        self.assertGreater(metadata["secular_decline_rate_annual"], 0.01)
+        self.assertTrue(
+            metadata["beta_recent_lower_bound_hit"]
+            or metadata["beta_recent_near_lower_bound"]
+        )
+        self.assertLess(metadata["secular_multiplier_series"][-1], 1.0)
         json.dumps(metadata, allow_nan=False)
 
 

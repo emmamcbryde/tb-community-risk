@@ -319,6 +319,7 @@ The Python dynamic model is retained for continuous-time LTBI-to-TB modelling wi
 - annual incidence and cases-averted outputs.
 
 The two-epoch beta mode may be useful when recent incidence is falling, but it is not guaranteed to solve all declining-epidemic calibration issues.
+If fitted beta is near zero, transmission calibration alone may still not fit a falling epidemic. The **Two-epoch beta + recent secular decline** option estimates an additional recent background decline in active TB progression/reactivation risk. Future-policy choices are `hold`, `continue_capped`, and `continue_fitted`. This is a phenomenological calibration trend, not an intervention effect.
 
 ---
 
