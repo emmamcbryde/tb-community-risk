@@ -83,11 +83,13 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
             ari_adj_hat=1.0,
             rmse_rw=3.0,
             calibration_metadata={
+                "calibration_mode": CAL_MODE_TWO_EPOCH,
                 "beta_historical": 2.5,
                 "beta_recent": 1.25,
             },
         )
 
+        self.assertIn(f"calibration_mode={CAL_MODE_TWO_EPOCH}", text)
         self.assertIn("β1 / historical beta=2.50", text)
         self.assertIn("β2 / recent beta=1.25", text)
         self.assertIn("Using β2 / recent beta=1.25 for projections", text)
@@ -103,6 +105,7 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
             calibration_metadata=None,
         )
 
+        self.assertIn(f"calibration_mode={CAL_MODE_RANDOM_WALK}", text)
         self.assertIn("β(t) range 1.00–2.00", text)
         self.assertIn("Using β=2.00 for projections", text)
         self.assertNotIn("β1 / historical beta", text)
@@ -113,6 +116,7 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
             "calibration_mode": "Two-epoch beta: historical + recent 10 years",
             "beta_historical": 2.0,
             "beta_recent": 1.0,
+            "beta_forward": 1.0,
             "beta_ratio_recent_to_historical": 0.5,
             "beta_recent_start_year": 2023,
             "recent_years": 2,
@@ -138,17 +142,35 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
         summary_df, preview_df = two_epoch_diagnostics_display_tables(metadata)
 
         summary = dict(zip(summary_df["Metric"], summary_df["Value"]))
-        self.assertEqual(summary["Beta 1 / historical beta"], 2.0)
-        self.assertEqual(summary["Beta 2 / recent beta"], 1.0)
+        metric_text = "\n".join(summary_df["Metric"].tolist())
+        for field_name in (
+            "beta_historical",
+            "beta_recent",
+            "beta_recent_start_year",
+            "recent_years",
+            "beta_lower_bound",
+            "beta_upper_bound",
+            "beta_forward",
+            "projection beta",
+        ):
+            self.assertIn(field_name, metric_text)
+
+        self.assertEqual(
+            summary["beta_historical (Beta 1 / historical beta)"], 2.0
+        )
+        self.assertEqual(summary["beta_recent (Beta 2 / recent beta)"], 1.0)
+        self.assertEqual(summary["beta_forward / projection beta"], 1.0)
         self.assertEqual(summary["Beta 2 / Beta 1 ratio"], 0.5)
-        self.assertEqual(summary["Recent beta start year"], 2023)
-        self.assertEqual(summary["Recent window length"], 2)
-        self.assertEqual(summary["Beta lower bound"], 0.01)
-        self.assertEqual(summary["Beta upper bound"], 50.0)
-        self.assertIs(summary["Beta 1 lower bound hit"], False)
-        self.assertIs(summary["Beta 2 lower bound hit"], False)
-        self.assertIs(summary["Beta 1 upper bound hit"], False)
-        self.assertIs(summary["Beta 2 upper bound hit"], False)
+        self.assertEqual(
+            summary["beta_recent_start_year (recent beta start year)"], 2023
+        )
+        self.assertEqual(summary["recent_years (recent window length)"], 2)
+        self.assertEqual(summary["beta_lower_bound"], 0.01)
+        self.assertEqual(summary["beta_upper_bound"], 50.0)
+        self.assertIs(summary["beta_historical_lower_bound_hit"], False)
+        self.assertIs(summary["beta_recent_lower_bound_hit"], False)
+        self.assertIs(summary["beta_historical_upper_bound_hit"], False)
+        self.assertIs(summary["beta_recent_upper_bound_hit"], False)
         self.assertEqual(summary["RMSE overall"], 3.0)
         self.assertEqual(summary["RMSE historical"], 4.0)
         self.assertEqual(summary["RMSE recent"], 1.5)
@@ -167,6 +189,27 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
         self.assertEqual(preview_df["Lower bound hit"].tolist(), [False, False])
         self.assertEqual(preview_df["Upper bound hit"].tolist(), [False, False])
 
+    def test_two_epoch_display_tables_accept_beta_fields_without_mode(self) -> None:
+        metadata = {
+            "beta_historical": 2.0,
+            "beta_recent": 1.0,
+            "beta_forward": 1.0,
+            "beta_historical_years": [2020, 2021],
+            "beta_recent_years": [2022, 2023],
+            "beta_recent_start_year": 2022,
+        }
+
+        summary_df, preview_df = two_epoch_diagnostics_display_tables(metadata)
+
+        summary = dict(zip(summary_df["Metric"], summary_df["Value"]))
+        self.assertEqual(
+            summary["beta_historical (Beta 1 / historical beta)"], 2.0
+        )
+        self.assertEqual(summary["beta_recent (Beta 2 / recent beta)"], 1.0)
+        self.assertEqual(summary["beta_forward / projection beta"], 1.0)
+        self.assertEqual(preview_df["Epoch"].tolist(), ["Beta 1 / historical", "Beta 2 / recent"])
+        self.assertEqual(preview_df["Years"].tolist(), ["2020-2021", "2022-2023"])
+
     def test_two_epoch_lower_bound_warning_requires_both_lower_hits(self) -> None:
         metadata = {
             "calibration_mode": "Two-epoch beta: historical + recent 10 years",
@@ -176,12 +219,71 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
 
         self.assertEqual(
             two_epoch_lower_bound_warning(metadata),
-            "Both beta estimates are at the lower bound; calibration may be "
+            "Both beta estimates are at the lower bound. Calibration may be "
             "constrained by beta bounds rather than data fit.",
         )
 
         metadata["beta_recent_lower_bound_hit"] = False
         self.assertIsNone(two_epoch_lower_bound_warning(metadata))
+
+    def test_two_epoch_lower_bound_warning_falls_back_to_beta_values(self) -> None:
+        metadata = {
+            "calibration_mode": CAL_MODE_TWO_EPOCH,
+            "beta_historical": np.float64(0.01),
+            "beta_recent": 0.01,
+            "beta_lower_bound": 0.01,
+        }
+
+        self.assertEqual(
+            two_epoch_lower_bound_warning(metadata),
+            "Both beta estimates are at the lower bound. Calibration may be "
+            "constrained by beta bounds rather than data fit.",
+        )
+
+    def test_two_epoch_lower_bound_warning_uses_default_floor_without_bound(
+        self,
+    ) -> None:
+        metadata = {
+            "calibration_mode": CAL_MODE_TWO_EPOCH,
+            "beta_historical": np.float64(0.01),
+            "beta_recent": 0.01,
+        }
+
+        self.assertEqual(
+            two_epoch_lower_bound_warning(metadata),
+            "Both beta estimates are at the lower bound. Calibration may be "
+            "constrained by beta bounds rather than data fit.",
+        )
+
+    def test_two_epoch_lower_bound_warning_values_override_false_flags(self) -> None:
+        metadata = {
+            "calibration_mode": CAL_MODE_TWO_EPOCH,
+            "beta_historical": 0.01,
+            "beta_recent": np.float64(0.01),
+            "beta_lower_bound": np.float64(0.01),
+            "beta_historical_lower_bound_hit": False,
+            "beta_recent_lower_bound_hit": np.bool_(False),
+        }
+
+        self.assertIsNotNone(two_epoch_lower_bound_warning(metadata))
+
+        metadata["beta_recent"] = 0.02
+        self.assertIsNone(two_epoch_lower_bound_warning(metadata))
+
+    def test_two_epoch_lower_bound_warning_accepts_beta_fields_without_mode(
+        self,
+    ) -> None:
+        metadata = {
+            "beta_historical": 0.01,
+            "beta_recent": np.float64(0.01),
+            "beta_lower_bound": 0.01,
+        }
+
+        self.assertEqual(
+            two_epoch_lower_bound_warning(metadata),
+            "Both beta estimates are at the lower bound. Calibration may be "
+            "constrained by beta bounds rather than data fit.",
+        )
 
     def test_two_epoch_display_tables_ignore_other_modes(self) -> None:
         self.assertIsNone(
@@ -379,6 +481,10 @@ class CalibrateBetaTwoEpochTests(unittest.TestCase):
 
         self.assertEqual(metadata["projection_start_year"], 2025)
         self.assertEqual(metadata["calibration_years"], list(range(2015, 2025)))
+        self.assertEqual(
+            metadata["beta_recent_start_year"],
+            metadata["projection_start_year"] - 10,
+        )
         self.assertEqual(metadata["beta_recent_start_year"], 2015)
         self.assertEqual(metadata["beta_recent_end_year"], 2024)
         self.assertEqual(metadata["beta_change_index"], 0)
