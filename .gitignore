@@ -35,3 +35,4 @@ validation/matlab_reference/**/matlab_results_bundle.json
 validation/matlab_reference/**/matlab_raw_replicates.csv
 validation/output/
 abm/just_for_executing_codex_checks.m
+openaikeyAPI20260522.txt
