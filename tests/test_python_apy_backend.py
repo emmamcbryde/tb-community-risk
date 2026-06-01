@@ -4,10 +4,7 @@ import sys
 import unittest
 
 from adapters.paths import repo_root
-from adapters.python_apy_backend import (
-    PYTHON_ECONOMICS_UNSUPPORTED,
-    PythonApyBackend,
-)
+from adapters.python_apy_backend import PythonApyBackend
 
 
 class PythonApyBackendTests(unittest.TestCase):
@@ -50,20 +47,30 @@ class PythonApyBackendTests(unittest.TestCase):
             "doNothing.derived",
         )
 
-    def test_unsupported_economics_methods_are_clear(self) -> None:
-        methods = [
-            lambda: self.backend.default_economics_config(),
-            lambda: self.backend.economics_preset_kwab150(),
-            lambda: self.backend.run_economics({}, {}),
-            lambda: self.backend.run_economics_for_config({}, {}),
-        ]
-        for method in methods:
-            with self.subTest(method=method):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    "does not yet include economics",
-                ):
-                    method()
+    def test_default_economics_config_returns_dict(self) -> None:
+        config = self.backend.default_economics_config()
+
+        self.assertIsInstance(config, dict)
+        self.assertIn("metadata", config)
+        self.assertIn("costs", config)
+
+    def test_economics_preset_kwab150_returns_dict(self) -> None:
+        config = self.backend.economics_preset_kwab150()
+
+        self.assertEqual(config["metadata"]["currencyCode"], "AUD")
+        self.assertEqual(config["metadata"]["priceYear"], 2019)
+
+    def test_run_economics_for_config_small_run(self) -> None:
+        config = self.backend.default_config()
+        config.update({"N": 100, "nReps": 5, "seed": 1})
+        economics_config = self.backend.economics_preset_kwab150()
+
+        economics = self.backend.run_economics_for_config(config, economics_config)
+
+        self.assertIn("summaryRows", economics)
+        self.assertIn("status", economics)
+        self.assertTrue(economics["summaryRows"])
+        self.assertTrue(economics["status"]["validationReport"]["isValid"])
 
     def test_python_backend_does_not_import_matlab_engine(self) -> None:
         sys.modules.pop("matlab.engine", None)
@@ -73,7 +80,18 @@ class PythonApyBackendTests(unittest.TestCase):
         self.backend.run_scenario_bundle(config)
 
         self.assertNotIn("matlab.engine", sys.modules)
-        self.assertIn("economics", PYTHON_ECONOMICS_UNSUPPORTED)
+
+    def test_python_backend_economics_does_not_import_matlab_engine(self) -> None:
+        sys.modules.pop("matlab.engine", None)
+        config = self.backend.default_config()
+        config.update({"N": 50, "nReps": 2, "seed": 2})
+
+        self.backend.run_economics_for_config(
+            config,
+            self.backend.economics_preset_kwab150(),
+        )
+
+        self.assertNotIn("matlab.engine", sys.modules)
 
 
 if __name__ == "__main__":

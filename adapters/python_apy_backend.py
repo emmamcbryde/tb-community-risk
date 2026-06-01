@@ -7,15 +7,15 @@ from typing import Any
 from adapters.backend import JsonDict
 from adapters.serialization import to_json_like
 from engine.apy.config import build_default_config
+from engine.apy.economics import (
+    build_default_economics_config,
+    build_economics_preset_kwab150,
+    run_health_economics,
+    run_health_economics_for_config,
+)
 from engine.apy.results_bundle import build_results_bundle
 from engine.apy.runner import run_scenario, run_scenario_with_do_nothing
 from engine.apy.validation import collect_validation_issues
-
-
-PYTHON_ECONOMICS_UNSUPPORTED = (
-    "Python APY backend does not yet include economics. Use the MATLAB backend "
-    "for economics or wait for the Python economics port."
-)
 
 
 class PythonApyBackend:
@@ -110,20 +110,30 @@ class PythonApyBackend:
         return to_json_like(config), report, {**load_info, "economics": economics}
 
     def default_economics_config(self) -> JsonDict:
-        raise NotImplementedError(PYTHON_ECONOMICS_UNSUPPORTED)
+        return to_json_like(build_default_economics_config())
 
     def economics_preset_kwab150(self) -> JsonDict:
-        raise NotImplementedError(PYTHON_ECONOMICS_UNSUPPORTED)
+        return to_json_like(build_economics_preset_kwab150())
 
     def run_economics(self, results: JsonDict, economics_config: JsonDict) -> JsonDict:
-        raise NotImplementedError(PYTHON_ECONOMICS_UNSUPPORTED)
+        return to_json_like(
+            run_health_economics(
+                _matlab_empty_to_none(results),
+                _matlab_empty_to_none(economics_config),
+            )
+        )
 
     def run_economics_for_config(
         self,
         config: JsonDict,
         economics_config: JsonDict,
     ) -> JsonDict:
-        raise NotImplementedError(PYTHON_ECONOMICS_UNSUPPORTED)
+        return to_json_like(
+            run_health_economics_for_config(
+                _matlab_empty_to_none(config),
+                _matlab_empty_to_none(economics_config),
+            )
+        )
 
 
 def _matlab_empty_to_none(value):

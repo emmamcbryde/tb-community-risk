@@ -26,15 +26,14 @@ backend = get_backend()
 backend_name = get_backend_name()
 
 st.title("Economics")
-st.caption("First economics workflow. Economics is currently backed by MATLAB.")
-
 if backend_name == "python_apy":
+    st.caption("Economics workflow using the experimental Python APY backend.")
     st.warning(
-        "Economics is currently available only through the MATLAB APY backend. "
-        "The Python APY backend does not yet include economics."
+        "Python APY economics is newly ported. MATLAB remains the reference "
+        "backend for economics parity checks."
     )
-    st.info("Switch to the MATLAB v9 reference backend on the Scenario page to run economics.")
-    st.stop()
+else:
+    st.caption("Economics workflow using the MATLAB APY backend.")
 
 ECONOMICS_WIDGET_KEYS = [
     "econ_currency_code",

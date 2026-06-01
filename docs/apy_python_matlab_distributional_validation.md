@@ -69,8 +69,11 @@ All 22 compared metrics passed the current initial tolerance rule.
 - Tolerances are intentionally broad and should be tightened after more MATLAB
   reference fixtures are added.
 - Do-nothing and `technical.dynamicComparison` parity are now covered for this
-  fixture, but economics, attributable-risk add-ons, and Streamlit Python
-  backend switching remain pending.
+  fixture.
+- Python economics has been ported after this diagnostic epidemiology suite,
+  but economics parity should still be validated against MATLAB compact
+  economics fixtures before treating it as a strict release gate.
+- Attributable-risk add-ons remain pending.
 
 ## Scenario Suite V1
 
