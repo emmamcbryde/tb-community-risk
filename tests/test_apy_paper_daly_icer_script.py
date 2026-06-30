@@ -33,7 +33,11 @@ class ApyPaperDalyIcerScriptTests(unittest.TestCase):
                 "apy_daly_icer_health_outcomes.csv",
                 "apy_daly_icer_costs.csv",
                 "apy_daly_icer_sensitivity.csv",
+                "apy_daly_qaly_source_audit.csv",
                 "apy_daly_icer_notes.md",
+                "apy_daly_qaly_source_audit_notes.md",
+                "apy_post_tb_sequelae_scenarios.csv",
+                "apy_post_tb_sequelae_notes.md",
             }
             self.assertEqual(
                 {path.name for path in output_dir.iterdir()},
@@ -44,8 +48,14 @@ class ApyPaperDalyIcerScriptTests(unittest.TestCase):
             )
             self.assertIn("costPerDALYAverted", strategy_text)
             self.assertIn("costPerQALYGained", strategy_text)
+            self.assertIn("qalysGained_DaleMortalityAdjusted", strategy_text)
+            self.assertIn("costPerQALYGained_GBDAligned", strategy_text)
             notes = (output_dir / "apy_daly_icer_notes.md").read_text(encoding="utf-8")
             self.assertIn("direct prevented TB cases", notes)
+            post_tb_notes = (output_dir / "apy_post_tb_sequelae_notes.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("Byrne June 2026", post_tb_notes)
         finally:
             if output_dir.exists():
                 shutil.rmtree(output_dir)
