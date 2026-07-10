@@ -1,5 +1,0 @@
-scenario_id,screeningStrategy,active_tb_cases_prevented,tb_disease_costs_averted,current_included_programme_cost,net_cost_vs_baseline,additional_programme_cost_before_no_longer_cost_saving,additional_cost_per_screened_person_before_no_longer_cost_saving,additional_cost_per_tpt_start_before_no_longer_cost_saving
-apy_paper_random_igra_3hp,random,4.0,76318.4,56362.2304,-19956.169599999994,19956.169599999994,44.347043555555544,623.6302999999998
-apy_paper_ltbi_igra_3hp,ltbi,11.0,209875.59999999998,62154.9824,-147720.61759999997,147720.61759999997,328.268039111111,2204.7853373134326
-apy_paper_cure_igra_3hp,cure,11.0,209875.59999999998,62154.9824,-147720.61759999997,147720.61759999997,328.268039111111,2204.7853373134326
-apy_paper_prevent_igra_3hp,prevent,12.0,228955.19999999998,61327.4464,-167627.7536,167627.7536,372.5061191111111,2703.67344516129

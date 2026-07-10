@@ -36,3 +36,26 @@ validation/matlab_reference/**/matlab_raw_replicates.csv
 validation/output/
 abm/just_for_executing_codex_checks.m
 openaikeyAPI20260522.txt
+
+# Generated paper/report artefacts
+/paper/sa_health_report/generated/
+/paper/sa_health_report/archive/
+/paper/sa_health_report/*.docx
+/paper/sa_health_report/*.pdf
+/paper/sa_health_report/*.tmp
+/paper/sa_health_report/figures/
+/paper/sa_health_report/tables/
+/paper/sa_health_report/excel/
+
+/paper/excel/*.xlsx
+/paper/figures/
+/outputs/
+
+# Keep lightweight documentation trackable
+!/paper/**/README.md
+!/paper/**/*.md
+
+# Local scratch/secrets
+/openaikey*.txt
+/reboot_text.txt
+/index.html
