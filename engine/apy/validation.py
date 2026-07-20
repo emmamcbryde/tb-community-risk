@@ -68,6 +68,18 @@ def collect_validation_issues(config: dict[str, Any]) -> dict[str, Any]:
     _validate_positive_scalar(report, cfg, "screenWindow", "Screen window")
     _validate_positive_scalar(report, cfg, "followHorizon", "Follow-up horizon")
     _validate_fraction(report, cfg, "screenCoverage", "Screening coverage")
+    _validate_optional_open_fraction(
+        report,
+        cfg,
+        "ltbiPrevalence",
+        "Assumed prevalence of MTB infection (LTBI)",
+    )
+    _validate_optional_open_fraction(
+        report,
+        cfg,
+        "activeTBPrevalence",
+        "Active-TB prevalence calibration target",
+    )
     _validate_positive_scalar(report, cfg, "age85PlusMax", "Age 85+ upper bound")
     _validate_positive_scalar(report, cfg, "targetAgeOR", "Age OR target")
 
@@ -369,6 +381,26 @@ def _validate_optional_fraction(
             label,
             "invalid_range",
             f"{label} must be a scalar in [0,1].",
+        )
+
+
+def _validate_optional_open_fraction(
+    report: dict[str, Any],
+    parent: dict[str, Any],
+    field: str,
+    label: str,
+) -> None:
+    value = parent.get(field)
+    if value is None:
+        return
+    if not _is_number(value) or not 0 < float(value) < 1:
+        _add_issue(
+            report,
+            "errors",
+            field,
+            label,
+            "invalid_range",
+            f"{label} must be greater than 0% and less than 100%.",
         )
 
 

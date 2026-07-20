@@ -136,6 +136,10 @@ def mark_config_changed() -> None:
         st.session_state["results_stale"] = True
     if st.session_state.get("economics_results"):
         st.session_state["dirty_economics"] = True
+    if st.session_state.get("compare_baseline_bundle") or st.session_state.get("compare_comparator_bundle"):
+        st.session_state["compare_results_stale"] = True
+        st.session_state["compare_economics_stale"] = True
+        st.session_state["compare_outputs_cleared"] = False
 
 
 def mark_economics_changed() -> None:

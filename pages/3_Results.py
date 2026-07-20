@@ -10,6 +10,7 @@ from app.display import (
     economics_summary_csv,
     safe_download_stem,
 )
+from app.results_workbook import build_results_workbook
 from app.state import init_session_state
 
 
@@ -149,6 +150,25 @@ with st.expander("Dynamic comparison"):
         st.json(dynamic_comparison, expanded=False)
 
 st.subheader("Downloads")
+if st.session_state.get("results_stale"):
+    st.warning("Excel workbook download is disabled until the model is rerun with the current inputs.")
+else:
+    workbook_bytes = build_results_workbook(
+        config=technical.get("interfaceConfig", {}),
+        bundle=bundle,
+        backend_status=st.session_state.get("backend_status"),
+        economics_results=economics,
+        economics_config=economics_config,
+        results_stale=False,
+        dirty_economics=bool(st.session_state.get("dirty_economics")),
+    )
+    st.download_button(
+        "Download consolidated APY results workbook",
+        data=workbook_bytes,
+        file_name=f"{safe_download_stem(scenario_label, 'APY_results')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
 if downloads.get("available"):
     download_rows = [
         {"field": key, "value": value}

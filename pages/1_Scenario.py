@@ -6,6 +6,17 @@ from pathlib import Path
 import streamlit as st
 
 from app.display import arrow_safe_dataframe, display_string
+from app.epidemiology_inputs import (
+    ADVANCED_RISK_FACTORS,
+    AGE_GROUP_LABELS,
+    PRINCIPAL_RISK_FACTORS,
+    RISK_FACTOR_LABELS,
+    apply_epidemiology_updates,
+    fraction_to_percent,
+    risk_override_from_percentages,
+    risk_override_mode,
+    risk_override_percent_values,
+)
 from app.state import (
     get_backend,
     get_backend_name,
@@ -107,7 +118,8 @@ def validation_rows(report: dict) -> list[dict[str, object]]:
                 rows.append(
                     {
                         "severity": display_string(issue.get("severity", group[:-1])),
-                        "field": display_string(issue.get("field", "")),
+                        "field": display_string(issue.get("fieldLabel", issue.get("field", ""))),
+                        "config field": display_string(issue.get("fieldName", "")),
                         "code": display_string(issue.get("code", "")),
                         "message": display_string(issue.get("message", "")),
                     }
@@ -193,6 +205,120 @@ if config:
             strategy_options,
             index=choice_index(config.get("screeningStrategy"), strategy_options, 3),
         )
+        st.subheader("Epidemiological assumptions")
+        st.caption(
+            "These controls set calibration targets for the simulated cohort. They are not the observed screening yield."
+        )
+        use_default_ltbi = st.checkbox(
+            "Use default APY MTB infection prevalence",
+            value=config.get("ltbiPrevalence") is None,
+        )
+        ltbi_prevalence_percent = None
+        if not use_default_ltbi:
+            ltbi_prevalence_percent = st.number_input(
+                "Assumed prevalence of MTB infection (LTBI)",
+                min_value=0.01,
+                max_value=99.99,
+                value=float(fraction_to_percent(config.get("ltbiPrevalence"), 47 / 624 * 100)),
+                step=0.1,
+                format="%.2f",
+                help=(
+                    "Displayed as a percentage and stored internally as a fraction. "
+                    "Changing this recalibrates infection probability and affects expected yield, "
+                    "false-positive burden and cases prevented."
+                ),
+            )
+        else:
+            st.info("Using the APY default MTB infection prevalence calibration target.")
+
+        use_default_active_tb = st.checkbox(
+            "Use default APY active-TB prevalence",
+            value=config.get("activeTBPrevalence") is None,
+        )
+        active_tb_prevalence_percent = None
+        if not use_default_active_tb:
+            active_tb_prevalence_percent = st.number_input(
+                "Assumed active-TB prevalence calibration target",
+                min_value=0.001,
+                max_value=99.99,
+                value=float(fraction_to_percent(config.get("activeTBPrevalence"), 10 / 770 * 100)),
+                step=0.01,
+                format="%.3f",
+                help="Displayed as a percentage and stored internally as a fraction.",
+            )
+        else:
+            st.info("Using the APY default active-TB prevalence calibration target.")
+
+        risk_prev_updates: dict[str, object] = {}
+        with st.expander("Risk-factor prevalence overrides", expanded=False):
+            st.caption(
+                "Default behaviour uses values from default_data.csv. Custom values are percentages and are stored internally as fractions."
+            )
+            risk_prev = config.get("riskPrev") or {}
+            mode_options = ["Use default", "Single overall", "Three age groups"]
+            for factor in PRINCIPAL_RISK_FACTORS:
+                st.markdown(f"**{RISK_FACTOR_LABELS[factor]}**")
+                current_value = risk_prev.get(factor)
+                mode = st.radio(
+                    f"{RISK_FACTOR_LABELS[factor]} source",
+                    mode_options,
+                    index=choice_index(risk_override_mode(current_value), mode_options),
+                    horizontal=True,
+                    key=f"risk_mode_{factor}",
+                )
+                current_pcts = risk_override_percent_values(current_value)
+                if mode == "Single overall":
+                    pct = st.number_input(
+                        f"{RISK_FACTOR_LABELS[factor]} prevalence (%)",
+                        min_value=0.01,
+                        max_value=99.99,
+                        value=float(current_pcts[0] or 1.0),
+                        step=0.1,
+                        format="%.2f",
+                        key=f"risk_single_{factor}",
+                    )
+                    risk_prev_updates[factor] = risk_override_from_percentages(mode, [pct])
+                elif mode == "Three age groups":
+                    cols = st.columns(3)
+                    values = []
+                    for idx, age_label in enumerate(AGE_GROUP_LABELS):
+                        values.append(
+                            cols[idx].number_input(
+                                f"{RISK_FACTOR_LABELS[factor]} {age_label} (%)",
+                                min_value=0.01,
+                                max_value=99.99,
+                                value=float(current_pcts[idx] or 1.0),
+                                step=0.1,
+                                format="%.2f",
+                                key=f"risk_age_{factor}_{idx}",
+                            )
+                        )
+                    risk_prev_updates[factor] = risk_override_from_percentages(mode, values)
+                else:
+                    risk_prev_updates[factor] = None
+
+            with st.expander("Advanced overall prevalence overrides"):
+                for factor in ADVANCED_RISK_FACTORS:
+                    current_value = risk_prev.get(factor)
+                    use_default = st.checkbox(
+                        f"Use default {RISK_FACTOR_LABELS[factor]} prevalence",
+                        value=current_value is None,
+                        key=f"adv_default_{factor}",
+                    )
+                    if use_default:
+                        risk_prev_updates[factor] = None
+                    else:
+                        pct = st.number_input(
+                            f"{RISK_FACTOR_LABELS[factor]} prevalence (%)",
+                            min_value=0.01,
+                            max_value=99.99,
+                            value=float(fraction_to_percent(current_value, 1.0)),
+                            step=0.1,
+                            format="%.2f",
+                            key=f"adv_pct_{factor}",
+                        )
+                        risk_prev_updates[factor] = risk_override_from_percentages("Single overall", [pct])
+
         with st.expander("Advanced / run controls"):
             st.caption("Technical run controls for stress testing and reproducibility.")
             population_size = st.number_input(
@@ -240,10 +366,19 @@ if config:
             "regimen": regimen,
             "screeningStrategy": screening_strategy,
         }
-        changed = any(config.get(key) != value for key, value in updates.items())
+        updated_config = dict(config)
+        updated_config.update(updates)
+        updated_config = apply_epidemiology_updates(
+            updated_config,
+            use_default_ltbi_prevalence=use_default_ltbi,
+            ltbi_prevalence_percent=ltbi_prevalence_percent,
+            use_default_active_tb_prevalence=use_default_active_tb,
+            active_tb_prevalence_percent=active_tb_prevalence_percent,
+            risk_prev_updates=risk_prev_updates,
+        )
+        changed = updated_config != config
         if changed:
-            config.update(updates)
-            st.session_state["config"] = config
+            st.session_state["config"] = updated_config
             mark_config_changed()
             st.success("Scenario edits applied.")
         else:
