@@ -42,7 +42,7 @@ backend = get_backend()
 # Sidebar (light, model-aware)
 # ---------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("### APY MATLAB backend")
+    st.markdown("### APY backend")
     status = st.session_state.get("backend_status", "unknown")
     st.write(status)
 

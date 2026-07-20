@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 from typing import Any
 
@@ -15,11 +16,11 @@ def init_session_state() -> None:
     """Initialize JSON-like Streamlit app state."""
     defaults: dict[str, Any] = {
         "backend_status": {
-            "name": "matlab",
+            "name": "python_apy",
             "started": False,
             "error": "",
         },
-        "apy_backend_name": "matlab",
+        "apy_backend_name": "python_apy",
         "config": None,
         "economics_config": None,
         "validation_report": None,
@@ -64,12 +65,21 @@ def init_session_state() -> None:
 
 
 def get_backend_name() -> str:
-    return str(st.session_state.get("apy_backend_name", "matlab"))
+    name = str(st.session_state.get("apy_backend_name", "python_apy"))
+    if name == "matlab" and not matlab_backend_enabled():
+        st.session_state["apy_backend_name"] = "python_apy"
+        return "python_apy"
+    return name
 
 
 def set_backend_name(name: str) -> None:
     if name not in {"matlab", "python_apy"}:
         raise ValueError(f"Unsupported APY backend: {name}")
+    if name == "matlab" and not matlab_backend_enabled():
+        raise ValueError(
+            "MATLAB reference backend is unavailable in this deployment. "
+            "Set APY_ENABLE_MATLAB_BACKEND=true in a local validation environment to enable it."
+        )
     if st.session_state.get("apy_backend_name") == name:
         return
     st.session_state["apy_backend_name"] = name
@@ -116,6 +126,15 @@ def get_backend() -> MatlabBackend | PythonApyBackend:
     if get_backend_name() == "python_apy":
         return get_python_apy_backend(root)
     return get_matlab_backend(root)
+
+
+def matlab_backend_enabled() -> bool:
+    return os.getenv("APY_ENABLE_MATLAB_BACKEND", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def mark_run_completed() -> None:

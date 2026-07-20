@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 import json
+import os
 import sys
 import types
 import unittest
@@ -174,6 +175,66 @@ class WorkbookExportTests(unittest.TestCase):
             import app.state as state
 
             importlib.reload(state)
+
+
+class HostedDeploymentSafetyTests(unittest.TestCase):
+    def test_new_session_defaults_to_python_and_blocks_matlab_without_opt_in(self) -> None:
+        fake_streamlit = types.SimpleNamespace(
+            session_state={},
+            cache_resource=lambda **_: (lambda fn: fn),
+        )
+        old_streamlit = sys.modules.get("streamlit")
+        old_env = os.environ.pop("APY_ENABLE_MATLAB_BACKEND", None)
+        sys.modules["streamlit"] = fake_streamlit
+        try:
+            import importlib
+            import app.state as state
+
+            importlib.reload(state)
+            state.init_session_state()
+            self.assertEqual(state.get_backend_name(), "python_apy")
+            self.assertFalse(state.matlab_backend_enabled())
+            with self.assertRaises(ValueError):
+                state.set_backend_name("matlab")
+        finally:
+            if old_env is not None:
+                os.environ["APY_ENABLE_MATLAB_BACKEND"] = old_env
+            if old_streamlit is not None:
+                sys.modules["streamlit"] = old_streamlit
+            else:
+                sys.modules.pop("streamlit", None)
+            import importlib
+            import app.state as state
+
+            importlib.reload(state)
+
+    def test_python_hosted_workflow_completes_without_matlab(self) -> None:
+        sys.modules.pop("matlab.engine", None)
+        backend = PythonApyBackend(repo_root())
+        config = backend.default_config()
+        config.update({"N": 100, "nReps": 5, "seed": 9})
+        config = apply_epidemiology_updates(
+            config,
+            use_default_ltbi_prevalence=False,
+            ltbi_prevalence_percent=2.0,
+            use_default_active_tb_prevalence=False,
+            active_tb_prevalence_percent=(10 / 770) * 0.02 / (47 / 624) * 100,
+        )
+        report = backend.validate_config(config)
+        self.assertTrue(report["isValid"])
+        bundle = backend.run_scenario_bundle(config, validation_report=report)
+        payload = build_results_workbook(
+            config=config,
+            bundle=bundle,
+            backend_status=backend.status(),
+            economics_results=None,
+            economics_config=None,
+            results_stale=False,
+        )
+        wb = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+        self.assertIn("Scenario_inputs", wb.sheetnames)
+        wb.close()
+        self.assertNotIn("matlab.engine", sys.modules)
 
 
 def _median(model_out: dict, metric: str) -> float:

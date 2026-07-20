@@ -21,6 +21,7 @@ from app.state import (
     get_backend,
     get_backend_name,
     init_session_state,
+    matlab_backend_enabled,
     mark_config_changed,
     mark_validation_completed,
     record_message,
@@ -36,17 +37,22 @@ st.title("Scenario")
 st.caption("APY v9 scenario setup for the selected backend.")
 
 BACKEND_LABELS = {
-    "matlab": "MATLAB v9 reference",
+    "matlab": "MATLAB reference - unavailable in hosted deployment",
     "python_apy": "Python APY v9 port (experimental)",
 }
-BACKEND_NAMES = {label: name for name, label in BACKEND_LABELS.items()}
+if matlab_backend_enabled():
+    BACKEND_LABELS["matlab"] = "MATLAB v9 reference"
+    backend_options = ["python_apy", "matlab"]
+else:
+    backend_options = ["python_apy"]
+BACKEND_NAMES = {BACKEND_LABELS[name]: name for name in backend_options}
 
 current_backend_name = get_backend_name()
 selected_backend_label = st.selectbox(
     "APY backend",
     list(BACKEND_NAMES),
     index=list(BACKEND_NAMES).index(
-        BACKEND_LABELS.get(current_backend_name, BACKEND_LABELS["matlab"])
+        BACKEND_LABELS.get(current_backend_name, BACKEND_LABELS["python_apy"])
     ),
 )
 selected_backend_name = BACKEND_NAMES[selected_backend_label]
@@ -57,10 +63,13 @@ if selected_backend_name != current_backend_name:
 backend = get_backend()
 
 st.caption(
-    "MATLAB remains the reference backend. The Python APY backend is experimental "
-    "and has passed diagnostic validation across the committed scenario suite, "
-    "but economics and attributable-risk add-ons are not yet ported."
+    "The Python APY backend is the hosted workflow and is experimental. "
+    "MATLAB remains the retained reference backend for local parity testing, "
+    "but is unavailable in hosted deployment unless explicitly enabled locally. "
+    "Attributable-risk add-ons are not yet ported."
 )
+if not matlab_backend_enabled():
+    st.info("MATLAB reference backend is unavailable in this hosted deployment.")
 
 
 def display_backend_status() -> None:
