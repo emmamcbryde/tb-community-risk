@@ -14,6 +14,7 @@ Open:
 1. VS Code
 2. ChatGPT in browser
 3. PowerShell terminal inside VS Code
+GITHUB desktop
 4. Optional: File Explorer to your repo folder
 ```
 
@@ -128,7 +129,7 @@ codex resume 019d94fb-b8a6-7ad1-93f8-c546cb18eb88
 ## 5. If Codex opens but seems confused
 
 First tell it where it is:
-
+remember to use ctrl shift v 
 ```text
 We are in the tb-community-risk repository on branch python-apy-abm-port.
 
@@ -139,7 +140,6 @@ git log --oneline -5
 
 Do not make changes yet. Report status only.
 ```
-
 This prevents Codex from charging ahead in the wrong branch or folder.
 
 ---
@@ -158,6 +158,9 @@ Please stop any long-running commands and report status only:
 6. anything committed?
 Do not make new changes.
 ```
+## 6.5 streamlit activation
+1. in powershell NOT codex write:
+streamlit run ui/app.py
 
 If you think Streamlit is stuck, in a separate PowerShell window:
 
