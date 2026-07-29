@@ -103,6 +103,7 @@ CHART_BLOCKS = [
     ("TPT starts", "nTotalCoursesStarted_median"),
     ("TPT completions", "nTotalCoursesCompleted_median"),
 ]
+HISTORICAL_COMPARISON_ABS_TOLERANCE = 1e-12
 
 
 def main() -> int:
@@ -695,20 +696,28 @@ def compare_frame(source: str, old_df: pd.DataFrame, new_df: pd.DataFrame, key_c
         new_value = getattr(row, "locked_run_value")
         old_missing = pd.isna(old_value)
         new_missing = pd.isna(new_value)
+        difference_class = "exact"
         if old_missing and new_missing:
             diff = rel = 0.0
             passed = True
         elif old_missing or new_missing:
             diff = rel = math.nan
             passed = False
+            difference_class = "missing_value"
         else:
             diff = float(new_value) - float(old_value)
             rel = math.nan if float(old_value) == 0 else diff / float(old_value)
-            passed = diff == 0.0
+            passed = abs(diff) <= HISTORICAL_COMPARISON_ABS_TOLERANCE
+            if diff != 0.0 and passed:
+                difference_class = "formatting_or_float_precision_only"
+            elif not passed:
+                difference_class = "numerical_difference"
         row_dict = row._asdict()
         row_dict["source_file"] = source
         row_dict["absolute_difference"] = diff
         row_dict["relative_difference"] = rel
+        row_dict["comparison_abs_tolerance"] = HISTORICAL_COMPARISON_ABS_TOLERANCE
+        row_dict["difference_class"] = difference_class
         row_dict["pass_fail"] = "pass" if passed else "fail"
         rows.append(row_dict)
     return rows

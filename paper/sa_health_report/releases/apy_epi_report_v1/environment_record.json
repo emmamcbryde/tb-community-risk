@@ -1,0 +1,23 @@
+{
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2025a\\bin\\matlab.EXE",
+  "matlab_version": "not used; version unavailable: Command '['matlab', '-batch', 'disp(version)']' returned non-zero exit status 1.",
+  "operating_system": "Windows-11-10.0.26200-SP0",
+  "packages": {
+    "altair": "5.0.1",
+    "matplotlib": "3.8.4",
+    "numpy": "1.26.4",
+    "openpyxl": "3.1.2",
+    "pandas": "2.2.2",
+    "scipy": "1.13.1",
+    "streamlit": "1.32.0"
+  },
+  "python_executable": "C:\\Users\\emmas\\anaconda3\\python.exe",
+  "python_version": "3.12.4 | packaged by Anaconda, Inc. | (main, Jun 18 2024, 15:03:56) [MSC v.1929 64 bit (AMD64)]",
+  "recorded_at_utc": "2026-07-29T11:10:38.976789+00:00",
+  "rng": {
+    "bit_generator": "PCG64",
+    "implementation": "numpy.random.default_rng",
+    "parent_seed": 1,
+    "replicate_seed_draw": "default_rng(seed).integers(0, np.iinfo(np.uint32).max, size=nReps)"
+  }
+}

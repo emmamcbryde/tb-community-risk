@@ -1,0 +1,222 @@
+{
+  "input_files": [
+    {
+      "path": "abm/default_data.csv",
+      "sha256": "4155434ed9f82b6c069100ed6e68c4a844739ae49fd11d203e029d7b9972d7db"
+    },
+    {
+      "path": "abm/default_age_distribution.csv",
+      "sha256": "cb350676f7a75b354406e0c5bc3f54670199867609313d08535b1e3d361a27e8"
+    },
+    {
+      "path": "paper/sa_health_report/releases/apy_epi_report_v1/scenarios/base_default_ltbi.json",
+      "sha256": "fea646bb39b5775faac19e80057cf8eb1ed6fcadefb3cd658b1a49bc9d8507f5"
+    },
+    {
+      "path": "paper/sa_health_report/releases/apy_epi_report_v1/scenarios/low_ltbi_1pct.json",
+      "sha256": "8b5b7906767c86bdba11146d9320df2254d710315d224e7f2d14cf4dda7df535"
+    },
+    {
+      "path": "paper/sa_health_report/releases/apy_epi_report_v1/scenarios/prevalence_ltbi_0_5pct.json",
+      "sha256": "d6586c880f227a37121576479583f8c88553284be3b012247d7d007eb29e5669"
+    },
+    {
+      "path": "paper/sa_health_report/releases/apy_epi_report_v1/scenarios/prevalence_ltbi_2pct.json",
+      "sha256": "d7d7d8f7bf54d9d24a7e75e0c92793f238e4b22da3c775b0f3d62cc9dbe0de4b"
+    },
+    {
+      "path": "paper/sa_health_report/releases/apy_epi_report_v1/scenarios/prevalence_ltbi_3pct.json",
+      "sha256": "0c48ffbe29b2fc07de900c20e8fe07f7e3b4db8a604acb2fe9aebd1460ded46b"
+    },
+    {
+      "path": "paper/sa_health_report/releases/apy_epi_report_v1/scenarios/prevalence_ltbi_5pct.json",
+      "sha256": "16ff5f42afb7edfb3defa6786e432e83046d8c6ae6739c9ad7de54bc24a4ec87"
+    },
+    {
+      "path": "paper/sa_health_report/releases/apy_epi_report_v1/scenarios/prevalence_ltbi_7_53pct.json",
+      "sha256": "aa008ea59ea8b00a4d53fe10d87a5788cddc226eaab34f50f86f670cd42c52f3"
+    },
+    {
+      "path": "paper/sa_health_report/releases/apy_epi_report_v1/scenarios/prevalence_ltbi_10pct.json",
+      "sha256": "ae0c9675c814c3c71103ebb7d8c3dba92e7a32f5a3db271a7d21f2fe215f303b"
+    }
+  ],
+  "resolved_parameters": {
+    "N": 1500,
+    "activeTBPrevalence_base_2y": 0.012987012987012988,
+    "activeTBPrevalence_low_2y": 0.0017242332135949158,
+    "base_calibration": {
+      "ageInfGamma": 1.472040267717198,
+      "ageInfLogLambda": -8.296759771437792,
+      "expectedActive2y": 0.012987012986780545,
+      "expectedAgeOR": 7.539999999999321,
+      "expectedInfPrev": 0.07532051281998707,
+      "lambdaEarly": 0.003797598662632285,
+      "lambdaLate": 0.000759519732526457,
+      "targetActive2y": 0.012987012987012988,
+      "targetAgeOR": 7.54,
+      "targetInfPrev": 0.07532051282051282
+    },
+    "disease_OR": {
+      "MJ": 3.0,
+      "alcohol": 3.0,
+      "cld": 3.0,
+      "contact": 5.0,
+      "diabetes": 3.0,
+      "renal": 3.6,
+      "smoking": 2.0
+    },
+    "earlyLateRatio": 5,
+    "followHorizon": 20,
+    "infection_OR": {
+      "MJ": 3.65,
+      "contact": 2.53,
+      "renal": 2.19
+    },
+    "low_1pct_calibration": {
+      "ageInfGamma": 1.4683409844566413,
+      "ageInfLogLambda": -10.429840360302478,
+      "expectedActive2y": 0.0017242332136548813,
+      "expectedAgeOR": 7.540000000005887,
+      "expectedInfPrev": 0.010000000000693546,
+      "lambdaEarly": 0.003330278838306738,
+      "lambdaLate": 0.0006660557676613476,
+      "targetActive2y": 0.0017242332135949158,
+      "targetAgeOR": 7.54,
+      "targetInfPrev": 0.01
+    },
+    "ltbiPrevalence_base": 0.07532051282051282,
+    "ltbiPrevalence_low": 0.01,
+    "nReps": 2000,
+    "pStartTPT": 0.85,
+    "partialDoseFractionADR": 0.3,
+    "partialDoseFractionOther": 0.6,
+    "partialShortCourseMode": "threshold80",
+    "prevalence_update_scenarios": [
+      {
+        "label": "0.5% LTBI",
+        "ltbiPrevalence": 0.005,
+        "scenario_id": "LTBI_0_5pct"
+      },
+      {
+        "label": "1% LTBI",
+        "ltbiPrevalence": 0.01,
+        "scenario_id": "LTBI_1pct"
+      },
+      {
+        "label": "2% LTBI",
+        "ltbiPrevalence": 0.02,
+        "scenario_id": "LTBI_2pct"
+      },
+      {
+        "label": "3% LTBI",
+        "ltbiPrevalence": 0.03,
+        "scenario_id": "LTBI_3pct"
+      },
+      {
+        "label": "5% LTBI",
+        "ltbiPrevalence": 0.05,
+        "scenario_id": "LTBI_5pct"
+      },
+      {
+        "label": "7.53% LTBI",
+        "ltbiPrevalence": 0.07532051282051282,
+        "scenario_id": "LTBI_7_53pct"
+      },
+      {
+        "label": "10% LTBI",
+        "ltbiPrevalence": 0.1,
+        "scenario_id": "LTBI_10pct"
+      }
+    ],
+    "prevalence_update_screen_count_grid": [
+      0,
+      50,
+      100,
+      150,
+      200,
+      300,
+      450,
+      600,
+      1000,
+      1500
+    ],
+    "regimen": "3HP",
+    "regimenADRstop": 0.05,
+    "regimenEffFull": 0.85,
+    "regimenPComplete": 0.8,
+    "risk_factor_prevalence_by_age": {
+      "MJ": [
+        0.0,
+        0.05,
+        0.2
+      ],
+      "alcohol": [
+        0.0,
+        0.4,
+        0.4
+      ],
+      "cld": [
+        0.0,
+        0.1,
+        0.2
+      ],
+      "contact": [
+        0.13,
+        0.13,
+        0.13
+      ],
+      "diabetes": [
+        0.0,
+        0.0,
+        0.3
+      ],
+      "renal": [
+        0.0,
+        0.01,
+        0.15
+      ],
+      "smoking": [
+        0.0,
+        0.1,
+        0.6
+      ]
+    },
+    "screenWindow": 2,
+    "screen_count_grid": [
+      0,
+      50,
+      100,
+      150,
+      200,
+      250,
+      300,
+      350,
+      400,
+      450,
+      500,
+      600,
+      700,
+      800,
+      900,
+      1000,
+      1100,
+      1200,
+      1300,
+      1400,
+      1500
+    ],
+    "seed": 1,
+    "strategies": [
+      "random",
+      "ltbi",
+      "prevent"
+    ],
+    "targetAgeOR": 7.54,
+    "testSensitivity": 0.95,
+    "testSpecificity": 0.98,
+    "testType": "IGRA",
+    "totalBCGPrev": 0.68,
+    "totalFemalePrev": 0.56
+  }
+}
