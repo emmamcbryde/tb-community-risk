@@ -1,0 +1,7 @@
+{
+  "scenario_id": "low_LTBI_1pct",
+  "label": "1% LTBI sensitivity",
+  "ltbiPrevalence": 0.01,
+  "activeTBPrevalence": 0.0017242332135949158,
+  "active_tb_scaling": "activeTBPrevalence = (10 / 770) * ltbiPrevalence / (47 / 624)"
+}

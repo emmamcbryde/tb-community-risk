@@ -1,0 +1,7 @@
+{
+  "scenario_id": "base_default_LTBI",
+  "label": "Default APY LTBI calibration",
+  "ltbiPrevalence": null,
+  "activeTBPrevalence": null,
+  "active_tb_scaling": "none"
+}

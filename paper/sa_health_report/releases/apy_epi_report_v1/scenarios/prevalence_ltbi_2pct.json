@@ -1,0 +1,7 @@
+{
+  "scenario_id": "LTBI_2pct",
+  "label": "2% LTBI prevalence-update scenario",
+  "ltbiPrevalence": 0.02,
+  "activeTBPrevalence": 0.0034484664271898315,
+  "active_tb_scaling": "activeTBPrevalence = (10 / 770) * ltbiPrevalence / (47 / 624)"
+}
