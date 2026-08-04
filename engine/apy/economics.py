@@ -20,6 +20,23 @@ from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
 
 ECONOMICS_CONTRACT_VERSION = "apy_v9_economics_results_v1"
 ECONOMICS_SOURCE = "run_health_economics_v9_python_port"
+COMPATIBILITY_COST_NOTES = (
+    "Compatibility mirror only. Authoritative Milestone 1 calculations use "
+    "costItems and valid convertedTargetYearCost values."
+)
+LEGACY_COST_ITEM_MAP = {
+    ("costs", "test", "IGRA"): "test_igra",
+    ("costs", "test", "TST"): "test_tst",
+    ("costs", "regimen", "x3HP"): "regimen_3hp",
+    ("costs", "regimen", "x4R"): "regimen_4r",
+    ("costs", "regimen", "x3HR"): "regimen_3hr",
+    ("costs", "regimen", "x6H"): "regimen_6h",
+    ("costs", "regimen", "x9H"): "regimen_9h",
+    ("costs", "activeTBDiseasePerCase"): "active_tb_disease",
+    ("costs", "falsePositiveIncrementalPerPerson"): "false_positive_incremental",
+    ("costs", "programSetupTotal"): "program_setup",
+    ("costs", "programRunningTotal"): "program_running",
+}
 
 
 def build_default_economics_config() -> dict[str, Any]:
@@ -45,7 +62,8 @@ def build_default_economics_config() -> dict[str, Any]:
                 "Projected model costs remain in constant target-year prices."
             ),
         },
-        "costItems": [],
+        "costItems": default_cost_items(),
+        "costsCompatibilityNotes": COMPATIBILITY_COST_NOTES,
         "discounting": {
             "selectedAnnualRate": 0.03,
             "availableAnnualRates": [0.03, 0.0],
@@ -117,102 +135,144 @@ def build_economics_preset_kwab150() -> dict[str, Any]:
         }
     )
     config["costs"]["activeTBDiseasePerCase"] = 19079.6
-    config["costItems"] = normalise_cost_table(
-        [
-            build_cost_item(
-                cost_item_id="test_igra",
-                description="IGRA screening test per person",
-                original_cost=113.48,
-                original_currency="AUD",
-                original_price_year=None,
-                source="Local data/costs.csv row cscreenqft",
-                page_table_item="cscreenqft",
-                source_year_status="unknown",
-                resource_category="screening_test",
-                notes="Includes test kit and lab processing according to local row description.",
-            ),
-            build_cost_item(
-                cost_item_id="test_tst",
-                description="TST screening per person",
-                original_cost=116.07,
-                original_currency="AUD",
-                original_price_year=None,
-                source="Local data/costs.csv row cscreentst",
-                page_table_item="cscreentst",
-                source_year_status="unknown",
-                resource_category="screening_test",
-                notes="Local row description says TST includes PPD injection and reading visit.",
-                resource_use={"returnVisitForReading": True},
-            ),
-            build_cost_item(
-                cost_item_id="regimen_3hp",
-                description="3HP preventive regimen per started course",
-                original_cost=165.5072,
-                original_currency="AUD",
-                original_price_year=None,
-                source="Local data/costs.csv row ctreat3HP",
-                page_table_item="ctreat3HP",
-                source_year_status="unknown",
-                resource_category="preventive_regimen",
-            ),
-            build_cost_item(
-                cost_item_id="regimen_4r",
-                description="4R preventive regimen per started course",
-                original_cost=123.3172,
-                original_currency="AUD",
-                original_price_year=None,
-                source="Local data/costs.csv row ctreat4R",
-                page_table_item="ctreat4R",
-                source_year_status="unknown",
-                resource_category="preventive_regimen",
-            ),
-            build_cost_item(
-                cost_item_id="regimen_3hr",
-                description="3HR preventive regimen per started course",
-                original_cost=134.2272,
-                original_currency="AUD",
-                original_price_year=None,
-                source="Local data/costs.csv row ctreat3HR",
-                page_table_item="ctreat3HR",
-                source_year_status="unknown",
-                resource_category="preventive_regimen",
-            ),
-            build_cost_item(
-                cost_item_id="regimen_6h",
-                description="6H preventive regimen per started course",
-                original_cost=187.7508,
-                original_currency="AUD",
-                original_price_year=None,
-                source="Local data/costs.csv row ctreat6H",
-                page_table_item="ctreat6H",
-                source_year_status="unknown",
-                resource_category="preventive_regimen",
-            ),
-            build_cost_item(
-                cost_item_id="regimen_9h",
-                description="9H preventive regimen per started course",
-                original_cost=254.8544,
-                original_currency="AUD",
-                original_price_year=None,
-                source="Local data/costs.csv row ctreat9H",
-                page_table_item="ctreat9H",
-                source_year_status="unknown",
-                resource_category="preventive_regimen",
-            ),
-            build_cost_item(
-                cost_item_id="active_tb_disease",
-                description="Active TB disease management per case",
-                original_cost=19079.6,
-                original_currency="AUD",
-                original_price_year=None,
-                source="Local data/costs.csv row ctb",
-                page_table_item="ctb",
-                source_year_status="unknown",
-                resource_category="tb_disease_care",
-            ),
-        ]
+    config["costItems"] = default_cost_items(
+        {
+            "test_igra": {
+                "originalCost": 113.48,
+                "sourceCitation": "Local data/costs.csv row cscreenqft",
+                "pageTableItem": "cscreenqft",
+                "notes": "Includes test kit and lab processing according to local row description.",
+            },
+            "test_tst": {
+                "originalCost": 116.07,
+                "sourceCitation": "Local data/costs.csv row cscreentst",
+                "pageTableItem": "cscreentst",
+                "notes": "Local row description says TST includes PPD injection and reading visit.",
+            },
+            "regimen_3hp": {
+                "originalCost": 165.5072,
+                "sourceCitation": "Local data/costs.csv row ctreat3HP",
+                "pageTableItem": "ctreat3HP",
+            },
+            "regimen_4r": {
+                "originalCost": 123.3172,
+                "sourceCitation": "Local data/costs.csv row ctreat4R",
+                "pageTableItem": "ctreat4R",
+            },
+            "regimen_3hr": {
+                "originalCost": 134.2272,
+                "sourceCitation": "Local data/costs.csv row ctreat3HR",
+                "pageTableItem": "ctreat3HR",
+            },
+            "regimen_6h": {
+                "originalCost": 187.7508,
+                "sourceCitation": "Local data/costs.csv row ctreat6H",
+                "pageTableItem": "ctreat6H",
+            },
+            "regimen_9h": {
+                "originalCost": 254.8544,
+                "sourceCitation": "Local data/costs.csv row ctreat9H",
+                "pageTableItem": "ctreat9H",
+            },
+            "active_tb_disease": {
+                "originalCost": 19079.6,
+                "sourceCitation": "Local data/costs.csv row ctb",
+                "pageTableItem": "ctb",
+            },
+        }
     )
+    return sync_legacy_cost_fields_from_cost_items(config)
+
+
+def default_cost_items(overrides: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    overrides = overrides or {}
+    specs = [
+        ("test_igra", "IGRA screening test per person", "screening_test", {}),
+        ("test_tst", "TST screening per person", "screening_test", {"returnVisitForReading": True}),
+        ("regimen_3hp", "3HP preventive regimen per started course", "preventive_regimen", {}),
+        ("regimen_4r", "4R preventive regimen per started course", "preventive_regimen", {}),
+        ("regimen_3hr", "3HR preventive regimen per started course", "preventive_regimen", {}),
+        ("regimen_6h", "6H preventive regimen per started course", "preventive_regimen", {}),
+        ("regimen_9h", "9H preventive regimen per started course", "preventive_regimen", {}),
+        ("active_tb_disease", "Active TB disease management per case", "tb_disease_care", {}),
+        (
+            "false_positive_incremental",
+            "False-positive incremental resource use or cost per treated false-positive person",
+            "false_positive_care",
+            {},
+        ),
+        ("program_setup", "Programme setup total cost", "program_setup", {}),
+        ("program_running", "Programme running total cost", "program_running", {}),
+    ]
+    items = []
+    for cost_item_id, description, category, resource_use in specs:
+        override = overrides.get(cost_item_id, {})
+        items.append(
+            build_cost_item(
+                cost_item_id=cost_item_id,
+                description=str(override.get("description", description)),
+                original_cost=override.get("originalCost"),
+                original_currency=str(override.get("originalCurrency", TARGET_CURRENCY)),
+                original_price_year=override.get("originalPriceYear"),
+                source=str(override.get("sourceCitation", "Not specified in repository.")),
+                page_table_item=str(override.get("pageTableItem", "")),
+                source_year_status=str(override.get("sourceYearStatus", "unknown")),
+                resource_category=str(override.get("resourceCategory", category)),
+                notes=str(
+                    override.get(
+                        "notes",
+                        "Unresolved until a source value, source year and provenance are supplied.",
+                    )
+                ),
+                resource_use=override.get("resourceUse", resource_use),
+            )
+        )
+    return items
+
+
+def sync_legacy_cost_fields_from_cost_items(econ_config: dict[str, Any]) -> dict[str, Any]:
+    config = deepcopy(econ_config)
+    costs = config.setdefault("costs", {})
+    costs.setdefault("test", {})
+    costs.setdefault("regimen", {})
+    by_id = {
+        item.get("costItemId"): item
+        for item in ensure_authoritative_cost_items(config.get("costItems") or [])
+    }
+    for path, cost_item_id in LEGACY_COST_ITEM_MAP.items():
+        _set_nested(config, path, by_id.get(cost_item_id, {}).get("originalCost"))
+    config["costsCompatibilityNotes"] = COMPATIBILITY_COST_NOTES
     return config
+
+
+def update_cost_item_original_values_from_legacy_fields(econ_config: dict[str, Any]) -> dict[str, Any]:
+    config = deepcopy(econ_config)
+    items = ensure_authoritative_cost_items(config.get("costItems") or [])
+    by_id = {item.get("costItemId"): item for item in items}
+    for path, cost_item_id in LEGACY_COST_ITEM_MAP.items():
+        value = _get_nested(config, path)
+        if value in (None, "", []):
+            continue
+        item = by_id.get(cost_item_id)
+        if item is None:
+            continue
+        item["originalCost"] = value
+        item["conversionStatus"] = "not_converted"
+        item["conversionApplied"] = False
+        item["costRecordType"] = "source"
+        item["warnings"] = []
+    config["costItems"] = list(by_id.values())
+    return sync_legacy_cost_fields_from_cost_items(config)
+
+
+def ensure_authoritative_cost_items(cost_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_id = {item.get("costItemId"): deepcopy(item) for item in cost_items if isinstance(item, dict)}
+    for item in default_cost_items():
+        by_id.setdefault(item["costItemId"], item)
+    ordered_ids = [item["costItemId"] for item in default_cost_items()]
+    return [by_id[item_id] for item_id in ordered_ids] + [
+        item for item_id, item in by_id.items() if item_id not in ordered_ids
+    ]
 
 
 def validate_economics_config(econ_config: dict[str, Any]) -> dict[str, Any]:
@@ -334,6 +394,12 @@ def run_health_economics(
         econ_config = build_default_economics_config()
     else:
         econ_config = _normalise_empty_to_none(deepcopy(econ_config))
+    econ_config = sync_legacy_cost_fields_from_cost_items(
+        {
+            **econ_config,
+            "costItems": ensure_authoritative_cost_items(econ_config.get("costItems") or []),
+        }
+    )
 
     validation_report = validate_economics_config(econ_config)
     if not validation_report["isValid"]:
@@ -354,28 +420,21 @@ def run_health_economics(
     quantities["baselineActiveTBCases"] = baseline_cases
     quantities["interventionActiveTBCases"] = intervention_cases
 
-    test_cost = selected_test_cost(econ_config, test_type, status)
-    regimen_cost = selected_regimen_cost(econ_config, regimen, status)
-    costs = econ_config.get("costs", {})
     normalised_items = normalise_cost_table(econ_config.get("costItems") or [])
     cost_item_lookup = {item.get("costItemId"): item for item in normalised_items}
-    converted_test_cost = selected_converted_test_cost(cost_item_lookup, test_type)
-    converted_regimen_cost = selected_converted_regimen_cost(cost_item_lookup, regimen)
-    converted_active_tb_cost = valid_converted_cost(cost_item_lookup.get("active_tb_disease", {}))
-    if normalised_items:
-        test_cost = converted_test_cost
-        regimen_cost = converted_regimen_cost
-    active_tb_cost = converted_active_tb_cost if normalised_items else _optional_cost(costs, "activeTBDiseasePerCase")
+    test_cost = selected_converted_test_cost(cost_item_lookup, test_type, status)
+    regimen_cost = selected_converted_regimen_cost(cost_item_lookup, regimen, status)
+    false_positive_cost = cost_item_value(cost_item_lookup, "false_positive_incremental")
+    setup_cost = cost_item_value(cost_item_lookup, "program_setup")
+    running_cost = cost_item_value(cost_item_lookup, "program_running")
+    active_tb_cost = cost_item_value(cost_item_lookup, "active_tb_disease")
 
     status["messages"].extend(unresolved_cost_warnings(normalised_items))
 
     unit_costs = {
         "testPerPerson": test_cost,
         "treatmentPerStarted": regimen_cost,
-        "falsePositiveIncrementalPerPerson": _optional_cost(
-            costs,
-            "falsePositiveIncrementalPerPerson",
-        ),
+        "falsePositiveIncrementalPerPerson": false_positive_cost,
         "activeTBDiseasePerCase": active_tb_cost,
     }
 
@@ -389,8 +448,8 @@ def run_health_economics(
             quantities["nFalsePositiveTreated"],
             unit_costs["falsePositiveIncrementalPerPerson"],
         ),
-        "programSetupCost": _optional_cost(costs, "programSetupTotal"),
-        "programRunningCost": _optional_cost(costs, "programRunningTotal"),
+        "programSetupCost": setup_cost,
+        "programRunningCost": running_cost,
         "tbDiseaseCostsAverted": multiply_if_available(
             quantities["nPreventedActiveTB"],
             active_tb_cost,
@@ -573,16 +632,22 @@ def selected_regimen_cost(
 def selected_converted_test_cost(
     cost_items: dict[str, dict[str, Any]],
     test_type: str,
+    status: dict[str, Any],
 ) -> float | None:
     key = {"IGRA": "test_igra", "TST": "test_tst"}.get(str(test_type).upper())
     if key is None:
+        status["missingInputs"].append(f"costItems test cost for {test_type}")
         return None
-    return valid_converted_cost(cost_items.get(key, {}))
+    value = cost_item_value(cost_items, key)
+    if value is None:
+        status["missingInputs"].append(f"costItems.{key}.convertedTargetYearCost")
+    return value
 
 
 def selected_converted_regimen_cost(
     cost_items: dict[str, dict[str, Any]],
     regimen: str,
+    status: dict[str, Any],
 ) -> float | None:
     key = {
         "3HP": "regimen_3hp",
@@ -592,8 +657,16 @@ def selected_converted_regimen_cost(
         "9H": "regimen_9h",
     }.get(str(regimen).upper())
     if key is None:
+        status["missingInputs"].append(f"Unknown regimen label: {regimen}")
         return None
-    return valid_converted_cost(cost_items.get(key, {}))
+    value = cost_item_value(cost_items, key)
+    if value is None:
+        status["missingInputs"].append(f"costItems.{key}.convertedTargetYearCost")
+    return value
+
+
+def cost_item_value(cost_items: dict[str, dict[str, Any]], cost_item_id: str) -> float | None:
+    return valid_converted_cost(cost_items.get(cost_item_id, {}))
 
 
 def baseline_intervention_cases(results: dict[str, Any]) -> tuple[float | None, float | None]:
@@ -839,6 +912,26 @@ def _normalise_empty_to_none(value: Any) -> Any:
     if isinstance(value, list):
         return [_normalise_empty_to_none(item) for item in value]
     return value
+
+
+def _get_nested(config: dict[str, Any], path: tuple[str, ...]) -> Any:
+    current: Any = config
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _set_nested(config: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
+    current = config
+    for key in path[:-1]:
+        child = current.get(key)
+        if not isinstance(child, dict):
+            child = {}
+            current[key] = child
+        current = child
+    current[path[-1]] = value
 
 
 def _summary_rows(results: dict[str, Any]) -> list[dict[str, Any]]:

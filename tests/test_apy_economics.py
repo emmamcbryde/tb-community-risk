@@ -6,6 +6,7 @@ import unittest
 from engine.apy.economics import (
     build_default_economics_config,
     build_economics_preset_kwab150,
+    update_cost_item_original_values_from_legacy_fields,
     run_health_economics,
     run_health_economics_for_config,
     validate_economics_config,
@@ -28,6 +29,11 @@ class ApyEconomicsTests(unittest.TestCase):
         cls.econ_config["costs"]["falsePositiveIncrementalPerPerson"] = 10.0
         cls.econ_config["costs"]["programSetupTotal"] = 1000.0
         cls.econ_config["costs"]["programRunningTotal"] = 2000.0
+        cls.econ_config = update_cost_item_original_values_from_legacy_fields(cls.econ_config)
+        for item in cls.econ_config["costItems"]:
+            if item["originalCost"] not in (None, "", []):
+                item["originalPriceYear"] = "2025-26"
+                item["sourceYearStatus"] = "explicit"
         cls.econ = run_health_economics(cls.python_output, cls.econ_config)
 
     def test_default_economics_config_has_expected_blank_fields(self) -> None:
@@ -53,7 +59,7 @@ class ApyEconomicsTests(unittest.TestCase):
         self.assertAlmostEqual(config["costs"]["activeTBDiseasePerCase"], 19079.6)
         self.assertEqual(
             config["costItems"][0]["conversionStatus"],
-            "unresolved_source_price_year",
+            "not_converted",
         )
 
     def test_valid_default_economics_config_passes_validation(self) -> None:
@@ -126,6 +132,7 @@ class ApyEconomicsTests(unittest.TestCase):
             item["conversionApplied"] = False
             item["warnings"] = []
 
+        config = update_cost_item_original_values_from_legacy_fields(config)
         econ = run_health_economics(self.python_output, config)
 
         self.assertIsNone(econ["costs"]["falsePositiveIncrementalCost"])

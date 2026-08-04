@@ -25,7 +25,7 @@ class PythonApyBackendEconomicsTests(unittest.TestCase):
         self.assertEqual(config["metadata"]["priceYear"], "2025-26")
         self.assertEqual(
             config["costItems"][0]["conversionStatus"],
-            "unresolved_source_price_year",
+            "not_converted",
         )
 
     def test_run_economics_for_config_small_run(self) -> None:

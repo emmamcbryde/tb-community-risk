@@ -19,6 +19,8 @@ from app.state import (
     record_message,
     sync_backend_status,
 )
+from engine.apy.costing import normalise_cost_table
+from engine.apy.economics import update_cost_item_original_values_from_legacy_fields
 
 
 init_session_state()
@@ -188,7 +190,7 @@ def economics_config_from_widgets(base_config: dict) -> dict:
     )
     config["costs"]["programSetupTotal"] = parse_optional_number("econ_setup_total")
     config["costs"]["programRunningTotal"] = parse_optional_number("econ_running_total")
-    return config
+    return update_cost_item_original_values_from_legacy_fields(config)
 
 
 def nested_get(config: dict, path: tuple[str, ...]) -> object:
@@ -408,7 +410,7 @@ if submitted:
 
 st.subheader("Current Assumptions")
 warnings = []
-for item in econ_config.get("costItems") or []:
+for item in normalise_cost_table(econ_config.get("costItems") or []):
     if item.get("conversionStatus") != "valid":
         warnings.append(f"{item.get('costItemId')}: {item.get('conversionStatus')}")
 if econ_config.get("threshold", {}).get("value") in (None, "", []):

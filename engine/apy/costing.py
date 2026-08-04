@@ -61,6 +61,7 @@ def build_cost_item(
         "notes": notes,
         "resourceUse": deepcopy(resource_use or {}),
         "conversionApplied": False,
+        "costRecordType": "source",
     }
 
 
@@ -82,12 +83,13 @@ def normalise_cost_item(
     index_lookup: dict[tuple[str, str], dict[str, Any]],
 ) -> dict[str, Any]:
     out = deepcopy(item)
-    warnings = list(out.get("warnings") or [])
-    if out.get("conversionApplied"):
-        warnings.append("Cost item already has conversionApplied=true; double inflation prevented.")
+    warnings = []
+    if str(out.get("costRecordType", "")).strip().lower() == "converted_input":
+        warnings.append("Converted target-year cost was supplied as a new source value; double inflation prevented.")
         out["conversionStatus"] = "invalid_double_inflation"
         out["warnings"] = warnings
         return out
+    _clear_derived_fields(out)
 
     original_cost = _number_or_none(out.get("originalCost"))
     source_year = out.get("originalPriceYear")
@@ -132,6 +134,8 @@ def normalise_cost_item(
                 out["convertedTargetYearCost"] = converted
                 out["conversionStatus"] = "valid"
                 out["conversionApplied"] = True
+    if out.get("conversionStatus") == "valid":
+        out["costRecordType"] = "normalised"
     out["warnings"] = warnings
     if out.get("conversionStatus") == "valid":
         _assert_reconciles(out)
@@ -174,6 +178,18 @@ def _assert_reconciles(item: dict[str, Any]) -> None:
         raise ValueError("Converted cost is marked valid but is incomplete.")
     if not math.isclose(original * factor, converted, rel_tol=1e-12, abs_tol=1e-12):
         raise ValueError("Converted cost does not reconcile with the recorded factor.")
+
+
+def _clear_derived_fields(item: dict[str, Any]) -> None:
+    item["indexSource"] = ""
+    item["indexVersion"] = ""
+    item["sourceYearIndexValue"] = None
+    item["targetYearIndexValue"] = None
+    item["inflationFactor"] = None
+    item["convertedTargetYearCost"] = None
+    item["conversionStatus"] = "not_converted"
+    item["conversionApplied"] = False
+    item["costRecordType"] = "source"
 
 
 def _normalise_index_row(row: dict[str, Any]) -> dict[str, Any]:

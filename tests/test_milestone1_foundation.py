@@ -19,6 +19,9 @@ from engine.apy.costing import (
 from engine.apy.economics import (
     build_default_economics_config,
     build_economics_preset_kwab150,
+    run_health_economics,
+    sync_legacy_cost_fields_from_cost_items,
+    update_cost_item_original_values_from_legacy_fields,
     validate_economics_config,
 )
 from engine.apy.scenario import (
@@ -200,7 +203,7 @@ class Milestone1CostingTests(unittest.TestCase):
             converted["convertedTargetYearCost"],
         )
 
-    def test_cost_cannot_be_inflated_twice(self) -> None:
+    def test_repeated_normalisation_does_not_inflate_twice(self) -> None:
         item = build_cost_item(
             cost_item_id="twice",
             description="twice",
@@ -215,7 +218,26 @@ class Milestone1CostingTests(unittest.TestCase):
 
         twice = normalise_cost_table([once], [])[0]
 
-        self.assertEqual(twice["conversionStatus"], "invalid_double_inflation")
+        self.assertEqual(twice["conversionStatus"], "valid")
+        self.assertEqual(twice["inflationFactor"], 1.0)
+        self.assertEqual(twice["convertedTargetYearCost"], 100)
+
+    def test_genuine_attempted_double_conversion_remains_detected(self) -> None:
+        item = build_cost_item(
+            cost_item_id="converted_as_source",
+            description="converted as source",
+            original_cost=100,
+            original_currency="AUD",
+            original_price_year="2025-26",
+            source="test",
+            source_year_status="explicit",
+            resource_category="test",
+        )
+        item["costRecordType"] = "converted_input"
+
+        converted = normalise_cost_table([item], [])[0]
+
+        self.assertEqual(converted["conversionStatus"], "invalid_double_inflation")
 
     def test_changing_target_year_changes_cost_not_resource_use(self) -> None:
         item = build_cost_item(
@@ -268,6 +290,83 @@ class Milestone1CostingTests(unittest.TestCase):
 
 
 class Milestone1EconomicsConfigTests(unittest.TestCase):
+    def test_editing_igra_cost_updates_authoritative_cost_item(self) -> None:
+        config = build_economics_preset_kwab150()
+        config["costs"]["test"]["IGRA"] = 222.0
+
+        updated = update_cost_item_original_values_from_legacy_fields(config)
+        items = {item["costItemId"]: item for item in updated["costItems"]}
+
+        self.assertEqual(items["test_igra"]["originalCost"], 222.0)
+        self.assertEqual(updated["costs"]["test"]["IGRA"], 222.0)
+
+    def test_editing_regimen_cost_updates_authoritative_cost_item(self) -> None:
+        config = build_economics_preset_kwab150()
+        config["costs"]["regimen"]["x3HP"] = 333.0
+
+        updated = update_cost_item_original_values_from_legacy_fields(config)
+        items = {item["costItemId"]: item for item in updated["costItems"]}
+
+        self.assertEqual(items["regimen_3hp"]["originalCost"], 333.0)
+        self.assertEqual(updated["costs"]["regimen"]["x3HP"], 333.0)
+
+    def test_unresolved_cost_items_cannot_contribute_to_totals(self) -> None:
+        results = _mock_economics_results()
+        config = build_economics_preset_kwab150()
+        config["costs"]["programSetupTotal"] = 1000.0
+        config["costs"]["programRunningTotal"] = 2000.0
+        config["costs"]["falsePositiveIncrementalPerPerson"] = 10.0
+        config = update_cost_item_original_values_from_legacy_fields(config)
+
+        econ = run_health_economics(results, config)
+
+        self.assertIsNone(econ["costs"]["testingCost"])
+        self.assertIsNone(econ["costs"]["totalProgramCost"])
+        self.assertIn("costItems.test_igra.convertedTargetYearCost", econ["status"]["missingInputs"])
+
+    def test_false_positive_setup_and_running_costs_cannot_bypass_normalisation(self) -> None:
+        results = _mock_economics_results()
+        config = build_default_economics_config()
+        config["costs"]["falsePositiveIncrementalPerPerson"] = 10.0
+        config["costs"]["programSetupTotal"] = 1000.0
+        config["costs"]["programRunningTotal"] = 2000.0
+        config = update_cost_item_original_values_from_legacy_fields(config)
+
+        econ = run_health_economics(results, config)
+
+        self.assertIsNone(econ["costs"]["falsePositiveIncrementalCost"])
+        self.assertIsNone(econ["costs"]["programSetupCost"])
+        self.assertIsNone(econ["costs"]["programRunningCost"])
+
+    def test_saved_and_reloaded_valid_cost_configuration_remains_valid(self) -> None:
+        config = _valid_target_year_econ_config()
+        payload = json.loads(json.dumps(config))
+
+        econ = run_health_economics(_mock_economics_results(), payload)
+
+        self.assertTrue(all(item["conversionStatus"] == "valid" for item in econ["costItems"]))
+
+    def test_repeated_economic_runs_do_not_inflate_twice(self) -> None:
+        config = _valid_target_year_econ_config()
+        first = run_health_economics(_mock_economics_results(), config)
+
+        second = run_health_economics(_mock_economics_results(), first["inputs"])
+
+        self.assertEqual(first["unitCosts"]["testPerPerson"], second["unitCosts"]["testPerPerson"])
+        self.assertTrue(all(item["conversionStatus"] == "valid" for item in second["costItems"]))
+
+    def test_backward_compatible_fields_cannot_conflict_with_cost_items(self) -> None:
+        config = _valid_target_year_econ_config()
+        items = {item["costItemId"]: item for item in config["costItems"]}
+        items["test_igra"]["originalCost"] = 50.0
+        config = sync_legacy_cost_fields_from_cost_items(config)
+        config["costs"]["test"]["IGRA"] = 9999.0
+
+        econ = run_health_economics(_mock_economics_results(), config)
+
+        self.assertEqual(econ["unitCosts"]["testPerPerson"], 50.0)
+        self.assertEqual(econ["inputs"]["costs"]["test"]["IGRA"], 50.0)
+
     def test_threshold_value_retains_currency_year_and_source(self) -> None:
         config = build_default_economics_config()
         config["threshold"].update(
@@ -312,6 +411,49 @@ class Milestone1EconomicsConfigTests(unittest.TestCase):
         self.assertIn("costNormalisation", econ_config)
         self.assertNotIn("engine.dynamic.dynamic_model", sys.modules)
         self.assertEqual(config["scenario"]["scopeStatement"], DIRECT_EFFECTS_SCOPE_STATEMENT)
+
+    def test_generic_remote_demo_is_labelled_as_synthetic_test_fixture(self) -> None:
+        preset = load_population_preset("generic_remote_demo")
+
+        self.assertIn("test fixture", " ".join(preset["sourcesAndNotes"]).lower())
+        self.assertIn("demonstration test fixture", preset["ltbiPrevalenceAssumptions"]["source"].lower())
+
+def _mock_economics_results() -> dict:
+    return {
+        "summary": [
+            {"Metric": "nScreened", "Median": 10},
+            {"Metric": "nTotalCoursesStarted", "Median": 4},
+            {"Metric": "nFalsePositiveTreated", "Median": 2},
+            {"Metric": "nCuredInfection", "Median": 3},
+            {"Metric": "nPreventedActiveTB", "Median": 1},
+        ],
+        "interfaceConfig": {"testType": "IGRA", "regimen": "3HP"},
+        "doNothing": {
+            "derived": [
+                {"nActiveBy20y_DoNothing": 5, "nActiveBy20y_AfterStrategy": 4}
+            ]
+        },
+    }
+
+
+def _valid_target_year_econ_config() -> dict:
+    config = build_economics_preset_kwab150()
+    config["costs"]["falsePositiveIncrementalPerPerson"] = 10.0
+    config["costs"]["programSetupTotal"] = 1000.0
+    config["costs"]["programRunningTotal"] = 2000.0
+    config = update_cost_item_original_values_from_legacy_fields(config)
+    for item in config["costItems"]:
+        if item["originalCost"] in (None, "", []):
+            item["originalCost"] = 0.0
+        item["originalPriceYear"] = "2025-26"
+        item["sourceYearStatus"] = "explicit"
+        item["originalCurrency"] = "AUD"
+        item["sourceCitation"] = item.get("sourceCitation") or "test"
+        item["conversionStatus"] = "not_converted"
+        item["conversionApplied"] = False
+        item["costRecordType"] = "source"
+        item["warnings"] = []
+    return sync_legacy_cost_fields_from_cost_items(config)
 
 
 if __name__ == "__main__":

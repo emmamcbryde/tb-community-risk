@@ -266,7 +266,7 @@ def _write_economics_assumptions(
     _write_rows_sheet(wb, "Economics_assumptions", rows)
 
     cost_items = []
-    if isinstance(source, dict):
+    if economics_results and isinstance(source, dict):
         cost_items = source.get("costItems") or source.get("costItemsTable") or []
     if not cost_items and isinstance(economics_config, dict):
         cost_items = normalise_cost_table(economics_config.get("costItems") or [])

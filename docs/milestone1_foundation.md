@@ -20,9 +20,13 @@ parameters. The demonstration regimen is 3HP, with existing alternative regimen
 labels retained.
 
 Economics use an Australian health-system perspective, AUD target currency, and
-2025-26 target price year. Existing local cost inputs are preserved as original
-source values. Their source price years are unresolved unless explicitly
-verified, so they are not silently treated as 2025-26 values.
+2025-26 target price year. `costItems` are the authoritative source records for
+all modelled unit and programme costs. Existing local cost inputs are preserved
+as original source values. Their source price years are unresolved unless
+explicitly verified, so they are not silently treated as 2025-26 values.
+Legacy `costs.*` fields are retained only as compatibility mirrors for older
+UI/state contracts; they are synchronised from `costItems` and do not override
+the authoritative cost-item calculation.
 
 Cost-year conversion is separate from future discounting:
 
@@ -34,8 +38,10 @@ Inflation index values are version-controlled in `data/inflation_indices.csv`
 and are never retrieved live during a run. Missing source years or missing index
 values produce unresolved warnings instead of fabricated costs. Downstream
 economics calculations only use converted target-year costs when conversion
-status is valid. Model-year costs remain in constant target-year prices; future
-inflation is not applied.
+status is valid. Raw source records and derived normalised output are kept
+separate so saving, loading, exporting, or rerunning a valid configuration does
+not apply inflation twice. Model-year costs remain in constant target-year
+prices; future inflation is not applied.
 
 The editable discounting structure supports 3% and 0% annual rates. Discounting
 is reserved for future costs and health outcomes, not historical source-price

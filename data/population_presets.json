@@ -96,7 +96,7 @@
       "screeningWindowYears": 2,
       "followUpHorizonYears": 10,
       "sourcesAndNotes": [
-        "Generic non-APY fixture for scenario-contract tests."
+        "Synthetic architecture test fixture only; not a validated clinical population or evidence-based preset."
       ]
     }
   ]
