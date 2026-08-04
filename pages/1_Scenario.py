@@ -29,6 +29,11 @@ from app.state import (
     sync_backend_status,
 )
 from adapters.paths import scenarios_dir
+from engine.apy.scenario import (
+    DEFAULT_POPULATION_PRESET_ID,
+    build_scenario_contract,
+    config_updates_from_scenario,
+)
 
 
 init_session_state()
@@ -175,6 +180,20 @@ if st.button("Load backend defaults", type="primary"):
         record_message("error", message)
         st.error(message)
 
+if st.button("Load APY demonstration preset"):
+    try:
+        base_config = backend.default_config()
+        scenario = build_scenario_contract(DEFAULT_POPULATION_PRESET_ID)
+        base_config.update(config_updates_from_scenario(scenario))
+        st.session_state["config"] = base_config
+        reset_run_state()
+        sync_backend_status(backend.status())
+        st.success("APY demonstration preset loaded.")
+    except Exception as exc:
+        message = f"Could not load APY demonstration preset: {exc}"
+        record_message("error", message)
+        st.error(message)
+
 config = st.session_state.get("config")
 if config:
     if st.session_state.get("dirty_config"):
@@ -192,6 +211,16 @@ if config:
             "Scenario label",
             value=str(config.get("scenarioLabel", "")),
         )
+        population_preset_id = st.text_input(
+            "Population preset identifier",
+            value=str(config.get("populationPresetId", DEFAULT_POPULATION_PRESET_ID)),
+        )
+        population_size = st.number_input(
+            "Population size",
+            min_value=1,
+            value=int(config.get("N", 1)),
+            step=100,
+        )
         screen_coverage = st.number_input(
             "Screen coverage",
             min_value=0.0,
@@ -203,6 +232,44 @@ if config:
             "Test type",
             test_options,
             index=choice_index(config.get("testType"), test_options),
+        )
+        test_characteristics = config.get("testCharacteristics", {})
+        igra_defaults = test_characteristics.get("IGRA", {})
+        tst_defaults = test_characteristics.get("TST", {})
+        igra_sensitivity = st.number_input(
+            "IGRA sensitivity",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(config.get("testSensitivity", igra_defaults.get("sensitivity", 0.95))),
+            step=0.01,
+        )
+        igra_specificity = st.number_input(
+            "IGRA specificity",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(config.get("testSpecificity", igra_defaults.get("specificity", 0.98))),
+            step=0.01,
+        )
+        tst_sensitivity = st.number_input(
+            "TST sensitivity",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(config.get("tstSensitivity", tst_defaults.get("sensitivity", 0.80))),
+            step=0.01,
+        )
+        tst_specificity_no_bcg = st.number_input(
+            "TST specificity without BCG",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(config.get("tstSpecificityNoBCG", tst_defaults.get("specificity", 0.97))),
+            step=0.01,
+        )
+        tst_specificity_bcg = st.number_input(
+            "TST specificity with prior BCG",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(config.get("tstSpecificityBCG", tst_defaults.get("specificityBCG", 0.55))),
+            step=0.01,
         )
         regimen = st.selectbox(
             "Regimen",
@@ -330,12 +397,6 @@ if config:
 
         with st.expander("Advanced / run controls"):
             st.caption("Technical run controls for stress testing and reproducibility.")
-            population_size = st.number_input(
-                "N",
-                min_value=1,
-                value=int(config.get("N", 1)),
-                step=100,
-            )
             n_reps = st.number_input(
                 "Simulation replicates",
                 min_value=1,
@@ -365,6 +426,7 @@ if config:
     if submitted:
         updates = {
             "scenarioLabel": scenario_label,
+            "populationPresetId": population_preset_id,
             "N": int(population_size),
             "nReps": int(n_reps),
             "seed": int(seed),
@@ -372,11 +434,29 @@ if config:
             "followHorizon": float(follow_horizon),
             "screenCoverage": float(screen_coverage),
             "testType": test_type,
+            "testSensitivity": float(igra_sensitivity),
+            "testSpecificity": float(igra_specificity),
+            "tstSensitivity": float(tst_sensitivity),
+            "tstSpecificityNoBCG": float(tst_specificity_no_bcg),
+            "tstSpecificityBCG": float(tst_specificity_bcg),
             "regimen": regimen,
             "screeningStrategy": screening_strategy,
         }
         updated_config = dict(config)
         updated_config.update(updates)
+        updated_config.setdefault("testCharacteristics", {})
+        updated_config["testCharacteristics"].setdefault("IGRA", {})
+        updated_config["testCharacteristics"].setdefault("TST", {})
+        updated_config["testCharacteristics"]["IGRA"].update(
+            {"sensitivity": float(igra_sensitivity), "specificity": float(igra_specificity)}
+        )
+        updated_config["testCharacteristics"]["TST"].update(
+            {
+                "sensitivity": float(tst_sensitivity),
+                "specificity": float(tst_specificity_no_bcg),
+                "specificityBCG": float(tst_specificity_bcg),
+            }
+        )
         updated_config = apply_epidemiology_updates(
             updated_config,
             use_default_ltbi_prevalence=use_default_ltbi,

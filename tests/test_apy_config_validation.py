@@ -12,12 +12,13 @@ class ApyConfigValidationTests(unittest.TestCase):
 
         self.assertEqual(cfg["configVersion"], "apy_v9_config_v1")
         self.assertEqual(cfg["modelVersion"], "v9")
-        self.assertEqual(cfg["scenarioLabel"], "APY default scenario")
+        self.assertEqual(cfg["scenarioLabel"], "APY demonstration LTBI screening scenario")
+        self.assertEqual(cfg["populationPresetId"], "apy_demonstration")
         self.assertTrue(cfg["useDefaults"])
         self.assertEqual(cfg["N"], 1500)
         self.assertEqual(cfg["nReps"], 2000)
         self.assertEqual(cfg["seed"], 1)
-        self.assertEqual(cfg["screenWindow"], 2)
+        self.assertEqual(cfg["screenWindow"], 3)
         self.assertEqual(cfg["followHorizon"], 20)
         self.assertEqual(cfg["screenCoverage"], 0.30)
         self.assertEqual(cfg["screeningStrategy"], "prevent")
@@ -26,6 +27,9 @@ class ApyConfigValidationTests(unittest.TestCase):
         self.assertEqual(cfg["regimen"], "3HP")
         self.assertIsNone(cfg["riskPrev"]["smoking"])
         self.assertEqual(cfg["diseaseOR"]["renal"], 3.6)
+        self.assertEqual(cfg["testSensitivity"], 0.95)
+        self.assertEqual(cfg["testSpecificity"], 0.98)
+        self.assertEqual(cfg["tstSensitivity"], 0.80)
         self.assertIsNone(cfg["pStartTPT"])
         self.assertIsNone(cfg["earlyLateRatio"])
 
@@ -68,8 +72,12 @@ class ApyConfigValidationTests(unittest.TestCase):
         self.assertFalse(report["isValid"])
         self.assertIn("testType", report["fatalFieldNames"])
 
-    def test_follow_horizon_must_exceed_screen_window(self) -> None:
+    def test_follow_horizon_must_be_at_least_screen_window(self) -> None:
         report = collect_validation_issues({"followHorizon": 2, "screenWindow": 2})
+
+        self.assertTrue(report["isValid"])
+
+        report = collect_validation_issues({"followHorizon": 1.9, "screenWindow": 2})
 
         self.assertFalse(report["isValid"])
         self.assertIn("followHorizon", report["fatalFieldNames"])

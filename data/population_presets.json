@@ -1,0 +1,103 @@
+{
+  "contractVersion": "ltbi_population_presets_v1",
+  "presets": [
+    {
+      "populationPresetId": "apy_demonstration",
+      "scenarioName": "APY demonstration LTBI screening scenario",
+      "scenarioVersion": "m1",
+      "populationSize": 1500,
+      "ageProfileSource": {
+        "type": "file",
+        "path": "abm/default_age_distribution.csv",
+        "description": "Bundled APY age distribution used by the APY v9 exemplar workflow."
+      },
+      "ltbiPrevalenceAssumptions": {
+        "value": null,
+        "source": "APY default_data.csv calibration target unless overridden",
+        "notes": "Null means the existing APY calibration target is used by the generic APY adapter."
+      },
+      "riskFactorAssumptions": {
+        "riskPrev": {
+          "MJ": null,
+          "contact": null,
+          "renal": null,
+          "diabetes": null,
+          "smoking": null,
+          "cld": null,
+          "alcohol": null,
+          "female": null,
+          "BCG": null
+        },
+        "diseaseOR": {
+          "MJ": null,
+          "contact": null,
+          "renal": 3.6,
+          "diabetes": null,
+          "smoking": null,
+          "cld": null,
+          "alcohol": null
+        },
+        "source": "APY default_data.csv unless explicitly overridden."
+      },
+      "targetingCriteria": {
+        "strategy": "prevent",
+        "description": "Targeted screening by predicted preventable active-TB risk."
+      },
+      "eligible": {
+        "number": null,
+        "proportion": 1.0,
+        "notes": "All simulated cohort members are considered potentially eligible unless future scenarios restrict eligibility."
+      },
+      "screened": {
+        "number": null,
+        "proportion": 0.30,
+        "notes": "Screening volume is controlled independently from the screening window."
+      },
+      "screeningWindowYears": 3,
+      "followUpHorizonYears": 20,
+      "sourcesAndNotes": [
+        "APY is a demonstration preset loaded through the generic population-preset contract, not a separate hard-coded pathway."
+      ]
+    },
+    {
+      "populationPresetId": "generic_remote_demo",
+      "scenarioName": "Generic remote community LTBI screening scenario",
+      "scenarioVersion": "m1",
+      "populationSize": 1000,
+      "ageProfileSource": {
+        "type": "none",
+        "path": "",
+        "description": "Uses broad APY fallback age groups until a local age table is supplied."
+      },
+      "ltbiPrevalenceAssumptions": {
+        "value": 0.02,
+        "source": "Demonstration test fixture value",
+        "notes": "Included to prove non-APY populations load without code changes."
+      },
+      "riskFactorAssumptions": {
+        "riskPrev": {},
+        "diseaseOR": {},
+        "source": "No custom risk-factor assumptions supplied."
+      },
+      "targetingCriteria": {
+        "strategy": "random",
+        "description": "Untargeted demonstration screening."
+      },
+      "eligible": {
+        "number": null,
+        "proportion": 1.0,
+        "notes": ""
+      },
+      "screened": {
+        "number": null,
+        "proportion": 0.20,
+        "notes": ""
+      },
+      "screeningWindowYears": 2,
+      "followUpHorizonYears": 10,
+      "sourcesAndNotes": [
+        "Generic non-APY fixture for scenario-contract tests."
+      ]
+    }
+  ]
+}

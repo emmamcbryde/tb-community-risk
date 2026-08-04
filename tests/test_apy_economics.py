@@ -19,6 +19,12 @@ class ApyEconomicsTests(unittest.TestCase):
         config = {"N": 100, "nReps": 5, "seed": 1}
         cls.python_output = run_scenario_with_do_nothing(config)
         cls.econ_config = build_economics_preset_kwab150()
+        for item in cls.econ_config["costItems"]:
+            item["originalPriceYear"] = "2025-26"
+            item["sourceYearStatus"] = "explicit"
+            item["conversionStatus"] = "not_converted"
+            item["conversionApplied"] = False
+            item["warnings"] = []
         cls.econ_config["costs"]["falsePositiveIncrementalPerPerson"] = 10.0
         cls.econ_config["costs"]["programSetupTotal"] = 1000.0
         cls.econ_config["costs"]["programRunningTotal"] = 2000.0
@@ -27,29 +33,34 @@ class ApyEconomicsTests(unittest.TestCase):
     def test_default_economics_config_has_expected_blank_fields(self) -> None:
         config = build_default_economics_config()
 
-        self.assertEqual(config["metadata"]["currencyCode"], "")
-        self.assertIsNone(config["metadata"]["priceYear"])
+        self.assertEqual(config["metadata"]["currencyCode"], "AUD")
+        self.assertEqual(config["metadata"]["priceYear"], "2025-26")
+        self.assertEqual(config["metadata"]["perspective"], "Australian health-system perspective")
         self.assertIsNone(config["costs"]["test"]["IGRA"])
         self.assertIsNone(config["costs"]["regimen"]["x3HP"])
         self.assertIsNone(config["costs"]["activeTBDiseasePerCase"])
 
-    def test_kwab150_preset_has_expected_aud_2019_values(self) -> None:
+    def test_kwab150_preset_has_expected_aud_target_year_metadata(self) -> None:
         config = build_economics_preset_kwab150()
 
         self.assertEqual(config["metadata"]["currencyCode"], "AUD")
-        self.assertEqual(config["metadata"]["priceYear"], 2019)
+        self.assertEqual(config["metadata"]["priceYear"], "2025-26")
         self.assertEqual(config["metadata"]["locationLabel"], "Australia")
         self.assertAlmostEqual(config["costs"]["test"]["IGRA"], 113.48)
         self.assertAlmostEqual(config["costs"]["test"]["TST"], 116.07)
         self.assertAlmostEqual(config["costs"]["regimen"]["x3HP"], 165.5072)
         self.assertAlmostEqual(config["costs"]["regimen"]["x4R"], 123.3172)
         self.assertAlmostEqual(config["costs"]["activeTBDiseasePerCase"], 19079.6)
+        self.assertEqual(
+            config["costItems"][0]["conversionStatus"],
+            "unresolved_source_price_year",
+        )
 
     def test_valid_default_economics_config_passes_validation(self) -> None:
         report = validate_economics_config(build_default_economics_config())
 
         self.assertTrue(report["isValid"])
-        self.assertFalse(report["hasWarnings"])
+        self.assertTrue(report["hasWarnings"])
 
     def test_negative_cost_fails_validation(self) -> None:
         config = build_default_economics_config()
@@ -108,6 +119,12 @@ class ApyEconomicsTests(unittest.TestCase):
 
     def test_missing_false_positive_incremental_cost_does_not_crash(self) -> None:
         config = build_economics_preset_kwab150()
+        for item in config["costItems"]:
+            item["originalPriceYear"] = "2025-26"
+            item["sourceYearStatus"] = "explicit"
+            item["conversionStatus"] = "not_converted"
+            item["conversionApplied"] = False
+            item["warnings"] = []
 
         econ = run_health_economics(self.python_output, config)
 

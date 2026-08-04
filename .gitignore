@@ -26,6 +26,7 @@ abm/output/*
 *.asv
 abm/app_code.txt
 *.json
+!data/population_presets.json
 !validation/matlab_reference/scenario_suite_v1.json
 !validation/matlab_reference/**/scenario_config.json
 !validation/matlab_reference/**/matlab_dynamic_comparison.json

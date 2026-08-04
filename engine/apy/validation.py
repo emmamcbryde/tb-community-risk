@@ -84,14 +84,14 @@ def collect_validation_issues(config: dict[str, Any]) -> dict[str, Any]:
     _validate_positive_scalar(report, cfg, "targetAgeOR", "Age OR target")
 
     if _is_number(cfg.get("followHorizon")) and _is_number(cfg.get("screenWindow")):
-        if float(cfg["followHorizon"]) <= float(cfg["screenWindow"]):
+        if float(cfg["followHorizon"]) < float(cfg["screenWindow"]):
             _add_issue(
                 report,
                 "errors",
                 "followHorizon",
                 "Follow-up horizon",
                 "invalid_range",
-                "followHorizon must be greater than screenWindow.",
+                "followHorizon must be at least as long as screenWindow.",
             )
 
     _validate_choice(report, cfg, "testType", "Test choice", TEST_TYPES)
@@ -108,6 +108,11 @@ def collect_validation_issues(config: dict[str, Any]) -> dict[str, Any]:
     )
 
     for field, label in [
+        ("testSensitivity", "IGRA sensitivity"),
+        ("testSpecificity", "IGRA specificity"),
+        ("tstSensitivity", "TST sensitivity"),
+        ("tstSpecificityBCG", "TST specificity with prior BCG"),
+        ("tstSpecificityNoBCG", "TST specificity without prior BCG"),
         ("pStartTPT", "Treatment start probability"),
         ("regimenPComplete", "Completion probability"),
         ("regimenADRstop", "ADR stop probability"),

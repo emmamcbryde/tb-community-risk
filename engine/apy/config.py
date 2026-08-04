@@ -4,15 +4,23 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from engine.apy.scenario import (
+    DEFAULT_POPULATION_PRESET_ID,
+    config_updates_from_scenario,
+    build_scenario_contract,
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def build_default_config() -> dict[str, Any]:
-    return {
+    scenario = build_scenario_contract(DEFAULT_POPULATION_PRESET_ID)
+    config = {
         "configVersion": "apy_v9_config_v1",
         "modelVersion": "v9",
         "scenarioLabel": "APY default scenario",
+        "populationPresetId": DEFAULT_POPULATION_PRESET_ID,
         "useDefaults": True,
         "csvFile": "abm/default_data.csv",
         "outputDir": "abm/output",
@@ -23,7 +31,7 @@ def build_default_config() -> dict[str, Any]:
         "N": 1500,
         "nReps": 2000,
         "seed": 1,
-        "screenWindow": 2,
+        "screenWindow": 3,
         "followHorizon": 20,
         "screenCoverage": 0.30,
         "screeningStrategy": "prevent",
@@ -55,12 +63,41 @@ def build_default_config() -> dict[str, Any]:
             "alcohol": None,
         },
         "testType": "IGRA",
-        "testSensitivity": None,
-        "testSpecificity": None,
-        "tstSensitivity": None,
-        "tstSpecificityBCG": None,
-        "tstSpecificityNoBCG": None,
+        "testSensitivity": 0.95,
+        "testSpecificity": 0.98,
+        "tstSensitivity": 0.80,
+        "tstSpecificityBCG": 0.55,
+        "tstSpecificityNoBCG": 0.97,
+        "testCharacteristics": {
+            "IGRA": {
+                "name": "IGRA",
+                "sensitivity": 0.95,
+                "specificity": 0.98,
+                "units": "probability",
+                "source": "Existing APY default parameter",
+                "notes": "Editable; not folded into coverage or regimen effectiveness.",
+                "resourceUse": {},
+            },
+            "TST": {
+                "name": "TST",
+                "sensitivity": 0.80,
+                "specificity": 0.97,
+                "specificityBCG": 0.55,
+                "units": "probability",
+                "source": "Existing APY default parameter",
+                "notes": "Specificity can differ by BCG status. TST may require a return visit for reading; no extra resource-use value is invented here.",
+                "resourceUse": {"returnVisitForReading": True},
+            },
+        },
         "regimen": "3HP",
+        "regimenAssumptions": {
+            "defaultRegimen": "3HP",
+            "availableRegimens": ["3HP", "4R", "3HR", "6H", "9H"],
+            "notes": (
+                "Treatment offered, started, completed, adverse-event discontinuation, "
+                "regimen efficacy and effectively treated true infection remain distinct model quantities."
+            ),
+        },
         "pStartTPT": None,
         "regimenPComplete": None,
         "regimenADRstop": None,
@@ -70,6 +107,8 @@ def build_default_config() -> dict[str, Any]:
         "partialDoseFractionOther": None,
         "earlyLateRatio": None,
     }
+    config.update(config_updates_from_scenario(scenario))
+    return config
 
 
 def normalise_config(config: dict[str, Any] | None = None) -> dict[str, Any]:

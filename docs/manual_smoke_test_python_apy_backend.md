@@ -41,7 +41,9 @@ remain outside the Python backend.
 
 12. Click `Load KWAB150 preset`.
 
-13. Confirm AUD 2019 Australia values populate the visible economics controls.
+13. Confirm AUD target-currency and 2025-26 target-price-year metadata
+    populate the visible economics controls, and that KWAB150 source cost
+    years remain flagged as unresolved.
 
 14. Click `Run economics`.
 

@@ -16,6 +16,8 @@ from app.epidemiology_inputs import (
     RISK_FACTOR_LABELS,
     prevalence_source_label,
 )
+from engine.apy.costing import normalise_cost_table, unresolved_cost_warnings
+from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT, scenario_from_config
 
 
 PROGRESSION_MULTIPLIERS = {
@@ -45,6 +47,7 @@ def build_results_workbook(
     wb.remove(wb.active)
     _write_readme(wb, config, bundle, backend_status, results_stale)
     _write_scenario_inputs(wb, config, backend_status)
+    _write_scenario_contract(wb, config)
     _write_risk_factor_inputs(wb, config)
     _write_rows_sheet(
         wb,
@@ -80,7 +83,7 @@ def _write_readme(
         ("Scenario name", config.get("scenarioLabel", metadata.get("scenarioLabel", ""))),
         ("Purpose", "Structured APY epidemiological results workbook for public-health planning."),
         ("Interpretation guardrail", "Targeting supports sequencing and planning, not exclusion or denial of screening or treatment."),
-        ("Transmission", "Effects are direct person-level effects and exclude downstream transmission benefits."),
+        ("Transmission", DIRECT_EFFECTS_SCOPE_STATEMENT),
         ("Backend warning", "Python APY backend is experimental; MATLAB remains the reference backend." if experimental else "MATLAB reference backend."),
         ("Stale results", "Yes - rerun before using for decisions." if results_stale else "No."),
     ]
@@ -103,6 +106,11 @@ def _write_scenario_inputs(
         ("follow-up horizon", config.get("followHorizon"), "years"),
         ("screening strategy", config.get("screeningStrategy")),
         ("test", config.get("testType")),
+        ("test sensitivity", config.get("testSensitivity"), "probability"),
+        ("test specificity", config.get("testSpecificity"), "probability"),
+        ("TST sensitivity", config.get("tstSensitivity"), "probability"),
+        ("TST specificity with BCG", config.get("tstSpecificityBCG"), "probability"),
+        ("TST specificity without BCG", config.get("tstSpecificityNoBCG"), "probability"),
         ("regimen", config.get("regimen")),
         ("LTBI prevalence source", prevalence_source_label(config.get("ltbiPrevalence"))),
         ("LTBI prevalence input", config.get("ltbiPrevalence"), "percentage"),
@@ -122,6 +130,30 @@ def _write_scenario_inputs(
             for unit in [rest[0] if rest else ""]
         ],
     )
+
+
+def _write_scenario_contract(wb: Workbook, config: dict[str, Any]) -> None:
+    scenario = scenario_from_config(config)
+    rows = [
+        {"Field": "contractVersion", "Value": scenario.get("contractVersion")},
+        {"Field": "scenarioName", "Value": scenario.get("scenarioName")},
+        {"Field": "scenarioVersion", "Value": scenario.get("scenarioVersion")},
+        {"Field": "populationPresetId", "Value": scenario.get("populationPresetId")},
+        {"Field": "populationSize", "Value": scenario.get("populationSize")},
+        {"Field": "ageProfileSource", "Value": scenario.get("ageProfileSource")},
+        {"Field": "ltbiPrevalenceAssumptions", "Value": scenario.get("ltbiPrevalenceAssumptions")},
+        {"Field": "riskFactorAssumptions", "Value": scenario.get("riskFactorAssumptions")},
+        {"Field": "targetingCriteria", "Value": scenario.get("targetingCriteria")},
+        {"Field": "eligible", "Value": scenario.get("eligible")},
+        {"Field": "screened", "Value": scenario.get("screened")},
+        {"Field": "screeningWindowYears", "Value": scenario.get("screeningWindowYears")},
+        {"Field": "followUpHorizonYears", "Value": scenario.get("followUpHorizonYears")},
+        {"Field": "comparator", "Value": scenario.get("comparator")},
+        {"Field": "intervention", "Value": scenario.get("intervention")},
+        {"Field": "sourcesAndNotes", "Value": scenario.get("sourcesAndNotes")},
+        {"Field": "scopeStatement", "Value": scenario.get("scopeStatement")},
+    ]
+    _write_rows_sheet(wb, "Scenario_contract", rows)
 
 
 def _write_risk_factor_inputs(wb: Workbook, config: dict[str, Any]) -> None:
@@ -200,6 +232,7 @@ def _write_economics(
             ws,
             [{"Status": "Economics not run", "Value": "", "Notes": "No zero values have been substituted for missing economics outputs."}],
         )
+        _write_economics_assumptions(wb, economics_results, economics_config)
         return
     rows = economics_results.get("summaryRows") or []
     if not rows:
@@ -210,6 +243,45 @@ def _write_economics(
     ws.cell(start, 2, bool(dirty_economics or results_stale))
     ws.cell(start + 1, 1, "Economics config supplied").font = Font(bold=True)
     ws.cell(start + 1, 2, bool(economics_config))
+    _write_economics_assumptions(wb, economics_results, economics_config)
+
+
+def _write_economics_assumptions(
+    wb: Workbook,
+    economics_results: dict[str, Any] | None,
+    economics_config: dict[str, Any] | None,
+) -> None:
+    source = economics_results or economics_config or {}
+    metadata = source.get("metadata", {}) if isinstance(source, dict) else {}
+    rows = [
+        {"Field": "perspective", "Value": metadata.get("perspective")},
+        {"Field": "targetCurrency", "Value": metadata.get("targetCurrency", metadata.get("currencyCode"))},
+        {"Field": "targetPriceYear", "Value": metadata.get("targetPriceYear", metadata.get("priceYear"))},
+        {"Field": "scopeStatement", "Value": metadata.get("scopeStatement", DIRECT_EFFECTS_SCOPE_STATEMENT)},
+        {"Field": "costNormalisation", "Value": source.get("costNormalisation", {}) if isinstance(source, dict) else {}},
+        {"Field": "discounting", "Value": source.get("discounting", {}) if isinstance(source, dict) else {}},
+        {"Field": "healthOutcome", "Value": source.get("healthOutcome", {}) if isinstance(source, dict) else {}},
+        {"Field": "threshold", "Value": source.get("threshold", {}) if isinstance(source, dict) else {}},
+    ]
+    _write_rows_sheet(wb, "Economics_assumptions", rows)
+
+    cost_items = []
+    if isinstance(source, dict):
+        cost_items = source.get("costItems") or source.get("costItemsTable") or []
+    if not cost_items and isinstance(economics_config, dict):
+        cost_items = normalise_cost_table(economics_config.get("costItems") or [])
+    _write_rows_sheet(wb, "Cost_normalisation", cost_items)
+
+    warnings = unresolved_cost_warnings(cost_items)
+    if isinstance(source, dict):
+        threshold = source.get("threshold", {})
+        if isinstance(threshold, dict) and threshold.get("value") in (None, "", []):
+            warnings.append("threshold.value: unresolved GDP-per-capita benchmark value")
+    _write_rows_sheet(
+        wb,
+        "Unresolved_assumptions",
+        [{"Warning": warning} for warning in warnings] or [{"Warning": ""}],
+    )
 
 
 def _humanise_metric_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

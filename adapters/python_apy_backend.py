@@ -80,9 +80,10 @@ class PythonApyBackend:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "contractVersion": "apy_streamlit_scenario_v1",
+            "contractVersion": "ltbi_screening_scenario_v1",
             "backend": "python_apy",
             "scenarioLabel": config.get("scenarioLabel", ""),
+            "scenario": to_json_like(config.get("scenario")),
             "config": to_json_like(config),
             "economics": to_json_like(economics_config),
         }

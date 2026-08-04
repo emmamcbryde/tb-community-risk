@@ -12,6 +12,7 @@ from app.display import (
 )
 from app.results_workbook import build_results_workbook
 from app.state import init_session_state
+from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
 
 
 init_session_state()
@@ -34,6 +35,13 @@ scenario_label = metadata.get("scenarioLabel")
 
 if st.session_state.get("results_stale"):
     st.warning("These results are stale because scenario inputs changed after the last run.")
+
+scope_statement = (
+    technical.get("interfaceConfig", {})
+    .get("scenario", {})
+    .get("scopeStatement", DIRECT_EFFECTS_SCOPE_STATEMENT)
+)
+st.info(scope_statement)
 
 st.subheader("Metadata")
 metadata_rows = [

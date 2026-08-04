@@ -58,7 +58,11 @@ class PythonApyBackendTests(unittest.TestCase):
         config = self.backend.economics_preset_kwab150()
 
         self.assertEqual(config["metadata"]["currencyCode"], "AUD")
-        self.assertEqual(config["metadata"]["priceYear"], 2019)
+        self.assertEqual(config["metadata"]["priceYear"], "2025-26")
+        self.assertEqual(
+            config["costItems"][0]["conversionStatus"],
+            "unresolved_source_price_year",
+        )
 
     def test_run_economics_for_config_small_run(self) -> None:
         config = self.backend.default_config()

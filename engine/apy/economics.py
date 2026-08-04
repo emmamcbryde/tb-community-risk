@@ -6,7 +6,16 @@ from typing import Any
 
 import pandas as pd
 
+from engine.apy.costing import (
+    TARGET_CURRENCY,
+    TARGET_PRICE_YEAR,
+    build_cost_item,
+    normalise_cost_table,
+    unresolved_cost_warnings,
+    valid_converted_cost,
+)
 from engine.apy.runner import run_scenario_with_do_nothing
+from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
 
 
 ECONOMICS_CONTRACT_VERSION = "apy_v9_economics_results_v1"
@@ -16,11 +25,47 @@ ECONOMICS_SOURCE = "run_health_economics_v9_python_port"
 def build_default_economics_config() -> dict[str, Any]:
     return {
         "metadata": {
-            "currencyCode": "",
-            "priceYear": None,
-            "locationLabel": "",
+            "currencyCode": TARGET_CURRENCY,
+            "priceYear": TARGET_PRICE_YEAR,
+            "targetCurrency": TARGET_CURRENCY,
+            "targetPriceYear": TARGET_PRICE_YEAR,
+            "perspective": "Australian health-system perspective",
+            "locationLabel": "Australia",
             "sourceNotes": "",
             "programCostBasis": "",
+            "scopeStatement": DIRECT_EFFECTS_SCOPE_STATEMENT,
+        },
+        "costNormalisation": {
+            "contractVersion": "ltbi_cost_normalisation_v1",
+            "formula": "converted_cost = original_cost * target_year_index / source_year_index",
+            "defaultInflationIndexId": "AUD_HEALTH_SYSTEM_CPI",
+            "indexTable": "data/inflation_indices.csv",
+            "notes": (
+                "Price-year conversion is separate from future discounting. "
+                "Projected model costs remain in constant target-year prices."
+            ),
+        },
+        "costItems": [],
+        "discounting": {
+            "selectedAnnualRate": 0.03,
+            "availableAnnualRates": [0.03, 0.0],
+            "primaryDisplayedRate": 0.03,
+            "comparisonRate": 0.0,
+            "notes": "Discounting applies to future costs and health outcomes only, not source-price conversion.",
+        },
+        "healthOutcome": {
+            "primary": "DALYs averted",
+            "unresolvedInputs": [],
+            "notes": "Natural epidemiological outputs remain reported alongside DALYs.",
+        },
+        "threshold": {
+            "metric": "cost per DALY averted",
+            "concept": "1 x Australian GDP per capita per DALY averted",
+            "value": None,
+            "currency": TARGET_CURRENCY,
+            "referenceYear": None,
+            "source": "",
+            "notes": "Illustrative benchmark only; not an official Australian funding threshold.",
         },
         "costs": {
             "test": {
@@ -47,14 +92,17 @@ def build_economics_preset_kwab150() -> dict[str, Any]:
     config["metadata"].update(
         {
             "currencyCode": "AUD",
-            "priceYear": 2019,
+            "priceYear": TARGET_PRICE_YEAR,
+            "targetCurrency": TARGET_CURRENCY,
+            "targetPriceYear": TARGET_PRICE_YEAR,
             "locationLabel": "Australia",
             "programCostBasis": "total",
             "sourceNotes": (
                 "KWAB150 preset populated from local data/costs.csv: "
                 "cscreenqft, cscreentst, ctreat*, and ctb mid values. "
-                "Program setup/running and false-positive incremental costs "
-                "are not specified in this preset."
+                "The source price year is unresolved in the repository, so "
+                "these costs are not treated as 2025-26 values until a verified "
+                "source year and inflation-index values are supplied."
             ),
         }
     )
@@ -69,6 +117,101 @@ def build_economics_preset_kwab150() -> dict[str, Any]:
         }
     )
     config["costs"]["activeTBDiseasePerCase"] = 19079.6
+    config["costItems"] = normalise_cost_table(
+        [
+            build_cost_item(
+                cost_item_id="test_igra",
+                description="IGRA screening test per person",
+                original_cost=113.48,
+                original_currency="AUD",
+                original_price_year=None,
+                source="Local data/costs.csv row cscreenqft",
+                page_table_item="cscreenqft",
+                source_year_status="unknown",
+                resource_category="screening_test",
+                notes="Includes test kit and lab processing according to local row description.",
+            ),
+            build_cost_item(
+                cost_item_id="test_tst",
+                description="TST screening per person",
+                original_cost=116.07,
+                original_currency="AUD",
+                original_price_year=None,
+                source="Local data/costs.csv row cscreentst",
+                page_table_item="cscreentst",
+                source_year_status="unknown",
+                resource_category="screening_test",
+                notes="Local row description says TST includes PPD injection and reading visit.",
+                resource_use={"returnVisitForReading": True},
+            ),
+            build_cost_item(
+                cost_item_id="regimen_3hp",
+                description="3HP preventive regimen per started course",
+                original_cost=165.5072,
+                original_currency="AUD",
+                original_price_year=None,
+                source="Local data/costs.csv row ctreat3HP",
+                page_table_item="ctreat3HP",
+                source_year_status="unknown",
+                resource_category="preventive_regimen",
+            ),
+            build_cost_item(
+                cost_item_id="regimen_4r",
+                description="4R preventive regimen per started course",
+                original_cost=123.3172,
+                original_currency="AUD",
+                original_price_year=None,
+                source="Local data/costs.csv row ctreat4R",
+                page_table_item="ctreat4R",
+                source_year_status="unknown",
+                resource_category="preventive_regimen",
+            ),
+            build_cost_item(
+                cost_item_id="regimen_3hr",
+                description="3HR preventive regimen per started course",
+                original_cost=134.2272,
+                original_currency="AUD",
+                original_price_year=None,
+                source="Local data/costs.csv row ctreat3HR",
+                page_table_item="ctreat3HR",
+                source_year_status="unknown",
+                resource_category="preventive_regimen",
+            ),
+            build_cost_item(
+                cost_item_id="regimen_6h",
+                description="6H preventive regimen per started course",
+                original_cost=187.7508,
+                original_currency="AUD",
+                original_price_year=None,
+                source="Local data/costs.csv row ctreat6H",
+                page_table_item="ctreat6H",
+                source_year_status="unknown",
+                resource_category="preventive_regimen",
+            ),
+            build_cost_item(
+                cost_item_id="regimen_9h",
+                description="9H preventive regimen per started course",
+                original_cost=254.8544,
+                original_currency="AUD",
+                original_price_year=None,
+                source="Local data/costs.csv row ctreat9H",
+                page_table_item="ctreat9H",
+                source_year_status="unknown",
+                resource_category="preventive_regimen",
+            ),
+            build_cost_item(
+                cost_item_id="active_tb_disease",
+                description="Active TB disease management per case",
+                original_cost=19079.6,
+                original_currency="AUD",
+                original_price_year=None,
+                source="Local data/costs.csv row ctb",
+                page_table_item="ctb",
+                source_year_status="unknown",
+                resource_category="tb_disease_care",
+            ),
+        ]
+    )
     return config
 
 
@@ -87,17 +230,19 @@ def validate_economics_config(econ_config: dict[str, Any]) -> dict[str, Any]:
     else:
         for field in (
             "currencyCode",
+            "targetCurrency",
+            "targetPriceYear",
             "locationLabel",
             "sourceNotes",
             "programCostBasis",
+            "perspective",
+            "scopeStatement",
         ):
             _validate_text_field(errors, metadata, field, f"metadata.{field}")
-        _validate_optional_numeric_scalar(
-            errors,
-            metadata,
-            "priceYear",
-            "metadata.priceYear",
-        )
+        if metadata.get("priceYear") not in (None, "", []) and not isinstance(
+            metadata.get("priceYear"), (str, int, float)
+        ):
+            errors.append(_issue("metadata.priceYear", "metadata.priceYear must be a year label."))
 
     costs = econ_config.get("costs")
     if not isinstance(costs, dict):
@@ -133,6 +278,51 @@ def validate_economics_config(econ_config: dict[str, Any]) -> dict[str, Any]:
     ):
         _validate_optional_cost(errors, costs, field, f"costs.{field}")
 
+    cost_items = econ_config.get("costItems")
+    if cost_items not in (None, []):
+        if not isinstance(cost_items, list):
+            errors.append(_issue("costItems", "costItems must be a list."))
+        else:
+            for idx, item in enumerate(cost_items):
+                if not isinstance(item, dict):
+                    errors.append(_issue(f"costItems.{idx}", "Each cost item must be a dict."))
+                elif item.get("conversionStatus") != "valid":
+                    warnings.append(
+                        _issue(
+                            f"costItems.{idx}",
+                            f"{item.get('costItemId', idx)} conversion is unresolved.",
+                            "warning",
+                        )
+                    )
+
+    discounting = econ_config.get("discounting", {})
+    if isinstance(discounting, dict):
+        _validate_optional_cost(
+            errors,
+            discounting,
+            "selectedAnnualRate",
+            "discounting.selectedAnnualRate",
+        )
+        rate = _coerce_number(discounting.get("selectedAnnualRate"))
+        if rate is not None and rate not in {0, 0.03}:
+            warnings.append(
+                _issue(
+                    "discounting.selectedAnnualRate",
+                    "Primary milestone rates are 0% and 3%; other numeric rates are retained for later review.",
+                    "warning",
+                )
+            )
+
+    threshold = econ_config.get("threshold", {})
+    if isinstance(threshold, dict) and _coerce_number(threshold.get("value")) is None:
+        warnings.append(
+            _issue(
+                "threshold.value",
+                "GDP-per-capita willingness-to-pay value is unresolved; enter a verified value and provenance before using threshold-based conclusions.",
+                "warning",
+            )
+        )
+
     return _report(errors, warnings)
 
 
@@ -167,6 +357,18 @@ def run_health_economics(
     test_cost = selected_test_cost(econ_config, test_type, status)
     regimen_cost = selected_regimen_cost(econ_config, regimen, status)
     costs = econ_config.get("costs", {})
+    normalised_items = normalise_cost_table(econ_config.get("costItems") or [])
+    cost_item_lookup = {item.get("costItemId"): item for item in normalised_items}
+    converted_test_cost = selected_converted_test_cost(cost_item_lookup, test_type)
+    converted_regimen_cost = selected_converted_regimen_cost(cost_item_lookup, regimen)
+    converted_active_tb_cost = valid_converted_cost(cost_item_lookup.get("active_tb_disease", {}))
+    if normalised_items:
+        test_cost = converted_test_cost
+        regimen_cost = converted_regimen_cost
+    active_tb_cost = converted_active_tb_cost if normalised_items else _optional_cost(costs, "activeTBDiseasePerCase")
+
+    status["messages"].extend(unresolved_cost_warnings(normalised_items))
+
     unit_costs = {
         "testPerPerson": test_cost,
         "treatmentPerStarted": regimen_cost,
@@ -174,7 +376,7 @@ def run_health_economics(
             costs,
             "falsePositiveIncrementalPerPerson",
         ),
-        "activeTBDiseasePerCase": _optional_cost(costs, "activeTBDiseasePerCase"),
+        "activeTBDiseasePerCase": active_tb_cost,
     }
 
     cost_values = {
@@ -191,15 +393,15 @@ def run_health_economics(
         "programRunningCost": _optional_cost(costs, "programRunningTotal"),
         "tbDiseaseCostsAverted": multiply_if_available(
             quantities["nPreventedActiveTB"],
-            unit_costs["activeTBDiseasePerCase"],
+            active_tb_cost,
         ),
         "baselineTBDiseaseCost": multiply_if_available(
             quantities["baselineActiveTBCases"],
-            unit_costs["activeTBDiseasePerCase"],
+            active_tb_cost,
         ),
         "interventionTBDiseaseCost": multiply_if_available(
             quantities["interventionActiveTBCases"],
-            unit_costs["activeTBDiseasePerCase"],
+            active_tb_cost,
         ),
     }
 
@@ -280,6 +482,14 @@ def run_health_economics(
         "contractVersion": ECONOMICS_CONTRACT_VERSION,
         "metadata": deepcopy(econ_config.get("metadata", {})),
         "inputs": deepcopy(econ_config),
+        "costNormalisation": deepcopy(econ_config.get("costNormalisation", {})),
+        "costItems": normalised_items,
+        "discounting": deepcopy(econ_config.get("discounting", {})),
+        "healthOutcome": deepcopy(econ_config.get("healthOutcome", {})),
+        "threshold": deepcopy(econ_config.get("threshold", {})),
+        "scopeStatement": econ_config.get("metadata", {}).get(
+            "scopeStatement", DIRECT_EFFECTS_SCOPE_STATEMENT
+        ),
         "strategy": {
             "testType": test_type,
             "regimen": regimen,
@@ -358,6 +568,32 @@ def selected_regimen_cost(
     if value is None:
         status["missingInputs"].append(f"costs.regimen.{field}")
     return value
+
+
+def selected_converted_test_cost(
+    cost_items: dict[str, dict[str, Any]],
+    test_type: str,
+) -> float | None:
+    key = {"IGRA": "test_igra", "TST": "test_tst"}.get(str(test_type).upper())
+    if key is None:
+        return None
+    return valid_converted_cost(cost_items.get(key, {}))
+
+
+def selected_converted_regimen_cost(
+    cost_items: dict[str, dict[str, Any]],
+    regimen: str,
+) -> float | None:
+    key = {
+        "3HP": "regimen_3hp",
+        "4R": "regimen_4r",
+        "3HR": "regimen_3hr",
+        "6H": "regimen_6h",
+        "9H": "regimen_9h",
+    }.get(str(regimen).upper())
+    if key is None:
+        return None
+    return valid_converted_cost(cost_items.get(key, {}))
 
 
 def baseline_intervention_cases(results: dict[str, Any]) -> tuple[float | None, float | None]:
@@ -504,6 +740,8 @@ def _report(
         "hasWarnings": bool(warnings),
         "errors": errors,
         "warnings": warnings,
+        "fatalFieldNames": [issue["field"] for issue in errors],
+        "warningFieldNames": [issue["field"] for issue in warnings],
     }
 
 

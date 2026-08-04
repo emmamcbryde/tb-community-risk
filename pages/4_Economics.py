@@ -39,6 +39,14 @@ ECONOMICS_WIDGET_KEYS = [
     "econ_currency_code",
     "econ_price_year",
     "econ_location_label",
+    "econ_perspective",
+    "econ_target_currency",
+    "econ_target_price_year",
+    "econ_discount_rate",
+    "econ_threshold_value",
+    "econ_threshold_currency",
+    "econ_threshold_year",
+    "econ_threshold_source",
     "econ_test_igra",
     "econ_test_tst",
     "econ_regimen_3hp",
@@ -56,6 +64,14 @@ ECONOMICS_WIDGET_FIELDS = {
     "econ_currency_code": ("metadata", "currencyCode"),
     "econ_price_year": ("metadata", "priceYear"),
     "econ_location_label": ("metadata", "locationLabel"),
+    "econ_perspective": ("metadata", "perspective"),
+    "econ_target_currency": ("metadata", "targetCurrency"),
+    "econ_target_price_year": ("metadata", "targetPriceYear"),
+    "econ_discount_rate": ("discounting", "selectedAnnualRate"),
+    "econ_threshold_value": ("threshold", "value"),
+    "econ_threshold_currency": ("threshold", "currency"),
+    "econ_threshold_year": ("threshold", "referenceYear"),
+    "econ_threshold_source": ("threshold", "source"),
     "econ_test_igra": ("costs", "test", "IGRA"),
     "econ_test_tst": ("costs", "test", "TST"),
     "econ_regimen_3hp": ("costs", "regimen", "x3HP"),
@@ -120,18 +136,42 @@ def parse_optional_number(key: str, integer: bool = False) -> int | float | list
 def economics_config_from_widgets(base_config: dict) -> dict:
     config = deepcopy(base_config)
     ensure_nested(config, "metadata")
+    ensure_nested(config, "discounting")
+    ensure_nested(config, "threshold")
     ensure_nested(config, "costs")
     ensure_nested(config, "costs", "test")
     ensure_nested(config, "costs", "regimen")
     config["metadata"]["currencyCode"] = str(
         st.session_state.get("econ_currency_code", "")
     ).strip()
-    config["metadata"]["priceYear"] = parse_optional_number(
-        "econ_price_year",
-        integer=True,
-    )
+    config["metadata"]["priceYear"] = str(
+        st.session_state.get("econ_price_year", "")
+    ).strip()
     config["metadata"]["locationLabel"] = str(
         st.session_state.get("econ_location_label", "")
+    ).strip()
+    config["metadata"]["perspective"] = str(
+        st.session_state.get("econ_perspective", "")
+    ).strip()
+    config["metadata"]["targetCurrency"] = str(
+        st.session_state.get("econ_target_currency", "")
+    ).strip()
+    config["metadata"]["targetPriceYear"] = str(
+        st.session_state.get("econ_target_price_year", "")
+    ).strip()
+    config["discounting"]["selectedAnnualRate"] = parse_optional_number(
+        "econ_discount_rate"
+    )
+    config["threshold"]["value"] = parse_optional_number("econ_threshold_value")
+    config["threshold"]["currency"] = str(
+        st.session_state.get("econ_threshold_currency", "")
+    ).strip()
+    config["threshold"]["referenceYear"] = parse_optional_number(
+        "econ_threshold_year",
+        integer=True,
+    )
+    config["threshold"]["source"] = str(
+        st.session_state.get("econ_threshold_source", "")
     ).strip()
     config["costs"]["test"]["IGRA"] = parse_optional_number("econ_test_igra")
     config["costs"]["test"]["TST"] = parse_optional_number("econ_test_tst")
@@ -169,6 +209,15 @@ def economics_overview_rows(config: dict) -> list[dict[str, object]]:
         {"field": "currencyCode", "value": metadata.get("currencyCode")},
         {"field": "priceYear", "value": metadata.get("priceYear")},
         {"field": "locationLabel", "value": metadata.get("locationLabel")},
+        {"field": "perspective", "value": metadata.get("perspective")},
+        {"field": "targetCurrency", "value": metadata.get("targetCurrency")},
+        {"field": "targetPriceYear", "value": metadata.get("targetPriceYear")},
+        {"field": "discountRate", "value": config.get("discounting", {}).get("selectedAnnualRate")},
+        {"field": "primaryHealthOutcome", "value": config.get("healthOutcome", {}).get("primary")},
+        {"field": "threshold.value", "value": config.get("threshold", {}).get("value")},
+        {"field": "threshold.currency", "value": config.get("threshold", {}).get("currency")},
+        {"field": "threshold.referenceYear", "value": config.get("threshold", {}).get("referenceYear")},
+        {"field": "threshold.source", "value": config.get("threshold", {}).get("source")},
         {"field": "test.IGRA", "value": test_costs.get("IGRA")},
         {"field": "test.TST", "value": test_costs.get("TST")},
         {"field": "regimen.3HP", "value": regimen_costs.get("x3HP")},
@@ -239,6 +288,8 @@ metadata = ensure_nested(econ_config, "metadata")
 costs = ensure_nested(econ_config, "costs")
 ensure_nested(econ_config, "costs", "test")
 ensure_nested(econ_config, "costs", "regimen")
+ensure_nested(econ_config, "discounting")
+ensure_nested(econ_config, "threshold")
 
 with st.form("economics_edits"):
     st.markdown("Metadata")
@@ -254,6 +305,44 @@ with st.form("economics_edits"):
         "Location label",
         key="econ_location_label",
     )
+    st.text_input(
+        "Economic perspective",
+        key="econ_perspective",
+        disabled=True,
+    )
+    st.text_input(
+        "Target currency",
+        key="econ_target_currency",
+    )
+    st.text_input(
+        "Target price year",
+        key="econ_target_price_year",
+    )
+    st.selectbox(
+        "Discount rate",
+        ["0.03", "0.0"],
+        index=0 if str(st.session_state.get("econ_discount_rate", "0.03")) != "0.0" else 1,
+        key="econ_discount_rate",
+    )
+    st.markdown("Primary outcome and benchmark")
+    st.info("Default health outcome: DALYs averted.")
+    optional_number_input(
+        "Illustrative GDP-per-capita threshold value",
+        "econ_threshold_value",
+    )
+    st.text_input(
+        "Threshold currency",
+        key="econ_threshold_currency",
+    )
+    optional_number_input(
+        "Threshold reference year",
+        "econ_threshold_year",
+    )
+    st.text_input(
+        "Threshold source",
+        key="econ_threshold_source",
+    )
+    st.caption("The GDP-per-capita benchmark is illustrative, not an official Australian funding threshold.")
     st.markdown("Test costs")
     optional_number_input(
         "IGRA test cost",
@@ -318,6 +407,14 @@ if submitted:
         st.error(f"Invalid economics number: {exc}")
 
 st.subheader("Current Assumptions")
+warnings = []
+for item in econ_config.get("costItems") or []:
+    if item.get("conversionStatus") != "valid":
+        warnings.append(f"{item.get('costItemId')}: {item.get('conversionStatus')}")
+if econ_config.get("threshold", {}).get("value") in (None, "", []):
+    warnings.append("GDP-per-capita threshold value is unresolved.")
+if warnings:
+    st.warning("Unresolved assumptions: " + "; ".join(warnings))
 st.dataframe(
     arrow_safe_dataframe(economics_overview_rows(econ_config)),
     width="content",
