@@ -68,6 +68,8 @@ def build_scenario_contract(
         "eligible": deepcopy(preset.get("eligible", {})),
         "screened": deepcopy(preset.get("screened", {})),
         "screeningWindowYears": preset.get("screeningWindowYears"),
+        "earlyProgressionPeriodYears": preset.get("earlyProgressionPeriodYears", 2),
+        "activeTBCalibrationHorizonYears": preset.get("activeTBCalibrationHorizonYears", 2),
         "followUpHorizonYears": preset.get("followUpHorizonYears"),
         "comparator": {
             "name": DEFAULT_COMPARATOR,
@@ -99,7 +101,11 @@ def config_updates_from_scenario(scenario: dict[str, Any]) -> dict[str, Any]:
         "populationPresetId": scenario.get("populationPresetId"),
         "N": scenario.get("populationSize"),
         "screenWindow": scenario.get("screeningWindowYears"),
+        "screeningWindowYears": scenario.get("screeningWindowYears"),
+        "earlyProgressionPeriodYears": scenario.get("earlyProgressionPeriodYears", 2),
+        "activeTBCalibrationHorizonYears": scenario.get("activeTBCalibrationHorizonYears", 2),
         "followHorizon": scenario.get("followUpHorizonYears"),
+        "followUpHorizonYears": scenario.get("followUpHorizonYears"),
         "screenCoverage": _coverage_from_screened(screened, scenario.get("populationSize")),
         "screeningStrategy": targeting.get("strategy"),
         "ltbiPrevalence": ltbi.get("value"),
@@ -129,10 +135,17 @@ def scenario_from_config(config: dict[str, Any]) -> dict[str, Any]:
     )
     scenario["populationSize"] = config.get("N", scenario.get("populationSize"))
     scenario["screeningWindowYears"] = config.get(
-        "screenWindow", scenario.get("screeningWindowYears")
+        "screeningWindowYears", config.get("screenWindow", scenario.get("screeningWindowYears"))
+    )
+    scenario["earlyProgressionPeriodYears"] = config.get(
+        "earlyProgressionPeriodYears", scenario.get("earlyProgressionPeriodYears", 2)
+    )
+    scenario["activeTBCalibrationHorizonYears"] = config.get(
+        "activeTBCalibrationHorizonYears",
+        scenario.get("activeTBCalibrationHorizonYears", 2),
     )
     scenario["followUpHorizonYears"] = config.get(
-        "followHorizon", scenario.get("followUpHorizonYears")
+        "followUpHorizonYears", config.get("followHorizon", scenario.get("followUpHorizonYears"))
     )
     scenario.setdefault("screened", {})
     scenario["screened"]["proportion"] = config.get(

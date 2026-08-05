@@ -131,6 +131,9 @@ def _build_complete_dynamic_comparison(
 
 def _build_partial_dynamic_comparison(results: dict[str, Any]) -> dict[str, Any]:
     cfg = results.get("interfaceConfig", {})
+    ledger_dynamic = _dynamic_from_event_ledger(results)
+    if ledger_dynamic is not None:
+        return ledger_dynamic
     summary_by_metric = {
         row["Metric"]: row for row in results["summary"].to_dict(orient="records")
     }
@@ -160,7 +163,7 @@ def _build_partial_dynamic_comparison(results: dict[str, Any]) -> dict[str, Any]
                 "Low95": row.get("Low95"),
                 "High95": row.get("High95"),
                 "Source": "summary.nActiveBy20y",
-                "Notes": "Untreated active TB by followHorizon in the strategy cohort.",
+            "Notes": "Legacy raw nActiveBy20y is untreated/comparator active TB; intervention active TB requires the event ledger.",
             }
         )
     return {
@@ -169,9 +172,7 @@ def _build_partial_dynamic_comparison(results: dict[str, Any]) -> dict[str, Any]
         "population": cfg.get("N"),
         "followHorizon": cfg.get("followHorizon"),
         "cumulative_baseline_active_tb_cases": None,
-        "cumulative_intervention_active_tb_cases": _metric_median(
-            summary_by_metric, "nActiveBy20y"
-        ),
+        "cumulative_intervention_active_tb_cases": None,
         "cumulative_cases_averted": _metric_median(
             summary_by_metric, "nPreventedActiveTB"
         ),
@@ -179,6 +180,58 @@ def _build_partial_dynamic_comparison(results: dict[str, Any]) -> dict[str, Any]
         "metricRows": metric_rows,
         "missingFields": missing,
         "notes": "Full dynamicComparison requires do-nothing/natural-history add-on parity.",
+    }
+
+
+def _dynamic_from_event_ledger(results: dict[str, Any]) -> dict[str, Any] | None:
+    ledger = results.get("eventLedger") or {}
+    totals = ledger.get("replicateTotals")
+    if not isinstance(totals, pd.DataFrame) or totals.empty:
+        return None
+    subset = totals[totals["eventName"].isin(["active_tb_cases", "active_tb_cases_prevented"])]
+    if subset.empty:
+        return None
+    wide = subset.pivot_table(
+        index=["replicateId", "arm"],
+        columns="eventName",
+        values="value",
+        aggfunc="first",
+    ).reset_index()
+    comparator = wide[wide["arm"] == "comparator"]["active_tb_cases"]
+    intervention = wide[wide["arm"] == "intervention"]["active_tb_cases"]
+    prevented = wide[wide["arm"] == "intervention"]["active_tb_cases_prevented"]
+    metric_rows = [
+        _dynamic_metric_row("cumulative_baseline_active_tb_cases", comparator),
+        _dynamic_metric_row("cumulative_intervention_active_tb_cases", intervention),
+        _dynamic_metric_row("cumulative_cases_averted", prevented),
+    ]
+    rel = prevented.reset_index(drop=True) / comparator.reset_index(drop=True).replace(0, pd.NA)
+    metric_rows.append(_dynamic_metric_row("relative_reduction_cumulative_active_tb_cases", rel))
+    rows_by_metric = {row["Metric"]: row for row in metric_rows}
+    displayed_intervention = rows_by_metric["cumulative_intervention_active_tb_cases"]["Median"]
+    displayed_prevented = rows_by_metric["cumulative_cases_averted"]["Median"]
+    displayed_baseline = (
+        None
+        if displayed_intervention is None or displayed_prevented is None
+        else displayed_intervention + displayed_prevented
+    )
+    return {
+        "available": True,
+        "source": "technical.eventLedger",
+        "population": results.get("interfaceConfig", {}).get("N"),
+        "followHorizon": results.get("interfaceConfig", {}).get("followUpHorizonYears", results.get("interfaceConfig", {}).get("followHorizon")),
+        "cumulative_baseline_active_tb_cases": displayed_baseline,
+        "cumulative_intervention_active_tb_cases": displayed_intervention,
+        "cumulative_cases_averted": displayed_prevented,
+        "relative_reduction_cumulative_active_tb_cases": rows_by_metric["relative_reduction_cumulative_active_tb_cases"]["Median"],
+        "metricRows": metric_rows,
+        "missingFields": [],
+        "notes": (
+            "Comparator, intervention and prevented active-TB cases are derived "
+            "from paired event-ledger rows. Top-level displayed values preserve "
+            "comparator = intervention + prevented; metricRows retain separate "
+            "distribution summaries."
+        ),
     }
 
 

@@ -4,6 +4,7 @@ from math import isfinite
 from typing import Any
 
 from engine.apy.config import normalise_config, resolve_repo_path
+from engine.apy.eligibility import RESTRICTED_ELIGIBILITY_ERROR, resolve_eligibility
 
 
 REQUIRED_FIELDS = [
@@ -66,7 +67,11 @@ def collect_validation_issues(config: dict[str, Any]) -> dict[str, Any]:
     _validate_positive_scalar(report, cfg, "nReps", "Number of replicates")
     _validate_nonnegative_scalar(report, cfg, "seed", "Random seed")
     _validate_positive_scalar(report, cfg, "screenWindow", "Screen window")
+    _validate_positive_scalar(report, cfg, "screeningWindowYears", "Screening window")
+    _validate_positive_scalar(report, cfg, "earlyProgressionPeriodYears", "Early progression period")
+    _validate_positive_scalar(report, cfg, "activeTBCalibrationHorizonYears", "Active-TB calibration horizon")
     _validate_positive_scalar(report, cfg, "followHorizon", "Follow-up horizon")
+    _validate_positive_scalar(report, cfg, "followUpHorizonYears", "Follow-up horizon")
     _validate_fraction(report, cfg, "screenCoverage", "Screening coverage")
     _validate_optional_open_fraction(
         report,
@@ -93,6 +98,19 @@ def collect_validation_issues(config: dict[str, Any]) -> dict[str, Any]:
                 "invalid_range",
                 "followHorizon must be at least as long as screenWindow.",
             )
+    try:
+        resolve_eligibility(cfg)
+    except ValueError as exc:
+        _add_issue(
+            report,
+            "errors",
+            "scenario.eligible",
+            "Eligible population",
+            "unsupported_restricted_eligibility"
+            if str(exc) == RESTRICTED_ELIGIBILITY_ERROR
+            else "invalid_range",
+            str(exc),
+        )
 
     _validate_choice(report, cfg, "testType", "Test choice", TEST_TYPES)
     _validate_choice(report, cfg, "regimen", "Treatment choice", REGIMENS)
@@ -150,7 +168,8 @@ def validate_config(config: dict[str, Any]) -> dict[str, Any]:
     report = collect_validation_issues(cfg)
     if not report["isValid"]:
         fields = ", ".join(report["fatalFieldNames"])
-        raise ValueError(f"Invalid APY config: {fields}")
+        messages = "; ".join(issue["message"] for issue in report["errors"])
+        raise ValueError(f"Invalid APY config: {fields}. {messages}")
     return cfg
 
 

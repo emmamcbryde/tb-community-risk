@@ -13,11 +13,11 @@ from engine.apy.scenario import (
 )
 
 
-EVENT_LEDGER_CONTRACT_VERSION = "ltbi_screening_event_ledger_v1"
+EVENT_LEDGER_CONTRACT_VERSION = "ltbi_screening_event_ledger_v2"
 YEAR_BIN_CONVENTION = (
     "model year 0 is [0,1), model year 1 is [1,2), and the final interval "
-    "may be shorter for a non-integer follow-up horizon; post-horizon "
-    "programme events are reported in modelYear=-1 with timeInterval='post_horizon'."
+    "may be shorter for a non-integer follow-up horizon; programme events after "
+    "follow-up retain their actual non-negative model year with withinFollowUp=false."
 )
 FLOAT_TOLERANCE = 1e-7
 
@@ -99,7 +99,11 @@ def metadata_from_config(
         "modelType": model_type,
         "backend": backend,
         "screeningWindow": config.get("screenWindow"),
+        "screeningWindowYears": config.get("screeningWindowYears", config.get("screenWindow")),
+        "earlyProgressionPeriodYears": config.get("earlyProgressionPeriodYears"),
+        "activeTBCalibrationHorizonYears": config.get("activeTBCalibrationHorizonYears"),
         "followUpHorizon": config.get("followHorizon"),
+        "followUpHorizonYears": config.get("followUpHorizonYears", config.get("followHorizon")),
         "modelVersion": model_version,
         "scopeStatement": DIRECT_EFFECTS_SCOPE_STATEMENT,
         "yearBinConvention": YEAR_BIN_CONVENTION,
@@ -173,6 +177,7 @@ def validate_event_ledger(
                 total = _value(row, event)
                 if abs(annual - total) > tolerance:
                     errors.append(_issue("annual_reconciliation", f"Annual {event} sums to {annual}, expected {total}.", row))
+        _validate_annual_cross_arm_tb_identity(annual_events, errors, tolerance)
     return _validation_report(errors, warnings)
 
 
@@ -212,6 +217,10 @@ def wide_to_long_totals(wide: pd.DataFrame) -> pd.DataFrame:
         "valueType",
         "screeningWindow",
         "followUpHorizon",
+        "screeningWindowYears",
+        "earlyProgressionPeriodYears",
+        "activeTBCalibrationHorizonYears",
+        "followUpHorizonYears",
     ]
     present_id_cols = [col for col in id_cols if col in wide.columns]
     rows = []
@@ -244,12 +253,13 @@ def annual_records_from_event_times(
         values = values[np.isfinite(values)]
         if len(values) == 0:
             continue
-        for model_year, count in _bin_times(values, follow_horizon).items():
+        for (model_year, within_follow_up), count in _bin_times(values, follow_horizon).items():
             rows.append(
                 {
                     **base,
                     "modelYear": model_year,
                     "timeInterval": _time_interval_label(model_year, follow_horizon),
+                    "withinFollowUp": within_follow_up,
                     "eventName": event_name,
                     "value": float(count),
                 }
@@ -265,18 +275,21 @@ def annual_records_from_weighted_events(
 ) -> pd.DataFrame:
     rows = []
     for event_name in EVENT_NAMES:
-        bins: dict[int, float] = {}
+        bins: dict[tuple[int, bool], float] = {}
         for time, value in event_values.get(event_name, []):
             if value == 0 or not np.isfinite(time):
                 continue
             model_year = _model_year(float(time), follow_horizon)
-            bins[model_year] = bins.get(model_year, 0.0) + float(value)
-        for model_year, value in bins.items():
+            within_follow_up = float(time) < float(follow_horizon)
+            key = (model_year, within_follow_up)
+            bins[key] = bins.get(key, 0.0) + float(value)
+        for (model_year, within_follow_up), value in bins.items():
             rows.append(
                 {
                     **base,
                     "modelYear": model_year,
                     "timeInterval": _time_interval_label(model_year, follow_horizon),
+                    "withinFollowUp": within_follow_up,
                     "eventName": event_name,
                     "value": float(value),
                 }
@@ -284,12 +297,17 @@ def annual_records_from_weighted_events(
     return pd.DataFrame(rows)
 
 
-def zero_comparator_wide(base: dict[str, Any], population: float, active_tb_cases: float) -> dict[str, Any]:
+def zero_comparator_wide(
+    base: dict[str, Any],
+    population: float,
+    active_tb_cases: float,
+    eligible_population: float | None = None,
+) -> dict[str, Any]:
     row = {**base, "arm": "comparator"}
     for event in EVENT_NAMES:
         row[event] = 0.0
     row["population"] = float(population)
-    row["eligible_population"] = float(population)
+    row["eligible_population"] = float(population if eligible_population is None else eligible_population)
     row["active_tb_cases"] = float(active_tb_cases)
     return row
 
@@ -463,28 +481,65 @@ def _matlab_intervention_row(
     return row
 
 
-def _bin_times(times: np.ndarray, follow_horizon: float) -> dict[int, float]:
-    out: dict[int, float] = {}
+def _bin_times(times: np.ndarray, follow_horizon: float) -> dict[tuple[int, bool], float]:
+    out: dict[tuple[int, bool], float] = {}
     for time in times:
         year = _model_year(float(time), follow_horizon)
-        out[year] = out.get(year, 0.0) + 1.0
+        key = (year, float(time) < float(follow_horizon))
+        out[key] = out.get(key, 0.0) + 1.0
     return out
 
 
 def _model_year(time: float, follow_horizon: float) -> int:
     if time < 0:
         return 0
-    if time >= follow_horizon:
-        return -1
     return int(np.floor(time))
 
 
 def _time_interval_label(model_year: int, follow_horizon: float) -> str:
-    if model_year == -1:
-        return "post_horizon"
     start = float(model_year)
-    end = min(start + 1.0, float(follow_horizon))
+    end = start + 1.0
     return f"[{start:g},{end:g})"
+
+
+def _validate_annual_cross_arm_tb_identity(
+    annual_events: pd.DataFrame,
+    errors: list[dict[str, Any]],
+    tolerance: float,
+) -> None:
+    subset = annual_events[
+        annual_events["eventName"].isin(["active_tb_cases", "active_tb_cases_prevented"])
+    ]
+    if subset.empty:
+        return
+    grouped = subset.groupby(
+        ["modelType", "replicateId", "pairedReplicateId", "modelYear", "arm", "eventName"],
+        dropna=False,
+    )["value"].sum()
+    years = subset[["modelType", "replicateId", "pairedReplicateId", "modelYear"]].drop_duplicates()
+    for _, row in years.iterrows():
+        base = (
+            row["modelType"],
+            row["replicateId"],
+            row["pairedReplicateId"],
+            row["modelYear"],
+        )
+        comparator = float(grouped.get((*base, "comparator", "active_tb_cases"), 0.0))
+        intervention = float(grouped.get((*base, "intervention", "active_tb_cases"), 0.0))
+        prevented = float(grouped.get((*base, "intervention", "active_tb_cases_prevented"), 0.0))
+        if abs(comparator - (intervention + prevented)) > tolerance:
+            errors.append(
+                {
+                    "field": "annual_active_tb_identity",
+                    "message": (
+                        "Annual comparator active TB must equal intervention active TB "
+                        "plus prevented cases in the same model year."
+                    ),
+                    "modelType": row["modelType"],
+                    "replicateId": row["replicateId"],
+                    "modelYear": row["modelYear"],
+                }
+            )
 
 
 def _validate_identities(row: pd.Series, errors: list[dict[str, Any]], tolerance: float) -> None:

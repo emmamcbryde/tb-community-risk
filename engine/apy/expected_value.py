@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from itertools import product
+import json
 from typing import Any
 
 import numpy as np
@@ -17,6 +18,7 @@ from engine.apy.cohort import (
     preventable_active_risk,
 )
 from engine.apy.config import normalise_config
+from engine.apy.eligibility import resolve_eligibility, screening_coverage_of_population
 from engine.apy.event_ledger import (
     EVENT_NAMES,
     annual_records_from_weighted_events,
@@ -33,26 +35,33 @@ from engine.apy.regimen import (
 )
 from engine.apy.runner import (
     BACKEND,
-    MODEL_VERSION,
+    EXPECTED_VALUE_MODEL_VERSION,
     _cached_calibration_from_config,
     build_strategy_metadata,
 )
 from engine.apy.scenario import DEFAULT_COMPARATOR, DEFAULT_INTERVENTION
 from engine.apy.simulation import _simulation_options
+from engine.apy.timing import event_probability_between, survival_probability
 from engine.apy.validation import validate_config
 
 
 QUADRATURE_POINTS = 24
+_STRATA_CACHE: dict[str, pd.DataFrame] = {}
 
 
-def run_expected_value(config: dict[str, Any] | None = None) -> dict[str, Any]:
+def run_expected_value(
+    config: dict[str, Any] | None = None,
+    *,
+    quadrature_points: int = QUADRATURE_POINTS,
+) -> dict[str, Any]:
     cfg = validate_config(normalise_config(config))
     calibration = _cached_calibration_from_config(cfg)
     pars = calibration["parameters"]
     reg = _build_regimen(cfg)
     opts = _simulation_options(cfg)
     opts["N"] = float(cfg["N"])
-    strata = _build_strata(pars, calibration, opts)
+    opts["quadraturePoints"] = int(quadrature_points)
+    strata = _cached_strata(pars, calibration, opts)
     strata = _allocate_screening(strata, opts)
     totals, annual_values, comparator_active_by_year = _expected_events(
         strata, opts, reg, calibration
@@ -62,6 +71,7 @@ def run_expected_value(config: dict[str, Any] | None = None) -> dict[str, Any]:
     comparator = zero_comparator_wide(
         base,
         population=float(cfg["N"]),
+        eligible_population=float(opts["eligiblePopulation"]),
         active_tb_cases=sum(comparator_active_by_year.values()),
     )
     intervention = {**base, "arm": "intervention"}
@@ -110,7 +120,7 @@ def run_expected_value(config: dict[str, Any] | None = None) -> dict[str, Any]:
             cfg,
             model_type="expected_value",
             backend=BACKEND,
-            model_version=MODEL_VERSION,
+            model_version=EXPECTED_VALUE_MODEL_VERSION,
         ),
         replicate_totals_wide=totals_wide,
         annual_events=annual,
@@ -122,7 +132,7 @@ def run_expected_value(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "calibration": {k: v for k, v in calibration.items() if k != "parameters"},
         "strategy": build_strategy_metadata(cfg, reg),
         "interfaceConfig": cfg,
-        "modelVersion": MODEL_VERSION,
+        "modelVersion": EXPECTED_VALUE_MODEL_VERSION,
         "backend": BACKEND,
     }
 
@@ -173,7 +183,11 @@ def _build_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict[
             )
             avg_latent = float(
                 average_survival_to_random_screen(
-                    [mult], calibration["lambdaEarly"], opts["screenWindow"]
+                    [mult],
+                    calibration["lambdaEarly"],
+                    opts["screenWindow"],
+                    calibration["lambdaLate"],
+                    opts["earlyProgressionPeriodYears"],
                 )[0]
             )
             preventable = float(
@@ -183,6 +197,7 @@ def _build_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict[
                     calibration["lambdaLate"],
                     opts["screenWindow"],
                     opts["followHorizon"],
+                    opts["earlyProgressionPeriodYears"],
                 )[0]
             )
             sens, spec = get_test_performance([bool(flag["BCG"])], opts)
@@ -208,16 +223,42 @@ def _build_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict[
     return out
 
 
+def _cached_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict[str, Any]) -> pd.DataFrame:
+    key = json.dumps(
+        {
+            "ageInfLogLambda": calibration["ageInfLogLambda"],
+            "ageInfGamma": calibration["ageInfGamma"],
+            "lambdaEarly": calibration["lambdaEarly"],
+            "lambdaLate": calibration["lambdaLate"],
+            "screenWindow": opts["screenWindow"],
+            "followHorizon": opts["followHorizon"],
+            "earlyProgressionPeriodYears": opts["earlyProgressionPeriodYears"],
+            "testType": opts["testType"],
+            "testSensitivity": opts["testSensitivity"],
+            "testSpecificity": opts["testSpecificity"],
+            "tstSensitivity": opts["tstSensitivity"],
+            "tstSpecificityBCG": opts["tstSpecificityBCG"],
+            "tstSpecificityNoBCG": opts["tstSpecificityNoBCG"],
+            "populationWeight": opts["N"],
+        },
+        sort_keys=True,
+        default=str,
+    )
+    if key not in _STRATA_CACHE:
+        _STRATA_CACHE[key] = _build_strata(pars, calibration, opts)
+    return _STRATA_CACHE[key].copy()
+
+
 def _allocate_screening(strata: pd.DataFrame, opts: dict[str, Any]) -> pd.DataFrame:
     out = strata.copy()
     population = out["populationWeight"].sum()
-    requested = min(max(float(opts["screenCoverage"]) * population, 0.0), population)
+    requested = min(max(float(opts["screenCoverage"]) * float(opts["eligiblePopulation"]), 0.0), population)
     out["screenedWeight"] = 0.0
     if requested <= 0:
         return out
     strategy = str(opts["screeningStrategy"]).lower()
     if strategy == "random":
-        out["screenedWeight"] = out["populationWeight"] * float(opts["screenCoverage"])
+        out["screenedWeight"] = out["populationWeight"] * float(opts["screenCoverageOfPopulation"])
         return out
     score_column = {
         "ltbi": "ltbiRiskScore",
@@ -248,7 +289,8 @@ def _expected_events(
     totals = {name: 0.0 for name in EVENT_NAMES}
     annual_values: dict[str, list[tuple[float, float]]] = {name: [] for name in EVENT_NAMES}
     comparator_active_by_year = _comparator_active_by_year(strata, opts, calibration)
-    q_times = (np.arange(QUADRATURE_POINTS, dtype=float) + 0.5) / QUADRATURE_POINTS * opts["screenWindow"]
+    q_points = int(opts.get("quadraturePoints", QUADRATURE_POINTS))
+    q_times = (np.arange(q_points, dtype=float) + 0.5) / q_points * opts["screenWindow"]
     p_complete = float(reg["pComplete"])
     p_adr = float(reg["pADRstop"])
     p_other = max(1.0 - p_complete - p_adr, 0.0)
@@ -259,7 +301,7 @@ def _expected_events(
     partial_eff_other = float(regimen_partial_efficacy(reg, other_dose))
     screened_weight = strata["screenedWeight"].to_numpy(dtype=float)
     selected = screened_weight > 0
-    point_weight = screened_weight[selected] / QUADRATURE_POINTS
+    point_weight = screened_weight[selected] / q_points
     p_inf = strata.loc[selected, "pInfection"].to_numpy(dtype=float)
     sens = strata.loc[selected, "testSensitivity"].to_numpy(dtype=float)
     spec = strata.loc[selected, "testSpecificity"].to_numpy(dtype=float)
@@ -340,7 +382,7 @@ def _expected_events(
             tp_started_by_stratum=tp_started,
         )
     totals["population"] = float(opts.get("N", 0.0))
-    totals["eligible_population"] = float(opts.get("N", 0.0))
+    totals["eligible_population"] = float(opts.get("eligiblePopulation", opts.get("N", 0.0)))
     totals["active_tb_cases_prevented"] = totals.pop(
         "infection_effectively_treated_total_prevented_marker", 0.0
     )
@@ -603,26 +645,31 @@ def _conditional_survival_array(
 
 
 def _survival(time: float, mult: float, calibration: dict[str, Any], opts: dict[str, Any]) -> float:
-    early = min(max(time, 0.0), float(opts["screenWindow"]))
-    late = max(time - float(opts["screenWindow"]), 0.0)
-    hazard = calibration["lambdaEarly"] * mult * early + calibration["lambdaLate"] * mult * late
-    return float(np.exp(-hazard))
+    return float(
+        survival_probability(
+            time,
+            mult,
+            calibration["lambdaEarly"],
+            calibration["lambdaLate"],
+            opts["earlyProgressionPeriodYears"],
+        )
+    )
 
 
 def _survival_array(time: float, mult: np.ndarray, calibration: dict[str, Any], opts: dict[str, Any]) -> np.ndarray:
-    early = min(max(time, 0.0), float(opts["screenWindow"]))
-    late = max(time - float(opts["screenWindow"]), 0.0)
-    hazard = calibration["lambdaEarly"] * mult * early + calibration["lambdaLate"] * mult * late
-    return np.exp(-hazard)
+    return survival_probability(
+        time,
+        mult,
+        calibration["lambdaEarly"],
+        calibration["lambdaLate"],
+        opts["earlyProgressionPeriodYears"],
+    )
 
 
 def _sum_event_year(events: list[tuple[float, float]], year: int, horizon: float) -> float:
     total = 0.0
     for time, value in events:
-        if time >= horizon:
-            event_year = -1
-        else:
-            event_year = int(np.floor(max(time, 0.0)))
+        event_year = int(np.floor(max(time, 0.0)))
         if event_year == year:
             total += value
     return total
@@ -635,13 +682,13 @@ def _representative_time(year: int) -> float:
 def _ledger_base(config: dict[str, Any]) -> dict[str, Any]:
     scenario = config.get("scenario") if isinstance(config.get("scenario"), dict) else {}
     return {
-        "contractVersion": "ltbi_screening_event_ledger_v1",
+        "contractVersion": "ltbi_screening_event_ledger_v2",
         "scenarioId": config.get("scenarioLabel") or scenario.get("scenarioName"),
         "scenarioVersion": scenario.get("scenarioVersion", config.get("configVersion")),
         "populationPresetId": config.get("populationPresetId"),
         "modelType": "expected_value",
         "backend": BACKEND,
-        "modelVersion": MODEL_VERSION,
+        "modelVersion": EXPECTED_VALUE_MODEL_VERSION,
         "arm": "",
         "comparator": DEFAULT_COMPARATOR,
         "intervention": DEFAULT_INTERVENTION,
@@ -649,8 +696,12 @@ def _ledger_base(config: dict[str, Any]) -> dict[str, Any]:
         "pairedReplicateId": 0,
         "replicateSeed": None,
         "valueType": "expected",
-        "screeningWindow": float(config["screenWindow"]),
-        "followUpHorizon": float(config["followHorizon"]),
+        "screeningWindow": float(config["screeningWindowYears"]),
+        "screeningWindowYears": float(config["screeningWindowYears"]),
+        "earlyProgressionPeriodYears": float(config["earlyProgressionPeriodYears"]),
+        "activeTBCalibrationHorizonYears": float(config["activeTBCalibrationHorizonYears"]),
+        "followUpHorizon": float(config["followUpHorizonYears"]),
+        "followUpHorizonYears": float(config["followUpHorizonYears"]),
     }
 
 

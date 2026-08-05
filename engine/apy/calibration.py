@@ -9,6 +9,7 @@ import numpy as np
 from engine.apy.age_distribution import broad_age_group_from_years
 from engine.apy.config import normalise_config
 from engine.apy.data import load_parameters_from_config
+from engine.apy.timing import event_probability_between, resolve_time_settings
 
 
 EPS = np.finfo(float).eps
@@ -167,7 +168,11 @@ def expected_active_within_window(
     log_lambda: float,
     gamma: float,
     screen_window: float,
+    early_progression_period_years: float | None = None,
+    lambda_late: float | None = None,
 ) -> float:
+    early_period = float(early_progression_period_years or screen_window)
+    late = float(lambda_late if lambda_late is not None else lambda_early)
     prev = 0.0
     for age, age_prob in zip(pars["exactAgeValues"], pars["exactAgeProb"]):
         age_group = broad_age_group_from_years([age])[0] - 1
@@ -186,7 +191,16 @@ def expected_active_within_window(
             mult = disease_multiplier_from_flags(
                 pars, mj, contact, renal, diabetes, smoking, cld, alcohol
             )
-            p_active = 1.0 - math.exp(-screen_window * lambda_early * mult)
+            p_active = float(
+                event_probability_between(
+                    0.0,
+                    screen_window,
+                    mult,
+                    lambda_early,
+                    late,
+                    early_period,
+                )
+            )
             prev += (
                 age_prob
                 * bern_prob(mj, p_mj)
@@ -209,14 +223,22 @@ def calibrate_early_hazard(
     target_active_2y: float,
     screen_window: float,
     early_late_ratio: float,
+    early_progression_period_years: float | None = None,
 ) -> dict[str, float]:
     if early_late_ratio < 1:
         raise ValueError("earlyLateRatio must be >= 1")
 
     def objective(lambda_early: float) -> float:
+        lambda_late = lambda_early / early_late_ratio
         return (
             expected_active_within_window(
-                lambda_early, pars, log_lambda, gamma, screen_window
+                lambda_early,
+                pars,
+                log_lambda,
+                gamma,
+                screen_window,
+                early_progression_period_years,
+                lambda_late,
             )
             - target_active_2y
         )
@@ -225,8 +247,14 @@ def calibrate_early_hazard(
     return {
         "lambdaEarly": lambda_early,
         "lambdaLate": lambda_early / early_late_ratio,
-        "expectedActive2y": expected_active_within_window(
-            lambda_early, pars, log_lambda, gamma, screen_window
+        "expectedActiveAtCalibrationHorizon": expected_active_within_window(
+            lambda_early,
+            pars,
+            log_lambda,
+            gamma,
+            screen_window,
+            early_progression_period_years,
+            lambda_early / early_late_ratio,
         ),
     }
 
@@ -239,6 +267,7 @@ def calibrate_from_config(config: dict[str, Any]) -> dict[str, Any]:
         _default_if_empty(cfg["activeTBPrevalence"], 10 / 770)
     )
     early_late_ratio = _default_if_empty(cfg["earlyLateRatio"], 5)
+    timing = resolve_time_settings(cfg)
 
     age_calibration = calibrate_age_infection_model(
         pars, target_inf_prev, cfg["targetAgeOR"]
@@ -248,8 +277,9 @@ def calibrate_from_config(config: dict[str, Any]) -> dict[str, Any]:
         age_calibration["logLambda"],
         age_calibration["gamma"],
         target_active_2y,
-        cfg["screenWindow"],
+        timing["activeTBCalibrationHorizonYears"],
         early_late_ratio,
+        timing["earlyProgressionPeriodYears"],
     )
     return {
         "parameters": pars,
@@ -263,10 +293,14 @@ def calibrate_from_config(config: dict[str, Any]) -> dict[str, Any]:
         ),
         "lambdaEarly": hazard["lambdaEarly"],
         "lambdaLate": hazard["lambdaLate"],
-        "expectedActive2y": hazard["expectedActive2y"],
+        "expectedActiveAtCalibrationHorizon": hazard["expectedActiveAtCalibrationHorizon"],
+        "expectedActive2y": hazard["expectedActiveAtCalibrationHorizon"],
         "targetInfPrev": target_inf_prev,
         "targetAgeOR": cfg["targetAgeOR"],
+        "targetActiveAtCalibrationHorizon": target_active_2y,
         "targetActive2y": target_active_2y,
+        "earlyProgressionPeriodYears": timing["earlyProgressionPeriodYears"],
+        "activeTBCalibrationHorizonYears": timing["activeTBCalibrationHorizonYears"],
     }
 
 

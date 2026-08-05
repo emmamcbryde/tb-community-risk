@@ -16,6 +16,7 @@ from engine.apy.cohort import (
     select_screened_people,
 )
 from engine.apy.config import normalise_config
+from engine.apy.eligibility import resolve_eligibility, screening_coverage_of_population
 from engine.apy.regimen import (
     apply_regimen_overrides,
     default_regimen_library,
@@ -23,6 +24,7 @@ from engine.apy.regimen import (
     regimen_partial_efficacy,
     validate_regimen,
 )
+from engine.apy.timing import resolve_time_settings
 
 
 RAW_FIELDS = [
@@ -179,6 +181,7 @@ def simulate_one_cohort(
         calibration["lambdaLate"],
         opts["screenWindow"],
         opts["followHorizon"],
+        opts["earlyProgressionPeriodYears"],
     )
     t_active = draw_untreated_active_times(
         population["infected"],
@@ -187,13 +190,14 @@ def simulate_one_cohort(
         calibration["lambdaLate"],
         opts["screenWindow"],
         rng,
+        opts["earlyProgressionPeriodYears"],
     )
 
     screened, screen_priority_score, screen_priority_rank = select_screened_people(
         population["ltbiRiskScore"],
         population["cureTargetScore"],
         population["preventTargetScore"],
-        opts["screenCoverage"],
+        opts["screenCoverageOfPopulation"],
         opts["screeningStrategy"],
         rng,
     )
@@ -310,7 +314,7 @@ def simulate_one_cohort(
     prevented_active_tb = protected_any & (t_active <= opts["followHorizon"])
     prevented_active_tb_full = protected_full & (t_active <= opts["followHorizon"])
     prevented_active_tb_partial = protected_partial & (t_active <= opts["followHorizon"])
-    active_by_2y = infected & (t_active <= opts["screenWindow"])
+    active_by_2y = infected & (t_active <= opts["activeTBCalibrationHorizonYears"])
     active_by_20y = infected & (t_active <= opts["followHorizon"])
 
     raw = _build_raw(
@@ -501,6 +505,11 @@ def get_counterfactual_no_bcg_specificity(bcg, config) -> np.ndarray:
 
 def _simulation_options(config: dict[str, Any]) -> dict[str, Any]:
     cfg = normalise_config(config)
+    timing = resolve_time_settings(cfg)
+    eligibility = resolve_eligibility(cfg)
+    screen_coverage_of_population = screening_coverage_of_population(
+        cfg, eligibility["number"]
+    )
     tst_no_bcg = cfg.get("tstSpecificityNoBCG")
     test_specificity = coerce_probability(cfg.get("testSpecificity"), 0.98)
     if tst_no_bcg is None or tst_no_bcg == []:
@@ -509,9 +518,15 @@ def _simulation_options(config: dict[str, Any]) -> dict[str, Any]:
         "testType": str(cfg["testType"]).upper(),
         "screeningStrategy": str(cfg["screeningStrategy"]).lower(),
         "regimen": str(cfg["regimen"]).upper(),
-        "screenWindow": float(cfg["screenWindow"]),
-        "followHorizon": float(cfg["followHorizon"]),
+        "screenWindow": timing["screeningWindowYears"],
+        "screeningWindowYears": timing["screeningWindowYears"],
+        "earlyProgressionPeriodYears": timing["earlyProgressionPeriodYears"],
+        "activeTBCalibrationHorizonYears": timing["activeTBCalibrationHorizonYears"],
+        "followHorizon": timing["followUpHorizonYears"],
+        "followUpHorizonYears": timing["followUpHorizonYears"],
+        "eligiblePopulation": float(eligibility["number"]),
         "screenCoverage": coerce_probability(cfg["screenCoverage"], 0.30),
+        "screenCoverageOfPopulation": screen_coverage_of_population,
         "pStartTPT": coerce_probability(cfg.get("pStartTPT"), 0.85),
         "partialDoseFractionADR": coerce_probability(
             cfg.get("partialDoseFractionADR"), 0.30
@@ -715,7 +730,7 @@ def _build_event_ledger_data(
     partial_false = false_positive_adr_stop | false_positive_stopped_other
     totals = {
         "population": int(n),
-        "eligible_population": int(n),
+        "eligible_population": float(opts["eligiblePopulation"]),
         "screened": int(screened.sum()),
         "infected_screened": int((screened & infected).sum()),
         "uninfected_screened": int(uninfected_screened.sum()),

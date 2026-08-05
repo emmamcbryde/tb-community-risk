@@ -6,6 +6,10 @@ import numpy as np
 
 from engine.apy.age_distribution import broad_age_group_from_years
 from engine.apy.calibration import age_cumulative_infection_hazard
+from engine.apy.timing import (
+    average_survival_to_uniform_screen,
+    preventable_active_risk_to_uniform_screen,
+)
 
 
 def make_rng(seed: int | None = None) -> np.random.Generator:
@@ -73,8 +77,20 @@ def disease_multiplier(
 
 
 def average_survival_to_random_screen(
-    mult_disease, lambda_early: float, screen_window: float
+    mult_disease,
+    lambda_early: float,
+    screen_window: float,
+    lambda_late: float | None = None,
+    early_progression_period_years: float | None = None,
 ) -> np.ndarray:
+    if lambda_late is not None and early_progression_period_years is not None:
+        return average_survival_to_uniform_screen(
+            mult_disease,
+            lambda_early,
+            lambda_late,
+            screen_window,
+            early_progression_period_years,
+        )
     rate = float(lambda_early) * np.asarray(mult_disease, dtype=float)
     avg_survival = np.ones_like(rate, dtype=float)
     idx = rate > 0
@@ -89,7 +105,17 @@ def preventable_active_risk(
     lambda_late: float,
     screen_window: float,
     follow_horizon: float,
+    early_progression_period_years: float | None = None,
 ) -> np.ndarray:
+    if early_progression_period_years is not None:
+        return preventable_active_risk_to_uniform_screen(
+            mult_disease,
+            lambda_early,
+            lambda_late,
+            screen_window,
+            follow_horizon,
+            early_progression_period_years,
+        )
     mult = np.asarray(mult_disease, dtype=float)
     avg_surv_to_screen = average_survival_to_random_screen(
         mult, lambda_early, screen_window
@@ -164,6 +190,7 @@ def draw_untreated_active_times(
     lambda_late: float,
     screen_window: float,
     rng,
+    early_progression_period_years: float | None = None,
 ) -> np.ndarray:
     infected_array = np.asarray(infected, dtype=bool)
     mult = np.asarray(mult_disease, dtype=float)
@@ -172,15 +199,16 @@ def draw_untreated_active_times(
     if len(idx_inf) == 0:
         return t_active
 
+    early_period = float(early_progression_period_years or screen_window)
     rate1 = lambda_early * mult[idx_inf]
     t1 = exprnd_local(1.0 / rate1, rng)
-    early = t1 <= screen_window
+    early = t1 <= early_period
     t_active[idx_inf[early]] = t1[early]
     idx_late = idx_inf[~early]
     if len(idx_late) > 0:
         rate2 = lambda_late * mult[idx_late]
         t2 = exprnd_local(1.0 / rate2, rng)
-        t_active[idx_late] = screen_window + t2
+        t_active[idx_late] = early_period + t2
     return t_active
 
 
@@ -245,10 +273,15 @@ def add_targeting_scores(
     lambda_late: float,
     screen_window: float,
     follow_horizon: float,
+    early_progression_period_years: float | None = None,
 ) -> dict[str, np.ndarray]:
     out = dict(population)
     avg_latent_at_screen = average_survival_to_random_screen(
-        out["diseaseMultiplier"], lambda_early, screen_window
+        out["diseaseMultiplier"],
+        lambda_early,
+        screen_window,
+        lambda_late,
+        early_progression_period_years,
     )
     preventable = preventable_active_risk(
         out["diseaseMultiplier"],
@@ -256,6 +289,7 @@ def add_targeting_scores(
         lambda_late,
         screen_window,
         follow_horizon,
+        early_progression_period_years,
     )
     out["ltbiRiskScore"] = out["pInfection"]
     out["cureTargetScore"] = out["pInfection"] * avg_latent_at_screen

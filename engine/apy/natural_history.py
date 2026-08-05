@@ -80,32 +80,40 @@ REQUIRED_RAW_COLUMNS = [
 def run_do_nothing_summary(results: dict[str, Any]) -> dict[str, Any]:
     raw = _require_raw_dataframe(results)
     n = _population_size(results)
+    ledger = _ledger_active_tb_frame(results)
+    if ledger is not None:
+        comparator_horizon = ledger["comparator_active_tb_cases"]
+        post_active_horizon = ledger["intervention_active_tb_cases"]
+        prevented_horizon = ledger["active_tb_cases_prevented"]
+    else:
+        comparator_horizon = raw["nActiveBy20y"]
+        post_active_horizon = raw["nActiveBy20y"] - raw["nPreventedActiveTB"]
+        prevented_horizon = raw["nPreventedActiveTB"]
 
-    post_active_horizon = raw["nActiveBy20y"] - raw["nPreventedActiveTB"]
     rel_reduction_horizon = safe_fraction_vector(
-        raw["nPreventedActiveTB"],
-        raw["nActiveBy20y"],
+        prevented_horizon,
+        comparator_horizon,
     )
     ltbi_prev = safe_fraction_vector(raw["nInfected"], n)
     active_prev_2y = safe_fraction_vector(raw["nActiveBy2y"], n)
-    active_prev_horizon = safe_fraction_vector(raw["nActiveBy20y"], n)
+    active_prev_horizon = safe_fraction_vector(comparator_horizon, n)
     post_active_prev_horizon = safe_fraction_vector(post_active_horizon, n)
 
     derived = pd.DataFrame(
         {
             "nInfected": raw["nInfected"],
             "nActiveBy2y_DoNothing": raw["nActiveBy2y"],
-            "nActiveBy20y_DoNothing": raw["nActiveBy20y"],
+            "nActiveBy20y_DoNothing": comparator_horizon,
             "nActiveBy20y_AfterStrategy": post_active_horizon,
-            "nActiveBy20y_Prevented": raw["nPreventedActiveTB"],
+            "nActiveBy20y_Prevented": prevented_horizon,
             "relReduction20y": rel_reduction_horizon,
             "ltbiPrev_DoNothing": ltbi_prev,
             "activePrev2y_DoNothing": active_prev_2y,
             "activePrev20y_DoNothing": active_prev_horizon,
             "activePrev20y_AfterStrategy": post_active_prev_horizon,
-            "nActiveByHorizon_DoNothing": raw["nActiveBy20y"],
+            "nActiveByHorizon_DoNothing": comparator_horizon,
             "nActiveByHorizon_AfterStrategy": post_active_horizon,
-            "nActiveByHorizon_Prevented": raw["nPreventedActiveTB"],
+            "nActiveByHorizon_Prevented": prevented_horizon,
             "relReductionHorizon": rel_reduction_horizon,
             "NNS_preventActiveTB": raw["NNS_preventActiveTB"],
             "NNS_cureInfection": raw["NNS_cureInfection"],
@@ -177,3 +185,29 @@ def _population_size(results: dict[str, Any]) -> float:
     if "N" not in cfg:
         raise ValueError("Results must contain interfaceConfig.N.")
     return float(cfg["N"])
+
+
+def _ledger_active_tb_frame(results: dict[str, Any]) -> pd.DataFrame | None:
+    ledger = results.get("eventLedger") or {}
+    totals = ledger.get("replicateTotals")
+    if not isinstance(totals, pd.DataFrame) or totals.empty:
+        return None
+    subset = totals[totals["eventName"].isin(["active_tb_cases", "active_tb_cases_prevented"])]
+    if subset.empty:
+        return None
+    wide = subset.pivot_table(
+        index=["replicateId", "arm"],
+        columns="eventName",
+        values="value",
+        aggfunc="first",
+    ).reset_index()
+    comparator = wide[wide["arm"] == "comparator"][["replicateId", "active_tb_cases"]].rename(
+        columns={"active_tb_cases": "comparator_active_tb_cases"}
+    )
+    intervention = wide[wide["arm"] == "intervention"][
+        ["replicateId", "active_tb_cases", "active_tb_cases_prevented"]
+    ].rename(columns={"active_tb_cases": "intervention_active_tb_cases"})
+    merged = comparator.merge(intervention, on="replicateId", how="inner")
+    if merged.empty:
+        return None
+    return merged

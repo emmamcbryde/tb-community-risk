@@ -9,7 +9,9 @@ from openpyxl import load_workbook
 
 from adapters.serialization import to_json_like
 from app.results_workbook import build_results_workbook
+from engine.apy.config import normalise_config
 from engine.apy.event_ledger import EVENT_LEDGER_CONTRACT_VERSION, matlab_total_ledger_from_raw_rows
+from engine.apy.event_ledger import validate_event_ledger
 from engine.apy.expected_value import run_expected_value
 from engine.apy.results_bundle import build_results_bundle
 from engine.apy.runner import run_replicates
@@ -28,9 +30,39 @@ class ApyEventLedgerTests(unittest.TestCase):
         ledger = self.ev["eventLedger"]
 
         self.assertEqual(ledger["metadata"]["contractVersion"], EVENT_LEDGER_CONTRACT_VERSION)
+        self.assertEqual(EVENT_LEDGER_CONTRACT_VERSION, "ltbi_screening_event_ledger_v2")
         self.assertEqual(ledger["metadata"]["modelType"], "expected_value")
         self.assertTrue(ledger["validation"]["isValid"])
         self.assertIn("year 0 is [0,1)", ledger["metadata"]["yearBinConvention"])
+        self.assertIn("withinFollowUp=false", ledger["metadata"]["yearBinConvention"])
+
+    def test_screening_window_change_does_not_change_comparator_natural_history(self) -> None:
+        common = {"N": 200, "nReps": 3, "seed": 222, "screenCoverage": 0.3}
+        two_year = run_replicates({**common, "screeningWindowYears": 2}, keep_example_cohort=False)
+        three_year = run_replicates({**common, "screeningWindowYears": 3}, keep_example_cohort=False)
+        comp2 = _arm_event_values(two_year["eventLedger"], "comparator", "active_tb_cases")
+        comp3 = _arm_event_values(three_year["eventLedger"], "comparator", "active_tb_cases")
+
+        self.assertEqual(comp2, comp3)
+        self.assertEqual(two_year["calibration"]["activeTBCalibrationHorizonYears"], 2)
+        self.assertEqual(three_year["calibration"]["activeTBCalibrationHorizonYears"], 2)
+
+    def test_legacy_time_aliases_still_override_defaults(self) -> None:
+        cfg = normalise_config({"screenWindow": 2, "followHorizon": 7})
+
+        self.assertEqual(cfg["screeningWindowYears"], 2)
+        self.assertEqual(cfg["screenWindow"], 2)
+        self.assertEqual(cfg["followUpHorizonYears"], 7)
+        self.assertEqual(cfg["followHorizon"], 7)
+
+    def test_restricted_eligibility_without_selection_rule_is_rejected(self) -> None:
+        scenario = {
+            "eligible": {"proportion": 0.5, "source": "test"},
+            "screened": {"proportion": 0.3},
+        }
+
+        with self.assertRaisesRegex(ValueError, "Restricted eligibility is configured"):
+            run_replicates({"N": 100, "scenario": scenario}, keep_example_cohort=False)
 
     def test_abm_ledger_preserves_replicates_and_seeds(self) -> None:
         totals = self.abm["eventLedger"]["replicateTotals"]
@@ -68,6 +100,52 @@ class ApyEventLedgerTests(unittest.TestCase):
                     row["screened"],
                     places=7,
                 )
+
+    def test_annual_cross_arm_validation_rejects_wrong_prevented_year(self) -> None:
+        ledger = self.abm["eventLedger"]
+        totals = _long_to_wide(ledger["replicateTotals"])
+        annual = ledger["annualEvents"].copy()
+        mask = (
+            (annual["arm"] == "intervention")
+            & (annual["eventName"] == "active_tb_cases_prevented")
+            & (annual["value"] > 0)
+        )
+        if not mask.any():
+            self.skipTest("No prevented cases in fixture ledger.")
+        idx = annual[mask].index[0]
+        annual.loc[idx, "modelYear"] = int(annual.loc[idx, "modelYear"]) + 1
+        annual.loc[idx, "timeInterval"] = f"[{annual.loc[idx, 'modelYear']},{annual.loc[idx, 'modelYear'] + 1})"
+
+        report = validate_event_ledger(totals, annual)
+
+        self.assertFalse(report["isValid"])
+        self.assertIn("annual_active_tb_identity", {err["field"] for err in report["errors"]})
+
+    def test_post_horizon_programme_events_keep_actual_year_and_flag(self) -> None:
+        result = run_replicates(
+            {
+                "N": 300,
+                "nReps": 3,
+                "seed": 321,
+                "screeningWindowYears": 0.5,
+                "followUpHorizonYears": 0.6,
+                "screenCoverage": 1.0,
+                "testSpecificity": 0.0,
+                "pStartTPT": 1.0,
+                "regimenPComplete": 1.0,
+                "regimenADRstop": 0.0,
+            },
+            keep_example_cohort=False,
+        )
+        annual = result["eventLedger"]["annualEvents"]
+        completions = annual[
+            (annual["eventName"] == "tpt_completed_total")
+            & (annual["withinFollowUp"] == False)
+        ]
+
+        self.assertTrue(result["eventLedger"]["validation"]["isValid"])
+        self.assertFalse(completions.empty)
+        self.assertTrue((completions["modelYear"] >= 0).all())
 
     def test_zero_screening_coverage_has_no_screening_or_tpt_events(self) -> None:
         ledger = run_expected_value({"N": 100, "screenCoverage": 0})["eventLedger"]
@@ -183,6 +261,35 @@ class ApyEventLedgerTests(unittest.TestCase):
         finally:
             wb.close()
 
+    def test_workbook_export_values_match_authoritative_ledger(self) -> None:
+        bundle = build_results_bundle(self.abm)
+        payload = build_results_workbook(
+            config=self.abm["interfaceConfig"],
+            bundle=bundle,
+            backend_status={"name": "python_apy"},
+        )
+        wb = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+        try:
+            rows = list(wb["Event_ledger_totals"].iter_rows(values_only=True))
+            headers = list(rows[0])
+            row_dicts = [dict(zip(headers, row)) for row in rows[1:]]
+            exported = next(
+                row
+                for row in row_dicts
+                if row["arm"] == "intervention"
+                and row["replicateId"] == 1
+                and row["eventName"] == "active_tb_cases_prevented"
+            )
+            ledger_row = self.abm["eventLedger"]["replicateTotals"]
+            expected = ledger_row[
+                (ledger_row["arm"] == "intervention")
+                & (ledger_row["replicateId"] == 1)
+                & (ledger_row["eventName"] == "active_tb_cases_prevented")
+            ]["value"].iloc[0]
+            self.assertEqual(exported["value"], expected)
+        finally:
+            wb.close()
+
     def test_matlab_adapter_reports_missing_unambiguous_fields(self) -> None:
         adapted = matlab_total_ledger_from_raw_rows(
             config=self.abm["interfaceConfig"],
@@ -213,10 +320,37 @@ class ApyEventLedgerTests(unittest.TestCase):
             tolerance = max(8.0, 0.45 * max(abs(ev[event]), 1.0))
             self.assertLessEqual(abs(ev[event] - abm_mean[event]), tolerance, event)
 
+    def test_expected_value_quadrature_converges_for_key_outcomes(self) -> None:
+        coarse = _intervention_totals(
+            run_expected_value({"N": 120, "screeningStrategy": "random"}, quadrature_points=8)["eventLedger"]
+        )
+        fine = _intervention_totals(
+            run_expected_value({"N": 120, "screeningStrategy": "random"}, quadrature_points=64)["eventLedger"]
+        )
+
+        for event in ["screened", "true_positive_latent", "infection_effectively_treated_total", "active_tb_cases_prevented"]:
+            self.assertLessEqual(abs(coarse[event] - fine[event]), max(0.25, 0.01 * max(abs(fine[event]), 1.0)))
+
+    def test_dynamic_comparison_uses_event_ledger_active_tb_semantics(self) -> None:
+        bundle = build_results_bundle(self.abm)
+        dynamic = bundle["technical"]["dynamicComparison"]
+
+        self.assertEqual(dynamic["source"], "technical.eventLedger")
+        self.assertAlmostEqual(
+            dynamic["cumulative_baseline_active_tb_cases"],
+            dynamic["cumulative_intervention_active_tb_cases"] + dynamic["cumulative_cases_averted"],
+        )
+
 
 def _intervention_totals(ledger: dict) -> pd.Series:
     wide = _long_to_wide(ledger["replicateTotals"])
     return wide[wide["arm"] == "intervention"].iloc[0]
+
+
+def _arm_event_values(ledger: dict, arm: str, event: str) -> list[float]:
+    rows = ledger["replicateTotals"]
+    values = rows[(rows["arm"] == arm) & (rows["eventName"] == event)]["value"]
+    return values.tolist()
 
 
 def _long_to_wide(totals: pd.DataFrame) -> pd.DataFrame:

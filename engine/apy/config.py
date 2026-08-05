@@ -31,6 +31,10 @@ def build_default_config() -> dict[str, Any]:
         "N": 1500,
         "nReps": 2000,
         "seed": 1,
+        "screeningWindowYears": 3,
+        "earlyProgressionPeriodYears": 2,
+        "activeTBCalibrationHorizonYears": 2,
+        "followUpHorizonYears": 20,
         "screenWindow": 3,
         "followHorizon": 20,
         "screenCoverage": 0.30,
@@ -115,6 +119,7 @@ def normalise_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
     normalised = build_default_config()
     if config:
         _deep_update(normalised, config)
+    _sync_time_aliases(normalised, config or {})
     normalised["testType"] = _normalise_text(normalised.get("testType"))
     normalised["regimen"] = _normalise_text(normalised.get("regimen"))
     normalised["screeningStrategy"] = _normalise_text(
@@ -124,6 +129,23 @@ def normalise_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
         normalised.get("partialShortCourseMode")
     )
     return normalised
+
+
+def _sync_time_aliases(config: dict[str, Any], overrides: dict[str, Any]) -> None:
+    if "screenWindow" in overrides and "screeningWindowYears" not in overrides:
+        config["screeningWindowYears"] = overrides["screenWindow"]
+    if "followHorizon" in overrides and "followUpHorizonYears" not in overrides:
+        config["followUpHorizonYears"] = overrides["followHorizon"]
+    if config.get("screeningWindowYears") is None:
+        config["screeningWindowYears"] = config.get("screenWindow", 3)
+    if config.get("followUpHorizonYears") is None:
+        config["followUpHorizonYears"] = config.get("followHorizon", 20)
+    config["screenWindow"] = config["screeningWindowYears"]
+    config["followHorizon"] = config["followUpHorizonYears"]
+    if config.get("earlyProgressionPeriodYears") is None:
+        config["earlyProgressionPeriodYears"] = 2
+    if config.get("activeTBCalibrationHorizonYears") is None:
+        config["activeTBCalibrationHorizonYears"] = 2
 
 
 def strip_empty_fields(d: dict[str, Any]) -> dict[str, Any]:

@@ -9,6 +9,7 @@ import pandas as pd
 
 from engine.apy.calibration import calibrate_from_config
 from engine.apy.config import normalise_config
+from engine.apy.eligibility import resolve_eligibility
 from engine.apy.event_ledger import (
     annual_records_from_event_times,
     make_bundle as make_event_ledger_bundle,
@@ -29,6 +30,7 @@ from engine.apy.validation import validate_config
 
 
 MODEL_VERSION = "python_apy_v9_port"
+EXPECTED_VALUE_MODEL_VERSION = "python_apy_expected_value_v1"
 BACKEND = "python"
 _CALIBRATION_CACHE: dict[str, dict[str, Any]] = {}
 
@@ -144,8 +146,12 @@ def build_strategy_metadata(config: dict[str, Any], reg: dict[str, Any]) -> dict
         "screeningStrategy": str(config["screeningStrategy"]).lower(),
         "regimen": reg["label"],
         "screenCoverage": float(config["screenCoverage"]),
-        "screenWindow": float(config["screenWindow"]),
-        "followHorizon": float(config["followHorizon"]),
+        "screenWindow": float(config["screeningWindowYears"]),
+        "screeningWindowYears": float(config["screeningWindowYears"]),
+        "earlyProgressionPeriodYears": float(config["earlyProgressionPeriodYears"]),
+        "activeTBCalibrationHorizonYears": float(config["activeTBCalibrationHorizonYears"]),
+        "followHorizon": float(config["followUpHorizonYears"]),
+        "followUpHorizonYears": float(config["followUpHorizonYears"]),
         "pStartTPT": _default_if_empty(config.get("pStartTPT"), 0.85),
         "regimenPComplete": reg["pComplete"],
         "regimenADRstop": reg["pADRstop"],
@@ -178,11 +184,14 @@ def _append_agent_based_ledger_rows(
 ) -> None:
     base = _ledger_base(config, replicate_id, replicate_seed)
     population = int(config["N"])
-    follow_horizon = float(config["followHorizon"])
+    eligibility = resolve_eligibility(config)
+    eligible_population = float(eligibility["number"])
+    follow_horizon = float(config["followUpHorizonYears"])
     comparator_active_times = ledger_data["comparatorActiveTimes"]
     comparator = zero_comparator_wide(
         base,
         population=population,
+        eligible_population=eligible_population,
         active_tb_cases=len(comparator_active_times),
     )
     intervention = {**base, "arm": "intervention"}
@@ -191,12 +200,12 @@ def _append_agent_based_ledger_rows(
 
     comparator_events = {
         "population": np.zeros(population),
-        "eligible_population": np.zeros(population),
+        "eligible_population": np.zeros(int(round(eligible_population))),
         "active_tb_cases": comparator_active_times,
     }
     intervention_events = {
         "population": np.zeros(population),
-        "eligible_population": np.zeros(population),
+        "eligible_population": np.zeros(int(round(eligible_population))),
         **ledger_data["interventionEventTimes"],
     }
     annual_frames.append(
@@ -218,7 +227,7 @@ def _append_agent_based_ledger_rows(
 def _ledger_base(config: dict[str, Any], replicate_id: int, replicate_seed: int | None) -> dict[str, Any]:
     scenario = config.get("scenario") if isinstance(config.get("scenario"), dict) else {}
     return {
-        "contractVersion": "ltbi_screening_event_ledger_v1",
+        "contractVersion": "ltbi_screening_event_ledger_v2",
         "scenarioId": config.get("scenarioLabel") or scenario.get("scenarioName"),
         "scenarioVersion": scenario.get("scenarioVersion", config.get("configVersion")),
         "populationPresetId": config.get("populationPresetId"),
@@ -232,8 +241,12 @@ def _ledger_base(config: dict[str, Any], replicate_id: int, replicate_seed: int 
         "pairedReplicateId": int(replicate_id),
         "replicateSeed": replicate_seed,
         "valueType": "simulated_count" if replicate_seed is not None else "expected",
-        "screeningWindow": float(config["screenWindow"]),
-        "followUpHorizon": float(config["followHorizon"]),
+        "screeningWindow": float(config["screeningWindowYears"]),
+        "screeningWindowYears": float(config["screeningWindowYears"]),
+        "earlyProgressionPeriodYears": float(config["earlyProgressionPeriodYears"]),
+        "activeTBCalibrationHorizonYears": float(config["activeTBCalibrationHorizonYears"]),
+        "followUpHorizon": float(config["followUpHorizonYears"]),
+        "followUpHorizonYears": float(config["followUpHorizonYears"]),
     }
 
 
@@ -272,7 +285,8 @@ def _calibration_key_payload(config: dict[str, Any]) -> dict[str, Any]:
         "ageDistributionSheet",
         "riskPrev",
         "diseaseOR",
-        "screenWindow",
+        "earlyProgressionPeriodYears",
+        "activeTBCalibrationHorizonYears",
         "earlyLateRatio",
     ]
     return {field: config.get(field) for field in fields}
