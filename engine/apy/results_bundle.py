@@ -29,6 +29,7 @@ def build_results_bundle(
     summary = results["summary"]
     key_metrics = summary[summary["Metric"].isin(KEY_METRICS)].copy()
     dynamic_comparison = _build_dynamic_comparison(results, do_nothing=do_nothing)
+    event_ledger = results.get("eventLedger") or {}
     return {
         "metadata": {
             "available": True,
@@ -56,8 +57,13 @@ def build_results_bundle(
                 "exampleCohortRows": _table_len(results.get("exampleCohort")),
             },
             "dynamicComparison": dynamic_comparison,
+            "eventLedger": event_ledger,
         },
-        "downloads": {},
+        "downloads": {
+            "eventLedgerTotals": _rows(event_ledger.get("replicateTotals")) if event_ledger else [],
+            "eventLedgerAnnual": _rows(event_ledger.get("annualEvents")) if event_ledger else [],
+            "eventDefinitions": _rows(event_ledger.get("definitions")) if event_ledger else [],
+        },
     }
 
 
@@ -201,6 +207,10 @@ def _metric_median(summary_by_metric: dict[str, dict[str, Any]], metric: str):
 
 
 def _rows(df: pd.DataFrame) -> list[dict[str, Any]]:
+    if df is None:
+        return []
+    if isinstance(df, list):
+        return df
     return df.to_dict(orient="records")
 
 

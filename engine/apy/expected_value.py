@@ -1,0 +1,664 @@
+from __future__ import annotations
+
+from itertools import product
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from engine.apy.age_distribution import broad_age_group_from_years
+from engine.apy.calibration import bern_prob
+from engine.apy.cohort import (
+    average_survival_to_random_screen,
+    disease_multiplier,
+    get_counterfactual_no_bcg_specificity,
+    get_test_performance,
+    infection_probability,
+    preventable_active_risk,
+)
+from engine.apy.config import normalise_config
+from engine.apy.event_ledger import (
+    EVENT_NAMES,
+    annual_records_from_weighted_events,
+    make_bundle as make_event_ledger_bundle,
+    metadata_from_config as event_metadata_from_config,
+    zero_comparator_wide,
+)
+from engine.apy.regimen import (
+    apply_regimen_overrides,
+    default_regimen_library,
+    get_regimen_from_library,
+    regimen_partial_efficacy,
+    validate_regimen,
+)
+from engine.apy.runner import (
+    BACKEND,
+    MODEL_VERSION,
+    _cached_calibration_from_config,
+    build_strategy_metadata,
+)
+from engine.apy.scenario import DEFAULT_COMPARATOR, DEFAULT_INTERVENTION
+from engine.apy.simulation import _simulation_options
+from engine.apy.validation import validate_config
+
+
+QUADRATURE_POINTS = 24
+
+
+def run_expected_value(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    cfg = validate_config(normalise_config(config))
+    calibration = _cached_calibration_from_config(cfg)
+    pars = calibration["parameters"]
+    reg = _build_regimen(cfg)
+    opts = _simulation_options(cfg)
+    opts["N"] = float(cfg["N"])
+    strata = _build_strata(pars, calibration, opts)
+    strata = _allocate_screening(strata, opts)
+    totals, annual_values, comparator_active_by_year = _expected_events(
+        strata, opts, reg, calibration
+    )
+
+    base = _ledger_base(cfg)
+    comparator = zero_comparator_wide(
+        base,
+        population=float(cfg["N"]),
+        active_tb_cases=sum(comparator_active_by_year.values()),
+    )
+    intervention = {**base, "arm": "intervention"}
+    intervention.update(totals)
+    totals_wide = pd.DataFrame([comparator, intervention])
+
+    comparator_annual = {
+        "population": [(0.0, float(cfg["N"]))],
+        "eligible_population": [(0.0, float(cfg["N"]))],
+        "active_tb_cases": [
+            (_representative_time(year), value)
+            for year, value in comparator_active_by_year.items()
+        ],
+    }
+    intervention_active_by_year = {
+        year: comparator_active_by_year.get(year, 0.0)
+        - _sum_event_year(annual_values.get("active_tb_cases_prevented", []), year, opts["followHorizon"])
+        for year in comparator_active_by_year
+    }
+    intervention_annual = {
+        **annual_values,
+        "population": [(0.0, float(cfg["N"]))],
+        "eligible_population": [(0.0, float(cfg["N"]))],
+        "active_tb_cases": [
+            (_representative_time(year), value)
+            for year, value in intervention_active_by_year.items()
+        ],
+    }
+    annual = pd.concat(
+        [
+            annual_records_from_weighted_events(
+                base={**base, "arm": "comparator"},
+                event_values=comparator_annual,
+                follow_horizon=opts["followHorizon"],
+            ),
+            annual_records_from_weighted_events(
+                base={**base, "arm": "intervention"},
+                event_values=intervention_annual,
+                follow_horizon=opts["followHorizon"],
+            ),
+        ],
+        ignore_index=True,
+    )
+    event_ledger = make_event_ledger_bundle(
+        metadata=event_metadata_from_config(
+            cfg,
+            model_type="expected_value",
+            backend=BACKEND,
+            model_version=MODEL_VERSION,
+        ),
+        replicate_totals_wide=totals_wide,
+        annual_events=annual,
+    )
+    return {
+        "eventLedger": event_ledger,
+        "strata": strata,
+        "parameters": pars,
+        "calibration": {k: v for k, v in calibration.items() if k != "parameters"},
+        "strategy": build_strategy_metadata(cfg, reg),
+        "interfaceConfig": cfg,
+        "modelVersion": MODEL_VERSION,
+        "backend": BACKEND,
+    }
+
+
+def _build_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict[str, Any]) -> pd.DataFrame:
+    rows = []
+    factor_names = ["MJ", "contact", "renal", "diabetes", "smoking", "cld", "alcohol", "BCG"]
+    for age, age_prob in zip(pars["exactAgeValues"], pars["exactAgeProb"]):
+        age_group = broad_age_group_from_years([age])[0]
+        age_idx = age_group - 1
+        probs = {
+            "MJ": pars["mjPrevByAge"][age_idx],
+            "contact": pars["contactPrevByAge"][age_idx],
+            "renal": pars["renalPrevByAge"][age_idx],
+            "diabetes": pars["diabetesPrevByAge"][age_idx],
+            "smoking": pars["smokingPrevByAge"][age_idx],
+            "cld": pars["cldPrevByAge"][age_idx],
+            "alcohol": pars["alcoholPrevByAge"][age_idx],
+            "BCG": pars["totalBCGPrev"],
+        }
+        for flags in product([0, 1], repeat=len(factor_names)):
+            flag = dict(zip(factor_names, flags))
+            weight_probability = float(age_prob)
+            for name in factor_names:
+                weight_probability *= bern_prob(flag[name], probs[name])
+            mult = float(
+                disease_multiplier(
+                    pars,
+                    flag["MJ"],
+                    flag["contact"],
+                    flag["renal"],
+                    flag["diabetes"],
+                    flag["smoking"],
+                    flag["cld"],
+                    flag["alcohol"],
+                )
+            )
+            p_inf = float(
+                infection_probability(
+                    [age],
+                    pars,
+                    calibration["ageInfLogLambda"],
+                    calibration["ageInfGamma"],
+                    [flag["MJ"]],
+                    [flag["contact"]],
+                    [flag["renal"]],
+                )[0]
+            )
+            avg_latent = float(
+                average_survival_to_random_screen(
+                    [mult], calibration["lambdaEarly"], opts["screenWindow"]
+                )[0]
+            )
+            preventable = float(
+                preventable_active_risk(
+                    [mult],
+                    calibration["lambdaEarly"],
+                    calibration["lambdaLate"],
+                    opts["screenWindow"],
+                    opts["followHorizon"],
+                )[0]
+            )
+            sens, spec = get_test_performance([bool(flag["BCG"])], opts)
+            no_bcg_spec = get_counterfactual_no_bcg_specificity([bool(flag["BCG"])], opts)
+            rows.append(
+                {
+                    "weight": weight_probability,
+                    "ageYears": float(age),
+                    "ageGroup": int(age_group),
+                    **{name: bool(flag[name]) for name in factor_names},
+                    "pInfection": p_inf,
+                    "diseaseMultiplier": mult,
+                    "ltbiRiskScore": p_inf,
+                    "cureTargetScore": p_inf * avg_latent,
+                    "preventTargetScore": p_inf * preventable,
+                    "testSensitivity": float(sens[0]),
+                    "testSpecificity": float(spec[0]),
+                    "testSpecificityNoBCG": float(no_bcg_spec[0]),
+                }
+            )
+    out = pd.DataFrame(rows)
+    out["populationWeight"] = out["weight"] * float(opts.get("N", 1.0))
+    return out
+
+
+def _allocate_screening(strata: pd.DataFrame, opts: dict[str, Any]) -> pd.DataFrame:
+    out = strata.copy()
+    population = out["populationWeight"].sum()
+    requested = min(max(float(opts["screenCoverage"]) * population, 0.0), population)
+    out["screenedWeight"] = 0.0
+    if requested <= 0:
+        return out
+    strategy = str(opts["screeningStrategy"]).lower()
+    if strategy == "random":
+        out["screenedWeight"] = out["populationWeight"] * float(opts["screenCoverage"])
+        return out
+    score_column = {
+        "ltbi": "ltbiRiskScore",
+        "cure": "cureTargetScore",
+        "prevent": "preventTargetScore",
+    }[strategy]
+    order = out.sort_values(
+        [score_column, "pInfection", "diseaseMultiplier", "ageYears"],
+        ascending=[False, False, False, False],
+        kind="mergesort",
+    ).index
+    remaining = requested
+    for idx in order:
+        take = min(float(out.at[idx, "populationWeight"]), remaining)
+        out.at[idx, "screenedWeight"] = take
+        remaining -= take
+        if remaining <= 1e-10:
+            break
+    return out
+
+
+def _expected_events(
+    strata: pd.DataFrame,
+    opts: dict[str, Any],
+    reg: dict[str, Any],
+    calibration: dict[str, Any],
+) -> tuple[dict[str, float], dict[str, list[tuple[float, float]]], dict[int, float]]:
+    totals = {name: 0.0 for name in EVENT_NAMES}
+    annual_values: dict[str, list[tuple[float, float]]] = {name: [] for name in EVENT_NAMES}
+    comparator_active_by_year = _comparator_active_by_year(strata, opts, calibration)
+    q_times = (np.arange(QUADRATURE_POINTS, dtype=float) + 0.5) / QUADRATURE_POINTS * opts["screenWindow"]
+    p_complete = float(reg["pComplete"])
+    p_adr = float(reg["pADRstop"])
+    p_other = max(1.0 - p_complete - p_adr, 0.0)
+    duration = float(reg["months"]) / 12.0
+    adr_dose = float(opts["partialDoseFractionADR"])
+    other_dose = float(opts["partialDoseFractionOther"])
+    partial_eff_adr = float(regimen_partial_efficacy(reg, adr_dose))
+    partial_eff_other = float(regimen_partial_efficacy(reg, other_dose))
+    screened_weight = strata["screenedWeight"].to_numpy(dtype=float)
+    selected = screened_weight > 0
+    point_weight = screened_weight[selected] / QUADRATURE_POINTS
+    p_inf = strata.loc[selected, "pInfection"].to_numpy(dtype=float)
+    sens = strata.loc[selected, "testSensitivity"].to_numpy(dtype=float)
+    spec = strata.loc[selected, "testSpecificity"].to_numpy(dtype=float)
+    no_bcg_spec = strata.loc[selected, "testSpecificityNoBCG"].to_numpy(dtype=float)
+    mult = strata.loc[selected, "diseaseMultiplier"].to_numpy(dtype=float)
+    bcg = strata.loc[selected, "BCG"].to_numpy(dtype=bool)
+    for screen_time in q_times:
+        survival_screen = _survival_array(screen_time, mult, calibration, opts)
+        infected_screened = point_weight * p_inf
+        latent = infected_screened * survival_screen
+        active = infected_screened * (1.0 - survival_screen)
+        uninfected = point_weight * (1.0 - p_inf)
+        tp_latent = latent * sens
+        tp_active = active * sens
+        fn_latent = latent * (1.0 - sens)
+        tn_active = active * (1.0 - sens)
+        false_positive = uninfected * (1.0 - spec)
+        true_negative = uninfected * spec
+        false_positive_due_bcg = np.where(
+            bcg,
+            uninfected * np.maximum((1.0 - spec) - (1.0 - no_bcg_spec), 0.0),
+            0.0,
+        )
+        _add_many(
+            annual_values,
+            totals,
+            screen_time,
+            {
+                "screened": point_weight,
+                "infected_screened": infected_screened,
+                "uninfected_screened": uninfected,
+                "latent_infected_at_screen": latent,
+                "active_tb_at_screen": active,
+                "true_positive_latent": tp_latent,
+                "test_positive_active": tp_active,
+                "false_negative_latent": fn_latent,
+                "test_negative_active": tn_active,
+                "false_positive": false_positive,
+                "true_negative": true_negative,
+                "test_positive_total": tp_latent + tp_active + false_positive,
+                "test_negative_total": fn_latent + tn_active + true_negative,
+                "false_positive_bcg": np.where(bcg, false_positive, 0.0),
+                "false_positive_no_bcg": np.where(~bcg, false_positive, 0.0),
+                "false_positive_due_to_bcg": false_positive_due_bcg,
+            },
+        )
+        tp_started = tp_latent * float(opts["pStartTPT"])
+        fp_started = false_positive * float(opts["pStartTPT"])
+        _add_many(
+            annual_values,
+            totals,
+            screen_time,
+            {
+                "tpt_eligible": tp_latent + false_positive,
+                "tpt_started_true_positive": tp_started,
+                "tpt_started_false_positive": fp_started,
+                "tpt_started_total": tp_started + fp_started,
+            },
+        )
+        _treatment_outcomes(
+            annual_values,
+            totals,
+            screen_time,
+            duration,
+            float(tp_started.sum()),
+            float(fp_started.sum()),
+            p_complete,
+            p_adr,
+            p_other,
+            adr_dose,
+            other_dose,
+            partial_eff_adr,
+            partial_eff_other,
+            reg,
+            mult,
+            calibration,
+            opts,
+            tp_started_by_stratum=tp_started,
+        )
+    totals["population"] = float(opts.get("N", 0.0))
+    totals["eligible_population"] = float(opts.get("N", 0.0))
+    totals["active_tb_cases_prevented"] = totals.pop(
+        "infection_effectively_treated_total_prevented_marker", 0.0
+    )
+    totals["active_tb_cases"] = sum(comparator_active_by_year.values()) - totals["active_tb_cases_prevented"]
+    return totals, annual_values, comparator_active_by_year
+
+
+def _treatment_outcomes(
+    annual_values: dict[str, list[tuple[float, float]]],
+    totals: dict[str, float],
+    screen_time: float,
+    duration: float,
+    tp_started: float,
+    fp_started: float,
+    p_complete: float,
+    p_adr: float,
+    p_other: float,
+    adr_dose: float,
+    other_dose: float,
+    partial_eff_adr: float,
+    partial_eff_other: float,
+    reg: dict[str, Any],
+    mult: np.ndarray,
+    calibration: dict[str, Any],
+    opts: dict[str, Any],
+    *,
+    tp_started_by_stratum: np.ndarray,
+) -> None:
+    full_time = screen_time + duration
+    adr_time = screen_time + duration * adr_dose
+    other_time = screen_time + duration * other_dose
+    tp_complete = tp_started * p_complete
+    fp_complete = fp_started * p_complete
+    tp_adr = tp_started * p_adr
+    fp_adr = fp_started * p_adr
+    tp_other = tp_started * p_other
+    fp_other = fp_started * p_other
+    _add(annual_values, totals, "tpt_completed_true_positive", full_time, tp_complete)
+    _add(annual_values, totals, "tpt_completed_false_positive", full_time, fp_complete)
+    _add(annual_values, totals, "tpt_completed_total", full_time, tp_complete + fp_complete)
+    _add(annual_values, totals, "tpt_adr_stop_true_positive", adr_time, tp_adr)
+    _add(annual_values, totals, "tpt_adr_stop_false_positive", adr_time, fp_adr)
+    _add(annual_values, totals, "tpt_adr_stop_total", adr_time, tp_adr + fp_adr)
+    _add(annual_values, totals, "tpt_other_stop_true_positive", other_time, tp_other)
+    _add(annual_values, totals, "tpt_other_stop_false_positive", other_time, fp_other)
+    _add(annual_values, totals, "tpt_other_stop_total", other_time, tp_other + fp_other)
+    _add(annual_values, totals, "tpt_partial_course_true_positive", adr_time, tp_adr)
+    _add(annual_values, totals, "tpt_partial_course_false_positive", adr_time, fp_adr)
+    _add(annual_values, totals, "tpt_partial_course_total", adr_time, tp_adr + fp_adr)
+    _add(annual_values, totals, "tpt_partial_course_true_positive", other_time, tp_other)
+    _add(annual_values, totals, "tpt_partial_course_false_positive", other_time, fp_other)
+    _add(annual_values, totals, "tpt_partial_course_total", other_time, tp_other + fp_other)
+
+    full_effective_by_stratum = (
+        tp_started_by_stratum
+        * p_complete
+        * float(reg["effFull"])
+        * _conditional_survival_array(screen_time, full_time, mult, calibration, opts)
+    )
+    adr_effective_by_stratum = (
+        tp_started_by_stratum
+        * p_adr
+        * partial_eff_adr
+        * _conditional_survival_array(screen_time, adr_time, mult, calibration, opts)
+    )
+    other_effective_by_stratum = (
+        tp_started_by_stratum
+        * p_other
+        * partial_eff_other
+        * _conditional_survival_array(screen_time, other_time, mult, calibration, opts)
+    )
+    full_effective = float(full_effective_by_stratum.sum())
+    adr_effective = float(adr_effective_by_stratum.sum())
+    other_effective = float(other_effective_by_stratum.sum())
+    _add(annual_values, totals, "infection_effectively_treated_full", full_time, full_effective)
+    _add(annual_values, totals, "infection_effectively_treated_partial", adr_time, adr_effective)
+    _add(annual_values, totals, "infection_effectively_treated_partial", other_time, other_effective)
+    _add(annual_values, totals, "infection_effectively_treated_total", full_time, full_effective)
+    _add(annual_values, totals, "infection_effectively_treated_total", adr_time, adr_effective)
+    _add(annual_values, totals, "infection_effectively_treated_total", other_time, other_effective)
+    for stop_time, probability, efficacy in [
+        (full_time, p_complete, float(reg["effFull"])),
+        (adr_time, p_adr, partial_eff_adr),
+        (other_time, p_other, partial_eff_other),
+    ]:
+        horizon = float(opts["followHorizon"])
+        for year in range(int(np.ceil(horizon))):
+            interval_start = max(float(year), stop_time)
+            interval_end = min(float(year + 1), horizon)
+            if interval_end <= interval_start:
+                continue
+            prevented = float(
+                (
+                    tp_started_by_stratum
+                    * probability
+                    * efficacy
+                    * _conditional_interval_event_array(
+                        screen_time,
+                        interval_start,
+                        interval_end,
+                        mult,
+                        calibration,
+                        opts,
+                    )
+                ).sum()
+            )
+            totals["infection_effectively_treated_total_prevented_marker"] = totals.get("infection_effectively_treated_total_prevented_marker", 0.0) + prevented
+            if prevented:
+                annual_values["active_tb_cases_prevented"].append(
+                    (_representative_time(year), prevented)
+                )
+
+
+def _add(
+    annual_values: dict[str, list[tuple[float, float]]],
+    totals: dict[str, float],
+    event: str,
+    time: float,
+    value: float,
+) -> None:
+    if value == 0:
+        return
+    totals[event] = totals.get(event, 0.0) + float(value)
+    annual_values[event].append((float(time), float(value)))
+
+
+def _add_many(
+    annual_values: dict[str, list[tuple[float, float]]],
+    totals: dict[str, float],
+    time: float,
+    values: dict[str, np.ndarray],
+) -> None:
+    for event, vector in values.items():
+        _add(annual_values, totals, event, time, float(np.asarray(vector, dtype=float).sum()))
+
+
+def _comparator_active_by_year(
+    strata: pd.DataFrame,
+    opts: dict[str, Any],
+    calibration: dict[str, Any],
+) -> dict[int, float]:
+    out: dict[int, float] = {}
+    horizon = float(opts["followHorizon"])
+    n_years = int(np.ceil(horizon))
+    for year in range(n_years):
+        start = float(year)
+        end = min(start + 1.0, horizon)
+        if end <= start:
+            continue
+        value = 0.0
+        value = float(
+            (
+                strata["populationWeight"].to_numpy(dtype=float)
+                * strata["pInfection"].to_numpy(dtype=float)
+                * _event_between_array(
+                    start,
+                    end,
+                    strata["diseaseMultiplier"].to_numpy(dtype=float),
+                    calibration,
+                    opts,
+                )
+            ).sum()
+        )
+        out[year] = value
+    return out
+
+
+def _event_between(start: float, end: float, mult: float, calibration: dict[str, Any], opts: dict[str, Any]) -> float:
+    return max(_survival(start, mult, calibration, opts) - _survival(end, mult, calibration, opts), 0.0)
+
+
+def _event_between_array(start: float, end: float, mult: np.ndarray, calibration: dict[str, Any], opts: dict[str, Any]) -> np.ndarray:
+    return np.maximum(
+        _survival_array(start, mult, calibration, opts)
+        - _survival_array(end, mult, calibration, opts),
+        0.0,
+    )
+
+
+def _conditional_event_between(
+    screen_time: float,
+    stop_time: float,
+    horizon: float,
+    mult: float,
+    calibration: dict[str, Any],
+    opts: dict[str, Any],
+) -> float:
+    if horizon <= stop_time:
+        return 0.0
+    denominator = max(_survival(screen_time, mult, calibration, opts), np.finfo(float).eps)
+    return max((_survival(stop_time, mult, calibration, opts) - _survival(horizon, mult, calibration, opts)) / denominator, 0.0)
+
+
+def _conditional_event_between_array(
+    screen_time: float,
+    stop_time: float,
+    horizon: float,
+    mult: np.ndarray,
+    calibration: dict[str, Any],
+    opts: dict[str, Any],
+) -> np.ndarray:
+    if horizon <= stop_time:
+        return np.zeros_like(mult, dtype=float)
+    denominator = np.maximum(
+        _survival_array(screen_time, mult, calibration, opts), np.finfo(float).eps
+    )
+    return np.maximum(
+        (
+            _survival_array(stop_time, mult, calibration, opts)
+            - _survival_array(horizon, mult, calibration, opts)
+        )
+        / denominator,
+        0.0,
+    )
+
+
+def _conditional_interval_event_array(
+    screen_time: float,
+    interval_start: float,
+    interval_end: float,
+    mult: np.ndarray,
+    calibration: dict[str, Any],
+    opts: dict[str, Any],
+) -> np.ndarray:
+    denominator = np.maximum(
+        _survival_array(screen_time, mult, calibration, opts), np.finfo(float).eps
+    )
+    return np.maximum(
+        (
+            _survival_array(interval_start, mult, calibration, opts)
+            - _survival_array(interval_end, mult, calibration, opts)
+        )
+        / denominator,
+        0.0,
+    )
+
+
+def _conditional_survival(
+    screen_time: float,
+    stop_time: float,
+    mult: float,
+    calibration: dict[str, Any],
+    opts: dict[str, Any],
+) -> float:
+    denominator = max(_survival(screen_time, mult, calibration, opts), np.finfo(float).eps)
+    return min(max(_survival(stop_time, mult, calibration, opts) / denominator, 0.0), 1.0)
+
+
+def _conditional_survival_array(
+    screen_time: float,
+    stop_time: float,
+    mult: np.ndarray,
+    calibration: dict[str, Any],
+    opts: dict[str, Any],
+) -> np.ndarray:
+    denominator = np.maximum(
+        _survival_array(screen_time, mult, calibration, opts), np.finfo(float).eps
+    )
+    return np.clip(_survival_array(stop_time, mult, calibration, opts) / denominator, 0.0, 1.0)
+
+
+def _survival(time: float, mult: float, calibration: dict[str, Any], opts: dict[str, Any]) -> float:
+    early = min(max(time, 0.0), float(opts["screenWindow"]))
+    late = max(time - float(opts["screenWindow"]), 0.0)
+    hazard = calibration["lambdaEarly"] * mult * early + calibration["lambdaLate"] * mult * late
+    return float(np.exp(-hazard))
+
+
+def _survival_array(time: float, mult: np.ndarray, calibration: dict[str, Any], opts: dict[str, Any]) -> np.ndarray:
+    early = min(max(time, 0.0), float(opts["screenWindow"]))
+    late = max(time - float(opts["screenWindow"]), 0.0)
+    hazard = calibration["lambdaEarly"] * mult * early + calibration["lambdaLate"] * mult * late
+    return np.exp(-hazard)
+
+
+def _sum_event_year(events: list[tuple[float, float]], year: int, horizon: float) -> float:
+    total = 0.0
+    for time, value in events:
+        if time >= horizon:
+            event_year = -1
+        else:
+            event_year = int(np.floor(max(time, 0.0)))
+        if event_year == year:
+            total += value
+    return total
+
+
+def _representative_time(year: int) -> float:
+    return float(year) + 0.5
+
+
+def _ledger_base(config: dict[str, Any]) -> dict[str, Any]:
+    scenario = config.get("scenario") if isinstance(config.get("scenario"), dict) else {}
+    return {
+        "contractVersion": "ltbi_screening_event_ledger_v1",
+        "scenarioId": config.get("scenarioLabel") or scenario.get("scenarioName"),
+        "scenarioVersion": scenario.get("scenarioVersion", config.get("configVersion")),
+        "populationPresetId": config.get("populationPresetId"),
+        "modelType": "expected_value",
+        "backend": BACKEND,
+        "modelVersion": MODEL_VERSION,
+        "arm": "",
+        "comparator": DEFAULT_COMPARATOR,
+        "intervention": DEFAULT_INTERVENTION,
+        "replicateId": 0,
+        "pairedReplicateId": 0,
+        "replicateSeed": None,
+        "valueType": "expected",
+        "screeningWindow": float(config["screenWindow"]),
+        "followUpHorizon": float(config["followHorizon"]),
+    }
+
+
+def _build_regimen(config: dict[str, Any]) -> dict[str, Any]:
+    library = default_regimen_library(config.get("partialShortCourseMode") or "threshold80")
+    reg = get_regimen_from_library(config["regimen"], library)
+    reg = apply_regimen_overrides(reg, config)
+    validation = validate_regimen(reg)
+    if not validation["isValid"]:
+        raise ValueError("; ".join(validation["errors"]))
+    return reg

@@ -60,6 +60,7 @@ def build_results_workbook(
         _humanise_metric_rows(bundle.get("headline", {}).get("summaryRows") or []),
     )
     _write_natural_history(wb, bundle)
+    _write_event_ledger(wb, bundle)
     _write_technical_metadata(wb, config, bundle, backend_status, results_stale)
     _write_economics(wb, economics_results, economics_config, dirty_economics, results_stale)
     _autosize_all(wb)
@@ -190,6 +191,34 @@ def _write_natural_history(wb: Workbook, bundle: dict[str, Any]) -> None:
     else:
         rows = [{"Field": "Natural history", "Value": "Not available"}]
     _write_rows_sheet(wb, "Natural_history", rows)
+
+
+def _write_event_ledger(wb: Workbook, bundle: dict[str, Any]) -> None:
+    ledger = bundle.get("technical", {}).get("eventLedger") or {}
+    downloads = bundle.get("downloads", {})
+    _write_rows_sheet(
+        wb,
+        "Event_ledger_totals",
+        _rows_from_table(downloads.get("eventLedgerTotals") or ledger.get("replicateTotals")),
+    )
+    _write_rows_sheet(
+        wb,
+        "Event_ledger_annual",
+        _rows_from_table(downloads.get("eventLedgerAnnual") or ledger.get("annualEvents")),
+    )
+    _write_rows_sheet(
+        wb,
+        "Event_definitions",
+        _rows_from_table(downloads.get("eventDefinitions") or ledger.get("definitions")),
+    )
+    validation = ledger.get("validation") if isinstance(ledger, dict) else {}
+    validation = validation or {}
+    rows = [{"Field": "isValid", "Value": validation.get("isValid")}]
+    for issue in validation.get("errors", []) or []:
+        rows.append({"Field": "error", "Value": issue})
+    for issue in validation.get("warnings", []) or []:
+        rows.append({"Field": "warning", "Value": issue})
+    _write_rows_sheet(wb, "Event_ledger_validation", rows)
 
 
 def _write_technical_metadata(
@@ -361,6 +390,16 @@ def _write_rows_to_existing_sheet(ws, rows: list[dict[str, Any]]) -> None:
         ws.append([_clean_cell(row.get(header)) for header in headers])
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
+
+
+def _rows_from_table(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if hasattr(value, "to_dict"):
+        return value.to_dict(orient="records")
+    return []
 
 
 def _autosize_all(wb: Workbook) -> None:

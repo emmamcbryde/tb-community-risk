@@ -33,6 +33,20 @@ RAW_FIELDS = [
     "nInfected",
     "nLatentAtScreen",
     "nActiveAtScreen",
+    "nTruePositiveLatent",
+    "nTestPositiveActive",
+    "nFalseNegativeLatent",
+    "nTestNegativeActive",
+    "nTrueNegative",
+    "nTPTEligible",
+    "nTPTStartedTruePositive",
+    "nTPTStartedFalsePositive",
+    "nTPTCompletedTruePositive",
+    "nTPTCompletedFalsePositive",
+    "nTPTADRstopTruePositive",
+    "nTPTADRstopFalsePositive",
+    "nTPTStoppedOtherTruePositive",
+    "nTPTStoppedOtherFalsePositive",
     "nTestPositive",
     "nTestPositiveNonActive",
     "nIGRApos",
@@ -211,6 +225,11 @@ def simulate_one_cohort(
         )
 
     false_positive_test = screened & ~infected & test_positive
+    true_positive_latent = latent_at_screen & test_positive
+    test_positive_active = active_at_screen & test_positive
+    false_negative_latent = latent_at_screen & ~test_positive
+    test_negative_active = active_at_screen & ~test_positive
+    true_negative = uninf_screened & ~test_positive
     false_positive_test_bcg = false_positive_test & population["BCG"]
     false_positive_test_no_bcg = false_positive_test & ~population["BCG"]
     false_positive_due_to_bcg = (
@@ -258,7 +277,13 @@ def simulate_one_cohort(
             )
 
     false_positive_treated = started_tpt & ~infected
+    true_positive_treated = started_tpt & latent_at_screen
     false_positive_completed = completed_tpt & ~infected
+    true_positive_completed = completed_tpt & latent_at_screen
+    true_positive_adr_stop = adr_stop & latent_at_screen
+    false_positive_adr_stop = adr_stop & ~infected
+    true_positive_stopped_other = stopped_other & latent_at_screen
+    false_positive_stopped_other = stopped_other & ~infected
     false_positive_treated_bcg = false_positive_treated & population["BCG"]
     false_positive_treated_no_bcg = false_positive_treated & ~population["BCG"]
     false_positive_completed_bcg = false_positive_completed & population["BCG"]
@@ -296,6 +321,11 @@ def simulate_one_cohort(
         uninf_screened,
         active_at_screen,
         latent_at_screen,
+        true_positive_latent,
+        test_positive_active,
+        false_negative_latent,
+        test_negative_active,
+        true_negative,
         test_positive,
         false_positive_test,
         false_positive_test_bcg,
@@ -309,10 +339,17 @@ def simulate_one_cohort(
         false_positive_due_to_bcg,
         excess_course_started_due_to_bcg,
         excess_course_completed_due_to_bcg,
+        eligible_tpt,
         started_tpt,
+        true_positive_treated,
         completed_tpt,
+        true_positive_completed,
         adr_stop,
+        true_positive_adr_stop,
+        false_positive_adr_stop,
         stopped_other,
+        true_positive_stopped_other,
+        false_positive_stopped_other,
         cured_infection,
         protected_full,
         protected_partial,
@@ -321,6 +358,43 @@ def simulate_one_cohort(
         prevented_active_tb_partial,
         active_by_2y,
         active_by_20y,
+    )
+    event_ledger_data = _build_event_ledger_data(
+        opts,
+        n,
+        population,
+        t_active,
+        screened,
+        screen_time,
+        active_at_screen,
+        latent_at_screen,
+        true_positive_latent,
+        test_positive_active,
+        false_negative_latent,
+        test_negative_active,
+        true_negative,
+        false_positive_test,
+        false_positive_test_bcg,
+        false_positive_test_no_bcg,
+        false_positive_due_to_bcg,
+        eligible_tpt,
+        started_tpt,
+        true_positive_treated,
+        false_positive_treated,
+        completed_tpt,
+        true_positive_completed,
+        false_positive_completed,
+        adr_stop,
+        true_positive_adr_stop,
+        false_positive_adr_stop,
+        stopped_other,
+        true_positive_stopped_other,
+        false_positive_stopped_other,
+        cured_infection,
+        protected_full,
+        protected_partial,
+        prevented_active_tb,
+        course_stop_time,
     )
 
     cohort = None
@@ -363,7 +437,7 @@ def simulate_one_cohort(
             prevented_active_tb_full,
             prevented_active_tb_partial,
         )
-    return {"raw": raw, "cohort": cohort}
+    return {"raw": raw, "cohort": cohort, "eventLedgerData": event_ledger_data}
 
 
 def simulate_one_cohort_from_config(
@@ -459,6 +533,11 @@ def _build_raw(opts: dict[str, Any], reg: dict[str, Any], population, *arrays) -
         uninf_screened,
         active_at_screen,
         latent_at_screen,
+        true_positive_latent,
+        test_positive_active,
+        false_negative_latent,
+        test_negative_active,
+        true_negative,
         test_positive,
         false_positive_test,
         false_positive_test_bcg,
@@ -472,10 +551,17 @@ def _build_raw(opts: dict[str, Any], reg: dict[str, Any], population, *arrays) -
         false_positive_due_to_bcg,
         excess_course_started_due_to_bcg,
         excess_course_completed_due_to_bcg,
+        eligible_tpt,
         started_tpt,
+        true_positive_treated,
         completed_tpt,
+        true_positive_completed,
         adr_stop,
+        true_positive_adr_stop,
+        false_positive_adr_stop,
         stopped_other,
+        true_positive_stopped_other,
+        false_positive_stopped_other,
         cured_infection,
         protected_full,
         protected_partial,
@@ -508,6 +594,20 @@ def _build_raw(opts: dict[str, Any], reg: dict[str, Any], population, *arrays) -
         "nInfected": int(infected.sum()),
         "nLatentAtScreen": int(latent_at_screen.sum()),
         "nActiveAtScreen": int(active_at_screen.sum()),
+        "nTruePositiveLatent": int(true_positive_latent.sum()),
+        "nTestPositiveActive": int(test_positive_active.sum()),
+        "nFalseNegativeLatent": int(false_negative_latent.sum()),
+        "nTestNegativeActive": int(test_negative_active.sum()),
+        "nTrueNegative": int(true_negative.sum()),
+        "nTPTEligible": int(eligible_tpt.sum()),
+        "nTPTStartedTruePositive": int(true_positive_treated.sum()),
+        "nTPTStartedFalsePositive": int(false_positive_treated.sum()),
+        "nTPTCompletedTruePositive": int(true_positive_completed.sum()),
+        "nTPTCompletedFalsePositive": int(false_positive_completed.sum()),
+        "nTPTADRstopTruePositive": int(true_positive_adr_stop.sum()),
+        "nTPTADRstopFalsePositive": int(false_positive_adr_stop.sum()),
+        "nTPTStoppedOtherTruePositive": int(true_positive_stopped_other.sum()),
+        "nTPTStoppedOtherFalsePositive": int(false_positive_stopped_other.sum()),
         "nTestPositive": int((test_positive & screened).sum()),
         "nTestPositiveNonActive": int((test_positive & screened & ~active_at_screen).sum()),
         "nIGRApos": int((test_positive & screened & ~active_at_screen).sum()),
@@ -567,6 +667,136 @@ def _build_raw(opts: dict[str, Any], reg: dict[str, Any], population, *arrays) -
         "NNS_falsePositiveTreated": safe_divide(n_screened, n_false_positive_treated),
         "NNT_started_cureInfection": safe_divide(n_started, n_cured),
         "NNT_started_preventActiveTB": safe_divide(n_started, n_prevented),
+    }
+
+
+def _build_event_ledger_data(
+    opts: dict[str, Any],
+    n: int,
+    population,
+    t_active,
+    screened,
+    screen_time,
+    active_at_screen,
+    latent_at_screen,
+    true_positive_latent,
+    test_positive_active,
+    false_negative_latent,
+    test_negative_active,
+    true_negative,
+    false_positive_test,
+    false_positive_test_bcg,
+    false_positive_test_no_bcg,
+    false_positive_due_to_bcg,
+    eligible_tpt,
+    started_tpt,
+    true_positive_treated,
+    false_positive_treated,
+    completed_tpt,
+    true_positive_completed,
+    false_positive_completed,
+    adr_stop,
+    true_positive_adr_stop,
+    false_positive_adr_stop,
+    stopped_other,
+    true_positive_stopped_other,
+    false_positive_stopped_other,
+    cured_infection,
+    protected_full,
+    protected_partial,
+    prevented_active_tb,
+    course_stop_time,
+) -> dict[str, Any]:
+    infected = population["infected"]
+    uninfected_screened = screened & ~infected
+    active_by_horizon = infected & (t_active <= opts["followHorizon"])
+    intervention_active = active_by_horizon & ~prevented_active_tb
+    partial_true = true_positive_adr_stop | true_positive_stopped_other
+    partial_false = false_positive_adr_stop | false_positive_stopped_other
+    totals = {
+        "population": int(n),
+        "eligible_population": int(n),
+        "screened": int(screened.sum()),
+        "infected_screened": int((screened & infected).sum()),
+        "uninfected_screened": int(uninfected_screened.sum()),
+        "latent_infected_at_screen": int(latent_at_screen.sum()),
+        "active_tb_at_screen": int(active_at_screen.sum()),
+        "true_positive_latent": int(true_positive_latent.sum()),
+        "test_positive_active": int(test_positive_active.sum()),
+        "false_positive": int(false_positive_test.sum()),
+        "false_negative_latent": int(false_negative_latent.sum()),
+        "test_negative_active": int(test_negative_active.sum()),
+        "true_negative": int(true_negative.sum()),
+        "test_positive_total": int((true_positive_latent | test_positive_active | false_positive_test).sum()),
+        "test_negative_total": int((false_negative_latent | test_negative_active | true_negative).sum()),
+        "tpt_eligible": int(eligible_tpt.sum()),
+        "tpt_started_true_positive": int(true_positive_treated.sum()),
+        "tpt_started_false_positive": int(false_positive_treated.sum()),
+        "tpt_started_total": int(started_tpt.sum()),
+        "tpt_completed_true_positive": int(true_positive_completed.sum()),
+        "tpt_completed_false_positive": int(false_positive_completed.sum()),
+        "tpt_completed_total": int(completed_tpt.sum()),
+        "tpt_adr_stop_true_positive": int(true_positive_adr_stop.sum()),
+        "tpt_adr_stop_false_positive": int(false_positive_adr_stop.sum()),
+        "tpt_adr_stop_total": int(adr_stop.sum()),
+        "tpt_other_stop_true_positive": int(true_positive_stopped_other.sum()),
+        "tpt_other_stop_false_positive": int(false_positive_stopped_other.sum()),
+        "tpt_other_stop_total": int(stopped_other.sum()),
+        "tpt_partial_course_true_positive": int(partial_true.sum()),
+        "tpt_partial_course_false_positive": int(partial_false.sum()),
+        "tpt_partial_course_total": int((partial_true | partial_false).sum()),
+        "infection_effectively_treated_full": int(protected_full.sum()),
+        "infection_effectively_treated_partial": int(protected_partial.sum()),
+        "infection_effectively_treated_total": int(cured_infection.sum()),
+        "active_tb_cases": int(intervention_active.sum()),
+        "active_tb_cases_prevented": int(prevented_active_tb.sum()),
+        "false_positive_bcg": int(false_positive_test_bcg.sum()),
+        "false_positive_no_bcg": int(false_positive_test_no_bcg.sum()),
+        "false_positive_due_to_bcg": int(false_positive_due_to_bcg.sum()),
+    }
+    event_times = {
+        "screened": screen_time[screened],
+        "infected_screened": screen_time[screened & infected],
+        "uninfected_screened": screen_time[uninfected_screened],
+        "latent_infected_at_screen": screen_time[latent_at_screen],
+        "active_tb_at_screen": screen_time[active_at_screen],
+        "true_positive_latent": screen_time[true_positive_latent],
+        "test_positive_active": screen_time[test_positive_active],
+        "false_positive": screen_time[false_positive_test],
+        "false_negative_latent": screen_time[false_negative_latent],
+        "test_negative_active": screen_time[test_negative_active],
+        "true_negative": screen_time[true_negative],
+        "test_positive_total": screen_time[true_positive_latent | test_positive_active | false_positive_test],
+        "test_negative_total": screen_time[false_negative_latent | test_negative_active | true_negative],
+        "tpt_eligible": screen_time[eligible_tpt],
+        "tpt_started_true_positive": screen_time[true_positive_treated],
+        "tpt_started_false_positive": screen_time[false_positive_treated],
+        "tpt_started_total": screen_time[started_tpt],
+        "tpt_completed_true_positive": course_stop_time[true_positive_completed],
+        "tpt_completed_false_positive": course_stop_time[false_positive_completed],
+        "tpt_completed_total": course_stop_time[completed_tpt],
+        "tpt_adr_stop_true_positive": course_stop_time[true_positive_adr_stop],
+        "tpt_adr_stop_false_positive": course_stop_time[false_positive_adr_stop],
+        "tpt_adr_stop_total": course_stop_time[adr_stop],
+        "tpt_other_stop_true_positive": course_stop_time[true_positive_stopped_other],
+        "tpt_other_stop_false_positive": course_stop_time[false_positive_stopped_other],
+        "tpt_other_stop_total": course_stop_time[stopped_other],
+        "tpt_partial_course_true_positive": course_stop_time[partial_true],
+        "tpt_partial_course_false_positive": course_stop_time[partial_false],
+        "tpt_partial_course_total": course_stop_time[partial_true | partial_false],
+        "infection_effectively_treated_full": course_stop_time[protected_full],
+        "infection_effectively_treated_partial": course_stop_time[protected_partial],
+        "infection_effectively_treated_total": course_stop_time[cured_infection],
+        "active_tb_cases": t_active[intervention_active],
+        "active_tb_cases_prevented": t_active[prevented_active_tb],
+        "false_positive_bcg": screen_time[false_positive_test_bcg],
+        "false_positive_no_bcg": screen_time[false_positive_test_no_bcg],
+        "false_positive_due_to_bcg": screen_time[false_positive_due_to_bcg],
+    }
+    return {
+        "interventionTotals": totals,
+        "comparatorActiveTimes": t_active[active_by_horizon],
+        "interventionEventTimes": event_times,
     }
 
 
