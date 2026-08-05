@@ -16,6 +16,7 @@ from engine.apy.calibration import (
     infection_probability_from_eta,
     odds_from_prob,
 )
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 from engine.apy.reference_loader import load_reference_scenario_config
 
 
@@ -110,7 +111,9 @@ class ApyCalibrationTests(unittest.TestCase):
             )
 
     def test_calibrate_from_config_keeps_age_calibration_and_records_ltbi_state_assumptions(self) -> None:
-        calibrated = calibrate_from_config(self.scenario_config)
+        calibrated = calibrate_from_config(
+            enable_development_compatibility_mode(self.scenario_config)
+        )
 
         self.assertAlmostEqual(
             calibrated["ageInfLogLambda"],
@@ -131,7 +134,7 @@ class ApyCalibrationTests(unittest.TestCase):
         )
         self.assertEqual(
             calibrated["ltbiStateAssumptionStatus"],
-            "unresolved",
+            "unresolved_development_compatibility",
         )
         self.assertEqual(calibrated["baselineRecentLTBIProportion"], 0.0)
 

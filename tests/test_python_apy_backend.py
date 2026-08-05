@@ -5,6 +5,7 @@ import unittest
 
 from adapters.paths import repo_root
 from adapters.python_apy_backend import PythonApyBackend
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 
 
 class PythonApyBackendTests(unittest.TestCase):
@@ -34,6 +35,7 @@ class PythonApyBackendTests(unittest.TestCase):
     def test_run_scenario_bundle_small_run(self) -> None:
         config = self.backend.default_config()
         config.update({"N": 100, "nReps": 5, "seed": 1})
+        config = enable_development_compatibility_mode(config)
 
         bundle = self.backend.run_scenario_bundle(config)
 
@@ -67,6 +69,7 @@ class PythonApyBackendTests(unittest.TestCase):
     def test_run_economics_for_config_small_run(self) -> None:
         config = self.backend.default_config()
         config.update({"N": 100, "nReps": 5, "seed": 1})
+        config = enable_development_compatibility_mode(config)
         economics_config = self.backend.economics_preset_kwab150()
 
         economics = self.backend.run_economics_for_config(config, economics_config)
@@ -80,6 +83,7 @@ class PythonApyBackendTests(unittest.TestCase):
         sys.modules.pop("matlab.engine", None)
         config = self.backend.default_config()
         config.update({"N": 50, "nReps": 1, "seed": 2})
+        config = enable_development_compatibility_mode(config)
 
         self.backend.run_scenario_bundle(config)
 
@@ -89,6 +93,7 @@ class PythonApyBackendTests(unittest.TestCase):
         sys.modules.pop("matlab.engine", None)
         config = self.backend.default_config()
         config.update({"N": 50, "nReps": 2, "seed": 2})
+        config = enable_development_compatibility_mode(config)
 
         self.backend.run_economics_for_config(
             config,

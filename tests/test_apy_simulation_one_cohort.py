@@ -16,6 +16,7 @@ from engine.apy.simulation import (
 from engine.apy.calibration import calibrate_from_config
 from engine.apy.config import normalise_config
 from engine.apy.cohort import make_rng
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 from engine.apy.regimen import (
     apply_regimen_overrides,
     default_regimen_library,
@@ -26,7 +27,9 @@ from engine.apy.regimen import (
 class ApySingleCohortSimulationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.config = normalise_config({"N": 100, "seed": 1})
+        cls.config = enable_development_compatibility_mode(
+            normalise_config({"N": 100, "seed": 1})
+        )
         cls.calibration = calibrate_from_config(cls.config)
         library = default_regimen_library(
             cls.config.get("partialShortCourseMode") or "threshold80"
@@ -49,7 +52,9 @@ class ApySingleCohortSimulationTests(unittest.TestCase):
         )
 
     def test_default_config_runs_small_single_cohort(self) -> None:
-        result = simulate_one_cohort_from_config(n=100, seed=1)
+        result = simulate_one_cohort_from_config(
+            enable_development_compatibility_mode({}), n=100, seed=1
+        )
 
         self.assertIsInstance(result["raw"], dict)
         self.assertEqual(len(result["cohort"]), 100)

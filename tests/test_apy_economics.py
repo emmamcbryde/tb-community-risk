@@ -11,13 +11,14 @@ from engine.apy.economics import (
     run_health_economics_for_config,
     validate_economics_config,
 )
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 from engine.apy.runner import run_scenario_with_do_nothing
 
 
 class ApyEconomicsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        config = {"N": 100, "nReps": 5, "seed": 1}
+        config = enable_development_compatibility_mode({"N": 100, "nReps": 5, "seed": 1})
         cls.python_output = run_scenario_with_do_nothing(config)
         cls.econ_config = build_economics_preset_kwab150()
         for item in cls.econ_config["costItems"]:
@@ -150,7 +151,7 @@ class ApyEconomicsTests(unittest.TestCase):
         self.assertFalse(econ["status"]["isComplete"])
 
     def test_run_health_economics_for_config_runs_without_matlab(self) -> None:
-        config = {"N": 50, "nReps": 2, "seed": 3}
+        config = enable_development_compatibility_mode({"N": 50, "nReps": 2, "seed": 3})
 
         econ = run_health_economics_for_config(config, self.econ_config)
 

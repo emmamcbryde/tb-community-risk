@@ -4,13 +4,16 @@ import unittest
 
 from engine.apy.results_bundle import KEY_METRICS, build_results_bundle
 from engine.apy.natural_history import run_do_nothing_summary
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 from engine.apy.runner import run_replicates
 
 
 class ApyResultsBundleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.results = run_replicates(n=100, n_reps=3, seed=20)
+        cls.results = run_replicates(
+            enable_development_compatibility_mode({}), n=100, n_reps=3, seed=20
+        )
         cls.bundle = build_results_bundle(cls.results)
 
     def test_bundle_has_core_sections(self) -> None:

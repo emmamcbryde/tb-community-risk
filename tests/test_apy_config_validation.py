@@ -7,7 +7,9 @@ from engine.apy.ltbi_state import (
     COMPATIBILITY_MODE_WARNING,
     LTBI_STATE_MODEL,
     apply_ltbi_state_edit,
+    enable_development_compatibility_mode,
     is_clinician_ready_ltbi_state,
+    require_numeric_ltbi_state_assumptions,
     resolve_ltbi_state_assumptions,
 )
 from engine.apy.validation import collect_validation_issues, validate_config
@@ -40,7 +42,7 @@ class ApyConfigValidationTests(unittest.TestCase):
         self.assertIsNone(cfg["pStartTPT"])
         self.assertIsNone(cfg["earlyLateRatio"])
         self.assertIsNone(cfg["ltbiStateAssumptions"]["baselineRecentLTBIProportion"])
-        self.assertTrue(cfg["ltbiStateAssumptions"]["developmentCompatibilityMode"])
+        self.assertFalse(cfg["ltbiStateAssumptions"]["developmentCompatibilityMode"])
 
     def test_normalised_config_fills_missing_fields_from_defaults(self) -> None:
         cfg = normalise_config({"scenarioLabel": "Custom", "riskPrev": {"smoking": 0.2}})
@@ -88,7 +90,7 @@ class ApyConfigValidationTests(unittest.TestCase):
         self.assertEqual(state["source"], "test source")
         self.assertFalse(state["provisional"])
 
-    def test_legacy_only_ltbi_state_fields_are_migrated(self) -> None:
+    def test_legacy_only_ltbi_state_fields_are_migrated_as_provisional(self) -> None:
         cfg = normalise_config(
             {
                 "baselineRecentLTBIProportion": 0.3,
@@ -98,7 +100,8 @@ class ApyConfigValidationTests(unittest.TestCase):
 
         self.assertEqual(cfg["ltbiStateAssumptions"]["baselineRecentLTBIProportion"], 0.3)
         self.assertEqual(cfg["ltbiStateAssumptions"]["recentToRemoteTransitionRatePerYear"], 0.4)
-        self.assertEqual(cfg["ltbiStateAssumptions"]["status"], "configured_from_legacy")
+        self.assertEqual(cfg["ltbiStateAssumptions"]["status"], "migrated_legacy_unverified")
+        self.assertTrue(cfg["ltbiStateAssumptions"]["provisional"])
 
     def test_conflicting_ltbi_state_fields_are_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "Conflicting LTBI-state configuration"):
@@ -130,12 +133,52 @@ class ApyConfigValidationTests(unittest.TestCase):
         self.assertFalse(is_clinician_ready_ltbi_state(cfg))
 
     def test_development_compatibility_mode_is_visibly_provisional(self) -> None:
-        state = resolve_ltbi_state_assumptions(build_default_config())
+        state = resolve_ltbi_state_assumptions(
+            enable_development_compatibility_mode(build_default_config())
+        )
 
         self.assertEqual(state["baselineRecentLTBIProportion"], 0.0)
         self.assertTrue(state["developmentCompatibilityMode"])
         self.assertTrue(state["provisional"])
         self.assertIn(COMPATIBILITY_MODE_WARNING, state["warning"])
+
+    def test_unresolved_default_run_requires_explicit_compatibility_opt_in(self) -> None:
+        state = resolve_ltbi_state_assumptions(build_default_config())
+
+        self.assertIsNone(state["baselineRecentLTBIProportion"])
+        self.assertFalse(state["developmentCompatibilityMode"])
+        with self.assertRaisesRegex(ValueError, "developmentCompatibilityMode=true"):
+            require_numeric_ltbi_state_assumptions(build_default_config())
+
+    def test_legacy_migration_fails_clinician_ready_validation(self) -> None:
+        cfg = normalise_config(
+            {
+                "baselineRecentLTBIProportion": 0.3,
+                "recentToRemoteTransitionRatePerYear": 0.2,
+            }
+        )
+        report = collect_validation_issues(cfg, clinician_ready=True)
+
+        self.assertFalse(report["isValid"])
+        self.assertFalse(is_clinician_ready_ltbi_state(cfg))
+        self.assertIn(
+            "ltbiStateAssumptions.baselineRecentLTBIProportion",
+            report["fatalFieldNames"],
+        )
+
+    def test_explicit_reviewed_value_can_pass_clinician_ready_validation(self) -> None:
+        cfg = apply_ltbi_state_edit(
+            build_default_config(),
+            baseline_recent_proportion=0.24,
+            transition_rate_per_year=0.2,
+            source="Scientific model-derived fixture source",
+            status="configured",
+            notes="Reviewed for clinician-ready validation test.",
+        )
+        report = collect_validation_issues(cfg, clinician_ready=True)
+
+        self.assertTrue(report["isValid"])
+        self.assertTrue(is_clinician_ready_ltbi_state(cfg))
 
     def test_markov_terminology_and_implied_mean_residence_time(self) -> None:
         state = resolve_ltbi_state_assumptions(

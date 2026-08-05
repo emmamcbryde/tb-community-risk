@@ -5,6 +5,7 @@ import unittest
 
 from adapters.paths import repo_root
 from adapters.python_apy_backend import PythonApyBackend
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 
 
 class PythonApyBackendEconomicsTests(unittest.TestCase):
@@ -31,6 +32,7 @@ class PythonApyBackendEconomicsTests(unittest.TestCase):
     def test_run_economics_for_config_small_run(self) -> None:
         config = self.backend.default_config()
         config.update({"N": 100, "nReps": 5, "seed": 1})
+        config = enable_development_compatibility_mode(config)
 
         economics = self.backend.run_economics_for_config(
             config,
@@ -45,6 +47,7 @@ class PythonApyBackendEconomicsTests(unittest.TestCase):
         sys.modules.pop("matlab.engine", None)
         config = self.backend.default_config()
         config.update({"N": 50, "nReps": 2, "seed": 4})
+        config = enable_development_compatibility_mode(config)
 
         self.backend.run_economics_for_config(
             config,

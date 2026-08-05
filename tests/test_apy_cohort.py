@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 
 from engine.apy.calibration import calibrate_from_config
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 from engine.apy.cohort import (
     add_targeting_scores,
     age_lookup,
@@ -30,6 +31,7 @@ class ApyCohortPrimitiveTests(unittest.TestCase):
         cfg = load_reference_scenario_config(
             "validation/matlab_reference/default_random_igra_3hp_N1500_seed1/scenario_config.json"
         )
+        cfg = enable_development_compatibility_mode(cfg)
         cls.calibration = calibrate_from_config(cfg)
         cls.pars = cls.calibration["parameters"]
 

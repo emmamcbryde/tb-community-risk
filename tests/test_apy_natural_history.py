@@ -7,13 +7,16 @@ import numpy as np
 import pandas as pd
 
 from engine.apy.natural_history import run_do_nothing_summary, safe_fraction_vector
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 from engine.apy.runner import run_replicates
 
 
 class ApyNaturalHistoryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.results = run_replicates(n=100, n_reps=3, seed=30)
+        cls.results = run_replicates(
+            enable_development_compatibility_mode({}), n=100, n_reps=3, seed=30
+        )
         cls.do_nothing = run_do_nothing_summary(cls.results)
 
     def test_run_do_nothing_summary_returns_expected_sections(self) -> None:

@@ -374,10 +374,10 @@ if config:
             )
             ltbi_status = st.selectbox(
                 "LTBI-state assumption status",
-                ["unresolved", "configured", "configured_from_legacy", "provisional"],
+                ["unresolved", "configured", "migrated_legacy_unverified", "provisional"],
                 index=choice_index(
                     ltbi_state.get("status"),
-                    ["unresolved", "configured", "configured_from_legacy", "provisional"],
+                    ["unresolved", "configured", "migrated_legacy_unverified", "provisional"],
                 ),
             )
             ltbi_notes = st.text_area(

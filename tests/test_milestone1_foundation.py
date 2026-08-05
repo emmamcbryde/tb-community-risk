@@ -44,6 +44,9 @@ class Milestone1ScenarioTests(unittest.TestCase):
         self.assertIsNone(
             scenario["ltbiStateAssumptions"]["baselineRecentLTBIProportion"]
         )
+        self.assertFalse(
+            scenario["ltbiStateAssumptions"]["developmentCompatibilityMode"]
+        )
         self.assertIn("ordinary background clinical care", scenario["comparator"]["notes"])
 
     def test_scenario_json_configuration_round_trip(self) -> None:

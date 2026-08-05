@@ -94,8 +94,9 @@ def canonicalise_ltbi_state_assumptions(config: dict[str, Any]) -> dict[str, Any
         if not nested_present or nested_recent in (None, []):
             nested[BASELINE_RECENT_KEY] = legacy_recent
             if not nested_present:
-                nested["status"] = "configured_from_legacy"
+                nested["status"] = "migrated_legacy_unverified"
                 nested["source"] = "Migrated from legacy top-level field"
+                nested["provisional"] = True
     if legacy_rate_present:
         legacy_rate = out[TRANSITION_RATE_KEY]
         nested_rate = nested.get(TRANSITION_RATE_KEY)
@@ -167,12 +168,32 @@ def apply_ltbi_state_edit(
     return canonicalise_ltbi_state_assumptions(updated)
 
 
+def enable_development_compatibility_mode(config: dict[str, Any]) -> dict[str, Any]:
+    updated = canonicalise_ltbi_state_assumptions(config)
+    nested = deepcopy(updated["ltbiStateAssumptions"])
+    nested[BASELINE_RECENT_KEY] = None
+    nested["developmentCompatibilityMode"] = True
+    nested["status"] = "unresolved_development_compatibility"
+    nested["provisional"] = True
+    nested.setdefault("source", "")
+    nested["notes"] = (
+        str(nested.get("notes") or "").strip()
+        + " Development compatibility mode explicitly selected; using 0% placeholder."
+    ).strip()
+    updated["ltbiStateAssumptions"] = nested
+    updated.pop(BASELINE_RECENT_KEY, None)
+    updated.pop(TRANSITION_RATE_KEY, None)
+    return canonicalise_ltbi_state_assumptions(updated)
+
+
 def is_clinician_ready_ltbi_state(config: dict[str, Any]) -> bool:
     state = resolve_ltbi_state_assumptions(config)
     return (
         state["baselineRecentLTBIProportion"] is not None
         and not state["provisional"]
         and not str(state["status"]).startswith("unresolved")
+        and state["status"] != "migrated_legacy_unverified"
+        and state.get("source") != "Migrated from legacy top-level field"
         and bool(str(state.get("source") or "").strip())
     )
 

@@ -88,7 +88,7 @@ def build_scenario_contract(
                     ),
                     "status": "unresolved",
                     "notes": "",
-                    "developmentCompatibilityMode": True,
+                    "developmentCompatibilityMode": False,
                     "provisional": True,
                 },
             )

@@ -130,7 +130,7 @@ def build_default_config() -> dict[str, Any]:
                 "Set developmentCompatibilityMode=true only for legacy development "
                 "workflows that require a numerical placeholder."
             ),
-            "developmentCompatibilityMode": True,
+            "developmentCompatibilityMode": False,
             "provisional": True,
         },
     }
@@ -156,9 +156,9 @@ def normalise_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
         normalised["ltbiStateAssumptions"] = {}
     normalised = canonicalise_ltbi_state_assumptions(normalised)
     if legacy_only_ltbi_state:
-        normalised["ltbiStateAssumptions"]["status"] = "configured_from_legacy"
+        normalised["ltbiStateAssumptions"]["status"] = "migrated_legacy_unverified"
         normalised["ltbiStateAssumptions"]["source"] = "Migrated from legacy top-level field"
-        normalised["ltbiStateAssumptions"]["provisional"] = False
+        normalised["ltbiStateAssumptions"]["provisional"] = True
     normalised["testType"] = _normalise_text(normalised.get("testType"))
     normalised["regimen"] = _normalise_text(normalised.get("regimen"))
     normalised["screeningStrategy"] = _normalise_text(

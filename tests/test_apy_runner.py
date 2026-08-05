@@ -9,11 +9,12 @@ from engine.apy.runner import (
     run_scenario,
     run_scenario_with_do_nothing,
 )
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 
 
 class ApyRunnerTests(unittest.TestCase):
     def test_run_replicates_small_scenario(self) -> None:
-        results = run_replicates(n=100, n_reps=5, seed=1)
+        results = run_replicates(_compat_config(), n=100, n_reps=5, seed=1)
 
         self.assertEqual(len(results["raw"]), 5)
         self.assertIsInstance(results["summary"], pd.DataFrame)
@@ -22,19 +23,19 @@ class ApyRunnerTests(unittest.TestCase):
         self.assertEqual(results["backend"], "python")
 
     def test_summary_dataframe_has_expected_columns(self) -> None:
-        summary = run_replicates(n=100, n_reps=3, seed=2)["summary"]
+        summary = run_replicates(_compat_config(), n=100, n_reps=3, seed=2)["summary"]
 
         self.assertEqual(list(summary.columns), ["Metric", "Median", "Low95", "High95"])
 
     def test_reproducible_with_same_seed(self) -> None:
-        first = run_replicates(n=100, n_reps=3, seed=3)["raw"]
-        second = run_replicates(n=100, n_reps=3, seed=3)["raw"]
+        first = run_replicates(_compat_config(), n=100, n_reps=3, seed=3)["raw"]
+        second = run_replicates(_compat_config(), n=100, n_reps=3, seed=3)["raw"]
 
         pd.testing.assert_frame_equal(first, second)
 
     def test_different_seed_changes_stochastic_output(self) -> None:
-        first = run_replicates(n=100, n_reps=3, seed=4)["raw"]
-        second = run_replicates(n=100, n_reps=3, seed=5)["raw"]
+        first = run_replicates(_compat_config(), n=100, n_reps=3, seed=4)["raw"]
+        second = run_replicates(_compat_config(), n=100, n_reps=3, seed=5)["raw"]
 
         self.assertFalse(first.equals(second))
 
@@ -42,19 +43,19 @@ class ApyRunnerTests(unittest.TestCase):
         for strategy in ["random", "ltbi", "cure", "prevent"]:
             with self.subTest(strategy=strategy):
                 results = run_replicates(
-                    {"screeningStrategy": strategy}, n=80, n_reps=2, seed=6
+                    _compat_config({"screeningStrategy": strategy}), n=80, n_reps=2, seed=6
                 )
                 self.assertEqual(results["strategy"]["screeningStrategy"], strategy)
 
     def test_igra_and_tst_both_run(self) -> None:
-        igra = run_replicates({"testType": "IGRA"}, n=80, n_reps=2, seed=7)
-        tst = run_replicates({"testType": "TST"}, n=80, n_reps=2, seed=7)
+        igra = run_replicates(_compat_config({"testType": "IGRA"}), n=80, n_reps=2, seed=7)
+        tst = run_replicates(_compat_config({"testType": "TST"}), n=80, n_reps=2, seed=7)
 
         self.assertEqual(igra["strategy"]["testType"], "IGRA")
         self.assertEqual(tst["strategy"]["testType"], "TST")
 
     def test_nreps_one_works(self) -> None:
-        results = run_replicates(n=50, n_reps=1, seed=8)
+        results = run_replicates(_compat_config(), n=50, n_reps=1, seed=8)
 
         self.assertEqual(len(results["raw"]), 1)
 
@@ -62,21 +63,21 @@ class ApyRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "N must be > 0"):
             run_replicates(n=0, n_reps=1, seed=9)
         with self.assertRaises(ValueError):
-            run_replicates({"screenCoverage": 2}, n=50, n_reps=1, seed=9)
+            run_replicates(_compat_config({"screenCoverage": 2}), n=50, n_reps=1, seed=9)
 
     def test_run_scenario_uses_config_nreps(self) -> None:
-        results = run_scenario({"N": 50, "nReps": 2, "seed": 10})
+        results = run_scenario(_compat_config({"N": 50, "nReps": 2, "seed": 10}))
 
         self.assertEqual(len(results["raw"]), 2)
 
     def test_raw_contains_rep_and_seed(self) -> None:
-        raw = run_replicates(n=50, n_reps=2, seed=11)["raw"]
+        raw = run_replicates(_compat_config(), n=50, n_reps=2, seed=11)["raw"]
 
         self.assertEqual(raw["rep"].tolist(), [1, 2])
         self.assertTrue((raw["seed"] >= 0).all())
 
     def test_run_scenario_with_do_nothing_returns_bundle(self) -> None:
-        out = run_scenario_with_do_nothing({"N": 50, "nReps": 2, "seed": 12})
+        out = run_scenario_with_do_nothing(_compat_config({"N": 50, "nReps": 2, "seed": 12}))
 
         self.assertIn("results", out)
         self.assertIn("doNothing", out)
@@ -88,3 +89,8 @@ class ApyRunnerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _compat_config(overrides: dict | None = None) -> dict:
+    config = enable_development_compatibility_mode(overrides or {})
+    return config

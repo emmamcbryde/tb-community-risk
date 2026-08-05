@@ -130,6 +130,7 @@ def _write_scenario_inputs(
         ("LTBI-state definition", ltbi_state.get("stateDefinition")),
         ("LTBI state assumption status", ltbi_state.get("status")),
         ("LTBI state assumption source", ltbi_state.get("source")),
+        ("LTBI state development compatibility mode", ltbi_state.get("developmentCompatibilityMode")),
         ("LTBI state assumption warning", ltbi_state.get("warning")),
         ("LTBI state provisional result", ltbi_state.get("provisional")),
         ("TPT start probability", config.get("pStartTPT"), "percentage"),
@@ -267,6 +268,7 @@ def _write_technical_metadata(
         ("ltbiState.stateDefinition", ltbi_state.get("stateDefinition")),
         ("ltbiState.source", ltbi_state.get("source")),
         ("ltbiState.status", ltbi_state.get("status")),
+        ("ltbiState.developmentCompatibilityMode", ltbi_state.get("developmentCompatibilityMode")),
         ("ltbiState.warning", ltbi_state.get("warning")),
         ("ltbiState.provisional", ltbi_state.get("provisional")),
     ]

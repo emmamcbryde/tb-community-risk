@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app.epidemiology_inputs import apply_ltbi_state_development_compatibility
 from app.state import (
     get_backend,
     get_backend_name,
@@ -11,6 +12,7 @@ from app.state import (
     record_message,
     sync_backend_status,
 )
+from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 
 
 init_session_state()
@@ -48,6 +50,22 @@ if st.session_state.get("results_stale"):
 elif st.session_state.get("results_bundle"):
     st.success("Stored results match the current config state.")
 
+ltbi_dev_compatibility_requested = False
+if backend_name == "python_apy":
+    ltbi_state = resolve_ltbi_state_assumptions(config)
+    unresolved_ltbi_state = ltbi_state.get("baselineRecentLTBIProportion") is None
+    if ltbi_state.get("warning"):
+        st.warning(str(ltbi_state["warning"]))
+    if unresolved_ltbi_state:
+        ltbi_dev_compatibility_requested = st.checkbox(
+            "Run provisional development analysis using the 0% compatibility placeholder",
+            value=False,
+            help=(
+                "This is a development-only opt-in for legacy workflows. It is not "
+                "a validated scientific assumption or recommended default."
+            ),
+        )
+
 if st.button("Validate scenario"):
     try:
         st.session_state["validation_report"] = backend.validate_config(config)
@@ -79,8 +97,20 @@ if st.session_state.get("dirty_config"):
 
 if st.button(run_label, type="primary"):
     try:
+        run_config = config
+        if backend_name == "python_apy":
+            ltbi_state = resolve_ltbi_state_assumptions(config)
+            if ltbi_state.get("baselineRecentLTBIProportion") is None:
+                if not ltbi_dev_compatibility_requested:
+                    raise ValueError(
+                        "Baseline recent-LTBI proportion is unresolved. Provide an "
+                        "explicit reviewed value, or explicitly opt into the "
+                        "provisional development compatibility placeholder."
+                    )
+                run_config = apply_ltbi_state_development_compatibility(config)
+                st.session_state["config"] = run_config
         bundle = backend.run_scenario_bundle(
-            config,
+            run_config,
             validation_report=st.session_state.get("validation_report"),
         )
         st.session_state["results_bundle"] = bundle

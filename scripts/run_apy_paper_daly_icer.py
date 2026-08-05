@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from engine.apy.config import build_default_config
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 from engine.apy.economics import (
     build_economics_preset_kwab150,
     run_health_economics,
@@ -310,7 +311,7 @@ def run_one_strategy(
     include_daly: bool = True,
     include_qaly: bool = True,
 ) -> dict[str, Any]:
-    config = build_default_config()
+    config = enable_development_compatibility_mode(build_default_config())
     config.update(
         {
             "scenarioLabel": f"APY paper DALY ICER - {strategy}",

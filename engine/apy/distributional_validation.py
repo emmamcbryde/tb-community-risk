@@ -7,6 +7,7 @@ import math
 import pandas as pd
 
 from engine.apy.config import build_default_config
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 from engine.apy.parity import DYNAMIC_COMPARISON_METRICS
 from engine.apy.reference_loader import (
     list_reference_scenario_dirs,
@@ -181,7 +182,7 @@ def run_reference_suite_distributional_validation(
 
 
 def portable_config_from_reference(reference_config: dict[str, Any]) -> dict[str, Any]:
-    config = build_default_config()
+    config = enable_development_compatibility_mode(build_default_config())
     for field in PORTABLE_REFERENCE_FIELDS:
         if field in reference_config:
             config[field] = _matlab_empty_to_none(reference_config[field])

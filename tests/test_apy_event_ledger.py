@@ -21,9 +21,9 @@ from engine.apy.runner import run_replicates
 class ApyEventLedgerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.ev = run_expected_value({"N": 200, "screeningStrategy": "random", "seed": 1})
+        cls.ev = run_expected_value(_reviewed_ltbi_config({"N": 200, "screeningStrategy": "random", "seed": 1}))
         cls.abm = run_replicates(
-            {"N": 200, "nReps": 4, "screeningStrategy": "random", "seed": 1},
+            _reviewed_ltbi_config({"N": 200, "nReps": 4, "screeningStrategy": "random", "seed": 1}),
             keep_example_cohort=False,
         )
 
@@ -175,7 +175,7 @@ class ApyEventLedgerTests(unittest.TestCase):
             self.assertLessEqual(abs(ev[event] - abm_mean[event]), max(20.0, 0.20 * ev[event]), event)
 
     def test_screening_window_change_does_not_change_comparator_natural_history(self) -> None:
-        common = {"N": 200, "nReps": 3, "seed": 222, "screenCoverage": 0.3}
+        common = _reviewed_ltbi_config({"N": 200, "nReps": 3, "seed": 222, "screenCoverage": 0.3})
         two_year = run_replicates({**common, "screeningWindowYears": 2}, keep_example_cohort=False)
         three_year = run_replicates({**common, "screeningWindowYears": 3}, keep_example_cohort=False)
         comp2 = _arm_event_values(two_year["eventLedger"], "comparator", "active_tb_cases")
@@ -200,7 +200,7 @@ class ApyEventLedgerTests(unittest.TestCase):
         }
 
         with self.assertRaisesRegex(ValueError, "Restricted eligibility is configured"):
-            run_replicates({"N": 100, "scenario": scenario}, keep_example_cohort=False)
+            run_replicates(_reviewed_ltbi_config({"N": 100, "scenario": scenario}), keep_example_cohort=False)
 
     def test_abm_ledger_preserves_replicates_and_seeds(self) -> None:
         totals = self.abm["eventLedger"]["replicateTotals"]
@@ -261,7 +261,7 @@ class ApyEventLedgerTests(unittest.TestCase):
 
     def test_post_horizon_programme_events_keep_actual_year_and_flag(self) -> None:
         result = run_replicates(
-            {
+            _reviewed_ltbi_config({
                 "N": 300,
                 "nReps": 3,
                 "seed": 321,
@@ -272,7 +272,7 @@ class ApyEventLedgerTests(unittest.TestCase):
                 "pStartTPT": 1.0,
                 "regimenPComplete": 1.0,
                 "regimenADRstop": 0.0,
-            },
+            }),
             keep_example_cohort=False,
         )
         annual = result["eventLedger"]["annualEvents"]
@@ -286,7 +286,7 @@ class ApyEventLedgerTests(unittest.TestCase):
         self.assertTrue((completions["modelYear"] >= 0).all())
 
     def test_zero_screening_coverage_has_no_screening_or_tpt_events(self) -> None:
-        ledger = run_expected_value({"N": 100, "screenCoverage": 0})["eventLedger"]
+        ledger = run_expected_value(_reviewed_ltbi_config({"N": 100, "screenCoverage": 0}))["eventLedger"]
         wide = _long_to_wide(ledger["replicateTotals"])
         intervention = wide[wide["arm"] == "intervention"].iloc[0]
         comparator = wide[wide["arm"] == "comparator"].iloc[0]
@@ -296,8 +296,8 @@ class ApyEventLedgerTests(unittest.TestCase):
         self.assertAlmostEqual(intervention["active_tb_cases"], comparator["active_tb_cases"])
 
     def test_test_sensitivity_boundaries(self) -> None:
-        sens0 = _intervention_totals(run_expected_value({"N": 100, "testSensitivity": 0})["eventLedger"])
-        sens1 = _intervention_totals(run_expected_value({"N": 100, "testSensitivity": 1})["eventLedger"])
+        sens0 = _intervention_totals(run_expected_value(_reviewed_ltbi_config({"N": 100, "testSensitivity": 0}))["eventLedger"])
+        sens1 = _intervention_totals(run_expected_value(_reviewed_ltbi_config({"N": 100, "testSensitivity": 1}))["eventLedger"])
 
         self.assertAlmostEqual(sens0["true_positive_latent"], 0)
         self.assertAlmostEqual(sens0["test_positive_active"], 0)
@@ -305,15 +305,15 @@ class ApyEventLedgerTests(unittest.TestCase):
         self.assertAlmostEqual(sens1["test_negative_active"], 0)
 
     def test_test_specificity_boundaries(self) -> None:
-        spec1 = _intervention_totals(run_expected_value({"N": 100, "testSpecificity": 1})["eventLedger"])
-        spec0 = _intervention_totals(run_expected_value({"N": 100, "testSpecificity": 0})["eventLedger"])
+        spec1 = _intervention_totals(run_expected_value(_reviewed_ltbi_config({"N": 100, "testSpecificity": 1}))["eventLedger"])
+        spec0 = _intervention_totals(run_expected_value(_reviewed_ltbi_config({"N": 100, "testSpecificity": 0}))["eventLedger"])
 
         self.assertAlmostEqual(spec1["false_positive"], 0)
         self.assertAlmostEqual(spec0["false_positive"], spec0["uninfected_screened"])
 
     def test_treatment_start_and_efficacy_boundaries(self) -> None:
-        no_start = _intervention_totals(run_expected_value({"N": 100, "pStartTPT": 0})["eventLedger"])
-        no_eff = _intervention_totals(run_expected_value({"N": 100, "regimenEffFull": 0})["eventLedger"])
+        no_start = _intervention_totals(run_expected_value(_reviewed_ltbi_config({"N": 100, "pStartTPT": 0}))["eventLedger"])
+        no_eff = _intervention_totals(run_expected_value(_reviewed_ltbi_config({"N": 100, "regimenEffFull": 0}))["eventLedger"])
 
         for event in ["tpt_started_total", "tpt_completed_total", "infection_effectively_treated_total", "active_tb_cases_prevented"]:
             self.assertAlmostEqual(no_start[event], 0)
@@ -325,12 +325,12 @@ class ApyEventLedgerTests(unittest.TestCase):
     def test_completion_zero_retains_partial_course_rule(self) -> None:
         totals = _intervention_totals(
             run_expected_value(
-                {
+                _reviewed_ltbi_config({
                     "N": 100,
                     "regimenPComplete": 0,
                     "partialShortCourseMode": "linear",
                     "partialDoseFractionOther": 0.6,
-                }
+                })
             )["eventLedger"]
         )
 
@@ -338,8 +338,8 @@ class ApyEventLedgerTests(unittest.TestCase):
         self.assertGreater(totals["infection_effectively_treated_partial"], 0)
 
     def test_igra_and_tst_characteristics_and_bcg_false_positives(self) -> None:
-        igra = _intervention_totals(run_expected_value({"N": 100, "testType": "IGRA"})["eventLedger"])
-        tst = _intervention_totals(run_expected_value({"N": 100, "testType": "TST"})["eventLedger"])
+        igra = _intervention_totals(run_expected_value(_reviewed_ltbi_config({"N": 100, "testType": "IGRA"}))["eventLedger"])
+        tst = _intervention_totals(run_expected_value(_reviewed_ltbi_config({"N": 100, "testType": "TST"}))["eventLedger"])
 
         self.assertNotAlmostEqual(igra["true_positive_latent"], tst["true_positive_latent"])
         self.assertGreater(tst["false_positive_bcg"], 0)
@@ -347,10 +347,10 @@ class ApyEventLedgerTests(unittest.TestCase):
         self.assertAlmostEqual(tst["false_positive"], tst["false_positive_bcg"] + tst["false_positive_no_bcg"])
 
     def test_fixed_abm_seed_and_expected_value_seed_behaviour(self) -> None:
-        a = run_replicates({"N": 80, "nReps": 2, "seed": 123}, keep_example_cohort=False)
-        b = run_replicates({"N": 80, "nReps": 2, "seed": 123}, keep_example_cohort=False)
-        ev_a = run_expected_value({"N": 100, "seed": 123})
-        ev_b = run_expected_value({"N": 100, "seed": 999})
+        a = run_replicates(_reviewed_ltbi_config({"N": 80, "nReps": 2, "seed": 123}), keep_example_cohort=False)
+        b = run_replicates(_reviewed_ltbi_config({"N": 80, "nReps": 2, "seed": 123}), keep_example_cohort=False)
+        ev_a = run_expected_value(_reviewed_ltbi_config({"N": 100, "seed": 123}))
+        ev_b = run_expected_value(_reviewed_ltbi_config({"N": 100, "seed": 999}))
 
         self.assertEqual(
             to_json_like(a["eventLedger"]["replicateTotals"]),
@@ -460,10 +460,10 @@ class ApyEventLedgerTests(unittest.TestCase):
 
     def test_expected_value_quadrature_converges_for_key_outcomes(self) -> None:
         coarse = _intervention_totals(
-            run_expected_value({"N": 120, "screeningStrategy": "random"}, quadrature_points=8)["eventLedger"]
+            run_expected_value(_reviewed_ltbi_config({"N": 120, "screeningStrategy": "random"}), quadrature_points=8)["eventLedger"]
         )
         fine = _intervention_totals(
-            run_expected_value({"N": 120, "screeningStrategy": "random"}, quadrature_points=64)["eventLedger"]
+            run_expected_value(_reviewed_ltbi_config({"N": 120, "screeningStrategy": "random"}), quadrature_points=64)["eventLedger"]
         )
 
         for event in ["screened", "true_positive_latent", "infection_effectively_treated_total", "active_tb_cases_prevented"]:
@@ -483,6 +483,18 @@ class ApyEventLedgerTests(unittest.TestCase):
 def _intervention_totals(ledger: dict) -> pd.Series:
     wide = _long_to_wide(ledger["replicateTotals"])
     return wide[wide["arm"] == "intervention"].iloc[0]
+
+
+def _reviewed_ltbi_config(overrides: dict) -> dict:
+    config = dict(overrides)
+    config["ltbiStateAssumptions"] = {
+        "baselineRecentLTBIProportion": 0.35,
+        "recentToRemoteTransitionRatePerYear": 0.2,
+        "status": "configured",
+        "source": "Reviewed unit-test LTBI-state fixture",
+        "developmentCompatibilityMode": False,
+    }
+    return config
 
 
 def _arm_event_values(ledger: dict, arm: str, event: str) -> list[float]:

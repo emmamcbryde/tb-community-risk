@@ -100,11 +100,11 @@ No validated APY-specific baseline recent-LTBI fraction was found in the APY
 MATLAB v9 reference engine. The authoritative
 `ltbiStateAssumptions.baselineRecentLTBIProportion` field is therefore `null`
 unless a scenario supplies a value or an explicitly documented derivation
-method. Development compatibility mode can supply a numerical placeholder only
-to keep old development workflows runnable; those results are marked
-provisional and emit a validation warning. Scenario authors should provide and
-document an explicit value before treating the APY exemplar as clinician-ready
-or scientifically final.
+method. Development compatibility mode is off by default. When explicitly
+selected it can supply a numerical placeholder only to keep old development
+workflows runnable; those results are marked provisional and emit a validation
+warning. Scenario authors should provide and document an explicit value before
+treating the APY exemplar as clinician-ready or scientifically final.
 
 At screening, infected people are classified as `active_tb_at_screen`,
 `recent_latent_at_screen`, or `remote_latent_at_screen`. Aggregate latent,

@@ -9,6 +9,7 @@ from engine.apy.parity import (
     compare_dynamic_comparison_to_reference,
     compare_python_summary_to_reference,
 )
+from engine.apy.ltbi_state import enable_development_compatibility_mode
 from engine.apy.reference_loader import load_reference_dir
 from engine.apy.runner import run_replicates, run_scenario_with_do_nothing
 
@@ -27,7 +28,9 @@ class ApyParityTests(unittest.TestCase):
 
     def test_python_summary_compares_to_reference_without_crashing(self) -> None:
         reference = load_reference_dir(FIXTURE_DIR)
-        python_results = run_replicates(n=100, n_reps=2, seed=1)
+        python_results = run_replicates(
+            enable_development_compatibility_mode({}), n=100, n_reps=2, seed=1
+        )
 
         comparison = compare_python_summary_to_reference(
             python_results["summary"],
@@ -68,7 +71,9 @@ class ApyParityTests(unittest.TestCase):
 
     def test_dynamic_comparison_compares_to_reference_without_crashing(self) -> None:
         reference = load_reference_dir(FIXTURE_DIR)
-        python_out = run_scenario_with_do_nothing({"N": 100, "nReps": 2, "seed": 13})
+        python_out = run_scenario_with_do_nothing(
+            enable_development_compatibility_mode({"N": 100, "nReps": 2, "seed": 13})
+        )
 
         comparison = compare_dynamic_comparison_to_reference(
             python_out["bundle"]["technical"]["dynamicComparison"],

@@ -5,6 +5,7 @@ from typing import Any
 
 from engine.apy.ltbi_state import (
     apply_ltbi_state_edit,
+    enable_development_compatibility_mode,
     resolve_ltbi_state_assumptions,
 )
 
@@ -136,6 +137,10 @@ def apply_ltbi_state_assumption_update(
     )
 
 
+def apply_ltbi_state_development_compatibility(config: dict[str, Any]) -> dict[str, Any]:
+    return enable_development_compatibility_mode(config)
+
+
 def ltbi_state_display_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
     state = resolve_ltbi_state_assumptions(config)
     return [
@@ -155,6 +160,11 @@ def ltbi_state_display_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
         {"Assumption": "State definition", "Value": state["stateDefinition"]},
         {"Assumption": "Source", "Value": state["source"]},
         {"Assumption": "Status", "Value": state["status"]},
+        {
+            "Assumption": "Development compatibility mode",
+            "Value": state["developmentCompatibilityMode"],
+        },
+        {"Assumption": "Provisional result", "Value": state["provisional"]},
         {"Assumption": "Warning", "Value": state["warning"] or ""},
     ]
 

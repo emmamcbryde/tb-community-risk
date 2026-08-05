@@ -14,6 +14,7 @@ from adapters.paths import repo_root
 from adapters.python_apy_backend import PythonApyBackend
 from app.epidemiology_inputs import (
     apply_epidemiology_updates,
+    apply_ltbi_state_development_compatibility,
     apply_ltbi_state_assumption_update,
     fraction_to_percent,
     ltbi_state_display_rows,
@@ -85,10 +86,28 @@ class PhysicianWorkflowHelperTests(unittest.TestCase):
             rows,
         )
 
+    def test_ltbi_state_ui_rows_show_development_compatibility_flags(self) -> None:
+        rows = ltbi_state_display_rows(
+            apply_ltbi_state_development_compatibility(build_default_config())
+        )
+
+        self.assertIn(
+            {"Assumption": "Development compatibility mode", "Value": True},
+            rows,
+        )
+        self.assertIn({"Assumption": "Provisional result", "Value": True}, rows)
+
 
 class PythonApyPrevalencePathTests(unittest.TestCase):
     def test_custom_ltbi_prevalence_reaches_calibration(self) -> None:
-        cfg = build_default_config()
+        cfg = apply_ltbi_state_assumption_update(
+            build_default_config(),
+            baseline_recent_percent=25.0,
+            transition_rate_per_year=0.2,
+            source="Reviewed unit-test LTBI-state fixture",
+            status="configured",
+            notes="",
+        )
         cfg["ltbiPrevalence"] = 0.01
         cfg["activeTBPrevalence"] = (10 / 770) * 0.01 / (47 / 624)
         calibration = calibrate_from_config(cfg)
@@ -97,7 +116,14 @@ class PythonApyPrevalencePathTests(unittest.TestCase):
 
     def test_low_prevalence_changes_python_yield_without_matlab(self) -> None:
         self.assertNotIn("matlab.engine", sys.modules)
-        default_cfg = build_default_config()
+        default_cfg = apply_ltbi_state_assumption_update(
+            build_default_config(),
+            baseline_recent_percent=25.0,
+            transition_rate_per_year=0.2,
+            source="Reviewed unit-test LTBI-state fixture",
+            status="configured",
+            notes="",
+        )
         default_cfg.update({"N": 300, "nReps": 20, "seed": 4, "screenCoverage": 1.0})
         low_cfg = dict(default_cfg)
         low_cfg["ltbiPrevalence"] = 0.01
@@ -165,7 +191,7 @@ class PythonApyPrevalencePathTests(unittest.TestCase):
 
 class WorkbookExportTests(unittest.TestCase):
     def test_workbook_contains_required_sheets_and_values(self) -> None:
-        cfg = build_default_config()
+        cfg = apply_ltbi_state_development_compatibility(build_default_config())
         cfg.update({"N": 80, "nReps": 3, "seed": 3, "ltbiPrevalence": 0.02})
         bundle = PythonApyBackend(repo_root()).run_scenario_bundle(cfg)
         payload = build_results_workbook(
@@ -193,6 +219,7 @@ class WorkbookExportTests(unittest.TestCase):
         self.assertIn(("LTBI prevalence input", 0.02, "percentage"), scenario_values)
         self.assertIn(("LTBI-state model", "continuous_markov_recent_remote", None), scenario_values)
         self.assertIn(("recent-state implied mean residence time", 5, "years"), scenario_values)
+        self.assertIn(("LTBI state development compatibility mode", True, None), scenario_values)
         self.assertIn(("LTBI state provisional result", True, None), scenario_values)
         economics_values = list(wb["Economics"].iter_rows(values_only=True))
         self.assertIn(("Economics not run", None, "No zero values have been substituted for missing economics outputs."), economics_values)
@@ -266,6 +293,14 @@ class HostedDeploymentSafetyTests(unittest.TestCase):
         backend = PythonApyBackend(repo_root())
         config = backend.default_config()
         config.update({"N": 100, "nReps": 5, "seed": 9})
+        config = apply_ltbi_state_assumption_update(
+            config,
+            baseline_recent_percent=25.0,
+            transition_rate_per_year=0.2,
+            source="Reviewed unit-test LTBI-state fixture",
+            status="configured",
+            notes="",
+        )
         config = apply_epidemiology_updates(
             config,
             use_default_ltbi_prevalence=False,
