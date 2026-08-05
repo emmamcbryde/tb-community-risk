@@ -17,6 +17,7 @@ from engine.apy.cohort import (
 )
 from engine.apy.config import normalise_config
 from engine.apy.eligibility import resolve_eligibility, screening_coverage_of_population
+from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from engine.apy.regimen import (
     apply_regimen_overrides,
     default_regimen_library,
@@ -33,17 +34,27 @@ RAW_FIELDS = [
     "regimen",
     "nScreened",
     "nInfected",
+    "nRecentLTBIAtBaseline",
+    "nRemoteLTBIAtBaseline",
     "nLatentAtScreen",
+    "nRecentLatentAtScreen",
+    "nRemoteLatentAtScreen",
     "nActiveAtScreen",
     "nTruePositiveLatent",
+    "nTruePositiveRecent",
+    "nTruePositiveRemote",
     "nTestPositiveActive",
     "nFalseNegativeLatent",
     "nTestNegativeActive",
     "nTrueNegative",
     "nTPTEligible",
     "nTPTStartedTruePositive",
+    "nTPTStartedRecent",
+    "nTPTStartedRemote",
     "nTPTStartedFalsePositive",
     "nTPTCompletedTruePositive",
+    "nTPTCompletedRecent",
+    "nTPTCompletedRemote",
     "nTPTCompletedFalsePositive",
     "nTPTADRstopTruePositive",
     "nTPTADRstopFalsePositive",
@@ -77,9 +88,13 @@ RAW_FIELDS = [
     "nTotalCoursesStarted",
     "nTotalCoursesCompleted",
     "nCuredInfection",
+    "nCuredInfectionRecent",
+    "nCuredInfectionRemote",
     "nCuredInfectionFull",
     "nCuredInfectionPartial",
     "nPreventedActiveTB",
+    "nPreventedActiveTBRecent",
+    "nPreventedActiveTBRemote",
     "nPreventedActiveTBFull",
     "nPreventedActiveTBPartial",
     "nActiveBy2y",
@@ -116,6 +131,8 @@ COHORT_COLUMNS = [
     "alcoholDrugs",
     "pInfection",
     "infected",
+    "recentLTBIAtBaseline",
+    "remoteLTBIAtBaseline",
     "diseaseMultiplier",
     "ltbiRiskScore",
     "cureTargetScore",
@@ -123,10 +140,13 @@ COHORT_COLUMNS = [
     "screenPriorityScore",
     "screenPriorityRank",
     "tActiveUntreated",
+    "tRecentToRemote",
     "screened",
     "screenTime",
     "activeAtScreen",
     "latentAtScreen",
+    "recentLatentAtScreen",
+    "remoteLatentAtScreen",
     "testSensitivityUsed",
     "testSpecificityUsed",
     "testSpecificityNoBCGCounterfactual",
@@ -150,9 +170,13 @@ COHORT_COLUMNS = [
     "excessCourseStartedDueToBCG",
     "excessCourseCompletedDueToBCG",
     "curedInfection",
+    "curedInfectionRecent",
+    "curedInfectionRemote",
     "curedInfectionFull",
     "curedInfectionPartial",
     "preventedActiveTB",
+    "preventedActiveTBRecent",
+    "preventedActiveTBRemote",
     "preventedActiveTBFull",
     "preventedActiveTBPartial",
 ]
@@ -182,17 +206,23 @@ def simulate_one_cohort(
         opts["screenWindow"],
         opts["followHorizon"],
         opts["earlyProgressionPeriodYears"],
+        opts["baselineRecentLTBIProportion"],
+        opts["recentToRemoteTransitionRatePerYear"],
     )
-    t_active = draw_untreated_active_times(
-        population["infected"],
-        population["diseaseMultiplier"],
-        calibration["lambdaEarly"],
-        calibration["lambdaLate"],
-        opts["screenWindow"],
-        rng,
-        opts["earlyProgressionPeriodYears"],
+    recent_at_baseline, remote_at_baseline, t_recent_to_remote, t_active = (
+        _draw_ltbi_state_history(
+            population["infected"],
+            population["diseaseMultiplier"],
+            calibration["lambdaEarly"],
+            calibration["lambdaLate"],
+            opts["baselineRecentLTBIProportion"],
+            opts["recentToRemoteTransitionRatePerYear"],
+            rng,
+        )
     )
-
+    population["recentLTBIAtBaseline"] = recent_at_baseline
+    population["remoteLTBIAtBaseline"] = remote_at_baseline
+    population["tRecentToRemote"] = t_recent_to_remote
     screened, screen_priority_score, screen_priority_rank = select_screened_people(
         population["ltbiRiskScore"],
         population["cureTargetScore"],
@@ -208,6 +238,10 @@ def simulate_one_cohort(
     infected = population["infected"]
     active_at_screen = screened & infected & (t_active <= screen_time)
     latent_at_screen = screened & infected & (t_active > screen_time)
+    recent_latent_at_screen = (
+        latent_at_screen & recent_at_baseline & (screen_time < t_recent_to_remote)
+    )
+    remote_latent_at_screen = latent_at_screen & ~recent_latent_at_screen
 
     test_sensitivity, test_specificity = get_test_performance(population["BCG"], opts)
     no_bcg_specificity = get_counterfactual_no_bcg_specificity(population["BCG"], opts)
@@ -230,6 +264,8 @@ def simulate_one_cohort(
 
     false_positive_test = screened & ~infected & test_positive
     true_positive_latent = latent_at_screen & test_positive
+    true_positive_recent = recent_latent_at_screen & test_positive
+    true_positive_remote = remote_latent_at_screen & test_positive
     test_positive_active = active_at_screen & test_positive
     false_negative_latent = latent_at_screen & ~test_positive
     test_negative_active = active_at_screen & ~test_positive
@@ -282,8 +318,12 @@ def simulate_one_cohort(
 
     false_positive_treated = started_tpt & ~infected
     true_positive_treated = started_tpt & latent_at_screen
+    tpt_started_recent = started_tpt & recent_latent_at_screen
+    tpt_started_remote = started_tpt & remote_latent_at_screen
     false_positive_completed = completed_tpt & ~infected
     true_positive_completed = completed_tpt & latent_at_screen
+    tpt_completed_recent = completed_tpt & recent_latent_at_screen
+    tpt_completed_remote = completed_tpt & remote_latent_at_screen
     true_positive_adr_stop = adr_stop & latent_at_screen
     false_positive_adr_stop = adr_stop & ~infected
     true_positive_stopped_other = stopped_other & latent_at_screen
@@ -311,7 +351,11 @@ def simulate_one_cohort(
     )
     protected_any = protected_full | protected_partial
     cured_infection = protected_any
+    cured_infection_recent = protected_any & recent_latent_at_screen
+    cured_infection_remote = protected_any & remote_latent_at_screen
     prevented_active_tb = protected_any & (t_active <= opts["followHorizon"])
+    prevented_active_tb_recent = prevented_active_tb & recent_latent_at_screen
+    prevented_active_tb_remote = prevented_active_tb & remote_latent_at_screen
     prevented_active_tb_full = protected_full & (t_active <= opts["followHorizon"])
     prevented_active_tb_partial = protected_partial & (t_active <= opts["followHorizon"])
     active_by_2y = infected & (t_active <= opts["activeTBCalibrationHorizonYears"])
@@ -325,7 +369,11 @@ def simulate_one_cohort(
         uninf_screened,
         active_at_screen,
         latent_at_screen,
+        recent_latent_at_screen,
+        remote_latent_at_screen,
         true_positive_latent,
+        true_positive_recent,
+        true_positive_remote,
         test_positive_active,
         false_negative_latent,
         test_negative_active,
@@ -346,8 +394,12 @@ def simulate_one_cohort(
         eligible_tpt,
         started_tpt,
         true_positive_treated,
+        tpt_started_recent,
+        tpt_started_remote,
         completed_tpt,
         true_positive_completed,
+        tpt_completed_recent,
+        tpt_completed_remote,
         adr_stop,
         true_positive_adr_stop,
         false_positive_adr_stop,
@@ -355,9 +407,13 @@ def simulate_one_cohort(
         true_positive_stopped_other,
         false_positive_stopped_other,
         cured_infection,
+        cured_infection_recent,
+        cured_infection_remote,
         protected_full,
         protected_partial,
         prevented_active_tb,
+        prevented_active_tb_recent,
+        prevented_active_tb_remote,
         prevented_active_tb_full,
         prevented_active_tb_partial,
         active_by_2y,
@@ -372,7 +428,11 @@ def simulate_one_cohort(
         screen_time,
         active_at_screen,
         latent_at_screen,
+        recent_latent_at_screen,
+        remote_latent_at_screen,
         true_positive_latent,
+        true_positive_recent,
+        true_positive_remote,
         test_positive_active,
         false_negative_latent,
         test_negative_active,
@@ -384,9 +444,13 @@ def simulate_one_cohort(
         eligible_tpt,
         started_tpt,
         true_positive_treated,
+        tpt_started_recent,
+        tpt_started_remote,
         false_positive_treated,
         completed_tpt,
         true_positive_completed,
+        tpt_completed_recent,
+        tpt_completed_remote,
         false_positive_completed,
         adr_stop,
         true_positive_adr_stop,
@@ -395,9 +459,13 @@ def simulate_one_cohort(
         true_positive_stopped_other,
         false_positive_stopped_other,
         cured_infection,
+        cured_infection_recent,
+        cured_infection_remote,
         protected_full,
         protected_partial,
         prevented_active_tb,
+        prevented_active_tb_recent,
+        prevented_active_tb_remote,
         course_stop_time,
     )
 
@@ -408,10 +476,13 @@ def simulate_one_cohort(
             screen_priority_score,
             screen_priority_rank,
             t_active,
+            t_recent_to_remote,
             screened,
             screen_time,
             active_at_screen,
             latent_at_screen,
+            recent_latent_at_screen,
+            remote_latent_at_screen,
             test_sensitivity,
             test_specificity,
             no_bcg_specificity,
@@ -435,9 +506,13 @@ def simulate_one_cohort(
             excess_course_started_due_to_bcg,
             excess_course_completed_due_to_bcg,
             cured_infection,
+            cured_infection_recent,
+            cured_infection_remote,
             protected_full,
             protected_partial,
             prevented_active_tb,
+            prevented_active_tb_recent,
+            prevented_active_tb_remote,
             prevented_active_tb_full,
             prevented_active_tb_partial,
         )
@@ -503,10 +578,61 @@ def get_counterfactual_no_bcg_specificity(bcg, config) -> np.ndarray:
     return cohort_counterfactual_specificity(bcg, opts)
 
 
+def _draw_ltbi_state_history(
+    infected,
+    mult_disease,
+    lambda_early: float,
+    lambda_late: float,
+    baseline_recent_proportion: float,
+    recent_to_remote_rate: float,
+    rng,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    infected_array = np.asarray(infected, dtype=bool)
+    mult = np.asarray(mult_disease, dtype=float)
+    recent = np.zeros(infected_array.shape, dtype=bool)
+    remote = np.zeros(infected_array.shape, dtype=bool)
+    transition_time = np.full(infected_array.shape, np.inf, dtype=float)
+    active_time = np.full(infected_array.shape, np.inf, dtype=float)
+    idx_inf = np.flatnonzero(infected_array)
+    if len(idx_inf) == 0:
+        return recent, remote, transition_time, active_time
+
+    recent_draw = rng.random(len(idx_inf)) < float(baseline_recent_proportion)
+    recent_idx = idx_inf[recent_draw]
+    remote_idx = idx_inf[~recent_draw]
+    recent[recent_idx] = True
+    remote[remote_idx] = True
+
+    if len(recent_idx) > 0:
+        early_rate = lambda_early * mult[recent_idx]
+        t_active_early = rng.exponential(scale=1.0 / early_rate)
+        t_transition = rng.exponential(
+            scale=np.full(len(recent_idx), 1.0 / float(recent_to_remote_rate))
+        )
+        transition_time[recent_idx] = t_transition
+        active_before_transition = t_active_early <= t_transition
+        active_time[recent_idx[active_before_transition]] = t_active_early[
+            active_before_transition
+        ]
+        transitioned = recent_idx[~active_before_transition]
+        if len(transitioned) > 0:
+            late_rate = lambda_late * mult[transitioned]
+            active_time[transitioned] = t_transition[
+                ~active_before_transition
+            ] + rng.exponential(scale=1.0 / late_rate)
+
+    if len(remote_idx) > 0:
+        late_rate = lambda_late * mult[remote_idx]
+        active_time[remote_idx] = rng.exponential(scale=1.0 / late_rate)
+
+    return recent, remote, transition_time, active_time
+
+
 def _simulation_options(config: dict[str, Any]) -> dict[str, Any]:
     cfg = normalise_config(config)
     timing = resolve_time_settings(cfg)
     eligibility = resolve_eligibility(cfg)
+    ltbi_state = resolve_ltbi_state_assumptions(cfg)
     screen_coverage_of_population = screening_coverage_of_population(
         cfg, eligibility["number"]
     )
@@ -539,6 +665,14 @@ def _simulation_options(config: dict[str, Any]) -> dict[str, Any]:
         "tstSensitivity": coerce_probability(cfg.get("tstSensitivity"), 0.80),
         "tstSpecificityBCG": coerce_probability(cfg.get("tstSpecificityBCG"), 0.55),
         "tstSpecificityNoBCG": coerce_probability(tst_no_bcg, 0.97),
+        "baselineRecentLTBIProportion": float(
+            ltbi_state["baselineRecentLTBIProportion"]
+        ),
+        "recentToRemoteTransitionRatePerYear": float(
+            ltbi_state["recentToRemoteTransitionRatePerYear"]
+        ),
+        "ltbiStateAssumptionStatus": ltbi_state["status"],
+        "ltbiStateWarning": ltbi_state.get("warning"),
     }
 
 
@@ -548,7 +682,11 @@ def _build_raw(opts: dict[str, Any], reg: dict[str, Any], population, *arrays) -
         uninf_screened,
         active_at_screen,
         latent_at_screen,
+        recent_latent_at_screen,
+        remote_latent_at_screen,
         true_positive_latent,
+        true_positive_recent,
+        true_positive_remote,
         test_positive_active,
         false_negative_latent,
         test_negative_active,
@@ -569,8 +707,12 @@ def _build_raw(opts: dict[str, Any], reg: dict[str, Any], population, *arrays) -
         eligible_tpt,
         started_tpt,
         true_positive_treated,
+        tpt_started_recent,
+        tpt_started_remote,
         completed_tpt,
         true_positive_completed,
+        tpt_completed_recent,
+        tpt_completed_remote,
         adr_stop,
         true_positive_adr_stop,
         false_positive_adr_stop,
@@ -578,9 +720,13 @@ def _build_raw(opts: dict[str, Any], reg: dict[str, Any], population, *arrays) -
         true_positive_stopped_other,
         false_positive_stopped_other,
         cured_infection,
+        cured_infection_recent,
+        cured_infection_remote,
         protected_full,
         protected_partial,
         prevented_active_tb,
+        prevented_active_tb_recent,
+        prevented_active_tb_remote,
         prevented_active_tb_full,
         prevented_active_tb_partial,
         active_by_2y,
@@ -607,17 +753,27 @@ def _build_raw(opts: dict[str, Any], reg: dict[str, Any], population, *arrays) -
         "regimen": reg["label"],
         "nScreened": n_screened,
         "nInfected": int(infected.sum()),
+        "nRecentLTBIAtBaseline": int(population["recentLTBIAtBaseline"].sum()),
+        "nRemoteLTBIAtBaseline": int(population["remoteLTBIAtBaseline"].sum()),
         "nLatentAtScreen": int(latent_at_screen.sum()),
+        "nRecentLatentAtScreen": int(recent_latent_at_screen.sum()),
+        "nRemoteLatentAtScreen": int(remote_latent_at_screen.sum()),
         "nActiveAtScreen": int(active_at_screen.sum()),
         "nTruePositiveLatent": int(true_positive_latent.sum()),
+        "nTruePositiveRecent": int(true_positive_recent.sum()),
+        "nTruePositiveRemote": int(true_positive_remote.sum()),
         "nTestPositiveActive": int(test_positive_active.sum()),
         "nFalseNegativeLatent": int(false_negative_latent.sum()),
         "nTestNegativeActive": int(test_negative_active.sum()),
         "nTrueNegative": int(true_negative.sum()),
         "nTPTEligible": int(eligible_tpt.sum()),
         "nTPTStartedTruePositive": int(true_positive_treated.sum()),
+        "nTPTStartedRecent": int(tpt_started_recent.sum()),
+        "nTPTStartedRemote": int(tpt_started_remote.sum()),
         "nTPTStartedFalsePositive": int(false_positive_treated.sum()),
         "nTPTCompletedTruePositive": int(true_positive_completed.sum()),
+        "nTPTCompletedRecent": int(tpt_completed_recent.sum()),
+        "nTPTCompletedRemote": int(tpt_completed_remote.sum()),
         "nTPTCompletedFalsePositive": int(false_positive_completed.sum()),
         "nTPTADRstopTruePositive": int(true_positive_adr_stop.sum()),
         "nTPTADRstopFalsePositive": int(false_positive_adr_stop.sum()),
@@ -651,9 +807,13 @@ def _build_raw(opts: dict[str, Any], reg: dict[str, Any], population, *arrays) -
         "nTotalCoursesStarted": n_started,
         "nTotalCoursesCompleted": n_completed,
         "nCuredInfection": n_cured,
+        "nCuredInfectionRecent": int(cured_infection_recent.sum()),
+        "nCuredInfectionRemote": int(cured_infection_remote.sum()),
         "nCuredInfectionFull": int(protected_full.sum()),
         "nCuredInfectionPartial": int(protected_partial.sum()),
         "nPreventedActiveTB": n_prevented,
+        "nPreventedActiveTBRecent": int(prevented_active_tb_recent.sum()),
+        "nPreventedActiveTBRemote": int(prevented_active_tb_remote.sum()),
         "nPreventedActiveTBFull": int(prevented_active_tb_full.sum()),
         "nPreventedActiveTBPartial": int(prevented_active_tb_partial.sum()),
         "nActiveBy2y": int(active_by_2y.sum()),
@@ -694,7 +854,11 @@ def _build_event_ledger_data(
     screen_time,
     active_at_screen,
     latent_at_screen,
+    recent_latent_at_screen,
+    remote_latent_at_screen,
     true_positive_latent,
+    true_positive_recent,
+    true_positive_remote,
     test_positive_active,
     false_negative_latent,
     test_negative_active,
@@ -706,9 +870,13 @@ def _build_event_ledger_data(
     eligible_tpt,
     started_tpt,
     true_positive_treated,
+    tpt_started_recent,
+    tpt_started_remote,
     false_positive_treated,
     completed_tpt,
     true_positive_completed,
+    tpt_completed_recent,
+    tpt_completed_remote,
     false_positive_completed,
     adr_stop,
     true_positive_adr_stop,
@@ -717,9 +885,13 @@ def _build_event_ledger_data(
     true_positive_stopped_other,
     false_positive_stopped_other,
     cured_infection,
+    cured_infection_recent,
+    cured_infection_remote,
     protected_full,
     protected_partial,
     prevented_active_tb,
+    prevented_active_tb_recent,
+    prevented_active_tb_remote,
     course_stop_time,
 ) -> dict[str, Any]:
     infected = population["infected"]
@@ -732,11 +904,18 @@ def _build_event_ledger_data(
         "population": int(n),
         "eligible_population": float(opts["eligiblePopulation"]),
         "screened": int(screened.sum()),
+        "infected_at_baseline": int(infected.sum()),
         "infected_screened": int((screened & infected).sum()),
         "uninfected_screened": int(uninfected_screened.sum()),
+        "recent_ltbi_at_baseline": int(population["recentLTBIAtBaseline"].sum()),
+        "remote_ltbi_at_baseline": int(population["remoteLTBIAtBaseline"].sum()),
         "latent_infected_at_screen": int(latent_at_screen.sum()),
+        "recent_latent_at_screen": int(recent_latent_at_screen.sum()),
+        "remote_latent_at_screen": int(remote_latent_at_screen.sum()),
         "active_tb_at_screen": int(active_at_screen.sum()),
         "true_positive_latent": int(true_positive_latent.sum()),
+        "true_positive_recent": int(true_positive_recent.sum()),
+        "true_positive_remote": int(true_positive_remote.sum()),
         "test_positive_active": int(test_positive_active.sum()),
         "false_positive": int(false_positive_test.sum()),
         "false_negative_latent": int(false_negative_latent.sum()),
@@ -746,9 +925,13 @@ def _build_event_ledger_data(
         "test_negative_total": int((false_negative_latent | test_negative_active | true_negative).sum()),
         "tpt_eligible": int(eligible_tpt.sum()),
         "tpt_started_true_positive": int(true_positive_treated.sum()),
+        "tpt_started_recent": int(tpt_started_recent.sum()),
+        "tpt_started_remote": int(tpt_started_remote.sum()),
         "tpt_started_false_positive": int(false_positive_treated.sum()),
         "tpt_started_total": int(started_tpt.sum()),
         "tpt_completed_true_positive": int(true_positive_completed.sum()),
+        "tpt_completed_recent": int(tpt_completed_recent.sum()),
+        "tpt_completed_remote": int(tpt_completed_remote.sum()),
         "tpt_completed_false_positive": int(false_positive_completed.sum()),
         "tpt_completed_total": int(completed_tpt.sum()),
         "tpt_adr_stop_true_positive": int(true_positive_adr_stop.sum()),
@@ -763,19 +946,30 @@ def _build_event_ledger_data(
         "infection_effectively_treated_full": int(protected_full.sum()),
         "infection_effectively_treated_partial": int(protected_partial.sum()),
         "infection_effectively_treated_total": int(cured_infection.sum()),
+        "infection_effectively_treated_recent": int(cured_infection_recent.sum()),
+        "infection_effectively_treated_remote": int(cured_infection_remote.sum()),
         "active_tb_cases": int(intervention_active.sum()),
         "active_tb_cases_prevented": int(prevented_active_tb.sum()),
+        "active_tb_cases_prevented_recent": int(prevented_active_tb_recent.sum()),
+        "active_tb_cases_prevented_remote": int(prevented_active_tb_remote.sum()),
         "false_positive_bcg": int(false_positive_test_bcg.sum()),
         "false_positive_no_bcg": int(false_positive_test_no_bcg.sum()),
         "false_positive_due_to_bcg": int(false_positive_due_to_bcg.sum()),
     }
     event_times = {
         "screened": screen_time[screened],
+        "infected_at_baseline": np.zeros(int(infected.sum())),
         "infected_screened": screen_time[screened & infected],
         "uninfected_screened": screen_time[uninfected_screened],
+        "recent_ltbi_at_baseline": np.zeros(int(population["recentLTBIAtBaseline"].sum())),
+        "remote_ltbi_at_baseline": np.zeros(int(population["remoteLTBIAtBaseline"].sum())),
         "latent_infected_at_screen": screen_time[latent_at_screen],
+        "recent_latent_at_screen": screen_time[recent_latent_at_screen],
+        "remote_latent_at_screen": screen_time[remote_latent_at_screen],
         "active_tb_at_screen": screen_time[active_at_screen],
         "true_positive_latent": screen_time[true_positive_latent],
+        "true_positive_recent": screen_time[true_positive_recent],
+        "true_positive_remote": screen_time[true_positive_remote],
         "test_positive_active": screen_time[test_positive_active],
         "false_positive": screen_time[false_positive_test],
         "false_negative_latent": screen_time[false_negative_latent],
@@ -785,9 +979,13 @@ def _build_event_ledger_data(
         "test_negative_total": screen_time[false_negative_latent | test_negative_active | true_negative],
         "tpt_eligible": screen_time[eligible_tpt],
         "tpt_started_true_positive": screen_time[true_positive_treated],
+        "tpt_started_recent": screen_time[tpt_started_recent],
+        "tpt_started_remote": screen_time[tpt_started_remote],
         "tpt_started_false_positive": screen_time[false_positive_treated],
         "tpt_started_total": screen_time[started_tpt],
         "tpt_completed_true_positive": course_stop_time[true_positive_completed],
+        "tpt_completed_recent": course_stop_time[tpt_completed_recent],
+        "tpt_completed_remote": course_stop_time[tpt_completed_remote],
         "tpt_completed_false_positive": course_stop_time[false_positive_completed],
         "tpt_completed_total": course_stop_time[completed_tpt],
         "tpt_adr_stop_true_positive": course_stop_time[true_positive_adr_stop],
@@ -802,8 +1000,12 @@ def _build_event_ledger_data(
         "infection_effectively_treated_full": course_stop_time[protected_full],
         "infection_effectively_treated_partial": course_stop_time[protected_partial],
         "infection_effectively_treated_total": course_stop_time[cured_infection],
+        "infection_effectively_treated_recent": course_stop_time[cured_infection_recent],
+        "infection_effectively_treated_remote": course_stop_time[cured_infection_remote],
         "active_tb_cases": t_active[intervention_active],
         "active_tb_cases_prevented": t_active[prevented_active_tb],
+        "active_tb_cases_prevented_recent": t_active[prevented_active_tb_recent],
+        "active_tb_cases_prevented_remote": t_active[prevented_active_tb_remote],
         "false_positive_bcg": screen_time[false_positive_test_bcg],
         "false_positive_no_bcg": screen_time[false_positive_test_no_bcg],
         "false_positive_due_to_bcg": screen_time[false_positive_due_to_bcg],
@@ -820,10 +1022,13 @@ def _build_cohort_dataframe(population: dict[str, np.ndarray], *arrays) -> pd.Da
         screen_priority_score,
         screen_priority_rank,
         t_active,
+        t_recent_to_remote,
         screened,
         screen_time,
         active_at_screen,
         latent_at_screen,
+        recent_latent_at_screen,
+        remote_latent_at_screen,
         test_sensitivity,
         test_specificity,
         no_bcg_specificity,
@@ -847,9 +1052,13 @@ def _build_cohort_dataframe(population: dict[str, np.ndarray], *arrays) -> pd.Da
         excess_course_started_due_to_bcg,
         excess_course_completed_due_to_bcg,
         cured_infection,
+        cured_infection_recent,
+        cured_infection_remote,
         protected_full,
         protected_partial,
         prevented_active_tb,
+        prevented_active_tb_recent,
+        prevented_active_tb_remote,
         prevented_active_tb_full,
         prevented_active_tb_partial,
     ) = arrays
@@ -870,6 +1079,8 @@ def _build_cohort_dataframe(population: dict[str, np.ndarray], *arrays) -> pd.Da
             "alcoholDrugs": population["alcohol"],
             "pInfection": population["pInfection"],
             "infected": population["infected"],
+            "recentLTBIAtBaseline": population["recentLTBIAtBaseline"],
+            "remoteLTBIAtBaseline": population["remoteLTBIAtBaseline"],
             "diseaseMultiplier": population["diseaseMultiplier"],
             "ltbiRiskScore": population["ltbiRiskScore"],
             "cureTargetScore": population["cureTargetScore"],
@@ -877,10 +1088,13 @@ def _build_cohort_dataframe(population: dict[str, np.ndarray], *arrays) -> pd.Da
             "screenPriorityScore": screen_priority_score,
             "screenPriorityRank": screen_priority_rank,
             "tActiveUntreated": t_active,
+            "tRecentToRemote": t_recent_to_remote,
             "screened": screened,
             "screenTime": screen_time,
             "activeAtScreen": active_at_screen,
             "latentAtScreen": latent_at_screen,
+            "recentLatentAtScreen": recent_latent_at_screen,
+            "remoteLatentAtScreen": remote_latent_at_screen,
             "testSensitivityUsed": test_sensitivity,
             "testSpecificityUsed": test_specificity,
             "testSpecificityNoBCGCounterfactual": no_bcg_specificity,
@@ -904,9 +1118,13 @@ def _build_cohort_dataframe(population: dict[str, np.ndarray], *arrays) -> pd.Da
             "excessCourseStartedDueToBCG": excess_course_started_due_to_bcg,
             "excessCourseCompletedDueToBCG": excess_course_completed_due_to_bcg,
             "curedInfection": cured_infection,
+            "curedInfectionRecent": cured_infection_recent,
+            "curedInfectionRemote": cured_infection_remote,
             "curedInfectionFull": protected_full,
             "curedInfectionPartial": protected_partial,
             "preventedActiveTB": prevented_active_tb,
+            "preventedActiveTBRecent": prevented_active_tb_recent,
+            "preventedActiveTBRemote": prevented_active_tb_remote,
             "preventedActiveTBFull": prevented_active_tb_full,
             "preventedActiveTBPartial": prevented_active_tb_partial,
         },

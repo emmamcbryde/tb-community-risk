@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from engine.apy.scenario import (
     DEFAULT_COMPARATOR,
     DEFAULT_INTERVENTION,
@@ -13,7 +14,7 @@ from engine.apy.scenario import (
 )
 
 
-EVENT_LEDGER_CONTRACT_VERSION = "ltbi_screening_event_ledger_v2"
+EVENT_LEDGER_CONTRACT_VERSION = "ltbi_screening_event_ledger_v3"
 YEAR_BIN_CONVENTION = (
     "model year 0 is [0,1), model year 1 is [1,2), and the final interval "
     "may be shorter for a non-integer follow-up horizon; programme events after "
@@ -28,9 +29,16 @@ EVENT_DEFINITIONS = [
     ("screened", "Screened", "people", "People receiving the systematic LTBI screening test."),
     ("infected_screened", "Infected screened", "people", "Screened people with MTB infection at baseline."),
     ("uninfected_screened", "Uninfected screened", "people", "Screened people without MTB infection."),
+    ("infected_at_baseline", "Infected at baseline", "people", "People with prevalent MTB infection at intervention start."),
+    ("recent_ltbi_at_baseline", "Recent LTBI at baseline", "people", "Prevalent infection in the recent compartment at intervention start."),
+    ("remote_ltbi_at_baseline", "Remote LTBI at baseline", "people", "Prevalent infection in the remote compartment at intervention start."),
     ("latent_infected_at_screen", "Latent infected at screen", "people", "Screened infected people who have not developed active TB by screening time."),
+    ("recent_latent_at_screen", "Recent latent at screen", "people", "Screened infected people still latent and in the recent compartment at screening time."),
+    ("remote_latent_at_screen", "Remote latent at screen", "people", "Screened infected people still latent and in the remote compartment at screening time."),
     ("active_tb_at_screen", "Active TB at screen", "people", "Screened infected people whose untreated active-TB onset time is at or before screening time; this is not assumed to be screen-detected active TB."),
     ("true_positive_latent", "True-positive latent", "people", "Test-positive person who is infected and latent at the time of screening."),
+    ("true_positive_recent", "True-positive recent", "people", "Test-positive latent person in the recent compartment at screening time."),
+    ("true_positive_remote", "True-positive remote", "people", "Test-positive latent person in the remote compartment at screening time."),
     ("test_positive_active", "Test-positive active", "people", "Test-positive person who already has active TB at the time of screening."),
     ("false_positive", "False positive", "people", "Positive LTBI test in an uninfected person."),
     ("false_negative_latent", "False-negative latent", "people", "Test-negative person who is infected and latent at the time of screening."),
@@ -40,9 +48,13 @@ EVENT_DEFINITIONS = [
     ("test_negative_total", "Test-negative total", "people", "All negative LTBI test results."),
     ("tpt_eligible", "TPT eligible", "people", "People eligible for preventive treatment after LTBI testing: true-positive latent plus false-positive results."),
     ("tpt_started_true_positive", "TPT started, true positive", "people", "True-positive latent people starting preventive treatment."),
+    ("tpt_started_recent", "TPT started, recent", "people", "True-positive recent latent people starting preventive treatment."),
+    ("tpt_started_remote", "TPT started, remote", "people", "True-positive remote latent people starting preventive treatment."),
     ("tpt_started_false_positive", "TPT started, false positive", "people", "False-positive people starting preventive treatment."),
     ("tpt_started_total", "TPT started total", "people", "All preventive treatment starts."),
     ("tpt_completed_true_positive", "TPT completed, true positive", "people", "True-positive latent people completing preventive treatment."),
+    ("tpt_completed_recent", "TPT completed, recent", "people", "True-positive recent latent people completing preventive treatment."),
+    ("tpt_completed_remote", "TPT completed, remote", "people", "True-positive remote latent people completing preventive treatment."),
     ("tpt_completed_false_positive", "TPT completed, false positive", "people", "False-positive people completing preventive treatment."),
     ("tpt_completed_total", "TPT completed total", "people", "All preventive treatment completions."),
     ("tpt_adr_stop_true_positive", "TPT ADR stop, true positive", "people", "True-positive latent people stopping preventive treatment because of adverse events."),
@@ -57,8 +69,12 @@ EVENT_DEFINITIONS = [
     ("infection_effectively_treated_full", "Infection effectively treated, full", "people", "True infections effectively treated after full-course preventive treatment."),
     ("infection_effectively_treated_partial", "Infection effectively treated, partial", "people", "True infections effectively treated after partial-course preventive treatment."),
     ("infection_effectively_treated_total", "Infection effectively treated total", "people", "True infections effectively treated by preventive treatment; compatibility alias for nCuredInfection."),
+    ("infection_effectively_treated_recent", "Infection effectively treated, recent", "people", "True infections effectively treated among people recent latent at screening."),
+    ("infection_effectively_treated_remote", "Infection effectively treated, remote", "people", "True infections effectively treated among people remote latent at screening."),
     ("active_tb_cases", "Active TB cases", "cases", "Untreated active TB cases in the comparator arm or remaining active TB cases in the intervention arm."),
     ("active_tb_cases_prevented", "Active TB cases prevented", "cases", "Active TB cases prevented by effective treatment, timed at untreated onset."),
+    ("active_tb_cases_prevented_recent", "Active TB cases prevented, recent", "cases", "Prevented active TB among people recent latent at screening."),
+    ("active_tb_cases_prevented_remote", "Active TB cases prevented, remote", "cases", "Prevented active TB among people remote latent at screening."),
     ("false_positive_bcg", "False positive, BCG", "people", "False-positive LTBI tests among BCG-vaccinated screened uninfected people."),
     ("false_positive_no_bcg", "False positive, no BCG", "people", "False-positive LTBI tests among non-BCG screened uninfected people."),
     ("false_positive_due_to_bcg", "False positive due to BCG", "people", "Additive BCG-attributable false-positive tests where supported."),
@@ -66,7 +82,19 @@ EVENT_DEFINITIONS = [
 
 
 EVENT_NAMES = [row[0] for row in EVENT_DEFINITIONS]
-CORE_ZERO_COMPARATOR_EVENTS = [name for name in EVENT_NAMES if name not in {"population", "eligible_population", "active_tb_cases"}]
+CORE_ZERO_COMPARATOR_EVENTS = [
+    name
+    for name in EVENT_NAMES
+    if name
+    not in {
+        "population",
+        "eligible_population",
+        "infected_at_baseline",
+        "recent_ltbi_at_baseline",
+        "remote_ltbi_at_baseline",
+        "active_tb_cases",
+    }
+]
 
 
 def event_definitions_frame() -> pd.DataFrame:
@@ -91,6 +119,7 @@ def metadata_from_config(
     model_version: str,
 ) -> dict[str, Any]:
     scenario = config.get("scenario") if isinstance(config.get("scenario"), dict) else {}
+    ltbi_state = resolve_ltbi_state_assumptions(config)
     return {
         "contractVersion": EVENT_LEDGER_CONTRACT_VERSION,
         "scenarioId": config.get("scenarioLabel") or scenario.get("scenarioName"),
@@ -104,6 +133,11 @@ def metadata_from_config(
         "activeTBCalibrationHorizonYears": config.get("activeTBCalibrationHorizonYears"),
         "followUpHorizon": config.get("followHorizon"),
         "followUpHorizonYears": config.get("followUpHorizonYears", config.get("followHorizon")),
+        "baselineRecentLTBIProportion": ltbi_state.get("baselineRecentLTBIProportion"),
+        "recentToRemoteTransitionRatePerYear": ltbi_state.get("recentToRemoteTransitionRatePerYear"),
+        "ltbiStateAssumptionStatus": ltbi_state.get("status"),
+        "ltbiStateAssumptionSource": ltbi_state.get("source"),
+        "ltbiStateWarning": ltbi_state.get("warning"),
         "modelVersion": model_version,
         "scopeStatement": DIRECT_EFFECTS_SCOPE_STATEMENT,
         "yearBinConvention": YEAR_BIN_CONVENTION,
@@ -544,8 +578,11 @@ def _validate_annual_cross_arm_tb_identity(
 
 def _validate_identities(row: pd.Series, errors: list[dict[str, Any]], tolerance: float) -> None:
     checks = [
+        ("baseline_ltbi_split", _value(row, "infected_at_baseline"), _value(row, "recent_ltbi_at_baseline") + _value(row, "remote_ltbi_at_baseline")),
         ("screened_split", _value(row, "screened"), _value(row, "infected_screened") + _value(row, "uninfected_screened")),
         ("infected_screened_split", _value(row, "infected_screened"), _value(row, "latent_infected_at_screen") + _value(row, "active_tb_at_screen")),
+        ("latent_recent_remote_split", _value(row, "latent_infected_at_screen"), _value(row, "recent_latent_at_screen") + _value(row, "remote_latent_at_screen")),
+        ("true_positive_recent_remote_split", _value(row, "true_positive_latent"), _value(row, "true_positive_recent") + _value(row, "true_positive_remote")),
         (
             "screened_test_split",
             _value(row, "screened"),
@@ -555,11 +592,15 @@ def _validate_identities(row: pd.Series, errors: list[dict[str, Any]], tolerance
         ("test_negative_total", _value(row, "test_negative_total"), _value(row, "false_negative_latent") + _value(row, "test_negative_active") + _value(row, "true_negative")),
         ("tpt_eligible", _value(row, "tpt_eligible"), _value(row, "true_positive_latent") + _value(row, "false_positive")),
         ("tpt_started_total", _value(row, "tpt_started_total"), _value(row, "tpt_started_true_positive") + _value(row, "tpt_started_false_positive")),
+        ("tpt_started_recent_remote_split", _value(row, "tpt_started_true_positive"), _value(row, "tpt_started_recent") + _value(row, "tpt_started_remote")),
         ("tpt_completed_total", _value(row, "tpt_completed_total"), _value(row, "tpt_completed_true_positive") + _value(row, "tpt_completed_false_positive")),
+        ("tpt_completed_recent_remote_split", _value(row, "tpt_completed_true_positive"), _value(row, "tpt_completed_recent") + _value(row, "tpt_completed_remote")),
         ("tpt_adr_stop_total", _value(row, "tpt_adr_stop_total"), _value(row, "tpt_adr_stop_true_positive") + _value(row, "tpt_adr_stop_false_positive")),
         ("tpt_other_stop_total", _value(row, "tpt_other_stop_total"), _value(row, "tpt_other_stop_true_positive") + _value(row, "tpt_other_stop_false_positive")),
         ("tpt_started_outcomes", _value(row, "tpt_started_total"), _value(row, "tpt_completed_total") + _value(row, "tpt_adr_stop_total") + _value(row, "tpt_other_stop_total")),
         ("effective_total", _value(row, "infection_effectively_treated_total"), _value(row, "infection_effectively_treated_full") + _value(row, "infection_effectively_treated_partial")),
+        ("effective_recent_remote_split", _value(row, "infection_effectively_treated_total"), _value(row, "infection_effectively_treated_recent") + _value(row, "infection_effectively_treated_remote")),
+        ("prevented_recent_remote_split", _value(row, "active_tb_cases_prevented"), _value(row, "active_tb_cases_prevented_recent") + _value(row, "active_tb_cases_prevented_remote")),
     ]
     for name, lhs, rhs in checks:
         if abs(lhs - rhs) > tolerance:

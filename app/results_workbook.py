@@ -17,6 +17,7 @@ from app.epidemiology_inputs import (
     prevalence_source_label,
 )
 from engine.apy.costing import normalise_cost_table, unresolved_cost_warnings
+from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT, scenario_from_config
 
 
@@ -96,6 +97,7 @@ def _write_scenario_inputs(
     config: dict[str, Any],
     backend_status: dict[str, Any] | None,
 ) -> None:
+    ltbi_state = resolve_ltbi_state_assumptions(config)
     rows = [
         ("backend", (backend_status or {}).get("name", "")),
         ("scenario label", config.get("scenarioLabel")),
@@ -121,6 +123,10 @@ def _write_scenario_inputs(
         ("LTBI prevalence input", config.get("ltbiPrevalence"), "percentage"),
         ("active-TB prevalence source", prevalence_source_label(config.get("activeTBPrevalence"))),
         ("active-TB prevalence input", config.get("activeTBPrevalence"), "percentage"),
+        ("baseline recent LTBI proportion", ltbi_state.get("baselineRecentLTBIProportion"), "probability"),
+        ("recent-to-remote transition rate", ltbi_state.get("recentToRemoteTransitionRatePerYear"), "per year"),
+        ("LTBI state assumption status", ltbi_state.get("status")),
+        ("LTBI state assumption source", ltbi_state.get("source")),
         ("TPT start probability", config.get("pStartTPT"), "percentage"),
         ("regimen completion probability", config.get("regimenPComplete"), "percentage"),
         ("ADR stop probability", config.get("regimenADRstop"), "percentage"),
@@ -237,6 +243,7 @@ def _write_technical_metadata(
     metadata = bundle.get("metadata", {})
     technical = bundle.get("technical", {})
     calibration = technical.get("calibration", {})
+    ltbi_state = resolve_ltbi_state_assumptions(config)
     rows = [
         ("backend", metadata.get("backend") or (backend_status or {}).get("name")),
         ("model version", metadata.get("modelVersion")),
@@ -248,6 +255,10 @@ def _write_technical_metadata(
         ("csvFile", config.get("csvFile")),
         ("ageDistributionFile", config.get("ageDistributionFile") or "default_age_distribution.csv if available next to default_data.csv"),
         ("Python limitation", "Python APY backend is experimental and does not include the progression attributable-risk add-on."),
+        ("ltbiState.baselineRecentLTBIProportion", ltbi_state.get("baselineRecentLTBIProportion")),
+        ("ltbiState.recentToRemoteTransitionRatePerYear", ltbi_state.get("recentToRemoteTransitionRatePerYear")),
+        ("ltbiState.status", ltbi_state.get("status")),
+        ("ltbiState.warning", ltbi_state.get("warning")),
     ]
     for key, value in calibration.items():
         rows.append((f"calibration.{key}", value))

@@ -1,6 +1,6 @@
 # Milestone 2 APY Event Ledger
 
-Milestone 2 adds the versioned `ltbi_screening_event_ledger_v2` contract for
+Milestone 2 adds the versioned `ltbi_screening_event_ledger_v3` contract for
 direct-effects APY LTBI screening analyses. The ledger is an epidemiological
 event contract, not a health-economic outcome engine. DALYs, ICERs, net
 monetary benefit, PSA and early stopping rules are not calculated here.
@@ -80,6 +80,27 @@ starts, completion, ADR stops, other stops, partial courses, effective
 treatment, active TB cases and active TB cases prevented. BCG-specific
 false-positive events are retained additively where supported.
 
+Version 3 adds explicit prevalent-infection states. `infected_at_baseline`
+equals `recent_ltbi_at_baseline + remote_ltbi_at_baseline`. Recent LTBI follows
+the older static/transmission-dynamic definition of infection acquired in the
+last 5 years; that older architecture used a continuous `L_fast -> L_slow`
+transition rate of `1/5` per year. Remote LTBI receives the late progression
+hazard from model time zero. Recent LTBI can progress, be effectively treated,
+or transition to remote LTBI; remote LTBI can progress or be effectively
+treated. The APY direct-effects model is a closed cohort: there is no
+post-baseline inflow from uninfected people to recent LTBI.
+
+No validated APY-specific baseline recent-LTBI fraction was found in the APY
+MATLAB v9 reference engine. The Python APY default therefore records an
+unresolved compatibility placeholder for `baselineRecentLTBIProportion` and
+emits a validation warning. Scenario authors should provide and document an
+explicit value before treating the APY exemplar as scientifically final.
+
+At screening, infected people are classified as `active_tb_at_screen`,
+`recent_latent_at_screen`, or `remote_latent_at_screen`. Aggregate latent,
+true-positive, TPT start/completion, effective-treatment and prevented-TB
+events reconcile exactly with their recent-plus-remote components.
+
 `true_positive_latent` is a test-positive person who is infected and latent at
 screening. A test-positive person already active at screening is recorded
 separately as `test_positive_active`. `active_tb_at_screen` is not assumed to
@@ -152,6 +173,9 @@ horizon and follow-up. MATLAB compatibility requires inspection/update before
 claiming parity if MATLAB still couples the screening window to the early
 progression or active-TB calibration horizon. Existing MATLAB cumulative raw
 fields can support only partial total-ledger mapping unless the MATLAB
-simulation emits the new event masks and event times. Annual MATLAB ledger
-output is not fabricated from cumulative summaries; annual availability remains
-false for that backend until reference MATLAB output includes event timing.
+simulation emits the new recent/remote event masks and event times. The APY
+MATLAB v9 engine samples a single `infected` state and does not expose baseline
+recent/remote LTBI, recent-to-remote transition times, or screening-time
+recent/remote latent states. Annual MATLAB ledger output is not fabricated from
+cumulative summaries; annual availability remains false for that backend until
+reference MATLAB output includes event timing.

@@ -11,11 +11,13 @@ from engine.apy.calibration import calibrate_from_config
 from engine.apy.config import normalise_config
 from engine.apy.eligibility import resolve_eligibility
 from engine.apy.event_ledger import (
+    EVENT_LEDGER_CONTRACT_VERSION,
     annual_records_from_event_times,
     make_bundle as make_event_ledger_bundle,
     metadata_from_config as event_metadata_from_config,
     zero_comparator_wide,
 )
+from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from engine.apy.scenario import DEFAULT_COMPARATOR, DEFAULT_INTERVENTION
 from engine.apy.regimen import (
     apply_regimen_overrides,
@@ -141,6 +143,7 @@ def run_scenario_with_do_nothing(
 
 
 def build_strategy_metadata(config: dict[str, Any], reg: dict[str, Any]) -> dict[str, Any]:
+    ltbi_state = resolve_ltbi_state_assumptions(config)
     return {
         "testType": str(config["testType"]).upper(),
         "screeningStrategy": str(config["screeningStrategy"]).lower(),
@@ -171,6 +174,11 @@ def build_strategy_metadata(config: dict[str, Any], reg: dict[str, Any]) -> dict
         "partialEfficacyAt50pct": regimen_partial_efficacy(reg, 0.50),
         "partialEfficacyAt80pct": regimen_partial_efficacy(reg, 0.80),
         "partialEfficacyAt100pct": regimen_partial_efficacy(reg, 1.00),
+        "baselineRecentLTBIProportion": ltbi_state["baselineRecentLTBIProportion"],
+        "recentToRemoteTransitionRatePerYear": ltbi_state[
+            "recentToRemoteTransitionRatePerYear"
+        ],
+        "ltbiStateAssumptionStatus": ltbi_state["status"],
     }
 
 
@@ -194,6 +202,12 @@ def _append_agent_based_ledger_rows(
         eligible_population=eligible_population,
         active_tb_cases=len(comparator_active_times),
     )
+    for event in [
+        "infected_at_baseline",
+        "recent_ltbi_at_baseline",
+        "remote_ltbi_at_baseline",
+    ]:
+        comparator[event] = float(ledger_data["interventionTotals"].get(event, 0.0))
     intervention = {**base, "arm": "intervention"}
     intervention.update({key: float(value) for key, value in ledger_data["interventionTotals"].items()})
     total_rows.extend([comparator, intervention])
@@ -201,6 +215,15 @@ def _append_agent_based_ledger_rows(
     comparator_events = {
         "population": np.zeros(population),
         "eligible_population": np.zeros(int(round(eligible_population))),
+        "infected_at_baseline": np.zeros(
+            int(round(ledger_data["interventionTotals"].get("infected_at_baseline", 0.0)))
+        ),
+        "recent_ltbi_at_baseline": np.zeros(
+            int(round(ledger_data["interventionTotals"].get("recent_ltbi_at_baseline", 0.0)))
+        ),
+        "remote_ltbi_at_baseline": np.zeros(
+            int(round(ledger_data["interventionTotals"].get("remote_ltbi_at_baseline", 0.0)))
+        ),
         "active_tb_cases": comparator_active_times,
     }
     intervention_events = {
@@ -227,7 +250,7 @@ def _append_agent_based_ledger_rows(
 def _ledger_base(config: dict[str, Any], replicate_id: int, replicate_seed: int | None) -> dict[str, Any]:
     scenario = config.get("scenario") if isinstance(config.get("scenario"), dict) else {}
     return {
-        "contractVersion": "ltbi_screening_event_ledger_v2",
+        "contractVersion": EVENT_LEDGER_CONTRACT_VERSION,
         "scenarioId": config.get("scenarioLabel") or scenario.get("scenarioName"),
         "scenarioVersion": scenario.get("scenarioVersion", config.get("configVersion")),
         "populationPresetId": config.get("populationPresetId"),
@@ -288,5 +311,8 @@ def _calibration_key_payload(config: dict[str, Any]) -> dict[str, Any]:
         "earlyProgressionPeriodYears",
         "activeTBCalibrationHorizonYears",
         "earlyLateRatio",
+        "ltbiStateAssumptions",
+        "baselineRecentLTBIProportion",
+        "recentToRemoteTransitionRatePerYear",
     ]
     return {field: config.get(field) for field in fields}

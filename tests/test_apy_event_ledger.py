@@ -13,6 +13,7 @@ from engine.apy.config import normalise_config
 from engine.apy.event_ledger import EVENT_LEDGER_CONTRACT_VERSION, matlab_total_ledger_from_raw_rows
 from engine.apy.event_ledger import validate_event_ledger
 from engine.apy.expected_value import run_expected_value
+from engine.apy.ltbi_state import mixed_baseline_event_between, remote_survival
 from engine.apy.results_bundle import build_results_bundle
 from engine.apy.runner import run_replicates
 
@@ -30,11 +31,148 @@ class ApyEventLedgerTests(unittest.TestCase):
         ledger = self.ev["eventLedger"]
 
         self.assertEqual(ledger["metadata"]["contractVersion"], EVENT_LEDGER_CONTRACT_VERSION)
-        self.assertEqual(EVENT_LEDGER_CONTRACT_VERSION, "ltbi_screening_event_ledger_v2")
+        self.assertEqual(EVENT_LEDGER_CONTRACT_VERSION, "ltbi_screening_event_ledger_v3")
         self.assertEqual(ledger["metadata"]["modelType"], "expected_value")
         self.assertTrue(ledger["validation"]["isValid"])
         self.assertIn("year 0 is [0,1)", ledger["metadata"]["yearBinConvention"])
         self.assertIn("withinFollowUp=false", ledger["metadata"]["yearBinConvention"])
+
+    def test_baseline_recent_remote_ltbi_reconciles(self) -> None:
+        ev_totals = _intervention_totals(
+            run_expected_value(
+                {
+                    "N": 120,
+                    "screeningStrategy": "random",
+                    "baselineRecentLTBIProportion": 0.35,
+                    "ltbiStateAssumptions": {
+                        "baselineRecentLTBIProportion": 0.35,
+                        "recentToRemoteTransitionRatePerYear": 0.2,
+                        "status": "configured",
+                    },
+                }
+            )["eventLedger"]
+        )
+
+        self.assertAlmostEqual(
+            ev_totals["infected_at_baseline"],
+            ev_totals["recent_ltbi_at_baseline"] + ev_totals["remote_ltbi_at_baseline"],
+        )
+        self.assertAlmostEqual(
+            ev_totals["latent_infected_at_screen"],
+            ev_totals["recent_latent_at_screen"] + ev_totals["remote_latent_at_screen"],
+        )
+        self.assertAlmostEqual(
+            ev_totals["true_positive_latent"],
+            ev_totals["true_positive_recent"] + ev_totals["true_positive_remote"],
+        )
+
+    def test_remote_baseline_uses_late_hazard_from_time_zero(self) -> None:
+        event = mixed_baseline_event_between(
+            0.0,
+            2.0,
+            [1.0],
+            lambda_early=0.05,
+            lambda_late=0.005,
+            transition_rate=0.2,
+            baseline_recent_proportion=0.0,
+        )[0]
+        expected_remote = 1.0 - remote_survival(2.0, [1.0], 0.005)[0]
+        incorrect_recent = 1.0 - pow(2.718281828459045, -0.05 * 2.0)
+
+        self.assertAlmostEqual(event, expected_remote)
+        self.assertNotAlmostEqual(event, incorrect_recent)
+
+    def test_screening_window_does_not_change_baseline_recent_remote_composition(self) -> None:
+        common = {
+            "N": 120,
+            "screenCoverage": 0.3,
+            "baselineRecentLTBIProportion": 0.4,
+            "ltbiStateAssumptions": {
+                "baselineRecentLTBIProportion": 0.4,
+                "recentToRemoteTransitionRatePerYear": 0.2,
+                "status": "configured",
+            },
+        }
+        two = _intervention_totals(run_expected_value({**common, "screeningWindowYears": 2})["eventLedger"])
+        three = _intervention_totals(run_expected_value({**common, "screeningWindowYears": 3})["eventLedger"])
+
+        self.assertAlmostEqual(two["recent_ltbi_at_baseline"], three["recent_ltbi_at_baseline"])
+        self.assertAlmostEqual(two["remote_ltbi_at_baseline"], three["remote_ltbi_at_baseline"])
+
+    def test_recent_ltbi_transitions_to_remote_and_closed_cohort_has_no_new_recent(self) -> None:
+        totals = _intervention_totals(
+            run_expected_value(
+                {
+                    "N": 200,
+                    "screenCoverage": 1.0,
+                    "screeningWindowYears": 3,
+                    "screeningStrategy": "random",
+                    "baselineRecentLTBIProportion": 1.0,
+                    "ltbiStateAssumptions": {
+                        "baselineRecentLTBIProportion": 1.0,
+                        "recentToRemoteTransitionRatePerYear": 0.2,
+                        "status": "configured",
+                    },
+                }
+            )["eventLedger"]
+        )
+
+        self.assertEqual(totals["remote_ltbi_at_baseline"], 0)
+        self.assertGreater(totals["remote_latent_at_screen"], 0)
+        self.assertLessEqual(totals["recent_latent_at_screen"], totals["recent_ltbi_at_baseline"])
+
+    def test_zero_recent_and_zero_remote_boundary_states(self) -> None:
+        all_remote = _intervention_totals(
+            run_expected_value({"N": 120, "baselineRecentLTBIProportion": 0.0})["eventLedger"]
+        )
+        all_recent = _intervention_totals(
+            run_expected_value(
+                {
+                    "N": 120,
+                    "baselineRecentLTBIProportion": 1.0,
+                    "ltbiStateAssumptions": {
+                        "baselineRecentLTBIProportion": 1.0,
+                        "recentToRemoteTransitionRatePerYear": 0.2,
+                        "status": "configured",
+                    },
+                }
+            )["eventLedger"]
+        )
+
+        self.assertEqual(all_remote["recent_ltbi_at_baseline"], 0)
+        self.assertAlmostEqual(all_remote["remote_ltbi_at_baseline"], all_remote["infected_at_baseline"])
+        self.assertEqual(all_remote["true_positive_recent"], 0)
+        self.assertEqual(all_recent["remote_ltbi_at_baseline"], 0)
+        self.assertGreater(all_recent["remote_latent_at_screen"], 0)
+
+    def test_recent_remote_stochastic_mean_matches_expected_value(self) -> None:
+        cfg = {
+            "N": 500,
+            "nReps": 8,
+            "seed": 77,
+            "screeningStrategy": "random",
+            "baselineRecentLTBIProportion": 0.5,
+            "ltbiStateAssumptions": {
+                "baselineRecentLTBIProportion": 0.5,
+                "recentToRemoteTransitionRatePerYear": 0.2,
+                "status": "configured",
+            },
+        }
+        ev = _intervention_totals(run_expected_value(cfg)["eventLedger"])
+        abm = run_replicates(cfg, keep_example_cohort=False)
+        abm_mean = (
+            _long_to_wide(abm["eventLedger"]["replicateTotals"])
+            .query("arm == 'intervention'")
+            .mean(numeric_only=True)
+        )
+
+        for event in [
+            "recent_ltbi_at_baseline",
+            "remote_ltbi_at_baseline",
+            "recent_latent_at_screen",
+            "remote_latent_at_screen",
+        ]:
+            self.assertLessEqual(abs(ev[event] - abm_mean[event]), max(20.0, 0.20 * ev[event]), event)
 
     def test_screening_window_change_does_not_change_comparator_natural_history(self) -> None:
         common = {"N": 200, "nReps": 3, "seed": 222, "screenCoverage": 0.3}

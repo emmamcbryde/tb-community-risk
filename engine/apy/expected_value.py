@@ -10,16 +10,15 @@ import pandas as pd
 from engine.apy.age_distribution import broad_age_group_from_years
 from engine.apy.calibration import bern_prob
 from engine.apy.cohort import (
-    average_survival_to_random_screen,
     disease_multiplier,
     get_counterfactual_no_bcg_specificity,
     get_test_performance,
     infection_probability,
-    preventable_active_risk,
 )
 from engine.apy.config import normalise_config
 from engine.apy.eligibility import resolve_eligibility, screening_coverage_of_population
 from engine.apy.event_ledger import (
+    EVENT_LEDGER_CONTRACT_VERSION,
     EVENT_NAMES,
     annual_records_from_weighted_events,
     make_bundle as make_event_ledger_bundle,
@@ -41,7 +40,14 @@ from engine.apy.runner import (
 )
 from engine.apy.scenario import DEFAULT_COMPARATOR, DEFAULT_INTERVENTION
 from engine.apy.simulation import _simulation_options
-from engine.apy.timing import event_probability_between, survival_probability
+from engine.apy.ltbi_state import (
+    mixed_baseline_event_between,
+    mixed_baseline_survival,
+    recent_no_active_survival,
+    recent_state_survival,
+    recent_to_remote_latent_probability,
+    remote_survival,
+)
 from engine.apy.validation import validate_config
 
 
@@ -74,6 +80,12 @@ def run_expected_value(
         eligible_population=float(opts["eligiblePopulation"]),
         active_tb_cases=sum(comparator_active_by_year.values()),
     )
+    for event in [
+        "infected_at_baseline",
+        "recent_ltbi_at_baseline",
+        "remote_ltbi_at_baseline",
+    ]:
+        comparator[event] = float(totals.get(event, 0.0))
     intervention = {**base, "arm": "intervention"}
     intervention.update(totals)
     totals_wide = pd.DataFrame([comparator, intervention])
@@ -81,6 +93,9 @@ def run_expected_value(
     comparator_annual = {
         "population": [(0.0, float(cfg["N"]))],
         "eligible_population": [(0.0, float(cfg["N"]))],
+        "infected_at_baseline": [(0.0, float(totals.get("infected_at_baseline", 0.0)))],
+        "recent_ltbi_at_baseline": [(0.0, float(totals.get("recent_ltbi_at_baseline", 0.0)))],
+        "remote_ltbi_at_baseline": [(0.0, float(totals.get("remote_ltbi_at_baseline", 0.0)))],
         "active_tb_cases": [
             (_representative_time(year), value)
             for year, value in comparator_active_by_year.items()
@@ -181,25 +196,7 @@ def _build_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict[
                     [flag["renal"]],
                 )[0]
             )
-            avg_latent = float(
-                average_survival_to_random_screen(
-                    [mult],
-                    calibration["lambdaEarly"],
-                    opts["screenWindow"],
-                    calibration["lambdaLate"],
-                    opts["earlyProgressionPeriodYears"],
-                )[0]
-            )
-            preventable = float(
-                preventable_active_risk(
-                    [mult],
-                    calibration["lambdaEarly"],
-                    calibration["lambdaLate"],
-                    opts["screenWindow"],
-                    opts["followHorizon"],
-                    opts["earlyProgressionPeriodYears"],
-                )[0]
-            )
+            p_recent = float(opts["baselineRecentLTBIProportion"])
             sens, spec = get_test_performance([bool(flag["BCG"])], opts)
             no_bcg_spec = get_counterfactual_no_bcg_specificity([bool(flag["BCG"])], opts)
             rows.append(
@@ -209,10 +206,9 @@ def _build_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict[
                     "ageGroup": int(age_group),
                     **{name: bool(flag[name]) for name in factor_names},
                     "pInfection": p_inf,
+                    "pRecentLTBIAtBaseline": p_recent,
+                    "pRemoteLTBIAtBaseline": 1.0 - p_recent,
                     "diseaseMultiplier": mult,
-                    "ltbiRiskScore": p_inf,
-                    "cureTargetScore": p_inf * avg_latent,
-                    "preventTargetScore": p_inf * preventable,
                     "testSensitivity": float(sens[0]),
                     "testSpecificity": float(spec[0]),
                     "testSpecificityNoBCG": float(no_bcg_spec[0]),
@@ -220,6 +216,32 @@ def _build_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict[
             )
     out = pd.DataFrame(rows)
     out["populationWeight"] = out["weight"] * float(opts.get("N", 1.0))
+    mult = out["diseaseMultiplier"].to_numpy(dtype=float)
+    times = (np.arange(32, dtype=float) + 0.5) / 32 * opts["screenWindow"]
+    survival_values = [
+        mixed_baseline_survival(
+            t,
+            mult,
+            calibration["lambdaEarly"],
+            calibration["lambdaLate"],
+            opts["recentToRemoteTransitionRatePerYear"],
+            float(opts["baselineRecentLTBIProportion"]),
+        )
+        for t in times
+    ]
+    avg_latent = np.mean(survival_values, axis=0)
+    horizon_survival = mixed_baseline_survival(
+        opts["followHorizon"],
+        mult,
+        calibration["lambdaEarly"],
+        calibration["lambdaLate"],
+        opts["recentToRemoteTransitionRatePerYear"],
+        float(opts["baselineRecentLTBIProportion"]),
+    )
+    preventable = np.maximum(avg_latent - horizon_survival, 0.0)
+    out["ltbiRiskScore"] = out["pInfection"]
+    out["cureTargetScore"] = out["pInfection"] * avg_latent
+    out["preventTargetScore"] = out["pInfection"] * preventable
     return out
 
 
@@ -233,6 +255,10 @@ def _cached_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict
             "screenWindow": opts["screenWindow"],
             "followHorizon": opts["followHorizon"],
             "earlyProgressionPeriodYears": opts["earlyProgressionPeriodYears"],
+            "baselineRecentLTBIProportion": opts["baselineRecentLTBIProportion"],
+            "recentToRemoteTransitionRatePerYear": opts[
+                "recentToRemoteTransitionRatePerYear"
+            ],
             "testType": opts["testType"],
             "testSensitivity": opts["testSensitivity"],
             "testSpecificity": opts["testSpecificity"],
@@ -303,18 +329,51 @@ def _expected_events(
     selected = screened_weight > 0
     point_weight = screened_weight[selected] / q_points
     p_inf = strata.loc[selected, "pInfection"].to_numpy(dtype=float)
+    p_recent = strata.loc[selected, "pRecentLTBIAtBaseline"].to_numpy(dtype=float)
+    p_remote = strata.loc[selected, "pRemoteLTBIAtBaseline"].to_numpy(dtype=float)
     sens = strata.loc[selected, "testSensitivity"].to_numpy(dtype=float)
     spec = strata.loc[selected, "testSpecificity"].to_numpy(dtype=float)
     no_bcg_spec = strata.loc[selected, "testSpecificityNoBCG"].to_numpy(dtype=float)
     mult = strata.loc[selected, "diseaseMultiplier"].to_numpy(dtype=float)
     bcg = strata.loc[selected, "BCG"].to_numpy(dtype=bool)
+    baseline_infected = (
+        strata["populationWeight"].to_numpy(dtype=float)
+        * strata["pInfection"].to_numpy(dtype=float)
+    )
+    baseline_recent = (
+        baseline_infected
+        * strata["pRecentLTBIAtBaseline"].to_numpy(dtype=float)
+    )
+    baseline_remote = (
+        baseline_infected
+        * strata["pRemoteLTBIAtBaseline"].to_numpy(dtype=float)
+    )
+    _add_many(
+        annual_values,
+        totals,
+        0.0,
+        {
+            "infected_at_baseline": baseline_infected,
+            "recent_ltbi_at_baseline": baseline_recent,
+            "remote_ltbi_at_baseline": baseline_remote,
+        },
+    )
     for screen_time in q_times:
-        survival_screen = _survival_array(screen_time, mult, calibration, opts)
         infected_screened = point_weight * p_inf
-        latent = infected_screened * survival_screen
-        active = infected_screened * (1.0 - survival_screen)
+        recent_latent = infected_screened * p_recent * _recent_state_survival_array(
+            screen_time, mult, calibration, opts
+        )
+        remote_latent = infected_screened * (
+            p_remote * _remote_survival_array(screen_time, mult, calibration, opts)
+            + p_recent
+            * _recent_to_remote_latent_array(screen_time, mult, calibration, opts)
+        )
+        latent = recent_latent + remote_latent
+        active = infected_screened - latent
         uninfected = point_weight * (1.0 - p_inf)
-        tp_latent = latent * sens
+        tp_recent = recent_latent * sens
+        tp_remote = remote_latent * sens
+        tp_latent = tp_recent + tp_remote
         tp_active = active * sens
         fn_latent = latent * (1.0 - sens)
         tn_active = active * (1.0 - sens)
@@ -334,8 +393,12 @@ def _expected_events(
                 "infected_screened": infected_screened,
                 "uninfected_screened": uninfected,
                 "latent_infected_at_screen": latent,
+                "recent_latent_at_screen": recent_latent,
+                "remote_latent_at_screen": remote_latent,
                 "active_tb_at_screen": active,
                 "true_positive_latent": tp_latent,
+                "true_positive_recent": tp_recent,
+                "true_positive_remote": tp_remote,
                 "test_positive_active": tp_active,
                 "false_negative_latent": fn_latent,
                 "test_negative_active": tn_active,
@@ -349,6 +412,8 @@ def _expected_events(
             },
         )
         tp_started = tp_latent * float(opts["pStartTPT"])
+        tp_started_recent = tp_recent * float(opts["pStartTPT"])
+        tp_started_remote = tp_remote * float(opts["pStartTPT"])
         fp_started = false_positive * float(opts["pStartTPT"])
         _add_many(
             annual_values,
@@ -357,6 +422,8 @@ def _expected_events(
             {
                 "tpt_eligible": tp_latent + false_positive,
                 "tpt_started_true_positive": tp_started,
+                "tpt_started_recent": tp_started_recent,
+                "tpt_started_remote": tp_started_remote,
                 "tpt_started_false_positive": fp_started,
                 "tpt_started_total": tp_started + fp_started,
             },
@@ -380,6 +447,8 @@ def _expected_events(
             calibration,
             opts,
             tp_started_by_stratum=tp_started,
+            tp_started_recent_by_stratum=tp_started_recent,
+            tp_started_remote_by_stratum=tp_started_remote,
         )
     totals["population"] = float(opts.get("N", 0.0))
     totals["eligible_population"] = float(opts.get("eligiblePopulation", opts.get("N", 0.0)))
@@ -410,17 +479,23 @@ def _treatment_outcomes(
     opts: dict[str, Any],
     *,
     tp_started_by_stratum: np.ndarray,
+    tp_started_recent_by_stratum: np.ndarray,
+    tp_started_remote_by_stratum: np.ndarray,
 ) -> None:
     full_time = screen_time + duration
     adr_time = screen_time + duration * adr_dose
     other_time = screen_time + duration * other_dose
     tp_complete = tp_started * p_complete
     fp_complete = fp_started * p_complete
+    tp_complete_recent = float(tp_started_recent_by_stratum.sum()) * p_complete
+    tp_complete_remote = float(tp_started_remote_by_stratum.sum()) * p_complete
     tp_adr = tp_started * p_adr
     fp_adr = fp_started * p_adr
     tp_other = tp_started * p_other
     fp_other = fp_started * p_other
     _add(annual_values, totals, "tpt_completed_true_positive", full_time, tp_complete)
+    _add(annual_values, totals, "tpt_completed_recent", full_time, tp_complete_recent)
+    _add(annual_values, totals, "tpt_completed_remote", full_time, tp_complete_remote)
     _add(annual_values, totals, "tpt_completed_false_positive", full_time, fp_complete)
     _add(annual_values, totals, "tpt_completed_total", full_time, tp_complete + fp_complete)
     _add(annual_values, totals, "tpt_adr_stop_true_positive", adr_time, tp_adr)
@@ -437,22 +512,34 @@ def _treatment_outcomes(
     _add(annual_values, totals, "tpt_partial_course_total", other_time, tp_other + fp_other)
 
     full_effective_by_stratum = (
-        tp_started_by_stratum
+        (
+            tp_started_recent_by_stratum
+            * _conditional_recent_survival_array(screen_time, full_time, mult, calibration, opts)
+            + tp_started_remote_by_stratum
+            * _conditional_remote_survival_array(screen_time, full_time, mult, calibration, opts)
+        )
         * p_complete
         * float(reg["effFull"])
-        * _conditional_survival_array(screen_time, full_time, mult, calibration, opts)
     )
     adr_effective_by_stratum = (
-        tp_started_by_stratum
+        (
+            tp_started_recent_by_stratum
+            * _conditional_recent_survival_array(screen_time, adr_time, mult, calibration, opts)
+            + tp_started_remote_by_stratum
+            * _conditional_remote_survival_array(screen_time, adr_time, mult, calibration, opts)
+        )
         * p_adr
         * partial_eff_adr
-        * _conditional_survival_array(screen_time, adr_time, mult, calibration, opts)
     )
     other_effective_by_stratum = (
-        tp_started_by_stratum
+        (
+            tp_started_recent_by_stratum
+            * _conditional_recent_survival_array(screen_time, other_time, mult, calibration, opts)
+            + tp_started_remote_by_stratum
+            * _conditional_remote_survival_array(screen_time, other_time, mult, calibration, opts)
+        )
         * p_other
         * partial_eff_other
-        * _conditional_survival_array(screen_time, other_time, mult, calibration, opts)
     )
     full_effective = float(full_effective_by_stratum.sum())
     adr_effective = float(adr_effective_by_stratum.sum())
@@ -463,6 +550,40 @@ def _treatment_outcomes(
     _add(annual_values, totals, "infection_effectively_treated_total", full_time, full_effective)
     _add(annual_values, totals, "infection_effectively_treated_total", adr_time, adr_effective)
     _add(annual_values, totals, "infection_effectively_treated_total", other_time, other_effective)
+    recent_effective = float(
+        (
+            tp_started_recent_by_stratum
+            * (
+                p_complete
+                * float(reg["effFull"])
+                * _conditional_recent_survival_array(screen_time, full_time, mult, calibration, opts)
+                + p_adr
+                * partial_eff_adr
+                * _conditional_recent_survival_array(screen_time, adr_time, mult, calibration, opts)
+                + p_other
+                * partial_eff_other
+                * _conditional_recent_survival_array(screen_time, other_time, mult, calibration, opts)
+            )
+        ).sum()
+    )
+    remote_effective = float(
+        (
+            tp_started_remote_by_stratum
+            * (
+                p_complete
+                * float(reg["effFull"])
+                * _conditional_remote_survival_array(screen_time, full_time, mult, calibration, opts)
+                + p_adr
+                * partial_eff_adr
+                * _conditional_remote_survival_array(screen_time, adr_time, mult, calibration, opts)
+                + p_other
+                * partial_eff_other
+                * _conditional_remote_survival_array(screen_time, other_time, mult, calibration, opts)
+            )
+        ).sum()
+    )
+    _add(annual_values, totals, "infection_effectively_treated_recent", full_time, recent_effective)
+    _add(annual_values, totals, "infection_effectively_treated_remote", full_time, remote_effective)
     for stop_time, probability, efficacy in [
         (full_time, p_complete, float(reg["effFull"])),
         (adr_time, p_adr, partial_eff_adr),
@@ -476,10 +597,51 @@ def _treatment_outcomes(
                 continue
             prevented = float(
                 (
-                    tp_started_by_stratum
+                    (
+                        tp_started_recent_by_stratum
+                        * _conditional_recent_interval_event_array(
+                            screen_time,
+                            interval_start,
+                            interval_end,
+                            mult,
+                            calibration,
+                            opts,
+                        )
+                        + tp_started_remote_by_stratum
+                        * _conditional_remote_interval_event_array(
+                            screen_time,
+                            interval_start,
+                            interval_end,
+                            mult,
+                            calibration,
+                            opts,
+                        )
+                    )
                     * probability
                     * efficacy
-                    * _conditional_interval_event_array(
+                ).sum()
+            )
+            prevented_recent = float(
+                (
+                    tp_started_recent_by_stratum
+                    * probability
+                    * efficacy
+                    * _conditional_recent_interval_event_array(
+                        screen_time,
+                        interval_start,
+                        interval_end,
+                        mult,
+                        calibration,
+                        opts,
+                    )
+                ).sum()
+            )
+            prevented_remote = float(
+                (
+                    tp_started_remote_by_stratum
+                    * probability
+                    * efficacy
+                    * _conditional_remote_interval_event_array(
                         screen_time,
                         interval_start,
                         interval_end,
@@ -490,9 +652,21 @@ def _treatment_outcomes(
                 ).sum()
             )
             totals["infection_effectively_treated_total_prevented_marker"] = totals.get("infection_effectively_treated_total_prevented_marker", 0.0) + prevented
+            totals["active_tb_cases_prevented_recent"] = totals.get(
+                "active_tb_cases_prevented_recent", 0.0
+            ) + prevented_recent
+            totals["active_tb_cases_prevented_remote"] = totals.get(
+                "active_tb_cases_prevented_remote", 0.0
+            ) + prevented_remote
             if prevented:
                 annual_values["active_tb_cases_prevented"].append(
                     (_representative_time(year), prevented)
+                )
+                annual_values["active_tb_cases_prevented_recent"].append(
+                    (_representative_time(year), prevented_recent)
+                )
+                annual_values["active_tb_cases_prevented_remote"].append(
+                    (_representative_time(year), prevented_remote)
                 )
 
 
@@ -555,10 +729,14 @@ def _event_between(start: float, end: float, mult: float, calibration: dict[str,
 
 
 def _event_between_array(start: float, end: float, mult: np.ndarray, calibration: dict[str, Any], opts: dict[str, Any]) -> np.ndarray:
-    return np.maximum(
-        _survival_array(start, mult, calibration, opts)
-        - _survival_array(end, mult, calibration, opts),
-        0.0,
+    return mixed_baseline_event_between(
+        start,
+        end,
+        mult,
+        calibration["lambdaEarly"],
+        calibration["lambdaLate"],
+        opts["recentToRemoteTransitionRatePerYear"],
+        opts["baselineRecentLTBIProportion"],
     )
 
 
@@ -657,12 +835,118 @@ def _survival(time: float, mult: float, calibration: dict[str, Any], opts: dict[
 
 
 def _survival_array(time: float, mult: np.ndarray, calibration: dict[str, Any], opts: dict[str, Any]) -> np.ndarray:
-    return survival_probability(
+    return mixed_baseline_survival(
         time,
         mult,
         calibration["lambdaEarly"],
         calibration["lambdaLate"],
-        opts["earlyProgressionPeriodYears"],
+        opts["recentToRemoteTransitionRatePerYear"],
+        opts["baselineRecentLTBIProportion"],
+    )
+
+
+def _recent_state_survival_array(time: float, mult: np.ndarray, calibration: dict[str, Any], opts: dict[str, Any]) -> np.ndarray:
+    return recent_state_survival(
+        time,
+        mult,
+        calibration["lambdaEarly"],
+        opts["recentToRemoteTransitionRatePerYear"],
+    )
+
+
+def _recent_to_remote_latent_array(time: float, mult: np.ndarray, calibration: dict[str, Any], opts: dict[str, Any]) -> np.ndarray:
+    return recent_to_remote_latent_probability(
+        time,
+        mult,
+        calibration["lambdaEarly"],
+        calibration["lambdaLate"],
+        opts["recentToRemoteTransitionRatePerYear"],
+    )
+
+
+def _remote_survival_array(time: float, mult: np.ndarray, calibration: dict[str, Any], opts: dict[str, Any]) -> np.ndarray:
+    return remote_survival(time, mult, calibration["lambdaLate"])
+
+
+def _conditional_recent_survival_array(
+    screen_time: float,
+    stop_time: float,
+    mult: np.ndarray,
+    calibration: dict[str, Any],
+    opts: dict[str, Any],
+) -> np.ndarray:
+    delta = max(stop_time - screen_time, 0.0)
+    return np.clip(
+        recent_no_active_survival(
+            delta,
+            mult,
+            calibration["lambdaEarly"],
+            calibration["lambdaLate"],
+            opts["recentToRemoteTransitionRatePerYear"],
+        ),
+        0.0,
+        1.0,
+    )
+
+
+def _conditional_remote_survival_array(
+    screen_time: float,
+    stop_time: float,
+    mult: np.ndarray,
+    calibration: dict[str, Any],
+    opts: dict[str, Any],
+) -> np.ndarray:
+    delta = max(stop_time - screen_time, 0.0)
+    return np.clip(
+        remote_survival(delta, mult, calibration["lambdaLate"]),
+        0.0,
+        1.0,
+    )
+
+
+def _conditional_recent_interval_event_array(
+    screen_time: float,
+    interval_start: float,
+    interval_end: float,
+    mult: np.ndarray,
+    calibration: dict[str, Any],
+    opts: dict[str, Any],
+) -> np.ndarray:
+    start_delta = max(interval_start - screen_time, 0.0)
+    end_delta = max(interval_end - screen_time, 0.0)
+    return np.maximum(
+        recent_no_active_survival(
+            start_delta,
+            mult,
+            calibration["lambdaEarly"],
+            calibration["lambdaLate"],
+            opts["recentToRemoteTransitionRatePerYear"],
+        )
+        - recent_no_active_survival(
+            end_delta,
+            mult,
+            calibration["lambdaEarly"],
+            calibration["lambdaLate"],
+            opts["recentToRemoteTransitionRatePerYear"],
+        ),
+        0.0,
+    )
+
+
+def _conditional_remote_interval_event_array(
+    screen_time: float,
+    interval_start: float,
+    interval_end: float,
+    mult: np.ndarray,
+    calibration: dict[str, Any],
+    opts: dict[str, Any],
+) -> np.ndarray:
+    start_delta = max(interval_start - screen_time, 0.0)
+    end_delta = max(interval_end - screen_time, 0.0)
+    return np.maximum(
+        remote_survival(start_delta, mult, calibration["lambdaLate"])
+        - remote_survival(end_delta, mult, calibration["lambdaLate"]),
+        0.0,
     )
 
 
@@ -682,7 +966,7 @@ def _representative_time(year: int) -> float:
 def _ledger_base(config: dict[str, Any]) -> dict[str, Any]:
     scenario = config.get("scenario") if isinstance(config.get("scenario"), dict) else {}
     return {
-        "contractVersion": "ltbi_screening_event_ledger_v2",
+        "contractVersion": EVENT_LEDGER_CONTRACT_VERSION,
         "scenarioId": config.get("scenarioLabel") or scenario.get("scenarioName"),
         "scenarioVersion": scenario.get("scenarioVersion", config.get("configVersion")),
         "populationPresetId": config.get("populationPresetId"),

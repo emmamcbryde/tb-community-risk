@@ -83,7 +83,7 @@ class ApyCalibrationTests(unittest.TestCase):
 
         self.assertAlmostEqual(expected, self.calibration["expectedActive2y"], places=10)
 
-    def test_calibrate_early_hazard_matches_matlab_snapshot(self) -> None:
+    def test_legacy_single_state_calibrate_early_hazard_matches_matlab_snapshot(self) -> None:
         hazard = calibrate_early_hazard(
             self.pars,
             self.calibration["ageInfLogLambda"],
@@ -91,6 +91,8 @@ class ApyCalibrationTests(unittest.TestCase):
             self.calibration["targetActive2y"],
             2,
             5,
+            baseline_recent_proportion=1.0,
+            recent_to_remote_rate=0.0,
         )
 
         self.assertAlmostEqual(hazard["lambdaEarly"], self.calibration["lambdaEarly"], places=10)
@@ -107,7 +109,7 @@ class ApyCalibrationTests(unittest.TestCase):
                 0.5,
             )
 
-    def test_calibrate_from_config_matches_matlab_snapshot(self) -> None:
+    def test_calibrate_from_config_keeps_age_calibration_and_records_ltbi_state_assumptions(self) -> None:
         calibrated = calibrate_from_config(self.scenario_config)
 
         self.assertAlmostEqual(
@@ -118,9 +120,7 @@ class ApyCalibrationTests(unittest.TestCase):
         self.assertAlmostEqual(
             calibrated["ageInfGamma"], self.calibration["ageInfGamma"], places=9
         )
-        self.assertAlmostEqual(
-            calibrated["lambdaEarly"], self.calibration["lambdaEarly"], places=10
-        )
+        self.assertNotAlmostEqual(calibrated["lambdaEarly"], self.calibration["lambdaEarly"], places=10)
         self.assertAlmostEqual(
             calibrated["expectedInfPrev"],
             self.calibration["expectedInfPrev"],
@@ -129,6 +129,11 @@ class ApyCalibrationTests(unittest.TestCase):
         self.assertAlmostEqual(
             calibrated["expectedAgeOR"], self.calibration["expectedAgeOR"], places=8
         )
+        self.assertEqual(
+            calibrated["ltbiStateAssumptionStatus"],
+            "unresolved_compatibility_placeholder",
+        )
+        self.assertEqual(calibrated["baselineRecentLTBIProportion"], 0.0)
 
 
 if __name__ == "__main__":

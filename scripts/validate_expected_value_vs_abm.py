@@ -17,13 +17,23 @@ from engine.apy.runner import run_replicates
 
 
 EVENTS = [
+    "recent_ltbi_at_baseline",
+    "remote_ltbi_at_baseline",
+    "recent_latent_at_screen",
+    "remote_latent_at_screen",
     "screened",
     "true_positive_latent",
+    "true_positive_recent",
+    "true_positive_remote",
     "false_positive",
     "tpt_started_total",
     "tpt_completed_total",
     "infection_effectively_treated_total",
+    "infection_effectively_treated_recent",
+    "infection_effectively_treated_remote",
     "active_tb_cases_prevented",
+    "active_tb_cases_prevented_recent",
+    "active_tb_cases_prevented_remote",
     "active_tb_cases",
 ]
 
@@ -35,6 +45,12 @@ SCENARIOS = {
         "seed": 2401,
         "screeningStrategy": "random",
         "screenCoverage": 0.35,
+        "baselineRecentLTBIProportion": 0.35,
+        "ltbiStateAssumptions": {
+            "baselineRecentLTBIProportion": 0.35,
+            "recentToRemoteTransitionRatePerYear": 0.2,
+            "status": "configured",
+        },
     },
     "apy_prevent_targeted": {
         "N": 700,
@@ -42,6 +58,12 @@ SCENARIOS = {
         "seed": 2402,
         "screeningStrategy": "prevent",
         "screenCoverage": 0.30,
+        "baselineRecentLTBIProportion": 0.35,
+        "ltbiStateAssumptions": {
+            "baselineRecentLTBIProportion": 0.35,
+            "recentToRemoteTransitionRatePerYear": 0.2,
+            "status": "configured",
+        },
     },
 }
 

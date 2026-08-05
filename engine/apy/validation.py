@@ -5,6 +5,7 @@ from typing import Any
 
 from engine.apy.config import normalise_config, resolve_repo_path
 from engine.apy.eligibility import RESTRICTED_ELIGIBILITY_ERROR, resolve_eligibility
+from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 
 
 REQUIRED_FIELDS = [
@@ -72,6 +73,26 @@ def collect_validation_issues(config: dict[str, Any]) -> dict[str, Any]:
     _validate_positive_scalar(report, cfg, "activeTBCalibrationHorizonYears", "Active-TB calibration horizon")
     _validate_positive_scalar(report, cfg, "followHorizon", "Follow-up horizon")
     _validate_positive_scalar(report, cfg, "followUpHorizonYears", "Follow-up horizon")
+    try:
+        ltbi_state = resolve_ltbi_state_assumptions(cfg)
+        if ltbi_state.get("warning"):
+            _add_issue(
+                report,
+                "warnings",
+                "ltbiStateAssumptions.baselineRecentLTBIProportion",
+                "Baseline recent LTBI proportion",
+                "unresolved_baseline_recent_ltbi_fraction",
+                str(ltbi_state["warning"]),
+            )
+    except ValueError as exc:
+        _add_issue(
+            report,
+            "errors",
+            "ltbiStateAssumptions",
+            "LTBI state assumptions",
+            "invalid_range",
+            str(exc),
+        )
     _validate_fraction(report, cfg, "screenCoverage", "Screening coverage")
     _validate_optional_open_fraction(
         report,

@@ -9,7 +9,12 @@ import numpy as np
 from engine.apy.age_distribution import broad_age_group_from_years
 from engine.apy.config import normalise_config
 from engine.apy.data import load_parameters_from_config
-from engine.apy.timing import event_probability_between, resolve_time_settings
+from engine.apy.ltbi_state import (
+    RECENT_TO_REMOTE_RATE_PER_YEAR,
+    mixed_baseline_event_between,
+    resolve_ltbi_state_assumptions,
+)
+from engine.apy.timing import resolve_time_settings
 
 
 EPS = np.finfo(float).eps
@@ -170,6 +175,8 @@ def expected_active_within_window(
     screen_window: float,
     early_progression_period_years: float | None = None,
     lambda_late: float | None = None,
+    baseline_recent_proportion: float = 1.0,
+    recent_to_remote_rate: float | None = None,
 ) -> float:
     early_period = float(early_progression_period_years or screen_window)
     late = float(lambda_late if lambda_late is not None else lambda_early)
@@ -192,13 +199,16 @@ def expected_active_within_window(
                 pars, mj, contact, renal, diabetes, smoking, cld, alcohol
             )
             p_active = float(
-                event_probability_between(
+                mixed_baseline_event_between(
                     0.0,
                     screen_window,
                     mult,
                     lambda_early,
                     late,
-                    early_period,
+                    RECENT_TO_REMOTE_RATE_PER_YEAR
+                    if recent_to_remote_rate is None
+                    else recent_to_remote_rate,
+                    baseline_recent_proportion,
                 )
             )
             prev += (
@@ -224,21 +234,31 @@ def calibrate_early_hazard(
     screen_window: float,
     early_late_ratio: float,
     early_progression_period_years: float | None = None,
+    baseline_recent_proportion: float = 1.0,
+    recent_to_remote_rate: float | None = None,
 ) -> dict[str, float]:
     if early_late_ratio < 1:
         raise ValueError("earlyLateRatio must be >= 1")
+    weights, multipliers = _progression_weighted_multipliers(pars, log_lambda, gamma)
 
     def objective(lambda_early: float) -> float:
         lambda_late = lambda_early / early_late_ratio
         return (
-            expected_active_within_window(
-                lambda_early,
-                pars,
-                log_lambda,
-                gamma,
-                screen_window,
-                early_progression_period_years,
-                lambda_late,
+            float(
+                (
+                    weights
+                    * mixed_baseline_event_between(
+                        0.0,
+                        screen_window,
+                        multipliers,
+                        lambda_early,
+                        lambda_late,
+                        RECENT_TO_REMOTE_RATE_PER_YEAR
+                        if recent_to_remote_rate is None
+                        else recent_to_remote_rate,
+                        baseline_recent_proportion,
+                    )
+                ).sum()
             )
             - target_active_2y
         )
@@ -247,16 +267,47 @@ def calibrate_early_hazard(
     return {
         "lambdaEarly": lambda_early,
         "lambdaLate": lambda_early / early_late_ratio,
-        "expectedActiveAtCalibrationHorizon": expected_active_within_window(
-            lambda_early,
-            pars,
-            log_lambda,
-            gamma,
-            screen_window,
-            early_progression_period_years,
-            lambda_early / early_late_ratio,
-        ),
+        "expectedActiveAtCalibrationHorizon": target_active_2y + objective(lambda_early),
     }
+
+
+def _progression_weighted_multipliers(
+    pars: dict[str, Any],
+    log_lambda: float,
+    gamma: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    weights = []
+    multipliers = []
+    for age, age_prob in zip(pars["exactAgeValues"], pars["exactAgeProb"]):
+        age_group = broad_age_group_from_years([age])[0] - 1
+        p_mj = pars["mjPrevByAge"][age_group]
+        p_contact = pars["contactPrevByAge"][age_group]
+        p_renal = pars["renalPrevByAge"][age_group]
+        p_diabetes = pars["diabetesPrevByAge"][age_group]
+        p_smoking = pars["smokingPrevByAge"][age_group]
+        p_cld = pars["cldPrevByAge"][age_group]
+        p_alcohol = pars["alcoholPrevByAge"][age_group]
+        p_inf_by_flags = _infection_probability_for_age_and_primary_flags(
+            age, log_lambda, gamma, pars
+        )
+        for mj, contact, renal, diabetes, smoking, cld, alcohol in product([0, 1], repeat=7):
+            weights.append(
+                age_prob
+                * bern_prob(mj, p_mj)
+                * bern_prob(contact, p_contact)
+                * bern_prob(renal, p_renal)
+                * bern_prob(diabetes, p_diabetes)
+                * bern_prob(smoking, p_smoking)
+                * bern_prob(cld, p_cld)
+                * bern_prob(alcohol, p_alcohol)
+                * p_inf_by_flags[(mj, contact, renal)]
+            )
+            multipliers.append(
+                disease_multiplier_from_flags(
+                    pars, mj, contact, renal, diabetes, smoking, cld, alcohol
+                )
+            )
+    return np.asarray(weights, dtype=float), np.asarray(multipliers, dtype=float)
 
 
 def calibrate_from_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -268,6 +319,7 @@ def calibrate_from_config(config: dict[str, Any]) -> dict[str, Any]:
     )
     early_late_ratio = _default_if_empty(cfg["earlyLateRatio"], 5)
     timing = resolve_time_settings(cfg)
+    ltbi_state = resolve_ltbi_state_assumptions(cfg)
 
     age_calibration = calibrate_age_infection_model(
         pars, target_inf_prev, cfg["targetAgeOR"]
@@ -280,6 +332,8 @@ def calibrate_from_config(config: dict[str, Any]) -> dict[str, Any]:
         timing["activeTBCalibrationHorizonYears"],
         early_late_ratio,
         timing["earlyProgressionPeriodYears"],
+        ltbi_state["baselineRecentLTBIProportion"],
+        ltbi_state["recentToRemoteTransitionRatePerYear"],
     )
     return {
         "parameters": pars,
@@ -301,6 +355,11 @@ def calibrate_from_config(config: dict[str, Any]) -> dict[str, Any]:
         "targetActive2y": target_active_2y,
         "earlyProgressionPeriodYears": timing["earlyProgressionPeriodYears"],
         "activeTBCalibrationHorizonYears": timing["activeTBCalibrationHorizonYears"],
+        "baselineRecentLTBIProportion": ltbi_state["baselineRecentLTBIProportion"],
+        "recentToRemoteTransitionRatePerYear": ltbi_state[
+            "recentToRemoteTransitionRatePerYear"
+        ],
+        "ltbiStateAssumptionStatus": ltbi_state["status"],
     }
 
 

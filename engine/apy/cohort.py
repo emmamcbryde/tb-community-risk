@@ -10,6 +10,9 @@ from engine.apy.timing import (
     average_survival_to_uniform_screen,
     preventable_active_risk_to_uniform_screen,
 )
+from engine.apy.ltbi_state import (
+    mixed_baseline_survival,
+)
 
 
 def make_rng(seed: int | None = None) -> np.random.Generator:
@@ -191,12 +194,40 @@ def draw_untreated_active_times(
     screen_window: float,
     rng,
     early_progression_period_years: float | None = None,
+    baseline_recent=None,
+    recent_to_remote_rate: float | None = None,
 ) -> np.ndarray:
     infected_array = np.asarray(infected, dtype=bool)
     mult = np.asarray(mult_disease, dtype=float)
     t_active = np.full(infected_array.shape, np.inf, dtype=float)
     idx_inf = np.flatnonzero(infected_array)
     if len(idx_inf) == 0:
+        return t_active
+
+    if baseline_recent is not None and recent_to_remote_rate is not None:
+        recent = np.asarray(baseline_recent, dtype=bool)
+        recent_idx = idx_inf[recent[idx_inf]]
+        remote_idx = idx_inf[~recent[idx_inf]]
+        if len(recent_idx) > 0:
+            rate_active = lambda_early * mult[recent_idx]
+            rate_transition = float(recent_to_remote_rate)
+            t_active_early = exprnd_local(1.0 / rate_active, rng)
+            t_transition = exprnd_local(
+                np.full(len(recent_idx), 1.0 / rate_transition), rng
+            )
+            active_before_transition = t_active_early <= t_transition
+            t_active[recent_idx[active_before_transition]] = t_active_early[
+                active_before_transition
+            ]
+            transitioned = recent_idx[~active_before_transition]
+            if len(transitioned) > 0:
+                rate_late = lambda_late * mult[transitioned]
+                t_active[transitioned] = t_transition[~active_before_transition] + exprnd_local(
+                    1.0 / rate_late, rng
+                )
+        if len(remote_idx) > 0:
+            rate_late = lambda_late * mult[remote_idx]
+            t_active[remote_idx] = exprnd_local(1.0 / rate_late, rng)
         return t_active
 
     early_period = float(early_progression_period_years or screen_window)
@@ -274,23 +305,60 @@ def add_targeting_scores(
     screen_window: float,
     follow_horizon: float,
     early_progression_period_years: float | None = None,
+    baseline_recent_proportion: float | None = None,
+    recent_to_remote_rate: float | None = None,
 ) -> dict[str, np.ndarray]:
     out = dict(population)
-    avg_latent_at_screen = average_survival_to_random_screen(
-        out["diseaseMultiplier"],
-        lambda_early,
-        screen_window,
-        lambda_late,
-        early_progression_period_years,
-    )
-    preventable = preventable_active_risk(
-        out["diseaseMultiplier"],
-        lambda_early,
-        lambda_late,
-        screen_window,
-        follow_horizon,
-        early_progression_period_years,
-    )
+    if baseline_recent_proportion is not None and recent_to_remote_rate is not None:
+        times = (np.arange(32, dtype=float) + 0.5) / 32 * float(screen_window)
+        surv_values = [
+            mixed_baseline_survival(
+                t,
+                out["diseaseMultiplier"],
+                lambda_early,
+                lambda_late,
+                recent_to_remote_rate,
+                baseline_recent_proportion,
+            )
+            for t in times
+        ]
+        prevent_values = [
+            mixed_baseline_survival(
+                t,
+                out["diseaseMultiplier"],
+                lambda_early,
+                lambda_late,
+                recent_to_remote_rate,
+                baseline_recent_proportion,
+            )
+            - mixed_baseline_survival(
+                follow_horizon,
+                out["diseaseMultiplier"],
+                lambda_early,
+                lambda_late,
+                recent_to_remote_rate,
+                baseline_recent_proportion,
+            )
+            for t in times
+        ]
+        avg_latent_at_screen = np.mean(surv_values, axis=0)
+        preventable = np.maximum(np.mean(prevent_values, axis=0), 0.0)
+    else:
+        avg_latent_at_screen = average_survival_to_random_screen(
+            out["diseaseMultiplier"],
+            lambda_early,
+            screen_window,
+            lambda_late,
+            early_progression_period_years,
+        )
+        preventable = preventable_active_risk(
+            out["diseaseMultiplier"],
+            lambda_early,
+            lambda_late,
+            screen_window,
+            follow_horizon,
+            early_progression_period_years,
+        )
     out["ltbiRiskScore"] = out["pInfection"]
     out["cureTargetScore"] = out["pInfection"] * avg_latent_at_screen
     out["preventTargetScore"] = out["pInfection"] * preventable

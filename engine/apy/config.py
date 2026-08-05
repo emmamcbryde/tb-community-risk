@@ -110,6 +110,24 @@ def build_default_config() -> dict[str, Any]:
         "partialDoseFractionADR": None,
         "partialDoseFractionOther": None,
         "earlyLateRatio": None,
+        "baselineRecentLTBIProportion": 0.0,
+        "recentToRemoteTransitionRatePerYear": 0.2,
+        "ltbiStateAssumptions": {
+            "baselineRecentLTBIProportion": 0.0,
+            "recentToRemoteTransitionRatePerYear": 0.2,
+            "recentDefinitionYears": 5.0,
+            "transitionModel": "continuous_exponential",
+            "source": (
+                "Older static/transmission-dynamic architecture: ltbi_recent is "
+                "infection in the last 5 years; L_fast -> L_slow at 1/5 per year. "
+                "APY MATLAB v9 has no validated baseline recent fraction."
+            ),
+            "status": "unresolved_compatibility_placeholder",
+            "notes": (
+                "The default value keeps legacy APY workflows runnable but is "
+                "not a validated APY-specific recent-LTBI estimate."
+            ),
+        },
     }
     config.update(config_updates_from_scenario(scenario))
     return config
