@@ -131,7 +131,7 @@ class ApyCalibrationTests(unittest.TestCase):
         )
         self.assertEqual(
             calibrated["ltbiStateAssumptionStatus"],
-            "unresolved_compatibility_placeholder",
+            "unresolved",
         )
         self.assertEqual(calibrated["baselineRecentLTBIProportion"], 0.0)
 

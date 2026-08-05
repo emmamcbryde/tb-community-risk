@@ -41,6 +41,9 @@ class Milestone1ScenarioTests(unittest.TestCase):
         self.assertEqual(preset["populationPresetId"], "apy_demonstration")
         self.assertEqual(scenario["screeningWindowYears"], 3)
         self.assertEqual(scenario["followUpHorizonYears"], 20)
+        self.assertIsNone(
+            scenario["ltbiStateAssumptions"]["baselineRecentLTBIProportion"]
+        )
         self.assertIn("ordinary background clinical care", scenario["comparator"]["notes"])
 
     def test_scenario_json_configuration_round_trip(self) -> None:

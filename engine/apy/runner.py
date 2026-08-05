@@ -174,11 +174,16 @@ def build_strategy_metadata(config: dict[str, Any], reg: dict[str, Any]) -> dict
         "partialEfficacyAt50pct": regimen_partial_efficacy(reg, 0.50),
         "partialEfficacyAt80pct": regimen_partial_efficacy(reg, 0.80),
         "partialEfficacyAt100pct": regimen_partial_efficacy(reg, 1.00),
+        "ltbiStateModel": ltbi_state["transitionModel"],
         "baselineRecentLTBIProportion": ltbi_state["baselineRecentLTBIProportion"],
         "recentToRemoteTransitionRatePerYear": ltbi_state[
             "recentToRemoteTransitionRatePerYear"
         ],
+        "recentStateImpliedMeanResidenceTimeYears": ltbi_state[
+            "impliedMeanResidenceTimeYears"
+        ],
         "ltbiStateAssumptionStatus": ltbi_state["status"],
+        "ltbiStateProvisional": ltbi_state["provisional"],
     }
 
 

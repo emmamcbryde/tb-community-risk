@@ -12,7 +12,7 @@ from engine.apy.data import load_parameters_from_config
 from engine.apy.ltbi_state import (
     RECENT_TO_REMOTE_RATE_PER_YEAR,
     mixed_baseline_event_between,
-    resolve_ltbi_state_assumptions,
+    require_numeric_ltbi_state_assumptions,
 )
 from engine.apy.timing import resolve_time_settings
 
@@ -319,7 +319,7 @@ def calibrate_from_config(config: dict[str, Any]) -> dict[str, Any]:
     )
     early_late_ratio = _default_if_empty(cfg["earlyLateRatio"], 5)
     timing = resolve_time_settings(cfg)
-    ltbi_state = resolve_ltbi_state_assumptions(cfg)
+    ltbi_state = require_numeric_ltbi_state_assumptions(cfg)
 
     age_calibration = calibrate_age_infection_model(
         pars, target_inf_prev, cfg["targetAgeOR"]

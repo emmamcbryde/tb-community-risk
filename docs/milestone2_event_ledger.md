@@ -54,6 +54,9 @@ The implementation keeps four concepts distinct:
   `targetActive2y` numerical target.
 - `followUpHorizonYears`: analytical active-TB follow-up horizon. The APY
   demonstration default is 20 years.
+- `recentToRemoteTransitionRatePerYear`: Markov transition rate from recent to
+  remote LTBI in the explicit LTBI-state pathway. It, not
+  `earlyProgressionPeriodYears`, controls recent-state residence time.
 
 Legacy aliases `screenWindow` and `followHorizon` remain compatibility mirrors,
 but internal APY calculations use the explicit fields. `nActiveBy2y` remains
@@ -82,19 +85,26 @@ false-positive events are retained additively where supported.
 
 Version 3 adds explicit prevalent-infection states. `infected_at_baseline`
 equals `recent_ltbi_at_baseline + remote_ltbi_at_baseline`. Recent LTBI follows
-the older static/transmission-dynamic definition of infection acquired in the
-last 5 years; that older architecture used a continuous `L_fast -> L_slow`
-transition rate of `1/5` per year. Remote LTBI receives the late progression
-hazard from model time zero. Recent LTBI can progress, be effectively treated,
-or transition to remote LTBI; remote LTBI can progress or be effectively
-treated. The APY direct-effects model is a closed cohort: there is no
-post-baseline inflow from uninfected people to recent LTBI.
+the older static/transmission-dynamic fast/slow latent-state architecture. The
+current Python APY implementation uses a continuous Markov `recent -> remote`
+transition rate of `0.2` per year, giving a mean residence time of five years
+in the recent/fast latent state. This is not a deterministic infection-time
+model in which every infection acquired within the last five years becomes
+remote exactly at year five. Remote LTBI receives the late progression hazard
+from model time zero. Recent LTBI can progress, be effectively treated, or
+transition to remote LTBI; remote LTBI can progress or be effectively treated.
+The APY direct-effects model is a closed cohort: there is no post-baseline
+inflow from uninfected people to recent LTBI.
 
 No validated APY-specific baseline recent-LTBI fraction was found in the APY
-MATLAB v9 reference engine. The Python APY default therefore records an
-unresolved compatibility placeholder for `baselineRecentLTBIProportion` and
-emits a validation warning. Scenario authors should provide and document an
-explicit value before treating the APY exemplar as scientifically final.
+MATLAB v9 reference engine. The authoritative
+`ltbiStateAssumptions.baselineRecentLTBIProportion` field is therefore `null`
+unless a scenario supplies a value or an explicitly documented derivation
+method. Development compatibility mode can supply a numerical placeholder only
+to keep old development workflows runnable; those results are marked
+provisional and emit a validation warning. Scenario authors should provide and
+document an explicit value before treating the APY exemplar as clinician-ready
+or scientifically final.
 
 At screening, infected people are classified as `active_tb_at_screen`,
 `recent_latent_at_screen`, or `remote_latent_at_screen`. Aggregate latent,

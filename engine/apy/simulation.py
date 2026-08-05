@@ -17,7 +17,7 @@ from engine.apy.cohort import (
 )
 from engine.apy.config import normalise_config
 from engine.apy.eligibility import resolve_eligibility, screening_coverage_of_population
-from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
+from engine.apy.ltbi_state import require_numeric_ltbi_state_assumptions
 from engine.apy.regimen import (
     apply_regimen_overrides,
     default_regimen_library,
@@ -632,7 +632,7 @@ def _simulation_options(config: dict[str, Any]) -> dict[str, Any]:
     cfg = normalise_config(config)
     timing = resolve_time_settings(cfg)
     eligibility = resolve_eligibility(cfg)
-    ltbi_state = resolve_ltbi_state_assumptions(cfg)
+    ltbi_state = require_numeric_ltbi_state_assumptions(cfg)
     screen_coverage_of_population = screening_coverage_of_population(
         cfg, eligibility["number"]
     )

@@ -3,6 +3,13 @@ from __future__ import annotations
 import unittest
 
 from engine.apy.config import build_default_config, normalise_config, strip_empty_fields
+from engine.apy.ltbi_state import (
+    COMPATIBILITY_MODE_WARNING,
+    LTBI_STATE_MODEL,
+    apply_ltbi_state_edit,
+    is_clinician_ready_ltbi_state,
+    resolve_ltbi_state_assumptions,
+)
 from engine.apy.validation import collect_validation_issues, validate_config
 
 
@@ -32,6 +39,8 @@ class ApyConfigValidationTests(unittest.TestCase):
         self.assertEqual(cfg["tstSensitivity"], 0.80)
         self.assertIsNone(cfg["pStartTPT"])
         self.assertIsNone(cfg["earlyLateRatio"])
+        self.assertIsNone(cfg["ltbiStateAssumptions"]["baselineRecentLTBIProportion"])
+        self.assertTrue(cfg["ltbiStateAssumptions"]["developmentCompatibilityMode"])
 
     def test_normalised_config_fills_missing_fields_from_defaults(self) -> None:
         cfg = normalise_config({"scenarioLabel": "Custom", "riskPrev": {"smoking": 0.2}})
@@ -53,6 +62,116 @@ class ApyConfigValidationTests(unittest.TestCase):
         report = collect_validation_issues(cfg)
 
         self.assertTrue(report["isValid"])
+        self.assertTrue(report["hasWarnings"])
+        self.assertIn(
+            "ltbiStateAssumptions.baselineRecentLTBIProportion",
+            report["warningFieldNames"],
+        )
+
+    def test_nested_ltbi_state_fields_are_authoritative(self) -> None:
+        cfg = normalise_config(
+            {
+                "ltbiStateAssumptions": {
+                    "baselineRecentLTBIProportion": 0.42,
+                    "recentToRemoteTransitionRatePerYear": 0.25,
+                    "source": "test source",
+                    "status": "configured",
+                    "developmentCompatibilityMode": False,
+                }
+            }
+        )
+        state = resolve_ltbi_state_assumptions(cfg)
+
+        self.assertEqual(cfg["baselineRecentLTBIProportion"], 0.42)
+        self.assertEqual(cfg["recentToRemoteTransitionRatePerYear"], 0.25)
+        self.assertEqual(state["baselineRecentLTBIProportion"], 0.42)
+        self.assertEqual(state["source"], "test source")
+        self.assertFalse(state["provisional"])
+
+    def test_legacy_only_ltbi_state_fields_are_migrated(self) -> None:
+        cfg = normalise_config(
+            {
+                "baselineRecentLTBIProportion": 0.3,
+                "recentToRemoteTransitionRatePerYear": 0.4,
+            }
+        )
+
+        self.assertEqual(cfg["ltbiStateAssumptions"]["baselineRecentLTBIProportion"], 0.3)
+        self.assertEqual(cfg["ltbiStateAssumptions"]["recentToRemoteTransitionRatePerYear"], 0.4)
+        self.assertEqual(cfg["ltbiStateAssumptions"]["status"], "configured_from_legacy")
+
+    def test_conflicting_ltbi_state_fields_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Conflicting LTBI-state configuration"):
+            normalise_config(
+                {
+                    "baselineRecentLTBIProportion": 0.1,
+                    "ltbiStateAssumptions": {
+                        "baselineRecentLTBIProportion": 0.2,
+                        "recentToRemoteTransitionRatePerYear": 0.2,
+                    },
+                }
+            )
+
+    def test_unresolved_ltbi_state_is_flagged_and_clinician_ready_rejects(self) -> None:
+        cfg = build_default_config()
+        report = collect_validation_issues(cfg)
+        clinician_report = collect_validation_issues(cfg, clinician_ready=True)
+
+        self.assertTrue(report["isValid"])
+        self.assertIn(
+            "ltbiStateAssumptions.baselineRecentLTBIProportion",
+            report["warningFieldNames"],
+        )
+        self.assertFalse(clinician_report["isValid"])
+        self.assertIn(
+            "ltbiStateAssumptions.baselineRecentLTBIProportion",
+            clinician_report["fatalFieldNames"],
+        )
+        self.assertFalse(is_clinician_ready_ltbi_state(cfg))
+
+    def test_development_compatibility_mode_is_visibly_provisional(self) -> None:
+        state = resolve_ltbi_state_assumptions(build_default_config())
+
+        self.assertEqual(state["baselineRecentLTBIProportion"], 0.0)
+        self.assertTrue(state["developmentCompatibilityMode"])
+        self.assertTrue(state["provisional"])
+        self.assertIn(COMPATIBILITY_MODE_WARNING, state["warning"])
+
+    def test_markov_terminology_and_implied_mean_residence_time(self) -> None:
+        state = resolve_ltbi_state_assumptions(
+            normalise_config(
+                {
+                    "ltbiStateAssumptions": {
+                        "baselineRecentLTBIProportion": 0.25,
+                        "recentToRemoteTransitionRatePerYear": 0.2,
+                        "status": "configured",
+                        "source": "test",
+                        "developmentCompatibilityMode": False,
+                    }
+                }
+            )
+        )
+
+        self.assertEqual(state["transitionModel"], LTBI_STATE_MODEL)
+        self.assertAlmostEqual(state["impliedMeanResidenceTimeYears"], 5.0)
+        self.assertIn("mean residence time", state["stateDefinition"])
+        self.assertNotIn("infection acquired within the last 5 years", state["stateDefinition"])
+
+    def test_ltbi_state_save_load_round_trip_preserves_provenance(self) -> None:
+        cfg = apply_ltbi_state_edit(
+            build_default_config(),
+            baseline_recent_proportion=0.27,
+            transition_rate_per_year=0.18,
+            source="round-trip source",
+            status="configured",
+            notes="round-trip notes",
+        )
+        loaded = normalise_config(cfg)
+
+        self.assertEqual(loaded["ltbiStateAssumptions"]["baselineRecentLTBIProportion"], 0.27)
+        self.assertEqual(loaded["ltbiStateAssumptions"]["source"], "round-trip source")
+        self.assertEqual(loaded["ltbiStateAssumptions"]["status"], "configured")
+        self.assertEqual(loaded["ltbiStateAssumptions"]["notes"], "round-trip notes")
 
     def test_invalid_n_fails(self) -> None:
         report = collect_validation_issues({"N": 0})

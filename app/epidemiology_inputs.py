@@ -3,6 +3,11 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from engine.apy.ltbi_state import (
+    apply_ltbi_state_edit,
+    resolve_ltbi_state_assumptions,
+)
+
 
 RISK_FACTOR_LABELS = {
     "contact": "Close contact",
@@ -105,6 +110,53 @@ def apply_epidemiology_updates(
             risk_prev[key] = value
     updated["riskPrev"] = risk_prev
     return updated
+
+
+def apply_ltbi_state_assumption_update(
+    config: dict[str, Any],
+    *,
+    baseline_recent_percent: float | None,
+    transition_rate_per_year: float,
+    source: str,
+    status: str,
+    notes: str = "",
+) -> dict[str, Any]:
+    baseline_fraction = (
+        None
+        if baseline_recent_percent is None
+        else validate_fraction(float(baseline_recent_percent) / 100.0)
+    )
+    return apply_ltbi_state_edit(
+        config,
+        baseline_recent_proportion=baseline_fraction,
+        transition_rate_per_year=transition_rate_per_year,
+        source=source,
+        status=status,
+        notes=notes,
+    )
+
+
+def ltbi_state_display_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
+    state = resolve_ltbi_state_assumptions(config)
+    return [
+        {"Assumption": "LTBI-state model", "Value": state["transitionModel"]},
+        {
+            "Assumption": "Baseline recent-LTBI proportion",
+            "Value": state["baselineRecentLTBIProportion"],
+        },
+        {
+            "Assumption": "Recent-to-remote transition rate",
+            "Value": state["recentToRemoteTransitionRatePerYear"],
+        },
+        {
+            "Assumption": "Implied mean residence time",
+            "Value": state["impliedMeanResidenceTimeYears"],
+        },
+        {"Assumption": "State definition", "Value": state["stateDefinition"]},
+        {"Assumption": "Source", "Value": state["source"]},
+        {"Assumption": "Status", "Value": state["status"]},
+        {"Assumption": "Warning", "Value": state["warning"] or ""},
+    ]
 
 
 def prevalence_source_label(value: Any) -> str:

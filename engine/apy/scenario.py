@@ -71,6 +71,28 @@ def build_scenario_contract(
         "earlyProgressionPeriodYears": preset.get("earlyProgressionPeriodYears", 2),
         "activeTBCalibrationHorizonYears": preset.get("activeTBCalibrationHorizonYears", 2),
         "followUpHorizonYears": preset.get("followUpHorizonYears"),
+        "ltbiStateAssumptions": deepcopy(
+            preset.get(
+                "ltbiStateAssumptions",
+                {
+                    "baselineRecentLTBIProportion": None,
+                    "recentToRemoteTransitionRatePerYear": 0.2,
+                    "transitionModel": "continuous_markov_recent_remote",
+                    "stateDefinition": (
+                        "fast/recent latent state with mean residence time of "
+                        "five years before transition to remote latent infection"
+                    ),
+                    "source": (
+                        "Transition structure from older static/transmission-dynamic "
+                        "architecture; APY-specific baseline recent fraction unresolved."
+                    ),
+                    "status": "unresolved",
+                    "notes": "",
+                    "developmentCompatibilityMode": True,
+                    "provisional": True,
+                },
+            )
+        ),
         "comparator": {
             "name": DEFAULT_COMPARATOR,
             "notes": (
@@ -109,6 +131,7 @@ def config_updates_from_scenario(scenario: dict[str, Any]) -> dict[str, Any]:
         "screenCoverage": _coverage_from_screened(screened, scenario.get("populationSize")),
         "screeningStrategy": targeting.get("strategy"),
         "ltbiPrevalence": ltbi.get("value"),
+        "ltbiStateAssumptions": deepcopy(scenario.get("ltbiStateAssumptions", {})),
         "scenario": deepcopy(scenario),
     }
     age_path = age_source.get("path")
@@ -158,6 +181,9 @@ def scenario_from_config(config: dict[str, Any]) -> dict[str, Any]:
     scenario.setdefault("ltbiPrevalenceAssumptions", {})
     scenario["ltbiPrevalenceAssumptions"]["value"] = config.get(
         "ltbiPrevalence", scenario["ltbiPrevalenceAssumptions"].get("value")
+    )
+    scenario["ltbiStateAssumptions"] = deepcopy(
+        config.get("ltbiStateAssumptions", scenario.get("ltbiStateAssumptions", {}))
     )
     scenario.setdefault("riskFactorAssumptions", {})
     scenario["riskFactorAssumptions"]["riskPrev"] = deepcopy(config.get("riskPrev", {}))

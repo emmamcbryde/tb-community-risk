@@ -12,11 +12,14 @@ from app.epidemiology_inputs import (
     PRINCIPAL_RISK_FACTORS,
     RISK_FACTOR_LABELS,
     apply_epidemiology_updates,
+    apply_ltbi_state_assumption_update,
     fraction_to_percent,
+    ltbi_state_display_rows,
     risk_override_from_percentages,
     risk_override_mode,
     risk_override_percent_values,
 )
+from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from app.state import (
     get_backend,
     get_backend_name,
@@ -325,6 +328,63 @@ if config:
         else:
             st.info("Using the APY default active-TB prevalence calibration target.")
 
+        ltbi_state = resolve_ltbi_state_assumptions(config)
+        with st.expander("Advanced LTBI-state assumptions", expanded=False):
+            st.dataframe(
+                arrow_safe_dataframe(ltbi_state_display_rows(config)),
+                width="stretch",
+                hide_index=True,
+            )
+            if ltbi_state.get("warning"):
+                st.warning(str(ltbi_state["warning"]))
+            ltbi_unresolved = st.checkbox(
+                "Baseline recent-LTBI proportion unresolved",
+                value=ltbi_state.get("baselineRecentLTBIProportion") is None
+                or str(ltbi_state.get("status", "")).startswith("unresolved"),
+            )
+            ltbi_recent_percent = None
+            if not ltbi_unresolved:
+                ltbi_recent_percent = st.number_input(
+                    "Baseline recent-LTBI proportion (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(
+                        fraction_to_percent(
+                            ltbi_state.get("baselineRecentLTBIProportion"),
+                            0.0,
+                        )
+                    ),
+                    step=1.0,
+                    format="%.2f",
+                )
+            ltbi_transition_rate = st.number_input(
+                "Recent-to-remote transition rate (per year)",
+                min_value=0.0001,
+                value=float(ltbi_state["recentToRemoteTransitionRatePerYear"]),
+                step=0.01,
+                format="%.4f",
+            )
+            st.caption(
+                f"Implied mean residence time: {1.0 / float(ltbi_transition_rate):.2f} years. "
+                "This is a Markov transition, not a deterministic five-year cutoff."
+            )
+            ltbi_source = st.text_input(
+                "LTBI-state assumption source",
+                value=str(ltbi_state.get("source") or ""),
+            )
+            ltbi_status = st.selectbox(
+                "LTBI-state assumption status",
+                ["unresolved", "configured", "configured_from_legacy", "provisional"],
+                index=choice_index(
+                    ltbi_state.get("status"),
+                    ["unresolved", "configured", "configured_from_legacy", "provisional"],
+                ),
+            )
+            ltbi_notes = st.text_area(
+                "LTBI-state notes",
+                value=str(ltbi_state.get("notes") or ""),
+            )
+
         risk_prev_updates: dict[str, object] = {}
         with st.expander("Risk-factor prevalence overrides", expanded=False):
             st.caption(
@@ -464,6 +524,14 @@ if config:
             use_default_active_tb_prevalence=use_default_active_tb,
             active_tb_prevalence_percent=active_tb_prevalence_percent,
             risk_prev_updates=risk_prev_updates,
+        )
+        updated_config = apply_ltbi_state_assumption_update(
+            updated_config,
+            baseline_recent_percent=ltbi_recent_percent,
+            transition_rate_per_year=float(ltbi_transition_rate),
+            source=ltbi_source,
+            status="unresolved" if ltbi_unresolved else ltbi_status,
+            notes=ltbi_notes,
         )
         changed = updated_config != config
         if changed:

@@ -5,7 +5,10 @@ from typing import Any
 
 from engine.apy.config import normalise_config, resolve_repo_path
 from engine.apy.eligibility import RESTRICTED_ELIGIBILITY_ERROR, resolve_eligibility
-from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
+from engine.apy.ltbi_state import (
+    is_clinician_ready_ltbi_state,
+    resolve_ltbi_state_assumptions,
+)
 
 
 REQUIRED_FIELDS = [
@@ -35,7 +38,11 @@ RISK_PREV_FIELDS = ["contact", "MJ", "renal", "diabetes", "smoking", "cld", "alc
 DISEASE_OR_FIELDS = ["contact", "MJ", "renal", "diabetes", "smoking", "cld", "alcohol"]
 
 
-def collect_validation_issues(config: dict[str, Any]) -> dict[str, Any]:
+def collect_validation_issues(
+    config: dict[str, Any],
+    *,
+    clinician_ready: bool = False,
+) -> dict[str, Any]:
     report = _init_report()
     if not isinstance(config, dict):
         _add_issue(
@@ -83,6 +90,19 @@ def collect_validation_issues(config: dict[str, Any]) -> dict[str, Any]:
                 "Baseline recent LTBI proportion",
                 "unresolved_baseline_recent_ltbi_fraction",
                 str(ltbi_state["warning"]),
+            )
+        if clinician_ready and not is_clinician_ready_ltbi_state(cfg):
+            _add_issue(
+                report,
+                "errors",
+                "ltbiStateAssumptions.baselineRecentLTBIProportion",
+                "Baseline recent LTBI proportion",
+                "unresolved_for_clinician_ready",
+                (
+                    "Clinician-ready/reference APY validation requires an explicit "
+                    "baseline recent-LTBI proportion or an explicitly selected "
+                    "derivation method with source and non-unresolved status."
+                ),
             )
     except ValueError as exc:
         _add_issue(
@@ -184,9 +204,9 @@ def collect_validation_issues(config: dict[str, Any]) -> dict[str, Any]:
     return _finalise_report(report)
 
 
-def validate_config(config: dict[str, Any]) -> dict[str, Any]:
+def validate_config(config: dict[str, Any], *, clinician_ready: bool = False) -> dict[str, Any]:
     cfg = normalise_config(config)
-    report = collect_validation_issues(cfg)
+    report = collect_validation_issues(cfg, clinician_ready=clinician_ready)
     if not report["isValid"]:
         fields = ", ".join(report["fatalFieldNames"])
         messages = "; ".join(issue["message"] for issue in report["errors"])

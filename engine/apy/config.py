@@ -9,6 +9,7 @@ from engine.apy.scenario import (
     config_updates_from_scenario,
     build_scenario_contract,
 )
+from engine.apy.ltbi_state import canonicalise_ltbi_state_assumptions
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -110,23 +111,27 @@ def build_default_config() -> dict[str, Any]:
         "partialDoseFractionADR": None,
         "partialDoseFractionOther": None,
         "earlyLateRatio": None,
-        "baselineRecentLTBIProportion": 0.0,
-        "recentToRemoteTransitionRatePerYear": 0.2,
         "ltbiStateAssumptions": {
-            "baselineRecentLTBIProportion": 0.0,
+            "baselineRecentLTBIProportion": None,
             "recentToRemoteTransitionRatePerYear": 0.2,
-            "recentDefinitionYears": 5.0,
-            "transitionModel": "continuous_exponential",
+            "impliedMeanResidenceTimeYears": 5.0,
+            "recentDefinitionYears": None,
+            "transitionModel": "continuous_markov_recent_remote",
+            "stateDefinition": (
+                "fast/recent latent state with mean residence time of five years "
+                "before transition to remote latent infection"
+            ),
             "source": (
-                "Older static/transmission-dynamic architecture: ltbi_recent is "
-                "infection in the last 5 years; L_fast -> L_slow at 1/5 per year. "
-                "APY MATLAB v9 has no validated baseline recent fraction."
+                "Transition structure from older static/transmission-dynamic "
+                "architecture; APY-specific baseline recent fraction unresolved."
             ),
-            "status": "unresolved_compatibility_placeholder",
+            "status": "unresolved",
             "notes": (
-                "The default value keeps legacy APY workflows runnable but is "
-                "not a validated APY-specific recent-LTBI estimate."
+                "Set developmentCompatibilityMode=true only for legacy development "
+                "workflows that require a numerical placeholder."
             ),
+            "developmentCompatibilityMode": True,
+            "provisional": True,
         },
     }
     config.update(config_updates_from_scenario(scenario))
@@ -135,9 +140,25 @@ def build_default_config() -> dict[str, Any]:
 
 def normalise_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
     normalised = build_default_config()
+    overrides = config or {}
+    legacy_only_ltbi_state = bool(
+        overrides
+        and "ltbiStateAssumptions" not in overrides
+        and (
+            "baselineRecentLTBIProportion" in overrides
+            or "recentToRemoteTransitionRatePerYear" in overrides
+        )
+    )
     if config:
         _deep_update(normalised, config)
-    _sync_time_aliases(normalised, config or {})
+    _sync_time_aliases(normalised, overrides)
+    if legacy_only_ltbi_state:
+        normalised["ltbiStateAssumptions"] = {}
+    normalised = canonicalise_ltbi_state_assumptions(normalised)
+    if legacy_only_ltbi_state:
+        normalised["ltbiStateAssumptions"]["status"] = "configured_from_legacy"
+        normalised["ltbiStateAssumptions"]["source"] = "Migrated from legacy top-level field"
+        normalised["ltbiStateAssumptions"]["provisional"] = False
     normalised["testType"] = _normalise_text(normalised.get("testType"))
     normalised["regimen"] = _normalise_text(normalised.get("regimen"))
     normalised["screeningStrategy"] = _normalise_text(

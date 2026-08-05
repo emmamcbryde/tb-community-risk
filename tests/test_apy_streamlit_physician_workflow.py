@@ -14,7 +14,9 @@ from adapters.paths import repo_root
 from adapters.python_apy_backend import PythonApyBackend
 from app.epidemiology_inputs import (
     apply_epidemiology_updates,
+    apply_ltbi_state_assumption_update,
     fraction_to_percent,
+    ltbi_state_display_rows,
     percent_to_fraction,
     risk_override_from_percentages,
 )
@@ -62,6 +64,26 @@ class PhysicianWorkflowHelperTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             risk_override_from_percentages("Three age groups", [1, 2])
+
+    def test_ltbi_state_ui_helper_updates_authoritative_nested_field(self) -> None:
+        cfg = build_default_config()
+        updated = apply_ltbi_state_assumption_update(
+            cfg,
+            baseline_recent_percent=33.0,
+            transition_rate_per_year=0.2,
+            source="test UI source",
+            status="configured",
+            notes="test UI notes",
+        )
+        rows = ltbi_state_display_rows(updated)
+
+        self.assertEqual(updated["ltbiStateAssumptions"]["baselineRecentLTBIProportion"], 0.33)
+        self.assertEqual(updated["baselineRecentLTBIProportion"], 0.33)
+        self.assertEqual(updated["ltbiStateAssumptions"]["source"], "test UI source")
+        self.assertIn(
+            {"Assumption": "Baseline recent-LTBI proportion", "Value": 0.33},
+            rows,
+        )
 
 
 class PythonApyPrevalencePathTests(unittest.TestCase):
@@ -112,6 +134,34 @@ class PythonApyPrevalencePathTests(unittest.TestCase):
         self.assertEqual(loaded["riskPrev"]["contact"], [0.01, 0.02, 0.03])
         self.assertEqual(info["backend"], "python_apy")
 
+    def test_python_backend_save_load_round_trip_preserves_ltbi_state(self) -> None:
+        backend = PythonApyBackend(repo_root())
+        cfg = apply_ltbi_state_assumption_update(
+            backend.default_config(),
+            baseline_recent_percent=22.0,
+            transition_rate_per_year=0.25,
+            source="saved source",
+            status="configured",
+            notes="saved notes",
+        )
+        tmp = repo_root() / ".tmp_test_ltbi_state_roundtrip"
+        tmp.mkdir(exist_ok=True)
+        path = tmp / "scenario.json"
+        try:
+            backend.save_scenario(cfg, str(path))
+            loaded, report, _ = backend.load_scenario(str(path))
+        finally:
+            if path.exists():
+                path.unlink()
+            if tmp.exists():
+                tmp.rmdir()
+
+        self.assertTrue(report["isValid"])
+        self.assertEqual(loaded["ltbiStateAssumptions"]["baselineRecentLTBIProportion"], 0.22)
+        self.assertEqual(loaded["ltbiStateAssumptions"]["recentToRemoteTransitionRatePerYear"], 0.25)
+        self.assertEqual(loaded["ltbiStateAssumptions"]["source"], "saved source")
+        self.assertEqual(loaded["ltbiStateAssumptions"]["status"], "configured")
+
 
 class WorkbookExportTests(unittest.TestCase):
     def test_workbook_contains_required_sheets_and_values(self) -> None:
@@ -141,6 +191,9 @@ class WorkbookExportTests(unittest.TestCase):
         scenario_values = list(wb["Scenario_inputs"].iter_rows(values_only=True))
         self.assertIn(("LTBI prevalence source", "Custom", None), scenario_values)
         self.assertIn(("LTBI prevalence input", 0.02, "percentage"), scenario_values)
+        self.assertIn(("LTBI-state model", "continuous_markov_recent_remote", None), scenario_values)
+        self.assertIn(("recent-state implied mean residence time", 5, "years"), scenario_values)
+        self.assertIn(("LTBI state provisional result", True, None), scenario_values)
         economics_values = list(wb["Economics"].iter_rows(values_only=True))
         self.assertIn(("Economics not run", None, "No zero values have been substituted for missing economics outputs."), economics_values)
         wb.close()
