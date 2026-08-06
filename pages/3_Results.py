@@ -169,6 +169,12 @@ else:
         economics_config=economics_config,
         results_stale=False,
         dirty_economics=bool(st.session_state.get("dirty_economics")),
+        decision_analysis_results={
+            "scenarioComparison": st.session_state.get("decision_scenario_comparison"),
+            "sensitivity": st.session_state.get("decision_sensitivity"),
+            "threshold": st.session_state.get("decision_threshold"),
+            "earlyReview": st.session_state.get("decision_early_review"),
+        },
     )
     st.download_button(
         "Download consolidated APY results workbook",

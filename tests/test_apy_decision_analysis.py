@@ -3,8 +3,12 @@ from __future__ import annotations
 import json
 import py_compile
 import unittest
+from io import BytesIO
 from unittest.mock import patch
 
+from openpyxl import load_workbook
+
+from app.results_workbook import build_results_workbook
 from adapters.serialization import to_json_like
 from engine.apy.decision_analysis import (
     DECISION_ANALYSIS_CONTRACT_VERSION,
@@ -345,6 +349,54 @@ class ApyDecisionAnalysisEarlyReviewTests(unittest.TestCase):
 class ApyDecisionAnalysisPageSmokeTests(unittest.TestCase):
     def test_decision_analysis_page_compiles(self) -> None:
         py_compile.compile("pages/5_Decision_Analysis.py", doraise=True)
+
+
+class ApyDecisionAnalysisWorkbookTests(unittest.TestCase):
+    def test_workbook_exports_decision_analysis_values_from_bundle(self) -> None:
+        comparison = run_scenario_comparison(
+            _reviewed_epi({"N": 20, "screenCoverage": 0}),
+            None,
+            [{"scenarioId": "zero", "label": "Zero screening", "changes": {"screenCoverage": 0}}],
+            model_type="expected_value",
+        )
+        payload = build_results_workbook(
+            config=_reviewed_epi({"N": 20}),
+            bundle={"metadata": {}, "headline": {}, "technical": {}, "downloads": {}},
+            decision_analysis_results={"scenarioComparison": comparison},
+        )
+        wb = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+
+        self.assertIn("Decision_scenarios", wb.sheetnames)
+        self.assertIn("Scenario_comparison", wb.sheetnames)
+        rows = list(wb["Scenario_comparison"].iter_rows(values_only=True))
+        exported = dict(zip(rows[0], rows[1]))
+        expected = comparison["scenarioSummaries"][0]
+
+        self.assertEqual(exported["scenarioId"], expected["scenarioId"])
+        self.assertEqual(exported["screened"], expected["screened"])
+        self.assertIsNone(exported["incrementalCost"])
+        wb.close()
+
+    def test_workbook_exports_early_review_prior_and_projection(self) -> None:
+        with patch("engine.apy.early_review._run_coverage_projection", _fake_prevalence_projection):
+            early = run_early_screening_review(
+                _reviewed_epi({"N": 30}),
+                None,
+                _review_input({"screenedToDate": 6, "plannedTotalScreened": 12, "eligiblePopulation": 30}),
+            )
+        payload = build_results_workbook(
+            config=_reviewed_epi({"N": 30}),
+            bundle={"metadata": {}, "headline": {}, "technical": {}, "downloads": {}},
+            decision_analysis_results={"earlyReview": early},
+        )
+        wb = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+
+        self.assertIn("Early_review_prior_posterior", wb.sheetnames)
+        self.assertIn("Early_review_projection", wb.sheetnames)
+        rows = list(wb["Early_review_prior_posterior"].iter_rows(values_only=True))
+        exported = dict(zip(rows[0], rows[1]))
+        self.assertEqual(exported["prevalence"], early["priorPosteriorTable"][0]["prevalence"])
+        wb.close()
 
 
 def _review_input(overrides: dict | None = None) -> dict:

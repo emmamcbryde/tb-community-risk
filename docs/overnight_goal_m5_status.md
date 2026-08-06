@@ -12,7 +12,7 @@ health-economics and evidence-readiness contracts.
 
 ## Current Checkpoint
 
-Checkpoint 4 - clinician decision-analysis interface complete.
+Checkpoint 5 - workbook, downloads and reproducibility complete.
 
 ## Changes Completed
 
@@ -44,6 +44,12 @@ Checkpoint 4 - clinician decision-analysis interface complete.
   one-way sensitivity/threshold analysis and early screening review. The page
   calls the authoritative decision-analysis bundle functions and displays
   unresolved-readiness warnings rather than conclusions.
+- Extended `build_results_workbook` with optional decision-analysis output
+  sheets for scenarios, scenario summaries, replicate economics, sensitivity,
+  threshold grids/crossings, early-review inputs/posteriors/projections and
+  validation.
+- Wired the Results page workbook download to include decision-analysis outputs
+  stored in Streamlit session state.
 
 ## Focused Tests Run
 
@@ -66,6 +72,8 @@ Checkpoint 4 - clinician decision-analysis interface complete.
   - Passed.
 - `conda run --no-capture-output -n tbmodel python -m unittest tests.test_apy_decision_analysis.ApyDecisionAnalysisPageSmokeTests -v`
   - 1 test passed.
+- `conda run --no-capture-output -n tbmodel python -m unittest tests.test_apy_decision_analysis.ApyDecisionAnalysisWorkbookTests -v`
+  - 2 tests passed.
 
 ## Defects Found During Review
 
@@ -83,17 +91,18 @@ Checkpoint 4 - clinician decision-analysis interface complete.
   retaining model-facing boundary coverage and a separate validation script.
 - Checkpoint 4: replaced deprecated `pd.np` page code with an explicit NumPy
   import before committing.
+- Checkpoint 5: no defects in focused workbook verification.
 
 ## Checkpoint Commit Hashes
 
 - Checkpoint 1: `860d080`
 - Checkpoint 2: `d4c7888`
 - Checkpoint 3: `9e5f4a4`
-- Checkpoint 4: pending commit.
+- Checkpoint 4: `13cc727`
+- Checkpoint 5: pending commit.
 
 ## Remaining Work
 
-- Checkpoint 5: workbook/download reproducibility.
 - Checkpoint 6: adversarial review, validation script, final hardening.
 
 ## Blockers

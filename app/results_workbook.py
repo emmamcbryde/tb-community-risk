@@ -44,6 +44,7 @@ def build_results_workbook(
     economics_config: dict[str, Any] | None = None,
     results_stale: bool = False,
     dirty_economics: bool = False,
+    decision_analysis_results: dict[str, Any] | None = None,
 ) -> bytes:
     wb = Workbook()
     wb.remove(wb.active)
@@ -66,6 +67,7 @@ def build_results_workbook(
     _write_technical_metadata(wb, config, bundle, backend_status, results_stale)
     _write_economics(wb, economics_results, economics_config, dirty_economics, results_stale)
     _write_apy_evidence_readiness(wb, config, economics_config)
+    _write_decision_analysis(wb, decision_analysis_results)
     _autosize_all(wb)
     output = BytesIO()
     wb.save(output)
@@ -426,6 +428,76 @@ def _write_apy_evidence_readiness(
         "Bundling_conflicts",
         readiness["bundlingConflicts"] or [{"assumptionId": "", "message": ""}],
     )
+
+
+def _write_decision_analysis(
+    wb: Workbook,
+    decision_analysis_results: dict[str, Any] | None,
+) -> None:
+    if not decision_analysis_results:
+        return
+    comparison = decision_analysis_results.get("scenarioComparison") or {}
+    sensitivity = decision_analysis_results.get("sensitivity") or {}
+    threshold = decision_analysis_results.get("threshold") or {}
+    early = decision_analysis_results.get("earlyReview") or {}
+
+    if comparison:
+        scenario_rows = []
+        for scenario in comparison.get("scenarios", []) or []:
+            scenario_rows.append(
+                {
+                    "scenarioId": scenario.get("scenarioId"),
+                    "label": scenario.get("label"),
+                    "description": scenario.get("description"),
+                    "baseScenarioId": scenario.get("baseScenarioId"),
+                    "changedFields": scenario.get("changedFields"),
+                    "unchangedInheritedFields": scenario.get("unchangedInheritedFields"),
+                    "modelType": scenario.get("modelType"),
+                    "valueType": scenario.get("valueType"),
+                    "provisional": scenario.get("provisional"),
+                    "eventLedgerVersion": scenario.get("eventLedgerVersion"),
+                    "economicResultsVersion": scenario.get("economicResultsVersion"),
+                    "configurationHash": scenario.get("configurationHash"),
+                    "modelVersion": scenario.get("modelVersion"),
+                    "seed": scenario.get("seed"),
+                    "nReps": scenario.get("nReps"),
+                }
+            )
+        _write_rows_sheet(wb, "Decision_scenarios", scenario_rows)
+        _write_rows_sheet(wb, "Scenario_comparison", comparison.get("scenarioSummaries") or [])
+        replicate_rows = []
+        for scenario in comparison.get("scenarios", []) or []:
+            econ = scenario.get("economics") or {}
+            reps = _rows_from_table(econ.get("replicateResults"))
+            for row in reps:
+                row = dict(row)
+                row["scenarioId"] = scenario.get("scenarioId")
+                replicate_rows.append(row)
+        _write_rows_sheet(wb, "Scenario_comparison_replicates", replicate_rows)
+        validation = comparison.get("validation") or {}
+        validation_rows = [
+            {"Field": "contractVersion", "Value": comparison.get("contractVersion")},
+            {"Field": "isValid", "Value": validation.get("isValid")},
+        ]
+        for issue in validation.get("errors", []) or []:
+            validation_rows.append({"Field": "error", "Value": issue})
+        for issue in validation.get("warnings", []) or []:
+            validation_rows.append({"Field": "warning", "Value": issue})
+        _write_rows_sheet(wb, "Decision_analysis_validation", validation_rows)
+
+    if sensitivity:
+        _write_rows_sheet(wb, "Sensitivity_spec", sensitivity.get("specifications") or [])
+        _write_rows_sheet(wb, "Sensitivity_results", sensitivity.get("results") or [])
+
+    if threshold:
+        _write_rows_sheet(wb, "Threshold_results", threshold.get("grid") or [])
+        _write_rows_sheet(wb, "Threshold_crossings", threshold.get("crossings") or [])
+
+    if early:
+        _write_rows_sheet(wb, "Early_review_inputs", [{"Field": key, "Value": value} for key, value in (early.get("inputs") or {}).items()])
+        _write_rows_sheet(wb, "Early_review_prior_posterior", early.get("priorPosteriorTable") or [])
+        _write_rows_sheet(wb, "Early_review_projection", early.get("projection") or [])
+        _write_rows_sheet(wb, "Early_review_summary", early.get("posteriorProjectionSummary") or [])
 
 
 def _humanise_metric_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
