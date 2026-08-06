@@ -410,6 +410,15 @@ if submitted:
 
 st.subheader("Current Assumptions")
 warnings = []
+ledger = (results_bundle or {}).get("technical", {}).get("eventLedger", {}) if isinstance(results_bundle, dict) else {}
+if results_bundle:
+    if ledger and ledger.get("validation", {}).get("isValid") is True:
+        st.success(
+            f"Event ledger available: {ledger.get('metadata', {}).get('contractVersion')} "
+            f"({ledger.get('metadata', {}).get('modelType')})."
+        )
+    else:
+        st.warning("A valid APY event ledger is required for authoritative economics.")
 for item in normalise_cost_table(econ_config.get("costItems") or []):
     if item.get("conversionStatus") != "valid":
         warnings.append(f"{item.get('costItemId')}: {item.get('conversionStatus')}")
@@ -439,7 +448,7 @@ elif st.session_state.get("results_stale"):
 
 if st.button("Run economics", type="primary", disabled=not can_run):
     try:
-        econ = backend.run_economics_for_config(config, econ_config)
+        econ = backend.run_economics(results_bundle, econ_config)
         st.session_state["economics_results"] = econ
         mark_economics_completed()
         sync_backend_status(backend.status())
@@ -452,10 +461,23 @@ if st.button("Run economics", type="primary", disabled=not can_run):
 
 econ_results = st.session_state.get("economics_results")
 if econ_results:
+    metadata = econ_results.get("metadata", {})
+    if metadata.get("isProvisional"):
+        st.warning("Economic outputs are provisional. Do not interpret them as clinician-ready cost-effectiveness conclusions.")
+    if econ_results.get("warnings"):
+        st.warning("; ".join(str(item) for item in econ_results.get("warnings") or []))
     st.subheader("Economics Summary")
     summary_rows = econ_results.get("summaryRows") or []
     if summary_rows:
         st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
+        primary = [
+            row for row in summary_rows
+            if row.get("metric") in {"incrementalCost", "dalysAverted", "primaryICER_ratioOfMeans"}
+            and float(row.get("discountRate", 0.03)) in {0.0, 0.03}
+        ]
+        if primary:
+            st.caption("Primary ICER uses mean paired incremental cost divided by mean paired DALYs averted; replicate ICERs are diagnostic only.")
+            st.dataframe(arrow_safe_dataframe(primary), width="stretch")
         st.markdown("Downloads")
         st.download_button(
             "Download economics summary CSV",

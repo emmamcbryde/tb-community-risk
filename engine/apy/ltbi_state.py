@@ -27,6 +27,13 @@ COMPATIBILITY_MODE_WARNING = (
 BASELINE_RECENT_KEY = "baselineRecentLTBIProportion"
 TRANSITION_RATE_KEY = "recentToRemoteTransitionRatePerYear"
 LEGACY_KEYS = {BASELINE_RECENT_KEY, TRANSITION_RATE_KEY}
+CLINICIAN_READY_LTBI_STATUSES = {"configured_reviewed", "model_derived_reviewed"}
+NON_READY_LTBI_STATUSES = {
+    "unresolved",
+    "unresolved_development_compatibility",
+    "provisional",
+    "migrated_legacy_unverified",
+}
 
 
 def resolve_ltbi_state_assumptions(config: dict[str, Any]) -> dict[str, Any]:
@@ -54,6 +61,8 @@ def resolve_ltbi_state_assumptions(config: dict[str, Any]) -> dict[str, Any]:
     if rate <= 0:
         raise ValueError("ltbiStateAssumptions.recentToRemoteTransitionRatePerYear must be > 0.")
     status = str(assumptions.get("status", "configured"))
+    if status in NON_READY_LTBI_STATUSES:
+        provisional = True
     warning = None
     if status.startswith("unresolved"):
         warnings.append(BASELINE_RECENT_FRACTION_UNRESOLVED_WARNING)
@@ -79,6 +88,10 @@ def canonicalise_ltbi_state_assumptions(config: dict[str, Any]) -> dict[str, Any
     nested = _default_nested_assumptions()
     if nested_present:
         nested.update(deepcopy(raw))
+        if "baselineRecentLTBIProportionStatus" not in raw and "status" in raw:
+            nested["baselineRecentLTBIProportionStatus"] = raw["status"]
+        if "baselineRecentLTBIProportionSource" not in raw and "source" in raw:
+            nested["baselineRecentLTBIProportionSource"] = raw["source"]
 
     legacy_recent_present = BASELINE_RECENT_KEY in out
     legacy_rate_present = TRANSITION_RATE_KEY in out
@@ -123,16 +136,42 @@ def canonicalise_ltbi_state_assumptions(config: dict[str, Any]) -> dict[str, Any
     nested[TRANSITION_RATE_KEY] = rate
     nested["impliedMeanResidenceTimeYears"] = 1.0 / rate
     nested.setdefault("source", "")
+    nested.setdefault("baselineRecentLTBIProportionSource", nested.get("source", ""))
+    nested.setdefault("baselineRecentLTBIProportionStatus", nested.get("status", "unresolved"))
+    nested.setdefault("baselineRecentLTBIDerivationMethod", "")
+    nested.setdefault("transitionModelSource", nested.get("source", ""))
+    nested.setdefault("transitionModelStatus", "configured_reviewed")
+    if (
+        nested.get("baselineRecentLTBIProportionStatus") in (None, "", "unresolved")
+        and str(nested.get("status")) in CLINICIAN_READY_LTBI_STATUSES
+    ):
+        nested["baselineRecentLTBIProportionStatus"] = nested["status"]
+    if (
+        not str(nested.get("baselineRecentLTBIProportionSource") or "").strip()
+        and str(nested.get("status")) in CLINICIAN_READY_LTBI_STATUSES
+        and str(nested.get("source") or "").strip()
+        and "APY-specific baseline recent fraction unresolved" not in str(nested.get("source"))
+    ):
+        nested["baselineRecentLTBIProportionSource"] = nested["source"]
     nested.setdefault("notes", "")
     nested.setdefault("status", "unresolved")
     nested.setdefault("developmentCompatibilityMode", False)
+    if str(nested.get("baselineRecentLTBIProportionStatus", "")) in NON_READY_LTBI_STATUSES:
+        nested["provisional"] = True
+    if str(nested.get("status", "")) in NON_READY_LTBI_STATUSES:
+        nested["provisional"] = True
     if "provisional" not in nested:
         nested["provisional"] = bool(
             str(nested["status"]).startswith("unresolved")
+            or nested["status"] in NON_READY_LTBI_STATUSES
             or nested.get("developmentCompatibilityMode")
         )
-    elif str(nested["status"]).startswith("configured") and not nested.get(
+    elif (
+        str(nested["status"]) in CLINICIAN_READY_LTBI_STATUSES
+        and str(nested.get("baselineRecentLTBIProportionStatus")) in CLINICIAN_READY_LTBI_STATUSES
+        and not nested.get(
         "developmentCompatibilityMode"
+        )
     ):
         nested["provisional"] = False
     if nested.get(BASELINE_RECENT_KEY) in ("", []):
@@ -158,10 +197,15 @@ def apply_ltbi_state_edit(
     nested[BASELINE_RECENT_KEY] = baseline_recent_proportion
     nested[TRANSITION_RATE_KEY] = transition_rate_per_year
     nested["status"] = status
+    nested["baselineRecentLTBIProportionStatus"] = status
+    nested["baselineRecentLTBIProportionSource"] = source or nested.get(
+        "baselineRecentLTBIProportionSource",
+        "",
+    )
     nested["source"] = source or nested.get("source", "")
     nested["notes"] = notes if notes is not None else nested.get("notes", "")
     nested["developmentCompatibilityMode"] = False
-    nested["provisional"] = str(status).startswith("unresolved")
+    nested["provisional"] = status not in CLINICIAN_READY_LTBI_STATUSES
     updated["ltbiStateAssumptions"] = nested
     updated.pop(BASELINE_RECENT_KEY, None)
     updated.pop(TRANSITION_RATE_KEY, None)
@@ -191,10 +235,10 @@ def is_clinician_ready_ltbi_state(config: dict[str, Any]) -> bool:
     return (
         state["baselineRecentLTBIProportion"] is not None
         and not state["provisional"]
-        and not str(state["status"]).startswith("unresolved")
-        and state["status"] != "migrated_legacy_unverified"
-        and state.get("source") != "Migrated from legacy top-level field"
-        and bool(str(state.get("source") or "").strip())
+        and not state["developmentCompatibilityMode"]
+        and state["status"] in CLINICIAN_READY_LTBI_STATUSES
+        and state["baselineRecentLTBIProportionStatus"] in CLINICIAN_READY_LTBI_STATUSES
+        and bool(str(state.get("baselineRecentLTBIProportionSource") or "").strip())
     )
 
 
@@ -219,6 +263,13 @@ def _default_nested_assumptions() -> dict[str, Any]:
             "Transition structure from older static/transmission-dynamic "
             "architecture; APY-specific baseline recent fraction unresolved."
         ),
+        "baselineRecentLTBIProportionSource": "",
+        "baselineRecentLTBIProportionStatus": "unresolved",
+        "baselineRecentLTBIDerivationMethod": "",
+        "transitionModelSource": (
+            "Transition structure from older static/transmission-dynamic architecture."
+        ),
+        "transitionModelStatus": "configured_reviewed",
         "status": "unresolved",
         "notes": "",
         "developmentCompatibilityMode": False,
@@ -249,6 +300,20 @@ def _resolved(
         "stateDefinition": assumptions.get("stateDefinition", RECENT_LTBI_DEFINITION),
         "recentDefinitionYears": _optional_float(assumptions.get("recentDefinitionYears")),
         "source": assumptions.get("source", "Configured APY scenario field"),
+        "baselineRecentLTBIProportionSource": assumptions.get(
+            "baselineRecentLTBIProportionSource",
+            "",
+        ),
+        "baselineRecentLTBIProportionStatus": assumptions.get(
+            "baselineRecentLTBIProportionStatus",
+            assumptions.get("status", "configured"),
+        ),
+        "baselineRecentLTBIDerivationMethod": assumptions.get(
+            "baselineRecentLTBIDerivationMethod",
+            "",
+        ),
+        "transitionModelSource": assumptions.get("transitionModelSource", ""),
+        "transitionModelStatus": assumptions.get("transitionModelStatus", ""),
         "status": assumptions.get("status", "configured"),
         "notes": assumptions.get("notes", ""),
         "developmentCompatibilityMode": bool(

@@ -161,6 +161,20 @@ def ltbi_state_display_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
         {"Assumption": "Source", "Value": state["source"]},
         {"Assumption": "Status", "Value": state["status"]},
         {
+            "Assumption": "Baseline recent-LTBI source",
+            "Value": state["baselineRecentLTBIProportionSource"],
+        },
+        {
+            "Assumption": "Baseline recent-LTBI status",
+            "Value": state["baselineRecentLTBIProportionStatus"],
+        },
+        {
+            "Assumption": "Baseline recent-LTBI derivation method",
+            "Value": state["baselineRecentLTBIDerivationMethod"],
+        },
+        {"Assumption": "Transition model source", "Value": state["transitionModelSource"]},
+        {"Assumption": "Transition model status", "Value": state["transitionModelStatus"]},
+        {
             "Assumption": "Development compatibility mode",
             "Value": state["developmentCompatibilityMode"],
         },

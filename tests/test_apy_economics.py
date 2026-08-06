@@ -35,6 +35,8 @@ class ApyEconomicsTests(unittest.TestCase):
             if item["originalCost"] not in (None, "", []):
                 item["originalPriceYear"] = "2025-26"
                 item["sourceYearStatus"] = "explicit"
+            if item["costItemId"] == "program_running":
+                item["resourceUse"]["costBasis"] = "annual_during_screening_window"
         cls.econ = run_health_economics(cls.python_output, cls.econ_config)
 
     def test_default_economics_config_has_expected_blank_fields(self) -> None:
@@ -155,7 +157,7 @@ class ApyEconomicsTests(unittest.TestCase):
 
         econ = run_health_economics_for_config(config, self.econ_config)
 
-        self.assertEqual(econ["source"], "run_health_economics_v9_python_port")
+        self.assertEqual(econ["source"], "event_ledger_health_economics_v2")
         self.assertIn("summaryRows", econ)
 
 

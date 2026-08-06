@@ -86,6 +86,11 @@ def build_scenario_contract(
                         "Transition structure from older static/transmission-dynamic "
                         "architecture; APY-specific baseline recent fraction unresolved."
                     ),
+                    "baselineRecentLTBIProportionSource": "",
+                    "baselineRecentLTBIProportionStatus": "unresolved",
+                    "baselineRecentLTBIDerivationMethod": "",
+                    "transitionModelSource": "Transition structure from older static/transmission-dynamic architecture.",
+                    "transitionModelStatus": "configured_reviewed",
                     "status": "unresolved",
                     "notes": "",
                     "developmentCompatibilityMode": False,

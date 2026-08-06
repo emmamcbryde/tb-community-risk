@@ -36,6 +36,11 @@ DEFAULT_OUTPUT_DIR = Path("outputs/apy_paper_daly_icer")
 DEFAULT_WORKBOOK_PATH = Path("paper/excel/APY_economics_decision_tree_formula_linked.xlsx")
 POST_TB_WORKBOOK_PATH = Path("paper/excel/APY_economics_decision_tree_formula_linked_post_tb.xlsx")
 POST_TB_REPORT_PATH = Path("APY_LTBI_health_economics_report_updated_post_tb.docx")
+LEGACY_OFFLINE_STATUS = "legacy_offline_not_clinician_ready"
+LEGACY_OFFLINE_NOTE = (
+    "Offline paper-output script using legacy DALY/QALY sensitivity assumptions; "
+    "not the authoritative Milestone 3 clinician-facing economic result."
+)
 OUTPUT_FILES = {
     "strategy": "apy_daly_icer_strategy_summary.csv",
     "health": "apy_daly_icer_health_outcomes.csv",
@@ -92,7 +97,10 @@ def main(argv: list[str] | None = None) -> int:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run offline APY paper DALY/QALY/ICER economics outputs.",
+        description=(
+            "Run legacy offline APY paper DALY/QALY/ICER outputs. These outputs "
+            "are not clinician-ready Milestone 3 economic conclusions."
+        ),
     )
     parser.add_argument("--output-dir", default="outputs/apy_paper_daly_icer")
     parser.add_argument("--quick", action="store_true")
@@ -396,6 +404,9 @@ def build_strategy_row(
         "screenCoverage": config["screenCoverage"],
         "screenWindow": config["screenWindow"],
         "followHorizon": config["followHorizon"],
+        "analysis_status": LEGACY_OFFLINE_STATUS,
+        "analysis_note": LEGACY_OFFLINE_NOTE,
+        "m3_authoritative_economics_contract": economics.get("contractVersion"),
         "nScreened_median": metric(results, "nScreened"),
         "nTotalCoursesStarted_median": metric(results, "nTotalCoursesStarted"),
         "nTotalCoursesCompleted_median": metric(results, "nTotalCoursesCompleted"),
@@ -435,7 +446,10 @@ def build_strategy_row(
         "nmbQALY_GBDAligned_75000": nmb.get("netMonetaryBenefitQALY_GBDAligned_high") if include_qaly else None,
     }
     row["dominance_status"] = dominance_status(row)
-    row["notes"] = "Direct person-level prevented cases; no downstream transmission effects."
+    row["notes"] = (
+        "Direct person-level prevented cases; no downstream transmission effects. "
+        f"{LEGACY_OFFLINE_NOTE}"
+    )
     return row
 
 

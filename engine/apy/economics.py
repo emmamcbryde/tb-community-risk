@@ -16,6 +16,11 @@ from engine.apy.costing import (
 )
 from engine.apy.runner import run_scenario_with_do_nothing
 from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
+from engine.apy.event_ledger_economics import (
+    HEALTH_ECONOMICS_CONTRACT_VERSION,
+    default_daly_assumptions,
+    run_event_ledger_health_economics,
+)
 
 
 ECONOMICS_CONTRACT_VERSION = "apy_v9_economics_results_v1"
@@ -76,6 +81,7 @@ def build_default_economics_config() -> dict[str, Any]:
             "unresolvedInputs": [],
             "notes": "Natural epidemiological outputs remain reported alongside DALYs.",
         },
+        "dalyAssumptions": default_daly_assumptions(),
         "threshold": {
             "metric": "cost per DALY averted",
             "concept": "1 x Australian GDP per capita per DALY averted",
@@ -189,11 +195,11 @@ def default_cost_items(overrides: dict[str, dict[str, Any]] | None = None) -> li
     specs = [
         ("test_igra", "IGRA screening test per person", "screening_test", {}),
         ("test_tst", "TST screening per person", "screening_test", {"returnVisitForReading": True}),
-        ("regimen_3hp", "3HP preventive regimen per started course", "preventive_regimen", {}),
-        ("regimen_4r", "4R preventive regimen per started course", "preventive_regimen", {}),
-        ("regimen_3hr", "3HR preventive regimen per started course", "preventive_regimen", {}),
-        ("regimen_6h", "6H preventive regimen per started course", "preventive_regimen", {}),
-        ("regimen_9h", "9H preventive regimen per started course", "preventive_regimen", {}),
+        ("regimen_3hp", "3HP preventive regimen per started course", "preventive_regimen", {"costBasis": "per_started_course"}),
+        ("regimen_4r", "4R preventive regimen per started course", "preventive_regimen", {"costBasis": "per_started_course"}),
+        ("regimen_3hr", "3HR preventive regimen per started course", "preventive_regimen", {"costBasis": "per_started_course"}),
+        ("regimen_6h", "6H preventive regimen per started course", "preventive_regimen", {"costBasis": "per_started_course"}),
+        ("regimen_9h", "9H preventive regimen per started course", "preventive_regimen", {"costBasis": "per_started_course"}),
         ("active_tb_disease", "Active TB disease management per case", "tb_disease_care", {}),
         (
             "false_positive_incremental",
@@ -203,6 +209,7 @@ def default_cost_items(overrides: dict[str, dict[str, Any]] | None = None) -> li
         ),
         ("program_setup", "Programme setup total cost", "program_setup", {}),
         ("program_running", "Programme running total cost", "program_running", {}),
+        ("tpt_adr_management", "TPT adverse-event management per ADR-related stop", "adverse_event_management", {}),
     ]
     items = []
     for cost_item_id, description, category, resource_use in specs:
@@ -401,6 +408,13 @@ def run_health_economics(
         }
     )
 
+    if _has_event_ledger(results):
+        routed_config = deepcopy(econ_config)
+        configs = _candidate_interface_configs(results)
+        if configs:
+            routed_config["scenarioConfig"] = configs[0]
+        return run_event_ledger_health_economics(results, routed_config)
+
     validation_report = validate_economics_config(econ_config)
     if not validation_report["isValid"]:
         raise ValueError("Economics config contains fatal validation errors.")
@@ -577,6 +591,16 @@ def run_health_economics_for_config(
         "scenarioLabel": out["results"].get("interfaceConfig", {}).get("scenarioLabel"),
     }
     return econ
+
+
+def _has_event_ledger(results: dict[str, Any]) -> bool:
+    if isinstance(results.get("eventLedger"), dict):
+        return True
+    if isinstance(results.get("technical"), dict) and isinstance(results["technical"].get("eventLedger"), dict):
+        return True
+    if isinstance(results.get("bundle"), dict):
+        return _has_event_ledger(results["bundle"])
+    return False
 
 
 def summary_metric(results: dict[str, Any], metric_name: str) -> float | None:

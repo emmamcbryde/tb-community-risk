@@ -77,7 +77,7 @@ class ApyConfigValidationTests(unittest.TestCase):
                     "baselineRecentLTBIProportion": 0.42,
                     "recentToRemoteTransitionRatePerYear": 0.25,
                     "source": "test source",
-                    "status": "configured",
+                    "status": "configured_reviewed",
                     "developmentCompatibilityMode": False,
                 }
             }
@@ -166,13 +166,47 @@ class ApyConfigValidationTests(unittest.TestCase):
             report["fatalFieldNames"],
         )
 
+    def test_provisional_status_remains_non_ready(self) -> None:
+        cfg = apply_ltbi_state_edit(
+            build_default_config(),
+            baseline_recent_proportion=0.2,
+            transition_rate_per_year=0.2,
+            source="test source",
+            status="provisional",
+            notes="not reviewed",
+        )
+        state = resolve_ltbi_state_assumptions(cfg)
+        report = collect_validation_issues(cfg, clinician_ready=True)
+
+        self.assertTrue(state["provisional"])
+        self.assertFalse(report["isValid"])
+
+    def test_transition_provenance_alone_does_not_validate_recent_fraction(self) -> None:
+        cfg = normalise_config(
+            {
+                "ltbiStateAssumptions": {
+                    "baselineRecentLTBIProportion": 0.2,
+                    "recentToRemoteTransitionRatePerYear": 0.2,
+                    "transitionModelSource": "Reviewed transition source",
+                    "transitionModelStatus": "configured_reviewed",
+                    "status": "configured_reviewed",
+                    "baselineRecentLTBIProportionStatus": "configured_reviewed",
+                    "baselineRecentLTBIProportionSource": "",
+                    "developmentCompatibilityMode": False,
+                }
+            }
+        )
+
+        self.assertFalse(is_clinician_ready_ltbi_state(cfg))
+        self.assertFalse(collect_validation_issues(cfg, clinician_ready=True)["isValid"])
+
     def test_explicit_reviewed_value_can_pass_clinician_ready_validation(self) -> None:
         cfg = apply_ltbi_state_edit(
             build_default_config(),
             baseline_recent_proportion=0.24,
             transition_rate_per_year=0.2,
             source="Scientific model-derived fixture source",
-            status="configured",
+            status="configured_reviewed",
             notes="Reviewed for clinician-ready validation test.",
         )
         report = collect_validation_issues(cfg, clinician_ready=True)
@@ -187,7 +221,7 @@ class ApyConfigValidationTests(unittest.TestCase):
                     "ltbiStateAssumptions": {
                         "baselineRecentLTBIProportion": 0.25,
                         "recentToRemoteTransitionRatePerYear": 0.2,
-                        "status": "configured",
+                        "status": "configured_reviewed",
                         "source": "test",
                         "developmentCompatibilityMode": False,
                     }

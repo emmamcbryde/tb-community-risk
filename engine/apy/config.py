@@ -125,6 +125,11 @@ def build_default_config() -> dict[str, Any]:
                 "Transition structure from older static/transmission-dynamic "
                 "architecture; APY-specific baseline recent fraction unresolved."
             ),
+            "baselineRecentLTBIProportionSource": "",
+            "baselineRecentLTBIProportionStatus": "unresolved",
+            "baselineRecentLTBIDerivationMethod": "",
+            "transitionModelSource": "Transition structure from older static/transmission-dynamic architecture.",
+            "transitionModelStatus": "configured_reviewed",
             "status": "unresolved",
             "notes": (
                 "Set developmentCompatibilityMode=true only for legacy development "

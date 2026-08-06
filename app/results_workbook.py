@@ -130,6 +130,11 @@ def _write_scenario_inputs(
         ("LTBI-state definition", ltbi_state.get("stateDefinition")),
         ("LTBI state assumption status", ltbi_state.get("status")),
         ("LTBI state assumption source", ltbi_state.get("source")),
+        ("baseline recent LTBI proportion source", ltbi_state.get("baselineRecentLTBIProportionSource")),
+        ("baseline recent LTBI proportion status", ltbi_state.get("baselineRecentLTBIProportionStatus")),
+        ("baseline recent LTBI derivation method", ltbi_state.get("baselineRecentLTBIDerivationMethod")),
+        ("LTBI transition model source", ltbi_state.get("transitionModelSource")),
+        ("LTBI transition model status", ltbi_state.get("transitionModelStatus")),
         ("LTBI state development compatibility mode", ltbi_state.get("developmentCompatibilityMode")),
         ("LTBI state assumption warning", ltbi_state.get("warning")),
         ("LTBI state provisional result", ltbi_state.get("provisional")),
@@ -267,6 +272,11 @@ def _write_technical_metadata(
         ("ltbiState.impliedMeanResidenceTimeYears", ltbi_state.get("impliedMeanResidenceTimeYears")),
         ("ltbiState.stateDefinition", ltbi_state.get("stateDefinition")),
         ("ltbiState.source", ltbi_state.get("source")),
+        ("ltbiState.baselineRecentLTBIProportionSource", ltbi_state.get("baselineRecentLTBIProportionSource")),
+        ("ltbiState.baselineRecentLTBIProportionStatus", ltbi_state.get("baselineRecentLTBIProportionStatus")),
+        ("ltbiState.baselineRecentLTBIDerivationMethod", ltbi_state.get("baselineRecentLTBIDerivationMethod")),
+        ("ltbiState.transitionModelSource", ltbi_state.get("transitionModelSource")),
+        ("ltbiState.transitionModelStatus", ltbi_state.get("transitionModelStatus")),
         ("ltbiState.status", ltbi_state.get("status")),
         ("ltbiState.developmentCompatibilityMode", ltbi_state.get("developmentCompatibilityMode")),
         ("ltbiState.warning", ltbi_state.get("warning")),
@@ -302,6 +312,8 @@ def _write_economics(
     ws.cell(start + 1, 1, "Economics config supplied").font = Font(bold=True)
     ws.cell(start + 1, 2, bool(economics_config))
     _write_economics_assumptions(wb, economics_results, economics_config)
+    if economics_results and economics_results.get("contractVersion") == "ltbi_health_economics_results_v2":
+        _write_event_ledger_economics(wb, economics_results)
 
 
 def _write_economics_assumptions(
@@ -339,6 +351,49 @@ def _write_economics_assumptions(
         wb,
         "Unresolved_assumptions",
         [{"Warning": warning} for warning in warnings] or [{"Warning": ""}],
+    )
+
+
+def _write_event_ledger_economics(
+    wb: Workbook,
+    economics_results: dict[str, Any],
+) -> None:
+    _write_rows_sheet(
+        wb,
+        "Economic_assumptions",
+        [
+            {"Field": "metadata", "Value": economics_results.get("metadata")},
+            {"Field": "assumptions", "Value": economics_results.get("assumptions")},
+            {"Field": "provenance", "Value": economics_results.get("provenance")},
+        ],
+    )
+    _write_rows_sheet(wb, "Economic_cost_inputs", economics_results.get("costItems") or [])
+    _write_rows_sheet(
+        wb,
+        "Economic_annual_by_arm",
+        _rows_from_table(economics_results.get("annualByArm")),
+    )
+    _write_rows_sheet(
+        wb,
+        "Economic_replicates",
+        _rows_from_table(economics_results.get("replicateResults")),
+    )
+    _write_rows_sheet(
+        wb,
+        "Economic_summary",
+        _rows_from_table(economics_results.get("summaries")),
+    )
+    validation = economics_results.get("validation") or {}
+    validation_rows = [{"Field": "isValid", "Value": validation.get("isValid")}]
+    for issue in validation.get("errors", []) or []:
+        validation_rows.append({"Field": "error", "Value": issue})
+    for issue in validation.get("warnings", []) or []:
+        validation_rows.append({"Field": "warning", "Value": issue})
+    _write_rows_sheet(wb, "Economic_validation", validation_rows)
+    _write_rows_sheet(
+        wb,
+        "Economic_unresolved_inputs",
+        economics_results.get("unresolvedInputs") or [{"field": "", "message": ""}],
     )
 
 
