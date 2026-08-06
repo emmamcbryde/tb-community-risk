@@ -20,6 +20,7 @@ from app.state import (
     sync_backend_status,
 )
 from engine.apy.costing import normalise_cost_table
+from engine.apy.evidence import assess_apy_reference_readiness
 from engine.apy.economics import update_cost_item_original_values_from_legacy_fields
 
 
@@ -431,6 +432,40 @@ st.dataframe(
     width="content",
     hide_index=True,
 )
+
+readiness = assess_apy_reference_readiness(config or {}, econ_config)
+st.subheader("APY Reference Evidence Readiness")
+status_rows = [
+    {"category": "epidemiology", "ready": readiness["epidemiologyReady"]},
+    {"category": "cost", "ready": readiness["costReady"]},
+    {"category": "DALY", "ready": readiness["dalyReady"]},
+    {"category": "threshold", "ready": readiness["thresholdReady"]},
+    {"category": "overall clinician-ready", "ready": readiness["overallClinicianReady"]},
+]
+st.dataframe(arrow_safe_dataframe(status_rows), width="content", hide_index=True)
+unresolved_rows = [
+    row
+    for row in readiness["readinessRows"]
+    if not row.get("ready")
+][:12]
+if unresolved_rows:
+    st.warning("APY reference evidence remains unresolved or provisional.")
+    st.dataframe(
+        arrow_safe_dataframe(
+            [
+                {
+                    "category": row.get("category"),
+                    "assumptionId": row.get("assumptionId"),
+                    "status": row.get("reviewStatus"),
+                    "source": row.get("sourceCitation"),
+                    "unresolvedReason": row.get("unresolvedReason"),
+                }
+                for row in unresolved_rows
+            ]
+        ),
+        width="content",
+        hide_index=True,
+    )
 st.download_button(
     "Download economics assumptions JSON",
     data=economics_assumptions_json(econ_config),

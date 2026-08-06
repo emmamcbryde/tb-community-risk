@@ -23,6 +23,16 @@ COMPARISON_DISCOUNT_RATE = 0.0
 NUMERIC_REVIEWED_STATUSES = {"configured_reviewed", "model_derived_reviewed"}
 EXCLUSION_REVIEWED_STATUS = "reviewed_exclusion"
 INTERPRETABLE_ICER_CLASSIFICATION = "increased cost with health gain"
+ESSENTIAL_COST_ITEM_IDS = {
+    "test_igra",
+    "test_tst",
+    "regimen_3hp",
+    "regimen_4r",
+    "regimen_3hr",
+    "regimen_6h",
+    "regimen_9h",
+    "active_tb_disease",
+}
 
 EXPECTED_COST_BASES = {
     "test_igra": {"per_person_screened"},
@@ -266,6 +276,17 @@ def _cost_lookup(
                 _unresolved(
                     "costItems.test_tst.resourceUse.returnVisitForReading",
                     out["basisIssues"][name],
+                )
+            )
+            out[name] = None
+            continue
+        original_currency = str(item.get("originalCurrency") or "")
+        target_item_currency = str(item.get("targetCurrency") or "")
+        if original_currency and target_item_currency and original_currency != target_item_currency:
+            unresolved.append(
+                _unresolved(
+                    f"costItems.{item_id}.originalCurrency",
+                    "Foreign-currency costs require an explicit currency-conversion record before use.",
                 )
             )
             out[name] = None
@@ -983,7 +1004,16 @@ def _reviewed_exclusion(daly: dict[str, Any], status_field: str, rationale_field
 
 def _reviewed_cost_exclusion(assumptions: dict[str, Any], cost_item_id: str) -> dict[str, Any] | None:
     rec = (assumptions.get("optionalCostExclusions") or {}).get(cost_item_id) or {}
-    if rec.get("status") == EXCLUSION_REVIEWED_STATUS and str(rec.get("rationale") or "").strip():
+    if rec.get("status") != EXCLUSION_REVIEWED_STATUS or not str(rec.get("rationale") or "").strip():
+        return None
+    exclusion_type = str(rec.get("exclusionType") or "").strip()
+    if cost_item_id in ESSENTIAL_COST_ITEM_IDS:
+        if exclusion_type == "outside_perspective":
+            return rec
+        if exclusion_type == "bundled" and str(rec.get("bundledIntoAssumptionId") or "").strip():
+            return rec
+        return None
+    if exclusion_type in {"outside_perspective", "bundled", "omitted_nonessential"}:
         return rec
     return None
 

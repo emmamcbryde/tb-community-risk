@@ -42,6 +42,8 @@ def collect_validation_issues(
     config: dict[str, Any],
     *,
     clinician_ready: bool = False,
+    economics_config: dict[str, Any] | None = None,
+    evidence_registry: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     report = _init_report()
     if not isinstance(config, dict):
@@ -104,6 +106,20 @@ def collect_validation_issues(
                     "derivation method with source and non-unresolved status."
                 ),
             )
+        if clinician_ready and economics_config is not None:
+            from engine.apy.evidence import assess_apy_reference_readiness
+
+            readiness = assess_apy_reference_readiness(cfg, economics_config, evidence_registry)
+            if not readiness["overallClinicianReady"]:
+                for assumption_id in readiness["unresolvedAssumptionIds"]:
+                    _add_issue(
+                        report,
+                        "errors",
+                        f"evidenceRegistry.{assumption_id}",
+                        assumption_id,
+                        "unresolved_for_clinician_ready",
+                        "APY reference evidence registry does not mark this assumption as clinician-ready.",
+                    )
     except ValueError as exc:
         _add_issue(
             report,

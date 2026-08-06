@@ -17,6 +17,7 @@ from app.epidemiology_inputs import (
     prevalence_source_label,
 )
 from engine.apy.costing import normalise_cost_table, unresolved_cost_warnings
+from engine.apy.evidence import assess_apy_reference_readiness
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT, scenario_from_config
 
@@ -64,6 +65,7 @@ def build_results_workbook(
     _write_event_ledger(wb, bundle)
     _write_technical_metadata(wb, config, bundle, backend_status, results_stale)
     _write_economics(wb, economics_results, economics_config, dirty_economics, results_stale)
+    _write_apy_evidence_readiness(wb, config, economics_config)
     _autosize_all(wb)
     output = BytesIO()
     wb.save(output)
@@ -403,6 +405,26 @@ def _write_event_ledger_economics(
         wb,
         "Economic_unresolved_inputs",
         economics_results.get("unresolvedInputs") or [{"field": "", "message": ""}],
+    )
+
+
+def _write_apy_evidence_readiness(
+    wb: Workbook,
+    config: dict[str, Any],
+    economics_config: dict[str, Any] | None,
+) -> None:
+    readiness = assess_apy_reference_readiness(config, economics_config or {})
+    _write_rows_sheet(wb, "Assumption_evidence_registry", readiness["registryRows"])
+    _write_rows_sheet(wb, "APY_readiness", readiness["readinessRows"])
+    _write_rows_sheet(
+        wb,
+        "Evidence_conflicts",
+        readiness["evidenceConflicts"] or [{"assumptionId": "", "message": ""}],
+    )
+    _write_rows_sheet(
+        wb,
+        "Bundling_conflicts",
+        readiness["bundlingConflicts"] or [{"assumptionId": "", "message": ""}],
     )
 
 
