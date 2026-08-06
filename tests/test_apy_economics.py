@@ -15,6 +15,33 @@ from engine.apy.ltbi_state import enable_development_compatibility_mode
 from engine.apy.runner import run_scenario_with_do_nothing
 
 
+def _reviewed_daly_fixture() -> dict:
+    def rec(value):
+        return {
+            "value": value,
+            "source": "Synthetic legacy economics test fixture",
+            "status": "configured_reviewed",
+            "notes": "Synthetic fixture.",
+            "provisional": False,
+        }
+
+    return {
+        "activeTBDisabilityWeight": rec(0.2),
+        "activeTBDurationYears": rec(0.5),
+        "tbCaseFatalityRisk": rec(0.1),
+        "yllPerTBDeath": rec(10),
+        "includeTPTHealthLoss": False,
+        "tptHealthLossExclusionStatus": "reviewed_exclusion",
+        "tptHealthLossExclusionRationale": "Synthetic reviewed exclusion.",
+        "includeADRHealthLoss": False,
+        "adrHealthLossExclusionStatus": "reviewed_exclusion",
+        "adrHealthLossExclusionRationale": "Synthetic reviewed exclusion.",
+        "includePostTBSequelae": False,
+        "postTBSequelaeStatus": "reviewed_exclusion",
+        "postTBSequelaeExclusionRationale": "Synthetic reviewed exclusion.",
+    }
+
+
 class ApyEconomicsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -30,6 +57,7 @@ class ApyEconomicsTests(unittest.TestCase):
         cls.econ_config["costs"]["falsePositiveIncrementalPerPerson"] = 10.0
         cls.econ_config["costs"]["programSetupTotal"] = 1000.0
         cls.econ_config["costs"]["programRunningTotal"] = 2000.0
+        cls.econ_config["dalyAssumptions"] = _reviewed_daly_fixture()
         cls.econ_config = update_cost_item_original_values_from_legacy_fields(cls.econ_config)
         for item in cls.econ_config["costItems"]:
             if item["originalCost"] not in (None, "", []):
@@ -37,6 +65,10 @@ class ApyEconomicsTests(unittest.TestCase):
                 item["sourceYearStatus"] = "explicit"
             if item["costItemId"] == "program_running":
                 item["resourceUse"]["costBasis"] = "annual_during_screening_window"
+            if item["costItemId"] == "tpt_adr_management":
+                item["originalCost"] = 0.0
+                item["originalPriceYear"] = "2025-26"
+                item["sourceYearStatus"] = "explicit"
         cls.econ = run_health_economics(cls.python_output, cls.econ_config)
 
     def test_default_economics_config_has_expected_blank_fields(self) -> None:
@@ -134,8 +166,11 @@ class ApyEconomicsTests(unittest.TestCase):
             item["conversionStatus"] = "not_converted"
             item["conversionApplied"] = False
             item["warnings"] = []
+            if item["costItemId"] == "tpt_adr_management":
+                item["originalCost"] = 0.0
 
         config = update_cost_item_original_values_from_legacy_fields(config)
+        config["dalyAssumptions"] = _reviewed_daly_fixture()
         econ = run_health_economics(self.python_output, config)
 
         self.assertIsNone(econ["costs"]["falsePositiveIncrementalCost"])

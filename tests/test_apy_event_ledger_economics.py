@@ -9,6 +9,7 @@ from openpyxl import load_workbook
 from app.results_workbook import build_results_workbook
 from engine.apy.config import build_default_config
 from engine.apy.economics import build_default_economics_config, run_health_economics
+from engine.apy.event_ledger import EVENT_LEDGER_CONTRACT_VERSION
 from engine.apy.event_ledger_economics import (
     HEALTH_ECONOMICS_CONTRACT_VERSION,
     classify_incremental_result,
@@ -59,6 +60,71 @@ class ApyEventLedgerEconomicsTests(unittest.TestCase):
         self.assertFalse(econ["status"]["isComplete"])
         self.assertIn("ICER", econ["status"]["notCalculated"])
 
+    def test_missing_annual_cost_is_not_skipped_by_replicate_aggregation(self) -> None:
+        config = _synthetic_econ()
+        _unresolve_cost(config, "test_igra")
+
+        econ = run_event_ledger_health_economics(_toy_ledger(), config)
+        annual = econ["annualByArm"]
+        reps = econ["replicateResults"]
+        row = reps[(reps["discountRate"] == 0.0) & (reps["replicateId"] == 0)].iloc[0]
+
+        self.assertTrue((annual["activeTBDiseaseCost"].dropna() > 0).any())
+        self.assertFalse(row["costPairComplete"])
+        self.assertIsNone(row["incrementalCost"])
+        self.assertIsNone(row["replicateICER"])
+        self.assertEqual(row["classification"], "incomplete / not calculated")
+
+    def test_unresolved_active_tb_cost_with_cases_blocks_totals(self) -> None:
+        config = _synthetic_econ()
+        _unresolve_cost(config, "active_tb_disease")
+
+        econ = run_event_ledger_health_economics(_toy_ledger(), config)
+        row = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+
+        self.assertFalse(row["costPairComplete"])
+        self.assertIsNone(row["incrementalCost"])
+
+    def test_unresolved_active_tb_daly_input_blocks_dalys_and_icer(self) -> None:
+        config = _synthetic_econ()
+        config["dalyAssumptions"]["activeTBDisabilityWeight"] = _assumption(None)
+
+        econ = run_event_ledger_health_economics(_toy_ledger(), config)
+        row = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+
+        self.assertFalse(row["dalyPairComplete"])
+        self.assertIsNone(row["dalysAverted"])
+        self.assertIsNone(row["replicateICER"])
+
+    def test_zero_resource_use_does_not_require_unit_cost(self) -> None:
+        config = _synthetic_econ()
+        _unresolve_cost(config, "test_igra")
+
+        econ = run_event_ledger_health_economics(_toy_ledger(screened=0, starts=0), config)
+        row = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+
+        self.assertTrue(row["costPairComplete"])
+        self.assertIsNotNone(row["incrementalCost"])
+
+    def test_ratio_of_means_uses_identical_complete_pair_set(self) -> None:
+        config = _synthetic_econ()
+        _unresolve_cost(config, "test_igra")
+        ledger = _toy_ledger(replicates=[
+            {"replicateId": 0, "screened": 0, "starts": 0, "comp_tb": 2, "int_tb": 2, "prevented": 0},
+            {"replicateId": 1, "screened": 10, "starts": 5, "comp_tb": 2, "int_tb": 1, "prevented": 1},
+        ])
+
+        econ = run_event_ledger_health_economics(ledger, config)
+        summary = econ["summaries"]
+        primary = summary[
+            (summary["discountRate"] == 0.0)
+            & (summary["metric"] == "primaryICER_ratioOfMeans")
+        ].iloc[0]
+
+        self.assertEqual(primary["totalPairedReplicates"], 2)
+        self.assertEqual(primary["completePairedReplicates"], 1)
+        self.assertEqual(primary["excludedPairedReplicates"], 1)
+
     def test_active_tb_cost_reconciliation_and_no_double_subtraction(self) -> None:
         result = run_expected_value(_reviewed_epi({"N": 120, "screeningStrategy": "random"}))
         econ = run_event_ledger_health_economics(result, _synthetic_econ({"program_setup": 0, "program_running": 0}))
@@ -107,6 +173,21 @@ class ApyEventLedgerEconomicsTests(unittest.TestCase):
         ]["programRunningCost"].sum()
         self.assertAlmostEqual(running, 120)
 
+    def test_setup_and_running_costs_survive_zero_event_years(self) -> None:
+        config = _synthetic_econ({"program_running": 25})
+        ledger = _toy_ledger(screening_window=3, screened_by_year={0: 5, 1: 0, 2: 5})
+
+        econ = run_event_ledger_health_economics(ledger, config)
+        annual = econ["annualByArm"]
+        running = annual[
+            (annual["arm"] == "intervention")
+            & (annual["discountRate"] == 0.0)
+            & (annual["modelYear"].isin([0, 1, 2]))
+        ][["modelYear", "programRunningCost"]]
+
+        self.assertEqual(set(running["modelYear"]), {0, 1, 2})
+        self.assertTrue((running["programRunningCost"] == 25).all())
+
     def test_cost_target_year_must_match_analysis(self) -> None:
         result = run_expected_value(_reviewed_epi({"N": 80}))
         config = _synthetic_econ()
@@ -118,6 +199,28 @@ class ApyEventLedgerEconomicsTests(unittest.TestCase):
 
         self.assertIn("costItems.test_igra.targetPriceYear", {item["field"] for item in econ["unresolvedInputs"]})
         self.assertIsNone(econ["costs"]["testingCost"])
+
+    def test_threshold_currency_year_mismatch_prevents_nmb(self) -> None:
+        config = _synthetic_econ({"threshold": 50000})
+        config["threshold"]["referenceYear"] = "2024-25"
+
+        econ = run_event_ledger_health_economics(_toy_ledger(), config)
+        row = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+
+        self.assertIn("threshold.alignment", {item["field"] for item in econ["unresolvedInputs"]})
+        self.assertIsNone(row["netMonetaryBenefit"])
+
+    def test_incorrect_cost_basis_prevents_component_calculation(self) -> None:
+        config = _synthetic_econ()
+        for item in config["costItems"]:
+            if item["costItemId"] == "test_igra":
+                item["resourceUse"]["costBasis"] = "per_completed_course"
+
+        econ = run_event_ledger_health_economics(_toy_ledger(), config)
+        row = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+
+        self.assertIn("costItems.test_igra.resourceUse.costBasis", {item["field"] for item in econ["unresolvedInputs"]})
+        self.assertFalse(row["costPairComplete"])
 
     def test_false_positive_and_adr_costs_do_not_create_benefit(self) -> None:
         result = run_expected_value(_reviewed_epi({"N": 100, "testSpecificity": 0}))
@@ -131,6 +234,41 @@ class ApyEventLedgerEconomicsTests(unittest.TestCase):
             intervention["tpt_adr_stop_total"].sum() * 7,
         )
         self.assertLessEqual(intervention["active_tb_cases_prevented"].sum(), intervention["infection_effectively_treated_total"].sum())
+
+    def test_missing_adr_cost_and_harm_require_reviewed_decisions(self) -> None:
+        config = _synthetic_econ({"adr": None, "adr_loss": None})
+        _unresolve_cost(config, "tpt_adr_management")
+        config["dalyAssumptions"]["includeADRHealthLoss"] = False
+        config["dalyAssumptions"]["adrHealthLossExclusionStatus"] = "unresolved"
+        config["dalyAssumptions"]["adrHealthLossExclusionRationale"] = ""
+
+        econ = run_event_ledger_health_economics(_toy_ledger(adr_stops=1), config)
+        row = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+
+        self.assertFalse(row["costPairComplete"])
+        self.assertFalse(row["dalyPairComplete"])
+        self.assertIn("dalyAssumptions.includeADRHealthLoss", {item["field"] for item in econ["unresolvedInputs"]})
+
+    def test_unresolved_post_tb_exclusion_prevents_complete_dalys(self) -> None:
+        config = _synthetic_econ()
+        config["dalyAssumptions"]["postTBSequelaeStatus"] = "unresolved"
+        config["dalyAssumptions"]["postTBSequelaeExclusionRationale"] = ""
+
+        econ = run_event_ledger_health_economics(_toy_ledger(), config)
+        row = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+
+        self.assertFalse(row["dalyPairComplete"])
+        self.assertIn("dalyAssumptions.includePostTBSequelae", {item["field"] for item in econ["unresolvedInputs"]})
+
+    def test_invalid_daly_ranges_are_rejected(self) -> None:
+        config = _synthetic_econ()
+        config["dalyAssumptions"]["activeTBDisabilityWeight"] = _assumption(1.5)
+        config["dalyAssumptions"]["tbCaseFatalityRisk"] = _assumption(-0.1)
+
+        econ = run_event_ledger_health_economics(_toy_ledger(), config)
+
+        self.assertIn("dalyAssumptions.activeTBDisabilityWeight", {item["field"] for item in econ["unresolvedInputs"]})
+        self.assertIn("dalyAssumptions.tbCaseFatalityRisk", {item["field"] for item in econ["unresolvedInputs"]})
 
     def test_discounting_known_year_and_no_quantity_change(self) -> None:
         result = run_expected_value(_reviewed_epi({"N": 80}))
@@ -177,9 +315,13 @@ class ApyEventLedgerEconomicsTests(unittest.TestCase):
             self.assertNotAlmostEqual(primary, reps["replicateICER"].mean())
 
     def test_dominance_and_nmb(self) -> None:
+        self.assertEqual(classify_incremental_result(None, 0), "incomplete / not calculated")
+        self.assertEqual(classify_incremental_result(float("nan"), 0), "incomplete / not calculated")
         self.assertEqual(classify_incremental_result(-1, 1), "dominant")
         self.assertEqual(classify_incremental_result(1, -1), "dominated")
         self.assertEqual(classify_incremental_result(-1, -1), "cost saving with health loss")
+        self.assertEqual(classify_incremental_result(0, 1), "health gain at no additional cost")
+        self.assertEqual(classify_incremental_result(1, 0), "increased cost with no material health difference")
         econ = run_event_ledger_health_economics(
             run_expected_value(_reviewed_epi({"N": 80})),
             _synthetic_econ({"threshold": 50000}),
@@ -190,6 +332,61 @@ class ApyEventLedgerEconomicsTests(unittest.TestCase):
 
         no_nmb = run_event_ledger_health_economics(run_expected_value(_reviewed_epi({"N": 80})), _synthetic_econ())
         self.assertIn("threshold.value", {item["field"] for item in no_nmb["unresolvedInputs"]})
+
+    def test_negative_or_zero_health_gain_has_no_primary_numeric_icer(self) -> None:
+        econ = run_event_ledger_health_economics(
+            _toy_ledger(prevented=0, comp_tb=1, int_tb=1),
+            _synthetic_econ({"threshold": 50000}),
+        )
+        row = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+        primary = econ["summaries"][
+            (econ["summaries"]["discountRate"] == 0.0)
+            & (econ["summaries"]["metric"] == "primaryICER_ratioOfMeans")
+        ].iloc[0]
+
+        self.assertIsNone(row["replicateICER"])
+        self.assertIsNone(primary["mean"])
+
+    def test_missing_nmb_excluded_and_deterministic_has_no_probability_row(self) -> None:
+        deterministic = run_event_ledger_health_economics(_toy_ledger(model_type="expected_value"), _synthetic_econ())
+        metrics = set(deterministic["summaries"]["metric"])
+
+        self.assertNotIn("probabilityPositiveNMB_fixedParameterSimulation", metrics)
+
+        stochastic = run_event_ledger_health_economics(_toy_ledger(replicates=[
+            {"replicateId": 0, "screened": 0, "starts": 0, "comp_tb": 2, "int_tb": 2, "prevented": 0},
+            {"replicateId": 1, "screened": 10, "starts": 5, "comp_tb": 2, "int_tb": 1, "prevented": 1},
+        ]), _synthetic_econ())
+        self.assertNotIn("probabilityPositiveNMB_fixedParameterSimulation", set(stochastic["summaries"]["metric"]))
+
+    def test_outside_horizon_events_visible_but_excluded_from_totals(self) -> None:
+        config = _synthetic_econ({"economic_horizon": 1})
+
+        econ = run_event_ledger_health_economics(_toy_ledger(active_year=5), config)
+        annual = econ["annualByArm"]
+        outside = annual[(annual["modelYear"] == 5) & (annual["discountRate"] == 0.0)]
+        row = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+
+        self.assertFalse(outside["includedInEconomicAnalysis"].any())
+        self.assertTrue((outside["economicExclusionReason"] != "").all())
+        self.assertAlmostEqual(row["comparatorCost"], 0.0)
+
+    def test_total_programme_cost_includes_all_program_components(self) -> None:
+        econ = run_event_ledger_health_economics(_toy_ledger(), _synthetic_econ({"adr": 7}))
+        row = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+        expected = sum(
+            row[f"intervention_{component}Discounted"]
+            for component in [
+                "screeningTestCost",
+                "tptRegimenCost",
+                "falsePositiveIncrementalCost",
+                "programSetupCost",
+                "programRunningCost",
+                "adrManagementCost",
+            ]
+        )
+
+        self.assertAlmostEqual(row["intervention_totalProgrammeCostDiscounted"], expected)
 
     def test_provisional_epidemiology_propagates(self) -> None:
         result = run_expected_value(enable_development_compatibility_mode({"N": 80}))
@@ -226,6 +423,25 @@ class ApyEventLedgerEconomicsTests(unittest.TestCase):
         self.assertEqual(first["incrementalCost"], expected["incrementalCost"])
         wb.close()
 
+    def test_workbook_blanks_unavailable_aggregate_results(self) -> None:
+        config = _synthetic_econ()
+        _unresolve_cost(config, "test_igra")
+        econ = run_event_ledger_health_economics(_toy_ledger(), config)
+        payload = build_results_workbook(
+            config=_reviewed_epi({}),
+            bundle={"metadata": {}, "headline": {}, "technical": {"eventLedger": _toy_ledger()["technical"]["eventLedger"]}},
+            backend_status={"name": "python_apy"},
+            economics_results=econ,
+            economics_config=config,
+        )
+        wb = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+        rows = list(wb["Economic_replicates"].iter_rows(values_only=True))
+        first = dict(zip(rows[0], rows[1]))
+
+        self.assertIn("costPairComplete", rows[0])
+        self.assertIsNone(first["incrementalCost"])
+        wb.close()
+
 
 def _reviewed_epi(overrides: dict) -> dict:
     cfg = apply_ltbi_state_edit(
@@ -243,6 +459,8 @@ def _reviewed_epi(overrides: dict) -> dict:
 def _synthetic_econ(overrides: dict | None = None) -> dict:
     overrides = overrides or {}
     config = build_default_economics_config()
+    if "economic_horizon" in overrides:
+        config["metadata"]["economicHorizonYears"] = overrides["economic_horizon"]
     values = {
         "test_igra": 10,
         "test_tst": 8,
@@ -279,19 +497,36 @@ def _synthetic_econ(overrides: dict | None = None) -> dict:
         "tptHealthLossExclusionStatus": "reviewed_exclusion" if "tpt_loss" not in overrides else "configured_reviewed",
         "tptHealthLossExclusionRationale": "Synthetic reviewed exclusion.",
         "dalyLossPerTPTStarted": _assumption(overrides.get("tpt_loss")),
+        "includeADRHealthLoss": "adr_loss" in overrides,
+        "adrHealthLossExclusionStatus": "reviewed_exclusion" if "adr_loss" not in overrides else "configured_reviewed",
+        "adrHealthLossExclusionRationale": "Synthetic reviewed ADR exclusion.",
         "dalyLossPerADRStop": _assumption(0.01),
+        "includePostTBSequelae": False,
+        "postTBSequelaeStatus": "reviewed_exclusion",
+        "postTBSequelaeExclusionRationale": "Synthetic reviewed post-TB exclusion.",
     }
     if "threshold" in overrides:
         config["threshold"].update(
             {
                 "value": overrides["threshold"],
                 "currency": "AUD",
-                "referenceYear": 2025,
+                "referenceYear": "2025-26",
                 "source": "Synthetic unit-test threshold fixture",
                 "status": "configured_reviewed",
             }
         )
     return config
+
+
+def _unresolve_cost(config: dict, cost_item_id: str) -> None:
+    for item in config["costItems"]:
+        if item["costItemId"] == cost_item_id:
+            item["originalCost"] = None
+            item["originalPriceYear"] = None
+            item["sourceYearStatus"] = "unknown"
+            item["convertedTargetYearCost"] = None
+            item["conversionStatus"] = "unresolved_source_price_year"
+            item["conversionApplied"] = False
 
 
 def _assumption(value):
@@ -302,6 +537,94 @@ def _assumption(value):
         "notes": "Synthetic fixture.",
         "provisional": False if value is not None else True,
     }
+
+
+def _toy_ledger(
+    *,
+    model_type: str = "agent_based",
+    screened: float = 10,
+    starts: float = 5,
+    adr_stops: float = 1,
+    comp_tb: float = 2,
+    int_tb: float = 1,
+    prevented: float = 1,
+    active_year: int = 5,
+    screening_window: int = 3,
+    screened_by_year: dict[int, float] | None = None,
+    replicates: list[dict] | None = None,
+) -> dict:
+    reps = replicates or [
+        {
+            "replicateId": 0,
+            "screened": screened,
+            "starts": starts,
+            "adr_stops": adr_stops,
+            "comp_tb": comp_tb,
+            "int_tb": int_tb,
+            "prevented": prevented,
+        }
+    ]
+    annual = []
+    value_type = "expected" if model_type == "expected_value" else "simulated_count"
+    for rep in reps:
+        rep_id = rep.get("replicateId", 0)
+        seed = None if model_type == "expected_value" else 100 + int(rep_id)
+        schedule = screened_by_year or {0: rep.get("screened", screened)}
+        for arm in ["comparator", "intervention"]:
+            for year, n_screened in schedule.items():
+                if arm == "intervention":
+                    _append_event(annual, model_type, value_type, arm, rep_id, seed, year, "screened", n_screened)
+                    _append_event(annual, model_type, value_type, arm, rep_id, seed, year, "tpt_started_total", rep.get("starts", starts) if year == min(schedule) else 0)
+                    _append_event(annual, model_type, value_type, arm, rep_id, seed, year, "tpt_started_false_positive", 1 if year == min(schedule) and rep.get("starts", starts) else 0)
+                    _append_event(annual, model_type, value_type, arm, rep_id, seed, year, "tpt_adr_stop_total", rep.get("adr_stops", adr_stops) if year == min(schedule) else 0)
+                    _append_event(annual, model_type, value_type, arm, rep_id, seed, year, "infection_effectively_treated_total", 1 if year == min(schedule) and rep.get("starts", starts) else 0)
+            active = rep.get("comp_tb", comp_tb) if arm == "comparator" else rep.get("int_tb", int_tb)
+            _append_event(annual, model_type, value_type, arm, rep_id, seed, active_year, "active_tb_cases", active)
+            if arm == "intervention":
+                _append_event(annual, model_type, value_type, arm, rep_id, seed, active_year, "active_tb_cases_prevented", rep.get("prevented", prevented))
+    return {
+        "technical": {
+            "eventLedger": {
+                "metadata": {
+                    "contractVersion": EVENT_LEDGER_CONTRACT_VERSION,
+                    "scenarioId": "toy_economics",
+                    "modelType": model_type,
+                    "backend": "python_apy",
+                    "screeningWindowYears": screening_window,
+                    "followUpHorizonYears": 20,
+                },
+                "definitions": [],
+                "replicateTotals": [],
+                "annualEvents": annual,
+                "validation": {"isValid": True, "errors": [], "warnings": []},
+                "summaries": [],
+            }
+        }
+    }
+
+
+def _append_event(rows, model_type, value_type, arm, rep_id, seed, year, name, value):
+    rows.append(
+        {
+            "scenarioId": "toy_economics",
+            "modelType": model_type,
+            "backend": "python_apy",
+            "arm": arm,
+            "replicateId": rep_id,
+            "pairedReplicateId": rep_id,
+            "replicateSeed": seed,
+            "valueType": value_type,
+            "screeningWindowYears": 3,
+            "followUpHorizonYears": 20,
+            "contractVersion": EVENT_LEDGER_CONTRACT_VERSION,
+            "modelVersion": "toy",
+            "modelYear": year,
+            "timeInterval": f"[{year}, {year + 1})",
+            "withinFollowUp": True,
+            "eventName": name,
+            "value": value,
+        }
+    )
 
 
 if __name__ == "__main__":

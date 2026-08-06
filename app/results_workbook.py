@@ -384,7 +384,16 @@ def _write_event_ledger_economics(
         _rows_from_table(economics_results.get("summaries")),
     )
     validation = economics_results.get("validation") or {}
-    validation_rows = [{"Field": "isValid", "Value": validation.get("isValid")}]
+    validation_rows = [
+        {"Field": "isValid", "Value": validation.get("isValid")},
+        {"Field": "structurallyValid", "Value": validation.get("structurallyValid")},
+        {"Field": "economicallyComplete", "Value": validation.get("economicallyComplete")},
+        {"Field": "conclusionPermitted", "Value": validation.get("conclusionPermitted")},
+        {"Field": "totalPairedReplicates", "Value": validation.get("totalPairedReplicates")},
+        {"Field": "completePairedReplicates", "Value": validation.get("completePairedReplicates")},
+        {"Field": "excludedPairedReplicates", "Value": validation.get("excludedPairedReplicates")},
+        {"Field": "exclusionReasons", "Value": validation.get("exclusionReasons")},
+    ]
     for issue in validation.get("errors", []) or []:
         validation_rows.append({"Field": "error", "Value": issue})
     for issue in validation.get("warnings", []) or []:

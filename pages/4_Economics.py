@@ -469,15 +469,27 @@ if econ_results:
     st.subheader("Economics Summary")
     summary_rows = econ_results.get("summaryRows") or []
     if summary_rows:
+        status = econ_results.get("status", {})
+        validation = econ_results.get("validation", {})
+        complete = bool(status.get("isComplete"))
         st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
         primary = [
             row for row in summary_rows
             if row.get("metric") in {"incrementalCost", "dalysAverted", "primaryICER_ratioOfMeans"}
             and float(row.get("discountRate", 0.03)) in {0.0, 0.03}
         ]
-        if primary:
+        if primary and complete:
             st.caption("Primary ICER uses mean paired incremental cost divided by mean paired DALYs averted; replicate ICERs are diagnostic only.")
             st.dataframe(arrow_safe_dataframe(primary), width="stretch")
+        elif primary:
+            st.markdown("Partial calculations - not a complete economic result")
+            st.dataframe(arrow_safe_dataframe(primary), width="stretch")
+        if validation:
+            st.caption(
+                "Complete pairs: "
+                f"{validation.get('completePairedReplicates')} of "
+                f"{validation.get('totalPairedReplicates')}."
+            )
         st.markdown("Downloads")
         st.download_button(
             "Download economics summary CSV",

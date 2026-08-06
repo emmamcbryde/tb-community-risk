@@ -193,23 +193,33 @@ def build_economics_preset_kwab150() -> dict[str, Any]:
 def default_cost_items(overrides: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     overrides = overrides or {}
     specs = [
-        ("test_igra", "IGRA screening test per person", "screening_test", {}),
-        ("test_tst", "TST screening per person", "screening_test", {"returnVisitForReading": True}),
+        ("test_igra", "IGRA screening test per person", "screening_test", {"costBasis": "per_person_screened"}),
+        (
+            "test_tst",
+            "TST screening per person",
+            "screening_test",
+            {"costBasis": "per_person_screened", "returnVisitForReading": True},
+        ),
         ("regimen_3hp", "3HP preventive regimen per started course", "preventive_regimen", {"costBasis": "per_started_course"}),
         ("regimen_4r", "4R preventive regimen per started course", "preventive_regimen", {"costBasis": "per_started_course"}),
         ("regimen_3hr", "3HR preventive regimen per started course", "preventive_regimen", {"costBasis": "per_started_course"}),
         ("regimen_6h", "6H preventive regimen per started course", "preventive_regimen", {"costBasis": "per_started_course"}),
         ("regimen_9h", "9H preventive regimen per started course", "preventive_regimen", {"costBasis": "per_started_course"}),
-        ("active_tb_disease", "Active TB disease management per case", "tb_disease_care", {}),
+        ("active_tb_disease", "Active TB disease management per case", "tb_disease_care", {"costBasis": "per_active_tb_case"}),
         (
             "false_positive_incremental",
             "False-positive incremental resource use or cost per treated false-positive person",
             "false_positive_care",
-            {},
+            {"costBasis": "per_false_positive_tpt_started"},
         ),
-        ("program_setup", "Programme setup total cost", "program_setup", {}),
-        ("program_running", "Programme running total cost", "program_running", {}),
-        ("tpt_adr_management", "TPT adverse-event management per ADR-related stop", "adverse_event_management", {}),
+        ("program_setup", "Programme setup total cost", "program_setup", {"costBasis": "total_once_at_program_start"}),
+        ("program_running", "Programme running total cost", "program_running", {"costBasis": "annual_during_screening_window"}),
+        (
+            "tpt_adr_management",
+            "TPT adverse-event management per ADR-related stop",
+            "adverse_event_management",
+            {"costBasis": "per_adr_stop"},
+        ),
     ]
     items = []
     for cost_item_id, description, category, resource_use in specs:
