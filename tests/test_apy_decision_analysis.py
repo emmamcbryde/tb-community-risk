@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import patch
 
 from adapters.serialization import to_json_like
 from engine.apy.decision_analysis import (
@@ -18,6 +19,7 @@ from engine.apy.sensitivity import (
     run_one_way_sensitivity,
     run_threshold_analysis,
 )
+from engine.apy.early_review import EARLY_REVIEW_CONTRACT_VERSION, run_early_screening_review
 from tests.test_apy_event_ledger_economics import _reviewed_epi, _synthetic_econ
 
 
@@ -215,6 +217,180 @@ class ApyDecisionAnalysisSensitivityTests(unittest.TestCase):
         crossings = crossings_from_evaluated_grid(grid)
         self.assertEqual(len(crossings), 3)
         self.assertTrue(all(crossing["bracketed"] for crossing in crossings))
+
+
+class ApyDecisionAnalysisEarlyReviewTests(unittest.TestCase):
+    def test_no_prior_means_no_posterior(self) -> None:
+        result = run_early_screening_review(
+            _reviewed_epi({"N": 100}),
+            _synthetic_econ(),
+            {"screenedToDate": 10, "testPositiveToDate": 1, "plannedTotalScreened": 30},
+        )
+
+        self.assertFalse(result["validation"]["isValid"])
+        self.assertIn("prior", {issue["field"] for issue in result["validation"]["errors"]})
+
+    def test_posterior_weights_normalize_and_low_high_yield_shift(self) -> None:
+        base = _reviewed_epi({"N": 30, "screeningStrategy": "random", "screenCoverage": 0.3})
+        common = {
+            "plannedTotalScreened": 9,
+            "screenedToDate": 6,
+            "eligiblePopulation": 30,
+            "prior": {"type": "beta", "mean": 0.1, "effectiveSampleSize": 20, "source": "Synthetic prior"},
+            "prevalenceGrid": [0.03, 0.1, 0.17],
+        }
+
+        with patch("engine.apy.early_review._run_coverage_projection", _fake_prevalence_projection):
+            low = run_early_screening_review(base, _synthetic_econ(), {**common, "testPositiveToDate": 0})
+            high = run_early_screening_review(base, _synthetic_econ(), {**common, "testPositiveToDate": 5})
+
+        self.assertEqual(low["contractVersion"], EARLY_REVIEW_CONTRACT_VERSION)
+        self.assertAlmostEqual(sum(row["posteriorWeight"] for row in low["priorPosteriorTable"]), 1.0)
+        self.assertLess(low["posterior"]["summary"]["mean"], low["prior"]["summary"]["mean"])
+        self.assertGreater(high["posterior"]["summary"]["mean"], high["prior"]["summary"]["mean"])
+
+    def test_false_positives_possible_at_zero_prevalence_when_specificity_below_one(self) -> None:
+        base = _reviewed_epi({"N": 20, "testType": "IGRA", "testSpecificity": 0.8, "screeningStrategy": "random"})
+        review = _review_input({"prevalenceGrid": [0.0, 0.1], "testPositiveToDate": 1})
+
+        result = run_early_screening_review(base, None, review)
+        zero = next(row for row in result["priorPosteriorTable"] if row["prevalence"] == 0.0)
+
+        self.assertGreater(zero["predictedPositiveProbability"], 0)
+
+    def test_perfect_test_approximates_prevalence_likelihood_for_random_screening(self) -> None:
+        base = _reviewed_epi(
+            {
+                "N": 20,
+                "testSensitivity": 1.0,
+                "testSpecificity": 1.0,
+                "screeningStrategy": "random",
+                "screeningWindowYears": 0.01,
+            }
+        )
+        with patch("engine.apy.early_review._run_coverage_projection", _fake_prevalence_projection):
+            result = run_early_screening_review(base, None, _review_input({"prevalenceGrid": [0.02, 0.1]}))
+
+        probs = {row["prevalence"]: row["predictedPositiveProbability"] for row in result["priorPosteriorTable"]}
+        self.assertLess(probs[0.02], probs[0.1])
+
+    def test_tst_bcg_composition_changes_predicted_false_positive_yield(self) -> None:
+        high_bcg = _reviewed_epi(
+            {
+                "N": 20,
+                "testType": "TST",
+                "screeningStrategy": "random",
+                "riskPrev": {"BCG": 1.0},
+            }
+        )
+        low_bcg = _reviewed_epi(
+            {
+                "N": 20,
+                "testType": "TST",
+                "screeningStrategy": "random",
+                "riskPrev": {"BCG": 0.0},
+            }
+        )
+        review = _review_input({"prevalenceGrid": [0.0]})
+
+        high = run_early_screening_review(high_bcg, None, review)
+        low = run_early_screening_review(low_bcg, None, review)
+
+        self.assertGreater(
+            high["priorPosteriorTable"][0]["predictedPositiveProbability"],
+            low["priorPosteriorTable"][0]["predictedPositiveProbability"],
+        )
+
+    def test_targeted_screening_yield_can_differ_from_population_prevalence(self) -> None:
+        base = _reviewed_epi({"N": 30, "screeningStrategy": "prevent"})
+        with patch("engine.apy.early_review._run_coverage_projection", _fake_targeted_projection):
+            result = run_early_screening_review(base, None, _review_input({"prevalenceGrid": [0.1]}))
+
+        predicted = result["priorPosteriorTable"][0]["predictedPositiveProbability"]
+        self.assertNotAlmostEqual(predicted, 0.1)
+
+    def test_stop_versus_continue_retains_completed_screening_and_adds_remaining(self) -> None:
+        base = _reviewed_epi({"N": 30, "screeningStrategy": "random"})
+        with patch("engine.apy.early_review._run_coverage_projection", _fake_prevalence_projection):
+            result = run_early_screening_review(
+                base,
+                _synthetic_econ({"threshold": 50000}),
+                _review_input(
+                    {
+                        "screenedToDate": 6,
+                        "plannedTotalScreened": 12,
+                        "eligiblePopulation": 30,
+                        "prevalenceGrid": [0.08, 0.12],
+                    }
+                ),
+            )
+
+        self.assertTrue(result["timingApproximation"])
+        first = result["projection"][0]
+        self.assertGreater(first["additionalPeopleScreened"], 0)
+        self.assertAlmostEqual(first["additionalCoverage"], (12 - 6) / 30)
+
+    def test_screened_equals_planned_total_has_no_remaining_screening(self) -> None:
+        with patch("engine.apy.early_review._run_coverage_projection", _fake_prevalence_projection):
+            result = run_early_screening_review(
+                _reviewed_epi({"N": 30, "screeningStrategy": "random"}),
+                None,
+                _review_input({"screenedToDate": 12, "plannedTotalScreened": 12, "eligiblePopulation": 30}),
+            )
+
+        self.assertAlmostEqual(result["projection"][0]["additionalPeopleScreened"], 0.0)
+
+
+def _review_input(overrides: dict | None = None) -> dict:
+    base = {
+        "reviewId": "synthetic_review",
+        "scenarioId": "synthetic_scenario",
+        "screenedToDate": 10,
+        "testPositiveToDate": 1,
+        "plannedTotalScreened": 30,
+        "eligiblePopulation": 100,
+        "prior": {
+            "type": "discrete_grid",
+            "weights": [0.5, 0.5],
+            "source": "Synthetic unit-test prior",
+        },
+        "prevalenceGrid": [0.05, 0.15],
+        "prevalenceThresholds": [0.1],
+    }
+    if overrides:
+        base.update(overrides)
+        if "prevalenceGrid" in overrides and "prior" not in overrides:
+            n = len(overrides["prevalenceGrid"])
+            base["prior"] = {"type": "discrete_grid", "weights": [1 / n] * n, "source": "Synthetic unit-test prior"}
+    return base
+
+
+def _fake_prevalence_projection(base_config, economics_config, prevalence, coverage, scenario_id):
+    screened = float(base_config.get("N", 100)) * float(coverage)
+    positives = screened * (0.02 + 0.8 * float(prevalence))
+    return {
+        "comparison": None,
+        "summary": {
+            "screened": screened,
+            "test_positive_total": positives,
+            "true_positive_recent": positives * 0.4,
+            "true_positive_remote": positives * 0.4,
+            "false_positive": positives * 0.2,
+            "tpt_started_total": positives * 0.8,
+            "tpt_completed_total": positives * 0.6,
+            "infection_effectively_treated_total": positives * 0.5,
+            "active_tb_cases_prevented": positives * 0.1,
+            "incrementalCost": positives * 10 if economics_config is not None else None,
+            "dalysAverted": positives * 0.01 if economics_config is not None else None,
+            "nmb": positives if economics_config is not None else None,
+        },
+    }
+
+
+def _fake_targeted_projection(base_config, economics_config, prevalence, coverage, scenario_id):
+    out = _fake_prevalence_projection(base_config, economics_config, prevalence, coverage, scenario_id)
+    out["summary"]["test_positive_total"] = out["summary"]["screened"] * 0.25
+    return out
 
 
 if __name__ == "__main__":

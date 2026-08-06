@@ -506,4 +506,6 @@ _ALLOWED_SCENARIO_ADAPTERS: dict[str, _AllowedAdapter] = {
     "regimenPComplete": lambda cfg, value: _set_probability(cfg, "regimenPComplete", value),
     "regimenADRstop": lambda cfg, value: _set_probability(cfg, "regimenADRstop", value),
     "regimenEffFull": lambda cfg, value: _set_probability(cfg, "regimenEffFull", value),
+    "ltbiPrevalence": lambda cfg, value: _set_probability(cfg, "ltbiPrevalence", value),
+    "activeTBPrevalence": lambda cfg, value: _set_probability(cfg, "activeTBPrevalence", value),
 }
