@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import py_compile
 import unittest
 from unittest.mock import patch
 
@@ -339,6 +340,11 @@ class ApyDecisionAnalysisEarlyReviewTests(unittest.TestCase):
             )
 
         self.assertAlmostEqual(result["projection"][0]["additionalPeopleScreened"], 0.0)
+
+
+class ApyDecisionAnalysisPageSmokeTests(unittest.TestCase):
+    def test_decision_analysis_page_compiles(self) -> None:
+        py_compile.compile("pages/5_Decision_Analysis.py", doraise=True)
 
 
 def _review_input(overrides: dict | None = None) -> dict:

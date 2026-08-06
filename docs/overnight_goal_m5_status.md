@@ -12,7 +12,7 @@ health-economics and evidence-readiness contracts.
 
 ## Current Checkpoint
 
-Checkpoint 3 - early screening review and prevalence updating complete.
+Checkpoint 4 - clinician decision-analysis interface complete.
 
 ## Changes Completed
 
@@ -40,6 +40,10 @@ Checkpoint 3 - early screening review and prevalence updating complete.
   the APY calibration through an invalid zero-prevalence target.
 - Added `scripts/validate_apy_early_review.py` using labelled synthetic
   validation inputs.
+- Added `pages/5_Decision_Analysis.py` with tabs for strategy comparison,
+  one-way sensitivity/threshold analysis and early screening review. The page
+  calls the authoritative decision-analysis bundle functions and displays
+  unresolved-readiness warnings rather than conclusions.
 
 ## Focused Tests Run
 
@@ -58,6 +62,10 @@ Checkpoint 3 - early screening review and prevalence updating complete.
 - `conda run --no-capture-output -n tbmodel python scripts/validate_apy_early_review.py`
   - Passed. Low-yield posterior mean `0.03547451899578974`; high-yield
     posterior mean `0.09998081433369738`.
+- `conda run --no-capture-output -n tbmodel python -m py_compile pages/5_Decision_Analysis.py engine/apy/decision_analysis.py engine/apy/sensitivity.py engine/apy/early_review.py`
+  - Passed.
+- `conda run --no-capture-output -n tbmodel python -m unittest tests.test_apy_decision_analysis.ApyDecisionAnalysisPageSmokeTests -v`
+  - 1 test passed.
 
 ## Defects Found During Review
 
@@ -73,16 +81,18 @@ Checkpoint 3 - early screening review and prevalence updating complete.
 - Checkpoint 3: several Bayesian-mechanics unit tests were initially too
   calibration-heavy. Reworked them to use a deterministic projection stub while
   retaining model-facing boundary coverage and a separate validation script.
+- Checkpoint 4: replaced deprecated `pd.np` page code with an explicit NumPy
+  import before committing.
 
 ## Checkpoint Commit Hashes
 
 - Checkpoint 1: `860d080`
 - Checkpoint 2: `d4c7888`
-- Checkpoint 3: pending commit.
+- Checkpoint 3: `9e5f4a4`
+- Checkpoint 4: pending commit.
 
 ## Remaining Work
 
-- Checkpoint 4: clinician decision-analysis interface.
 - Checkpoint 5: workbook/download reproducibility.
 - Checkpoint 6: adversarial review, validation script, final hardening.
 
