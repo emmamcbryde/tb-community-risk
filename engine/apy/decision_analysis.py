@@ -55,9 +55,12 @@ def run_scenario_comparison(
         cfg.setdefault("scenario", {})
         if isinstance(cfg["scenario"], dict):
             cfg["scenario"]["scenarioName"] = definition["scenarioId"]
+        scenario_econ_config, econ_changed = _scenario_economics_config(economics_config, definition)
+        if econ_changed:
+            changed["economics"] = econ_changed
         model_result = _run_model(cfg, model_type)
-        econ_result = _run_economics_if_possible(model_result, economics_config, cfg)
-        readiness = assess_apy_reference_readiness(cfg, economics_config or {})
+        econ_result = _run_economics_if_possible(model_result, scenario_econ_config, cfg)
+        readiness = assess_apy_reference_readiness(cfg, scenario_econ_config or {})
         scenario_results.append(
             {
                 "scenarioId": definition["scenarioId"],
@@ -509,3 +512,50 @@ _ALLOWED_SCENARIO_ADAPTERS: dict[str, _AllowedAdapter] = {
     "ltbiPrevalence": lambda cfg, value: _set_probability(cfg, "ltbiPrevalence", value),
     "activeTBPrevalence": lambda cfg, value: _set_probability(cfg, "activeTBPrevalence", value),
 }
+
+
+_ALLOWED_ECONOMICS_ADAPTERS: dict[str, Callable[[dict[str, Any], Any], None]] = {
+    "testIGRACost": lambda econ, value: _set_cost_original(econ, "test_igra", value),
+    "testTSTCost": lambda econ, value: _set_cost_original(econ, "test_tst", value),
+    "regimen3HPCost": lambda econ, value: _set_cost_original(econ, "regimen_3hp", value),
+    "regimen4RCost": lambda econ, value: _set_cost_original(econ, "regimen_4r", value),
+    "regimen3HRCost": lambda econ, value: _set_cost_original(econ, "regimen_3hr", value),
+    "regimen6HCost": lambda econ, value: _set_cost_original(econ, "regimen_6h", value),
+    "regimen9HCost": lambda econ, value: _set_cost_original(econ, "regimen_9h", value),
+    "activeTBDiseaseCost": lambda econ, value: _set_cost_original(econ, "active_tb_disease", value),
+    "falsePositiveIncrementalCost": lambda econ, value: _set_cost_original(econ, "false_positive_incremental", value),
+    "programSetupCost": lambda econ, value: _set_cost_original(econ, "program_setup", value),
+    "programRunningCost": lambda econ, value: _set_cost_original(econ, "program_running", value),
+    "adrManagementCost": lambda econ, value: _set_cost_original(econ, "tpt_adr_management", value),
+}
+
+
+def _scenario_economics_config(
+    economics_config: dict[str, Any] | None,
+    definition: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    changes = deepcopy(definition.get("economicsChanges") or {})
+    if not changes:
+        return deepcopy(economics_config) if economics_config is not None else None, {}
+    if economics_config is None:
+        raise ValueError("Scenario economicsChanges require an economics_config.")
+    econ = deepcopy(economics_config)
+    changed: dict[str, Any] = {}
+    for field, value in changes.items():
+        adapter = _ALLOWED_ECONOMICS_ADAPTERS.get(field)
+        if adapter is None:
+            raise ValueError(f"Unsupported or unvalidated economics scenario change: {field}")
+        adapter(econ, value)
+        changed[field] = value
+    return econ, changed
+
+
+def _set_cost_original(econ: dict[str, Any], cost_item_id: str, value: Any) -> None:
+    for item in econ.get("costItems") or []:
+        if item.get("costItemId") == cost_item_id:
+            item["originalCost"] = float(value)
+            if item.get("originalPriceYear") == item.get("targetPriceYear") and item.get("conversionStatus") == "valid":
+                item["convertedTargetYearCost"] = float(value)
+                item["calculatedInflationFactor"] = 1.0
+            return
+    raise ValueError(f"Cost item {cost_item_id} is not available.")

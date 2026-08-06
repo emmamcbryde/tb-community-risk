@@ -86,6 +86,31 @@ class ApyDecisionAnalysisScenarioComparisonTests(unittest.TestCase):
         self.assertEqual(summary["icerClassification"], "incomplete / not calculated")
         self.assertTrue(result["validation"]["warnings"])
 
+    def test_scenario_specific_economics_changes_use_validated_cost_adapters(self) -> None:
+        base = _reviewed_epi({"N": 40, "screenCoverage": 0.2})
+        econ = _synthetic_econ({"program_setup": 0, "program_running": 0})
+        result = run_scenario_comparison(
+            base,
+            econ,
+            [
+                {"scenarioId": "low_test_cost", "changes": {"test": "IGRA"}, "economicsChanges": {"testIGRACost": 1}},
+                {"scenarioId": "high_test_cost", "changes": {"test": "IGRA"}, "economicsChanges": {"testIGRACost": 20}},
+            ],
+            model_type="expected_value",
+        )
+
+        low, high = result["scenarioSummaries"]
+        self.assertLess(low["incrementalCost"], high["incrementalCost"])
+        self.assertEqual(result["scenarios"][0]["changedFields"]["economics"]["testIGRACost"], 1)
+
+        with self.assertRaisesRegex(ValueError, "Unsupported or unvalidated economics"):
+            run_scenario_comparison(
+                base,
+                econ,
+                [{"scenarioId": "bad", "economicsChanges": {"costItems.0.originalCost": 1}}],
+                model_type="expected_value",
+            )
+
     def test_stochastic_strategy_comparison_preserves_baseline_cohort_fingerprint(self) -> None:
         base = _reviewed_epi({"N": 120, "screenCoverage": 0.25, "screeningStrategy": "prevent"})
         scenarios = [

@@ -181,7 +181,7 @@ with tab_early:
     review_time = st.number_input("Review time", min_value=0.0, value=0.0, step=0.25)
     st.markdown("Explicit prior")
     prior_mean = st.number_input("Prior mean LTBI prevalence", min_value=0.0, max_value=1.0, value=0.1, step=0.01)
-    prior_ess = st.number_input("Prior effective sample size", min_value=0.0, value=20.0, step=1.0)
+    prior_ess = st.number_input("Prior effective sample size", min_value=0.001, value=20.0, step=1.0)
     grid_low = st.number_input("Prevalence grid low", min_value=0.0, max_value=1.0, value=0.01, step=0.01)
     grid_high = st.number_input("Prevalence grid high", min_value=0.0, max_value=1.0, value=0.2, step=0.01)
     if st.button("Run early review"):

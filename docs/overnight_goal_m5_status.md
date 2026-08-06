@@ -12,7 +12,7 @@ health-economics and evidence-readiness contracts.
 
 ## Current Checkpoint
 
-Checkpoint 5 - workbook, downloads and reproducibility complete.
+Checkpoint 6 - adversarial review, validation script and final hardening complete.
 
 ## Changes Completed
 
@@ -50,6 +50,12 @@ Checkpoint 5 - workbook, downloads and reproducibility complete.
   validation.
 - Wired the Results page workbook download to include decision-analysis outputs
   stored in Streamlit session state.
+- Added `docs/milestone5_clinician_decision_analysis.md`.
+- Added `scripts/validate_clinician_decision_workflow.py`.
+- Hardened scenario comparison so scenario-specific economic cost assumptions
+  use explicit validated cost-item adapters and cannot use arbitrary paths.
+- Tightened the Decision Analysis page beta-prior effective-sample-size control
+  so the UI cannot submit zero prior strength.
 
 ## Focused Tests Run
 
@@ -74,6 +80,24 @@ Checkpoint 5 - workbook, downloads and reproducibility complete.
   - 1 test passed.
 - `conda run --no-capture-output -n tbmodel python -m unittest tests.test_apy_decision_analysis.ApyDecisionAnalysisWorkbookTests -v`
   - 2 tests passed.
+- `conda run --no-capture-output -n tbmodel python scripts/validate_clinician_decision_workflow.py`
+  - Passed. Deterministic scenarios `2`; stochastic paired comparisons `1`;
+    sensitivity tornado rows `3`; threshold grid rows `3`; early-review
+    low/high posterior means `0.03547451899578974` and
+    `0.09998081433369738`.
+- `conda run --no-capture-output -n tbmodel python -m unittest tests.test_apy_decision_analysis -v`
+  - 21 tests passed in `228.880s`.
+- `conda run --no-capture-output -n tbmodel python -m unittest discover -s tests -v`
+  - 332 tests passed in `1009.538s`.
+- `conda run --no-capture-output -n tbmodel python -m py_compile engine/apy/decision_analysis.py engine/apy/sensitivity.py engine/apy/early_review.py app/results_workbook.py pages/3_Results.py pages/5_Decision_Analysis.py scripts/validate_apy_early_review.py scripts/validate_clinician_decision_workflow.py`
+  - Passed after rerunning sequentially. Parallel `conda run` checks collided
+    on Conda temp activation files.
+- `conda run --no-capture-output -n tbmodel python -m unittest tests.test_apy_source_formatting -v`
+  - 3 tests passed.
+- `conda run --no-capture-output -n tbmodel python -c "import streamlit; print('streamlit import ok')"`
+  - Passed.
+- `git diff --check`
+  - Passed.
 
 ## Defects Found During Review
 
@@ -92,6 +116,11 @@ Checkpoint 5 - workbook, downloads and reproducibility complete.
 - Checkpoint 4: replaced deprecated `pd.np` page code with an explicit NumPy
   import before committing.
 - Checkpoint 5: no defects in focused workbook verification.
+- Checkpoint 6: adversarial review found scenario-specific economic
+  assumptions were not yet represented by validated adapters. Added explicit
+  economic cost-item adapters and a regression test.
+- Checkpoint 6: adversarial review found the Streamlit beta-prior control
+  allowed zero effective sample size. Raised the UI minimum to `0.001`.
 
 ## Checkpoint Commit Hashes
 
@@ -99,17 +128,22 @@ Checkpoint 5 - workbook, downloads and reproducibility complete.
 - Checkpoint 2: `d4c7888`
 - Checkpoint 3: `9e5f4a4`
 - Checkpoint 4: `13cc727`
-- Checkpoint 5: pending commit.
+- Checkpoint 5: `44152ed`
+- Checkpoint 6/final: pending commit.
 
 ## Remaining Work
 
-- Checkpoint 6: adversarial review, validation script, final hardening.
+- Final commit and push.
 
 ## Blockers
 
-- External scientific evidence remains unresolved by design; software work can
-  continue with unresolved outputs clearly marked.
+- External scientific evidence remains unresolved by design. Current APY
+  reference-readiness remains blocked by unresolved/provisional epidemiology,
+  cost, DALY and threshold evidence. Software outputs continue independently
+  where possible and mark incomplete/provisional results explicitly.
 
 ## Final Verification Results
 
-- Pending.
+- Complete suite passed: 332 tests in `1009.538s`.
+- Synthetic clinician decision workflow validation passed.
+- Syntax, formatting, Streamlit import and diff checks passed.
