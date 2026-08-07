@@ -114,6 +114,10 @@ with tab_compare:
             with st.expander("Paired replicate diagnostics"):
                 st.dataframe(arrow_safe_dataframe(comparison["pairedReplicateComparisons"]), width="stretch", hide_index=True)
                 st.dataframe(arrow_safe_dataframe(comparison.get("pairedDifferenceSummaries", [])), width="stretch", hide_index=True)
+        if comparison.get("commonSeedNonpairedDiagnostics"):
+            with st.expander("Common-seed non-paired diagnostics"):
+                st.caption("Baseline-generating inputs differ; these rows are not paired clinical effect intervals.")
+                st.dataframe(arrow_safe_dataframe(comparison["commonSeedNonpairedDiagnostics"]), width="stretch", hide_index=True)
         st.caption("Expected-value rows may be fractional. Stochastic percentiles describe finite-population simulation distributions, not confidence intervals.")
         st.download_button(
             "Download scenario comparison CSV",
@@ -224,6 +228,8 @@ with tab_early:
             st.info(early.get("activeTBSurveillanceJointUpdateNotes", ""))
             if early.get("timingApproximation"):
                 st.warning(early.get("timingApproximationDescription"))
+            if early.get("economicTimingStatus") == "approximate_not_decision_grade":
+                st.warning("Approximate economic components - timing not fully represented. NMB and continuation conclusions are unavailable.")
             st.dataframe(arrow_safe_dataframe(early["posteriorProjectionSummary"]), width="stretch", hide_index=True)
             st.download_button(
                 "Download early-review posterior CSV",

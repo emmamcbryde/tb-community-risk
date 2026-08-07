@@ -99,8 +99,8 @@ def run_scenario_comparison(
             }
         )
 
-    paired_replicates = _paired_replicate_comparisons(scenario_results)
-    comparisons = _paired_strategy_comparisons(scenario_results, paired_replicates)
+    replicate_comparisons = _replicate_comparisons(scenario_results)
+    comparisons = _paired_strategy_comparisons(scenario_results, replicate_comparisons)
     validation = _validate_scenario_comparison(scenario_results, comparisons)
     return {
         "contractVersion": DECISION_ANALYSIS_CONTRACT_VERSION,
@@ -116,8 +116,13 @@ def run_scenario_comparison(
         "scenarios": scenario_results,
         "scenarioSummaries": [_summary_record(row) for row in scenario_results],
         "pairedComparisons": comparisons,
-        "pairedReplicateComparisons": paired_replicates,
-        "pairedDifferenceSummaries": _paired_difference_summaries(paired_replicates),
+        "pairedReplicateComparisons": [
+            row for row in replicate_comparisons if row.get("comparisonDesign") == "paired_shared_baseline"
+        ],
+        "commonSeedNonpairedDiagnostics": [
+            row for row in replicate_comparisons if row.get("comparisonDesign") == "common_seed_nonpaired"
+        ],
+        "pairedDifferenceSummaries": _paired_difference_summaries(replicate_comparisons),
         "validation": validation,
     }
 
@@ -271,31 +276,36 @@ def _event_metrics(ledger: dict[str, Any]) -> dict[str, Any]:
 
 def _paired_strategy_comparisons(
     scenarios: list[dict[str, Any]],
-    paired_replicates: list[dict[str, Any]],
+    replicate_comparisons: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     if len(scenarios) < 2:
         return []
     base = scenarios[0]
     rows = []
     for other in scenarios[1:]:
+        replicate_rows = [
+            row
+            for row in replicate_comparisons
+            if row.get("baseScenarioId") == base["scenarioId"]
+            and row.get("comparisonScenarioId") == other["scenarioId"]
+        ]
+        design = _comparison_design(base, other, replicate_rows)
+        pairing_valid = _pairing_valid(replicate_rows) if design == "paired_shared_baseline" else None
         rows.append(
             {
                 "baseScenarioId": base["scenarioId"],
                 "comparisonScenarioId": other["scenarioId"],
                 "modelType": other["modelType"],
-                "pairedCohortFingerprintMatch": (
-                    all(
-                        row.get("fingerprintMatch") is True
-                        for row in paired_replicates
-                        if row.get("baseScenarioId") == base["scenarioId"]
-                        and row.get("comparisonScenarioId") == other["scenarioId"]
-                    )
-                    if other["modelType"] == "agent_based"
-                    else None
-                ),
+                "comparisonDesign": design,
+                "pairedCohortFingerprintMatch": pairing_valid,
+                "pairingValid": pairing_valid,
                 "fingerprintMatchRequired": _requires_baseline_fingerprint_match(base, other)
                 if other["modelType"] == "agent_based"
                 else None,
+                "pairedDifferenceIntervalsAvailable": bool(
+                    design == "paired_shared_baseline" and pairing_valid is True
+                ),
+                "comparisonDesignNotes": _comparison_design_notes(design, pairing_valid),
                 "deltaActiveTBCasesPrevented": _subtract(
                     other["metrics"].get("active_tb_cases_prevented"),
                     base["metrics"].get("active_tb_cases_prevented"),
@@ -314,12 +324,17 @@ def _paired_strategy_comparisons(
     return rows
 
 
-def _paired_replicate_comparisons(scenarios: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _replicate_comparisons(scenarios: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if len(scenarios) < 2 or scenarios[0]["modelType"] != "agent_based":
         return []
     base = scenarios[0]
     rows: list[dict[str, Any]] = []
     for other in scenarios[1:]:
+        comparison_design = (
+            "paired_shared_baseline"
+            if _requires_baseline_fingerprint_match(base, other)
+            else "common_seed_nonpaired"
+        )
         base_events = _event_metric_by_replicate(base["eventLedger"])
         other_events = _event_metric_by_replicate(other["eventLedger"])
         base_econ = _economic_metric_by_replicate(base.get("economics"))
@@ -330,9 +345,12 @@ def _paired_replicate_comparisons(scenarios: list[dict[str, Any]]) -> list[dict[
             row = {
                 "baseScenarioId": base["scenarioId"],
                 "comparisonScenarioId": other["scenarioId"],
+                "comparisonDesign": comparison_design,
                 "replicateId": rep,
                 "pairedReplicateId": rep,
                 "seed": (other_fp.get(rep) or base_fp.get(rep) or {}).get("seed"),
+                "baseSeed": (base_fp.get(rep) or {}).get("seed"),
+                "comparisonSeed": (other_fp.get(rep) or {}).get("seed"),
                 "baseFingerprint": (base_fp.get(rep) or {}).get("baselineFingerprint"),
                 "comparisonFingerprint": (other_fp.get(rep) or {}).get("baselineFingerprint"),
                 "fingerprintMatchRequired": _requires_baseline_fingerprint_match(base, other),
@@ -373,7 +391,17 @@ def _paired_difference_summaries(rows: list[dict[str, Any]]) -> list[dict[str, A
     out: list[dict[str, Any]] = []
     if not rows:
         return out
-    frame = pd.DataFrame(rows)
+    frame = pd.DataFrame(
+        [
+            row
+            for row in rows
+            if row.get("comparisonDesign") == "paired_shared_baseline"
+            and row.get("fingerprintMatch") is True
+            and row.get("baseSeed") == row.get("comparisonSeed")
+        ]
+    )
+    if frame.empty:
+        return out
     for (base_id, comparison_id), group in frame.groupby(["baseScenarioId", "comparisonScenarioId"], dropna=False):
         for column in [col for col in group.columns if col.startswith("delta_")]:
             values = pd.to_numeric(group[column], errors="coerce").dropna()
@@ -388,6 +416,7 @@ def _paired_difference_summaries(rows: list[dict[str, Any]]) -> list[dict[str, A
                     "p2_5": None if values.empty else float(values.quantile(0.025)),
                     "p97_5": None if values.empty else float(values.quantile(0.975)),
                     "intervalInterpretation": "paired simulation distribution across replicates",
+                    "comparisonDesign": "paired_shared_baseline",
                 }
             )
     return out
@@ -424,6 +453,45 @@ def _validate_scenario_comparison(
                 }
             )
     return {"isValid": not errors, "errors": errors, "warnings": warnings}
+
+
+def _comparison_design(
+    base: dict[str, Any],
+    other: dict[str, Any],
+    replicate_rows: list[dict[str, Any]],
+) -> str | None:
+    if other.get("modelType") != "agent_based":
+        return None
+    if _requires_baseline_fingerprint_match(base, other):
+        return "paired_shared_baseline"
+    if replicate_rows and all(row.get("baseSeed") == row.get("comparisonSeed") for row in replicate_rows):
+        return "common_seed_nonpaired"
+    return "unpaired"
+
+
+def _pairing_valid(replicate_rows: list[dict[str, Any]]) -> bool:
+    if not replicate_rows:
+        return False
+    return all(
+        row.get("baseFingerprint")
+        and row.get("comparisonFingerprint")
+        and row.get("fingerprintMatch") is True
+        and row.get("baseSeed") == row.get("comparisonSeed")
+        and row.get("replicateId") == row.get("pairedReplicateId")
+        for row in replicate_rows
+    )
+
+
+def _comparison_design_notes(design: str | None, pairing_valid: bool | None) -> str:
+    if design == "paired_shared_baseline" and pairing_valid is True:
+        return "Shared baseline cohort and untreated natural history verified by replicate fingerprints."
+    if design == "paired_shared_baseline":
+        return "Pairing was expected for this strategy-only comparison but fingerprints or replicate identities did not align."
+    if design == "common_seed_nonpaired":
+        return "Common seeds may be present, but baseline-generating inputs differ; differences are non-paired diagnostics only."
+    if design == "unpaired":
+        return "Replicate identities are not aligned; only marginal scenario summaries are primary."
+    return ""
 
 
 def _requires_baseline_fingerprint_match(base: dict[str, Any], other: dict[str, Any]) -> bool:
@@ -716,6 +784,16 @@ def _set_strategy(cfg: dict[str, Any], value: Any) -> None:
     cfg["screeningStrategy"] = strategy
 
 
+def _set_baseline_recent_ltbi_proportion(cfg: dict[str, Any], value: Any) -> None:
+    _set_probability(cfg, "baselineRecentLTBIProportion", value)
+    ltbi = cfg.setdefault("ltbiStateAssumptions", {})
+    ltbi["baselineRecentLTBIProportion"] = float(value)
+    ltbi.setdefault("baselineRecentLTBIProportionStatus", "configured_reviewed")
+    ltbi.setdefault("baselineRecentLTBIProportionSource", "Scenario-specific reviewed input")
+    ltbi.setdefault("status", ltbi["baselineRecentLTBIProportionStatus"])
+    ltbi["provisional"] = False
+
+
 _ALLOWED_SCENARIO_ADAPTERS: dict[str, _AllowedAdapter] = {
     "test": _set_test,
     "testType": _set_test,
@@ -739,6 +817,7 @@ _ALLOWED_SCENARIO_ADAPTERS: dict[str, _AllowedAdapter] = {
     "regimenEffFull": lambda cfg, value: _set_probability(cfg, "regimenEffFull", value),
     "ltbiPrevalence": lambda cfg, value: _set_probability(cfg, "ltbiPrevalence", value),
     "activeTBPrevalence": lambda cfg, value: _set_probability(cfg, "activeTBPrevalence", value),
+    "baselineRecentLTBIProportion": _set_baseline_recent_ltbi_proportion,
 }
 
 

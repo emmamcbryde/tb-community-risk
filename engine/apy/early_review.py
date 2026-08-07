@@ -94,6 +94,7 @@ def run_early_screening_review(
         else _yield_direction(prior_summary.get("mean"), posterior_summary.get("mean"))
     )
     timing_approximation = True
+    timing_reasons = _economic_timing_approximation_reasons()
     return {
         "contractVersion": EARLY_REVIEW_CONTRACT_VERSION,
         "reviewId": review_input.get("reviewId", "early_review"),
@@ -132,6 +133,14 @@ def run_early_screening_review(
             "is not erased; remaining programme consequences are planned minus completed. "
             "Within-window review-time scheduling is not yet exact."
         ),
+        "economicTimingStatus": "approximate_not_decision_grade",
+        "economicDecisionComplete": False,
+        "economicTimingApproximation": True,
+        "economicTimingApproximationReasons": timing_reasons,
+        "conclusionPermitted": False,
+        "posteriorProbabilityPositiveNMB": None,
+        "economicConclusion": None,
+        "approximateEconomicComponentsLabel": "Approximate economic components - timing not fully represented",
         "validation": validation,
         "calibrationPolicy": "infection_intercept_only",
         "referenceCalibrationHash": _first_projection_field(projection_rows, "referenceCalibrationHash"),
@@ -218,9 +227,8 @@ def _projection_delta_row(
         "plannedComparatorActiveTB": "comparator_active_tb",
         "plannedInterventionActiveTB": "intervention_active_tb",
         "plannedActiveTBCasesPrevented": "active_tb_cases_prevented",
-        "additionalProgrammeCost": "incrementalCost",
+        "additionalIncrementalCostOfContinuing": "incrementalCost",
         "additionalDALYsAverted": "dalysAverted",
-        "additionalNMB": "nmb",
     }
     for out_key, source_key in metric_map.items():
         if out_key.startswith("planned"):
@@ -228,6 +236,26 @@ def _projection_delta_row(
         else:
             row[out_key] = _subtract(planned_summary.get(source_key), completed_summary.get(source_key))
     row["economicsComplete"] = planned_summary.get("incrementalCost") is not None and completed_summary.get("incrementalCost") is not None
+    row["economicTimingStatus"] = "approximate_not_decision_grade"
+    row["economicDecisionComplete"] = False
+    row["economicTimingApproximation"] = True
+    row["economicTimingApproximationReasons"] = _economic_timing_approximation_reasons()
+    row["conclusionPermitted"] = False
+    row["additionalNMB"] = None
+    row["posteriorProbabilityPositiveNMB"] = None
+    row["economicConclusion"] = None
+    row["deprecatedAdditionalProgrammeCost"] = row.get("additionalIncrementalCostOfContinuing")
+    row["deprecatedAdditionalProgrammeCostNotes"] = (
+        "Deprecated compatibility alias. Authoritative field is additionalIncrementalCostOfContinuing; "
+        "the value is planned incremental cost minus completed-coverage incremental cost and may include "
+        "non-programme health-system consequences."
+    )
+    row["additionalProgrammeSetupCost"] = 0.0 if completed_coverage > 0 else None
+    row["additionalProgrammeSetupCostNotes"] = (
+        "Setup expenditure is treated as already incurred after screening has begun and is not charged again as a future continuation cost."
+        if completed_coverage > 0
+        else "Future setup timing is unavailable under the current approximate review-time allocation."
+    )
     row["calibrationPolicy"] = planned_summary.get("calibrationPolicy")
     row["referenceCalibrationHash"] = planned_summary.get("referenceCalibrationHash")
     row["timingApproximation"] = True
@@ -390,9 +418,8 @@ def _posterior_projection_summary(rows: list[dict[str, Any]], weights: list[floa
         "plannedComparatorActiveTB",
         "plannedInterventionActiveTB",
         "plannedActiveTBCasesPrevented",
-        "additionalProgrammeCost",
+        "additionalIncrementalCostOfContinuing",
         "additionalDALYsAverted",
-        "additionalNMB",
     ]
     out = []
     for metric in metrics:
@@ -439,6 +466,15 @@ def _yield_direction(prior_mean: float | None, posterior_mean: float | None) -> 
     if posterior_mean > prior_mean:
         return "Observed positive yield shifts the prevalence distribution upward under the selected prior and test assumptions."
     return "Observed positive yield leaves the posterior mean unchanged at the displayed precision."
+
+
+def _economic_timing_approximation_reasons() -> list[str]:
+    return [
+        "Exact review-time allocation of programme setup expenditure is not represented.",
+        "Programme-running costs already incurred versus remaining after review are not separately scheduled.",
+        "Already-started versus future TPT courses are approximated by completed versus planned total coverage.",
+        "Future active-TB and discount timing are inherited from coverage scenarios rather than an exact review-time schedule.",
+    ]
 
 
 def _count_value(value: Any) -> int | None:

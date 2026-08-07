@@ -13,7 +13,9 @@ from app.results_workbook import build_results_workbook
 from adapters.serialization import to_json_like
 from engine.apy.decision_analysis import (
     DECISION_ANALYSIS_CONTRACT_VERSION,
+    _paired_strategy_comparisons,
     _scenario_metrics,
+    _validate_scenario_comparison,
     build_scenario_config,
     run_scenario_comparison,
 )
@@ -135,6 +137,88 @@ class ApyDecisionAnalysisScenarioComparisonTests(unittest.TestCase):
         self.assertIsNotNone(result["scenarios"][0]["seed"])
         self.assertEqual(len(result["pairedReplicateComparisons"]), 3)
         self.assertTrue(all(row["fingerprintMatch"] for row in result["pairedReplicateComparisons"]))
+        self.assertEqual(result["pairedComparisons"][0]["comparisonDesign"], "paired_shared_baseline")
+        self.assertTrue(result["pairedComparisons"][0]["pairedDifferenceIntervalsAvailable"])
+
+    def test_strategy_only_regimen_and_coverage_changes_are_paired(self) -> None:
+        base = _reviewed_epi({"N": 80, "screenCoverage": 0.2, "screeningStrategy": "random"})
+        result = run_scenario_comparison(
+            base,
+            None,
+            [
+                {"scenarioId": "base", "changes": {"test": "IGRA", "regimen": "3HP", "screenCoverage": 0.2}},
+                {"scenarioId": "regimen_4r", "changes": {"regimen": "4R"}},
+                {"scenarioId": "coverage_high", "changes": {"screenCoverage": 0.4}},
+            ],
+            model_type="agent_based",
+            n_reps=2,
+            master_seed=321,
+        )
+
+        self.assertTrue(result["validation"]["isValid"])
+        self.assertEqual(
+            {row["comparisonDesign"] for row in result["pairedComparisons"]},
+            {"paired_shared_baseline"},
+        )
+        self.assertTrue(all(row["pairedDifferenceIntervalsAvailable"] for row in result["pairedComparisons"]))
+
+    def test_baseline_prevalence_and_recent_fraction_changes_are_common_seed_nonpaired(self) -> None:
+        base = _reviewed_epi({"N": 80, "screenCoverage": 0.2, "ltbiPrevalence": 0.08})
+        result = run_scenario_comparison(
+            base,
+            None,
+            [
+                {"scenarioId": "base", "changes": {}},
+                {"scenarioId": "prevalence_high", "changes": {"ltbiPrevalence": 0.16}},
+                {"scenarioId": "recent_high", "changes": {"baselineRecentLTBIProportion": 0.6}},
+            ],
+            model_type="agent_based",
+            n_reps=2,
+            master_seed=456,
+        )
+
+        self.assertTrue(result["validation"]["isValid"])
+        self.assertEqual(
+            {row["comparisonDesign"] for row in result["pairedComparisons"]},
+            {"common_seed_nonpaired"},
+        )
+        self.assertFalse(any(row["pairedDifferenceIntervalsAvailable"] for row in result["pairedComparisons"]))
+        self.assertEqual(result["pairedDifferenceSummaries"], [])
+        self.assertEqual(result["pairedReplicateComparisons"], [])
+        self.assertTrue(result["commonSeedNonpairedDiagnostics"])
+
+    def test_strategy_only_mismatched_fingerprint_fails_validation(self) -> None:
+        scenarios = [
+            {"scenarioId": "base", "eventLedger": {"validation": {"isValid": True}}},
+            {"scenarioId": "tst", "eventLedger": {"validation": {"isValid": True}}},
+        ]
+        comparisons = [
+            {
+                "modelType": "agent_based",
+                "comparisonDesign": "paired_shared_baseline",
+                "fingerprintMatchRequired": True,
+                "pairedCohortFingerprintMatch": False,
+                "comparisonScenarioId": "tst",
+            }
+        ]
+
+        validation = _validate_scenario_comparison(scenarios, comparisons)
+
+        self.assertFalse(validation["isValid"])
+        self.assertIn("pairedCohortFingerprint", {issue["field"] for issue in validation["errors"]})
+
+    def test_empty_replicate_set_does_not_declare_pairing_valid(self) -> None:
+        rows = _paired_strategy_comparisons(
+            [
+                {"scenarioId": "base", "modelType": "agent_based", "metrics": {}, "changedFields": {"test": "IGRA"}},
+                {"scenarioId": "tst", "modelType": "agent_based", "metrics": {}, "changedFields": {"test": "TST"}},
+            ],
+            [],
+        )
+
+        self.assertEqual(rows[0]["comparisonDesign"], "paired_shared_baseline")
+        self.assertFalse(rows[0]["pairingValid"])
+        self.assertFalse(rows[0]["pairedDifferenceIntervalsAvailable"])
 
     def test_infection_intercept_only_changes_prevalence_not_progression_hazards(self) -> None:
         base = _reviewed_epi({"N": 120, "screenCoverage": 0.2, "ltbiPrevalence": 0.08})
@@ -552,6 +636,29 @@ class ApyDecisionAnalysisEarlyReviewTests(unittest.TestCase):
         self.assertGreater(first["additionalPeopleScreened"], 0)
         self.assertAlmostEqual(first["additionalCoverage"], (12 - 6) / 30)
         self.assertTrue(first["fixedProgrammeCostTimingApproximate"])
+        self.assertIn("additionalIncrementalCostOfContinuing", first)
+        self.assertIn("deprecatedAdditionalProgrammeCost", first)
+        self.assertNotIn(
+            "additionalProgrammeCost",
+            {row["metric"] for row in result["posteriorProjectionSummary"]},
+        )
+
+    def test_approximate_economic_timing_blocks_decision_grade_nmb(self) -> None:
+        with patch("engine.apy.early_review._run_coverage_projection", _fake_prevalence_projection):
+            result = run_early_screening_review(
+                _reviewed_epi({"N": 30, "screeningStrategy": "random"}),
+                _synthetic_econ({"threshold": 50000, "program_running": 100}),
+                _review_input({"screenedToDate": 6, "plannedTotalScreened": 12, "eligiblePopulation": 30}),
+            )
+
+        self.assertEqual(result["economicTimingStatus"], "approximate_not_decision_grade")
+        self.assertFalse(result["economicDecisionComplete"])
+        self.assertFalse(result["conclusionPermitted"])
+        self.assertIsNone(result["posteriorProbabilityPositiveNMB"])
+        self.assertTrue(result["projection"][0]["economicTimingApproximation"])
+        self.assertIsNone(result["projection"][0]["additionalNMB"])
+        self.assertGreater(result["projection"][0]["additionalActiveTBCasesPrevented"], 0)
+        self.assertEqual(result["projection"][0]["additionalProgrammeSetupCost"], 0.0)
 
     def test_screened_equals_planned_total_has_no_remaining_screening(self) -> None:
         with patch("engine.apy.early_review._run_coverage_projection", _fake_prevalence_projection):
@@ -611,9 +718,19 @@ class ApyDecisionAnalysisWorkbookTests(unittest.TestCase):
 
         self.assertIn("Early_review_prior_posterior", wb.sheetnames)
         self.assertIn("Early_review_projection", wb.sheetnames)
+        self.assertIn("Early_review_calibration", wb.sheetnames)
         rows = list(wb["Early_review_prior_posterior"].iter_rows(values_only=True))
         exported = dict(zip(rows[0], rows[1]))
         self.assertEqual(exported["prevalence"], early["priorPosteriorTable"][0]["prevalence"])
+        projection_rows = list(wb["Early_review_projection"].iter_rows(values_only=True))
+        projection = dict(zip(projection_rows[0], projection_rows[1]))
+        self.assertEqual(projection["economicTimingStatus"], "approximate_not_decision_grade")
+        self.assertIsNone(projection["additionalNMB"])
+        self.assertIn("additionalIncrementalCostOfContinuing", projection)
+        calibration_rows = list(wb["Early_review_calibration"].iter_rows(values_only=True))
+        calibration = {row[0]: row[1] for row in calibration_rows[1:]}
+        self.assertEqual(calibration["economicTimingStatus"], "approximate_not_decision_grade")
+        self.assertIsNone(calibration["posteriorProbabilityPositiveNMB"])
         wb.close()
 
 

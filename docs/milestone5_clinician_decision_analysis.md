@@ -30,6 +30,22 @@ reuse fixed replicate seeds and record a cohort fingerprint so strategy-only
 changes can be checked for the same baseline population, infection state and
 untreated comparator history.
 
+Agent-based comparisons now carry an explicit comparison design:
+
+- `paired_shared_baseline`: strategy-only changes such as IGRA versus TST,
+  regimen choice or screening coverage, where the baseline population and
+  untreated natural history should be shared and replicate fingerprints must
+  match.
+- `common_seed_nonpaired`: baseline-generating changes such as LTBI
+  prevalence, baseline recent-LTBI composition, progression assumptions or
+  population composition. Common seeds may be used as a diagnostic, but
+  differences are not reported as paired clinical intervals.
+- `unpaired`: replicate identities are not aligned.
+
+Only `paired_shared_baseline` comparisons with complete matching fingerprints
+and aligned replicate seeds produce paired replicate-difference summaries or
+`paired simulation distribution across replicates` wording.
+
 Milestone 5 hardening adds an explicit reference calibration artifact. The
 artifact records the infection age-shape, infection intercept, recent/remote
 LTBI assumptions, early and late progression hazards, calibration targets and
@@ -103,6 +119,24 @@ using the same deterministic targeting order. Completed screening is retained
 and continuing adds only remaining programme activity. Exact within-window
 review-time scheduling is not yet represented; outputs set
 `timingApproximation=true` and document this approximation.
+
+The authoritative early-review cost field for continuing is
+`additionalIncrementalCostOfContinuing`, defined as planned incremental cost
+minus completed-coverage incremental cost. The deprecated compatibility alias
+`deprecatedAdditionalProgrammeCost` may be present temporarily, but it should
+not be used as the displayed label because the value can include programme
+costs, treatment costs, active-TB care costs and other health-system
+consequences.
+
+Until exact review-time economic allocation is implemented, early-review
+economics set `economicTimingStatus=approximate_not_decision_grade`,
+`economicDecisionComplete=false` and `conclusionPermitted=false`. Posterior NMB
+and probability-positive-NMB continuation conclusions remain unavailable. Any
+calculable economic values are approximate components only because exact
+scheduling would need to distinguish sunk setup cost, already-incurred and
+remaining programme-running costs, people already screened, future screening,
+TPT already started, future TPT starts, future active-TB outcomes and discount
+timing.
 
 ## Clinician Interface And Export
 

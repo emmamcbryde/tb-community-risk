@@ -469,6 +469,7 @@ def _write_decision_analysis(
         _write_rows_sheet(wb, "Decision_scenarios", scenario_rows)
         _write_rows_sheet(wb, "Scenario_comparison", comparison.get("scenarioSummaries") or [])
         _write_rows_sheet(wb, "Paired_replicate_comparisons", comparison.get("pairedReplicateComparisons") or [])
+        _write_rows_sheet(wb, "Common_seed_nonpaired_diag", comparison.get("commonSeedNonpairedDiagnostics") or [])
         _write_rows_sheet(wb, "Paired_difference_summary", comparison.get("pairedDifferenceSummaries") or [])
         replicate_rows = []
         for scenario in comparison.get("scenarios", []) or []:
@@ -509,6 +510,12 @@ def _write_decision_analysis(
                 {"Field": "priorDiscretisationMethod", "Value": (early.get("prior") or {}).get("discretisationMethod")},
                 {"Field": "timingApproximation", "Value": early.get("timingApproximation")},
                 {"Field": "timingApproximationDescription", "Value": early.get("timingApproximationDescription")},
+                {"Field": "economicTimingStatus", "Value": early.get("economicTimingStatus")},
+                {"Field": "economicDecisionComplete", "Value": early.get("economicDecisionComplete")},
+                {"Field": "economicTimingApproximation", "Value": early.get("economicTimingApproximation")},
+                {"Field": "economicTimingApproximationReasons", "Value": early.get("economicTimingApproximationReasons")},
+                {"Field": "conclusionPermitted", "Value": early.get("conclusionPermitted")},
+                {"Field": "posteriorProbabilityPositiveNMB", "Value": early.get("posteriorProbabilityPositiveNMB")},
                 {"Field": "activeTBSurveillanceJointUpdate", "Value": early.get("activeTBSurveillanceJointUpdate")},
                 {"Field": "activeTBSurveillanceJointUpdateNotes", "Value": early.get("activeTBSurveillanceJointUpdateNotes")},
             ],
