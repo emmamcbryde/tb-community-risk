@@ -145,6 +145,9 @@ def normalise_cost_item(
 def valid_converted_cost(item: dict[str, Any]) -> float | None:
     if item.get("conversionStatus") != "valid":
         return None
+    override = item.get("targetYearCostSensitivityOverride")
+    if isinstance(override, dict) and override.get("active") is True:
+        return _number_or_none(override.get("value"))
     return _number_or_none(item.get("convertedTargetYearCost"))
 
 

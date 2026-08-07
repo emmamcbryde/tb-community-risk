@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from engine.apy.calibration import calibrate_from_config
+from engine.apy.calibration_policy import resolve_calibration_for_config
 from engine.apy.config import normalise_config
 from engine.apy.eligibility import resolve_eligibility
 from engine.apy.event_ledger import (
@@ -83,6 +83,7 @@ def run_replicates(
         )
         row = {"rep": idx, "seed": int(replicate_seed)}
         row.update(out["raw"])
+        row["baselineFingerprint"] = out["eventLedgerData"].get("baselineFingerprint")
         raw_rows.append(row)
         _append_agent_based_ledger_rows(
             event_total_rows,
@@ -113,6 +114,9 @@ def run_replicates(
         "summary": summary,
         "eventLedger": event_ledger,
         "exampleCohort": example_cohort,
+        "replicateFingerprints": raw[["rep", "seed", "baselineFingerprint"]].to_dict("records")
+        if not raw.empty and "baselineFingerprint" in raw
+        else [],
         "parameters": pars,
         "calibration": calibration,
         "strategy": build_strategy_metadata(cfg, reg),
@@ -297,7 +301,7 @@ def _default_if_empty(value: Any, default: float) -> float:
 def _cached_calibration_from_config(config: dict[str, Any]) -> dict[str, Any]:
     key = json.dumps(_calibration_key_payload(config), sort_keys=True, default=str)
     if key not in _CALIBRATION_CACHE:
-        _CALIBRATION_CACHE[key] = calibrate_from_config(config)
+        _CALIBRATION_CACHE[key] = resolve_calibration_for_config(config)
     return deepcopy(_CALIBRATION_CACHE[key])
 
 
@@ -319,5 +323,7 @@ def _calibration_key_payload(config: dict[str, Any]) -> dict[str, Any]:
         "ltbiStateAssumptions",
         "baselineRecentLTBIProportion",
         "recentToRemoteTransitionRatePerYear",
+        "calibrationPolicy",
+        "referenceCalibrationArtifact",
     ]
     return {field: config.get(field) for field in fields}

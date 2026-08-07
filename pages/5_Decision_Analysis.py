@@ -110,6 +110,10 @@ with tab_compare:
         st.dataframe(arrow_safe_dataframe(comparison["scenarioSummaries"]), width="stretch", hide_index=True)
         if comparison.get("pairedComparisons"):
             st.dataframe(arrow_safe_dataframe(comparison["pairedComparisons"]), width="stretch", hide_index=True)
+        if comparison.get("pairedReplicateComparisons"):
+            with st.expander("Paired replicate diagnostics"):
+                st.dataframe(arrow_safe_dataframe(comparison["pairedReplicateComparisons"]), width="stretch", hide_index=True)
+                st.dataframe(arrow_safe_dataframe(comparison.get("pairedDifferenceSummaries", [])), width="stretch", hide_index=True)
         st.caption("Expected-value rows may be fractional. Stochastic percentiles describe finite-population simulation distributions, not confidence intervals.")
         st.download_button(
             "Download scenario comparison CSV",
@@ -170,6 +174,7 @@ with tab_sensitivity:
     if threshold:
         if not threshold["validation"]["isValid"]:
             st.warning("; ".join(item["message"] for item in threshold["validation"].get("warnings", [])))
+        st.caption(f"Monotonicity: {threshold.get('monotonicity')}")
         st.dataframe(arrow_safe_dataframe(threshold.get("grid", [])), width="stretch", hide_index=True)
         st.dataframe(arrow_safe_dataframe(threshold.get("crossings", [])), width="stretch", hide_index=True)
 
@@ -180,7 +185,7 @@ with tab_early:
     planned = st.number_input("Planned total screened", min_value=0, value=int(round(float(config.get("screenCoverage", 0.3)) * int(config.get("N", 0)))), step=1)
     review_time = st.number_input("Review time", min_value=0.0, value=0.0, step=0.25)
     st.markdown("Explicit prior")
-    prior_mean = st.number_input("Prior mean LTBI prevalence", min_value=0.0, max_value=1.0, value=0.1, step=0.01)
+    prior_mean = st.number_input("Prior mean LTBI prevalence", min_value=0.001, max_value=0.999, value=0.1, step=0.01)
     prior_ess = st.number_input("Prior effective sample size", min_value=0.001, value=20.0, step=1.0)
     grid_low = st.number_input("Prevalence grid low", min_value=0.0, max_value=1.0, value=0.01, step=0.01)
     grid_high = st.number_input("Prevalence grid high", min_value=0.0, max_value=1.0, value=0.2, step=0.01)
@@ -213,7 +218,10 @@ with tab_early:
             st.error(early["validation"]["errors"])
         else:
             st.dataframe(arrow_safe_dataframe([early["prior"]["summary"], early["posterior"]["summary"]]), width="stretch", hide_index=True)
+            st.caption(f"Calibration policy: {early.get('calibrationPolicy')} | reference calibration: {early.get('referenceCalibrationHash')}")
+            st.caption(f"Prior discretisation: {(early.get('prior') or {}).get('discretisationMethod')}")
             st.caption(early.get("likelihoodNotes", ""))
+            st.info(early.get("activeTBSurveillanceJointUpdateNotes", ""))
             if early.get("timingApproximation"):
                 st.warning(early.get("timingApproximationDescription"))
             st.dataframe(arrow_safe_dataframe(early["posteriorProjectionSummary"]), width="stretch", hide_index=True)

@@ -130,11 +130,12 @@ def collect_validation_issues(
             str(exc),
         )
     _validate_fraction(report, cfg, "screenCoverage", "Screening coverage")
-    _validate_optional_open_fraction(
+    _validate_optional_fraction(
         report,
         cfg,
         "ltbiPrevalence",
         "Assumed prevalence of MTB infection (LTBI)",
+        "ltbiPrevalence",
     )
     _validate_optional_open_fraction(
         report,

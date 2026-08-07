@@ -9,6 +9,7 @@ import pandas as pd
 
 from adapters.serialization import to_json_like
 from engine.apy.config import normalise_config
+from engine.apy.calibration_policy import build_reference_calibration_artifact
 from engine.apy.evidence import assess_apy_reference_readiness
 from engine.apy.event_ledger import EVENT_LEDGER_CONTRACT_VERSION
 from engine.apy.event_ledger_economics import (
@@ -44,6 +45,9 @@ def run_scenario_comparison(
         raise ValueError("At least one scenario definition is required.")
 
     base = normalise_config(base_config)
+    reference_calibration = build_reference_calibration_artifact(
+        {**base, "calibrationPolicy": "full_reference_calibration"}
+    )
     scenario_results = []
     for index, definition in enumerate(scenario_definitions):
         cfg, changed, inherited = build_scenario_config(base, definition)
@@ -55,6 +59,9 @@ def run_scenario_comparison(
         cfg.setdefault("scenario", {})
         if isinstance(cfg["scenario"], dict):
             cfg["scenario"]["scenarioName"] = definition["scenarioId"]
+        calibration_policy = _resolve_calibration_policy(definition, changed)
+        cfg["calibrationPolicy"] = calibration_policy
+        cfg["referenceCalibrationArtifact"] = deepcopy(reference_calibration)
         scenario_econ_config, econ_changed = _scenario_economics_config(economics_config, definition)
         if econ_changed:
             changed["economics"] = econ_changed
@@ -78,17 +85,22 @@ def run_scenario_comparison(
                     econ_result.get("contractVersion") if isinstance(econ_result, dict) else None
                 ),
                 "configurationHash": config_hash(cfg),
+                "calibrationPolicy": calibration_policy,
+                "referenceCalibrationHash": reference_calibration["artifactHash"],
                 "modelVersion": EXPECTED_VALUE_MODEL_VERSION if model_type == "expected_value" else MODEL_VERSION,
                 "seed": cfg.get("seed") if model_type == "agent_based" else None,
                 "nReps": cfg.get("nReps") if model_type == "agent_based" else None,
                 "eventLedger": model_result["eventLedger"],
                 "economics": econ_result,
+                "calibration": _calibration_summary(model_result),
                 "metrics": _scenario_metrics(model_result["eventLedger"], econ_result),
                 "cohortFingerprint": _cohort_fingerprint(model_result),
+                "replicateFingerprints": _replicate_fingerprints(model_result),
             }
         )
 
-    comparisons = _paired_strategy_comparisons(scenario_results)
+    paired_replicates = _paired_replicate_comparisons(scenario_results)
+    comparisons = _paired_strategy_comparisons(scenario_results, paired_replicates)
     validation = _validate_scenario_comparison(scenario_results, comparisons)
     return {
         "contractVersion": DECISION_ANALYSIS_CONTRACT_VERSION,
@@ -98,10 +110,14 @@ def run_scenario_comparison(
             "scenarioCount": len(scenario_results),
             "eventLedgerContractVersion": EVENT_LEDGER_CONTRACT_VERSION,
             "economicContractVersion": HEALTH_ECONOMICS_CONTRACT_VERSION,
+            "referenceCalibrationHash": reference_calibration["artifactHash"],
+            "referenceCalibrationArtifactVersion": reference_calibration["artifactVersion"],
         },
         "scenarios": scenario_results,
         "scenarioSummaries": [_summary_record(row) for row in scenario_results],
         "pairedComparisons": comparisons,
+        "pairedReplicateComparisons": paired_replicates,
+        "pairedDifferenceSummaries": _paired_difference_summaries(paired_replicates),
         "validation": validation,
     }
 
@@ -151,6 +167,23 @@ def _run_model(config: dict[str, Any], model_type: str) -> dict[str, Any]:
     return run_replicates(config, keep_example_cohort=True)
 
 
+def _resolve_calibration_policy(definition: dict[str, Any], changed: dict[str, Any]) -> str:
+    explicit = definition.get("calibrationPolicy") or definition.get("modelRecalibrationRule")
+    if explicit:
+        policy = str(explicit)
+        aliases = {
+            "no_recalibration": "none",
+            "recalibrate": "full_reference_calibration",
+        }
+        return aliases.get(policy, policy)
+    changed_keys = set(changed)
+    if "ltbiPrevalence" in changed_keys:
+        return "infection_intercept_only"
+    if "activeTBPrevalence" in changed_keys:
+        return "progression_hazards_only"
+    return "none"
+
+
 def _run_economics_if_possible(
     model_result: dict[str, Any],
     economics_config: dict[str, Any] | None,
@@ -191,7 +224,7 @@ def _scenario_metrics(ledger: dict[str, Any], economics: dict[str, Any] | None) 
                     "comparatorDALYs": _mean(complete, "comparatorDALYs"),
                     "interventionDALYs": _mean(complete, "interventionDALYs"),
                     "dalysAverted": _mean(complete, "dalysAverted"),
-                    "icerClassification": _first_non_empty(complete, "classification"),
+                    "icerClassification": _primary_icer_classification(economics),
                     "interpretableICER": _primary_icer(economics),
                     "nmb": _mean(complete, "netMonetaryBenefit"),
                     "probabilityPositiveNMB": _probability_positive_nmb(economics),
@@ -236,7 +269,10 @@ def _event_metrics(ledger: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _paired_strategy_comparisons(scenarios: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _paired_strategy_comparisons(
+    scenarios: list[dict[str, Any]],
+    paired_replicates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     if len(scenarios) < 2:
         return []
     base = scenarios[0]
@@ -248,10 +284,18 @@ def _paired_strategy_comparisons(scenarios: list[dict[str, Any]]) -> list[dict[s
                 "comparisonScenarioId": other["scenarioId"],
                 "modelType": other["modelType"],
                 "pairedCohortFingerprintMatch": (
-                    base.get("cohortFingerprint") == other.get("cohortFingerprint")
+                    all(
+                        row.get("fingerprintMatch") is True
+                        for row in paired_replicates
+                        if row.get("baseScenarioId") == base["scenarioId"]
+                        and row.get("comparisonScenarioId") == other["scenarioId"]
+                    )
                     if other["modelType"] == "agent_based"
                     else None
                 ),
+                "fingerprintMatchRequired": _requires_baseline_fingerprint_match(base, other)
+                if other["modelType"] == "agent_based"
+                else None,
                 "deltaActiveTBCasesPrevented": _subtract(
                     other["metrics"].get("active_tb_cases_prevented"),
                     base["metrics"].get("active_tb_cases_prevented"),
@@ -268,6 +312,85 @@ def _paired_strategy_comparisons(scenarios: list[dict[str, Any]]) -> list[dict[s
             }
         )
     return rows
+
+
+def _paired_replicate_comparisons(scenarios: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if len(scenarios) < 2 or scenarios[0]["modelType"] != "agent_based":
+        return []
+    base = scenarios[0]
+    rows: list[dict[str, Any]] = []
+    for other in scenarios[1:]:
+        base_events = _event_metric_by_replicate(base["eventLedger"])
+        other_events = _event_metric_by_replicate(other["eventLedger"])
+        base_econ = _economic_metric_by_replicate(base.get("economics"))
+        other_econ = _economic_metric_by_replicate(other.get("economics"))
+        base_fp = {row["rep"]: row for row in base.get("replicateFingerprints") or []}
+        other_fp = {row["rep"]: row for row in other.get("replicateFingerprints") or []}
+        for rep in sorted(set(base_fp) | set(other_fp) | set(base_events) | set(other_events)):
+            row = {
+                "baseScenarioId": base["scenarioId"],
+                "comparisonScenarioId": other["scenarioId"],
+                "replicateId": rep,
+                "pairedReplicateId": rep,
+                "seed": (other_fp.get(rep) or base_fp.get(rep) or {}).get("seed"),
+                "baseFingerprint": (base_fp.get(rep) or {}).get("baselineFingerprint"),
+                "comparisonFingerprint": (other_fp.get(rep) or {}).get("baselineFingerprint"),
+                "fingerprintMatchRequired": _requires_baseline_fingerprint_match(base, other),
+            }
+            row["fingerprintMatch"] = bool(
+                row["baseFingerprint"]
+                and row["comparisonFingerprint"]
+                and row["baseFingerprint"] == row["comparisonFingerprint"]
+            )
+            for metric in [
+                "screened",
+                "test_positive_total",
+                "true_positive_latent",
+                "false_positive",
+                "tpt_started_total",
+                "tpt_completed_total",
+                "infection_effectively_treated_total",
+                "active_tb_cases_prevented",
+            ]:
+                row[f"delta_{metric}"] = _subtract(
+                    other_events.get(rep, {}).get(metric),
+                    base_events.get(rep, {}).get(metric),
+                )
+            for metric in ["incrementalCost", "dalysAverted", "netMonetaryBenefit"]:
+                row[f"delta_{metric}"] = _subtract(
+                    other_econ.get(rep, {}).get(metric),
+                    base_econ.get(rep, {}).get(metric),
+                )
+            row["economicPairComplete"] = bool(
+                other_econ.get(rep, {}).get("economicPairComplete")
+                and base_econ.get(rep, {}).get("economicPairComplete")
+            )
+            rows.append(row)
+    return rows
+
+
+def _paired_difference_summaries(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if not rows:
+        return out
+    frame = pd.DataFrame(rows)
+    for (base_id, comparison_id), group in frame.groupby(["baseScenarioId", "comparisonScenarioId"], dropna=False):
+        for column in [col for col in group.columns if col.startswith("delta_")]:
+            values = pd.to_numeric(group[column], errors="coerce").dropna()
+            out.append(
+                {
+                    "baseScenarioId": base_id,
+                    "comparisonScenarioId": comparison_id,
+                    "metric": column.removeprefix("delta_"),
+                    "n": int(values.size),
+                    "mean": None if values.empty else float(values.mean()),
+                    "median": None if values.empty else float(values.median()),
+                    "p2_5": None if values.empty else float(values.quantile(0.025)),
+                    "p97_5": None if values.empty else float(values.quantile(0.975)),
+                    "intervalInterpretation": "paired simulation distribution across replicates",
+                }
+            )
+    return out
 
 
 def _validate_scenario_comparison(
@@ -288,7 +411,11 @@ def _validate_scenario_comparison(
             if econ_validation.get("economicallyComplete") is not True:
                 warnings.append({"field": scenario["scenarioId"], "message": "Economic result is incomplete."})
     for row in comparisons:
-        if row.get("modelType") == "agent_based" and row.get("pairedCohortFingerprintMatch") is False:
+        if (
+            row.get("modelType") == "agent_based"
+            and row.get("fingerprintMatchRequired") is True
+            and row.get("pairedCohortFingerprintMatch") is False
+        ):
             errors.append(
                 {
                     "field": "pairedCohortFingerprint",
@@ -297,6 +424,85 @@ def _validate_scenario_comparison(
                 }
             )
     return {"isValid": not errors, "errors": errors, "warnings": warnings}
+
+
+def _requires_baseline_fingerprint_match(base: dict[str, Any], other: dict[str, Any]) -> bool:
+    strategy_fields = {
+        "test",
+        "testType",
+        "regimen",
+        "screeningStrategy",
+        "screenCoverage",
+        "screeningNumber",
+        "screeningWindowYears",
+        "followUpHorizonYears",
+        "pStartTPT",
+        "testSensitivity",
+        "testSpecificity",
+        "tstSensitivity",
+        "tstSpecificityBCG",
+        "tstSpecificityNoBCG",
+        "economics",
+    }
+    changed = set((base.get("changedFields") or {}).keys()) | set((other.get("changedFields") or {}).keys())
+    return bool(changed) and changed.issubset(strategy_fields)
+
+
+def _event_metric_by_replicate(ledger: dict[str, Any]) -> dict[int, dict[str, float]]:
+    totals = ledger.get("replicateTotals")
+    frame = totals if isinstance(totals, pd.DataFrame) else pd.DataFrame(totals or [])
+    out: dict[int, dict[str, float]] = {}
+    if frame.empty or "replicateId" not in frame:
+        return out
+    for rep, group in frame[frame.get("arm") == "intervention"].groupby("replicateId"):
+        metrics: dict[str, float] = {}
+        for _, row in group.iterrows():
+            metrics[str(row.get("eventName"))] = float(row.get("value"))
+        out[int(rep)] = metrics
+    return out
+
+
+def _economic_metric_by_replicate(economics: dict[str, Any] | None) -> dict[int, dict[str, Any]]:
+    if not economics or economics.get("available") is not True:
+        return {}
+    reps = economics.get("replicateResults")
+    frame = reps if isinstance(reps, pd.DataFrame) else pd.DataFrame(reps or [])
+    if frame.empty or "replicateId" not in frame:
+        return {}
+    primary = frame[frame["discountRate"] == PRIMARY_DISCOUNT_RATE] if "discountRate" in frame else frame
+    out: dict[int, dict[str, Any]] = {}
+    for _, row in primary.iterrows():
+        out[int(row["replicateId"])] = row.to_dict()
+    return out
+
+
+def _calibration_summary(model_result: dict[str, Any]) -> dict[str, Any]:
+    calibration = model_result.get("calibration") or {}
+    keys = [
+        "calibrationPolicy",
+        "referenceCalibrationHash",
+        "infectionAgeShapeParameter",
+        "ageInfLogLambda",
+        "lambdaEarly",
+        "lambdaLate",
+        "recentToRemoteTransitionModel",
+        "recentToRemoteTransitionRatePerYear",
+        "calibrationParametersRetained",
+        "calibrationParametersRecalibrated",
+        "zeroInfectionPrevalence",
+    ]
+    return {key: calibration.get(key) for key in keys if key in calibration}
+
+
+def _replicate_fingerprints(model_result: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = model_result.get("replicateFingerprints")
+    if isinstance(rows, list):
+        return deepcopy(rows)
+    raw = model_result.get("raw")
+    frame = raw if isinstance(raw, pd.DataFrame) else pd.DataFrame(raw or [])
+    if frame.empty or "baselineFingerprint" not in frame:
+        return []
+    return frame[["rep", "seed", "baselineFingerprint"]].to_dict("records")
 
 
 def _summary_record(scenario: dict[str, Any]) -> dict[str, Any]:
@@ -326,6 +532,8 @@ def _summary_record(scenario: dict[str, Any]) -> dict[str, Any]:
         "valueType": scenario["valueType"],
         "provisional": scenario["provisional"],
         "configurationHash": scenario["configurationHash"],
+        "calibrationPolicy": scenario.get("calibrationPolicy"),
+        "referenceCalibrationHash": scenario.get("referenceCalibrationHash"),
         **{key: scenario["metrics"].get(key) for key in keys},
     }
 
@@ -404,6 +612,26 @@ def _primary_icer(economics: dict[str, Any]) -> float | None:
         return None
     value = rows.iloc[0].get("mean")
     return None if pd.isna(value) else float(value) if value is not None else None
+
+
+def _primary_icer_classification(economics: dict[str, Any]) -> str | None:
+    summaries = economics.get("summaries")
+    frame = summaries if isinstance(summaries, pd.DataFrame) else pd.DataFrame(summaries or [])
+    if frame.empty:
+        return None
+    rows = frame[
+        (frame.get("discountRate") == PRIMARY_DISCOUNT_RATE)
+        & (frame.get("metric") == "aggregateICERClassification")
+    ]
+    if rows.empty:
+        rows = frame[
+            (frame.get("discountRate") == PRIMARY_DISCOUNT_RATE)
+            & (frame.get("metric") == "primaryICER_ratioOfMeans")
+        ]
+    if rows.empty:
+        return None
+    value = rows.iloc[0].get("classification") or rows.iloc[0].get("interpretation")
+    return None if pd.isna(value) else value
 
 
 def _probability_positive_nmb(economics: dict[str, Any]) -> float | None:

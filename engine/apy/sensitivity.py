@@ -41,7 +41,7 @@ def run_one_way_sensitivity(
             continue
         values = {
             "low": spec["lowValue"],
-            "base": _base_value(base_config, spec),
+            "base": _base_value(base_config, spec, economics_config),
             "high": spec["highValue"],
         }
         outcome_rows = {}
@@ -172,6 +172,13 @@ def run_threshold_analysis(
 
 
 def monotonicity_diagnostic(grid: list[dict[str, Any]]) -> dict[str, Any]:
+    if any(not row.get("complete") for row in grid):
+        return {
+            "isMonotonic": None,
+            "direction": "gapped_grid",
+            "hasGaps": True,
+            "message": "Monotonicity was not assessed across incomplete grid points.",
+        }
     values = [row["difference"] for row in grid if row.get("complete")]
     if len(values) < 2:
         return {"isMonotonic": None, "direction": "insufficient_complete_grid"}
@@ -254,8 +261,9 @@ def _bisect_root(
 
 def _detect_crossings(grid: list[dict[str, Any]]) -> list[dict[str, Any]]:
     crossings = []
-    complete = [row for row in grid if row.get("complete")]
-    for left, right in zip(complete, complete[1:]):
+    for left, right in zip(grid, grid[1:]):
+        if not left.get("complete") or not right.get("complete"):
+            continue
         a = left.get("difference")
         b = right.get("difference")
         if a is None or b is None:
@@ -271,8 +279,8 @@ def _detect_crossings(grid: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "bracketed": True,
                 }
             )
-    if complete and complete[-1].get("difference") == 0:
-        crossings.append({"type": "exact", "root": complete[-1]["parameterValue"], "bracketed": False})
+    if grid and grid[-1].get("complete") and grid[-1].get("difference") == 0:
+        crossings.append({"type": "exact", "root": grid[-1]["parameterValue"], "bracketed": False})
     return crossings
 
 
@@ -312,7 +320,7 @@ def _run_parameter_value(
     if adapter in _ECONOMIC_COST_ADAPTERS:
         if econ is None:
             econ = {}
-        _ECONOMIC_COST_ADAPTERS[adapter](econ, value)
+        _ECONOMIC_COST_ADAPTERS[adapter](econ, value, spec)
     else:
         scenario_changes[adapter] = value
     scenario = {
@@ -328,30 +336,73 @@ def _run_parameter_value(
     )
 
 
-def _set_cost_original(econ: dict[str, Any], cost_item_id: str, value: Any) -> None:
+def _set_cost_sensitivity(
+    econ: dict[str, Any],
+    cost_item_id: str,
+    value: Any,
+    spec: dict[str, Any],
+) -> None:
+    basis = str(spec.get("monetaryValueBasis") or "target_year_converted_cost")
     for item in econ.get("costItems") or []:
         if item.get("costItemId") == cost_item_id:
-            item["originalCost"] = float(value)
-            if item.get("originalPriceYear") == item.get("targetPriceYear") and item.get("conversionStatus") == "valid":
-                item["convertedTargetYearCost"] = float(value)
-                item["calculatedInflationFactor"] = 1.0
+            if basis == "target_year_converted_cost":
+                item["targetYearCostSensitivityOverride"] = {
+                    "active": True,
+                    "value": float(value),
+                    "unit": item.get("targetCurrency"),
+                    "priceYear": item.get("targetPriceYear"),
+                    "basis": basis,
+                    "source": spec.get("source", ""),
+                    "notes": "Sensitivity override of authoritative target-year cost; original source record preserved.",
+                }
+            elif basis == "original_source_year_cost":
+                factor = item.get("inflationFactor")
+                if factor in (None, ""):
+                    raise ValueError(f"Cost item {cost_item_id} lacks a valid stored conversion factor.")
+                item["sourceYearCostSensitivityOverride"] = {
+                    "active": True,
+                    "value": float(value),
+                    "currency": item.get("originalCurrency"),
+                    "priceYear": item.get("originalPriceYear"),
+                    "basis": basis,
+                    "source": spec.get("source", ""),
+                }
+                item["originalCost"] = float(value)
+                item["convertedTargetYearCost"] = float(value) * float(factor)
+                item["conversionStatus"] = "valid"
+            else:
+                raise ValueError(f"Unsupported monetaryValueBasis for {cost_item_id}: {basis}")
             return
     raise ValueError(f"Cost item {cost_item_id} is not available for sensitivity analysis.")
 
 
-_ECONOMIC_COST_ADAPTERS: dict[str, Callable[[dict[str, Any], Any], None]] = {
-    "programRunningCost": lambda econ, value: _set_cost_original(econ, "program_running", value),
-    "programSetupCost": lambda econ, value: _set_cost_original(econ, "program_setup", value),
-    "testIGRACost": lambda econ, value: _set_cost_original(econ, "test_igra", value),
-    "testTSTCost": lambda econ, value: _set_cost_original(econ, "test_tst", value),
-    "activeTBDiseaseCost": lambda econ, value: _set_cost_original(econ, "active_tb_disease", value),
+_ECONOMIC_COST_ADAPTERS: dict[str, Callable[[dict[str, Any], Any, dict[str, Any]], None]] = {
+    "programRunningCost": lambda econ, value, spec: _set_cost_sensitivity(econ, "program_running", value, spec),
+    "programSetupCost": lambda econ, value, spec: _set_cost_sensitivity(econ, "program_setup", value, spec),
+    "testIGRACost": lambda econ, value, spec: _set_cost_sensitivity(econ, "test_igra", value, spec),
+    "testTSTCost": lambda econ, value, spec: _set_cost_sensitivity(econ, "test_tst", value, spec),
+    "activeTBDiseaseCost": lambda econ, value, spec: _set_cost_sensitivity(econ, "active_tb_disease", value, spec),
 }
 
 
-def _base_value(base_config: dict[str, Any], spec: dict[str, Any]) -> Any:
+def _base_value(base_config: dict[str, Any], spec: dict[str, Any], economics_config: dict[str, Any] | None = None) -> Any:
     if spec.get("baseValue") not in (None, ""):
         return spec["baseValue"]
     adapter = str(spec.get("adapter") or spec.get("parameterId"))
+    if adapter in _ECONOMIC_COST_ADAPTERS and economics_config:
+        cost_item_id = {
+            "programRunningCost": "program_running",
+            "programSetupCost": "program_setup",
+            "testIGRACost": "test_igra",
+            "testTSTCost": "test_tst",
+            "activeTBDiseaseCost": "active_tb_disease",
+        }[adapter]
+        for item in economics_config.get("costItems") or []:
+            if item.get("costItemId") == cost_item_id:
+                basis = str(spec.get("monetaryValueBasis") or "target_year_converted_cost")
+                if basis == "original_source_year_cost":
+                    return item.get("originalCost")
+                return item.get("convertedTargetYearCost")
     if adapter == "test":
         return base_config.get("testType")
     if adapter == "regimen":

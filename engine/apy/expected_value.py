@@ -185,17 +185,20 @@ def _build_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict[
                     flag["alcohol"],
                 )
             )
-            p_inf = float(
-                infection_probability(
-                    [age],
-                    pars,
-                    calibration["ageInfLogLambda"],
-                    calibration["ageInfGamma"],
-                    [flag["MJ"]],
-                    [flag["contact"]],
-                    [flag["renal"]],
-                )[0]
-            )
+            if calibration.get("zeroInfectionPrevalence"):
+                p_inf = 0.0
+            else:
+                p_inf = float(
+                    infection_probability(
+                        [age],
+                        pars,
+                        calibration["ageInfLogLambda"],
+                        calibration["ageInfGamma"],
+                        [flag["MJ"]],
+                        [flag["contact"]],
+                        [flag["renal"]],
+                    )[0]
+                )
             p_recent = float(opts["baselineRecentLTBIProportion"])
             sens, spec = get_test_performance([bool(flag["BCG"])], opts)
             no_bcg_spec = get_counterfactual_no_bcg_specificity([bool(flag["BCG"])], opts)
@@ -265,6 +268,15 @@ def _cached_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict
             "tstSensitivity": opts["tstSensitivity"],
             "tstSpecificityBCG": opts["tstSpecificityBCG"],
             "tstSpecificityNoBCG": opts["tstSpecificityNoBCG"],
+            "totalBCGPrev": pars.get("totalBCGPrev"),
+            "totalFemalePrev": pars.get("totalFemalePrev"),
+            "mjPrevByAge": pars.get("mjPrevByAge"),
+            "contactPrevByAge": pars.get("contactPrevByAge"),
+            "renalPrevByAge": pars.get("renalPrevByAge"),
+            "diabetesPrevByAge": pars.get("diabetesPrevByAge"),
+            "smokingPrevByAge": pars.get("smokingPrevByAge"),
+            "cldPrevByAge": pars.get("cldPrevByAge"),
+            "alcoholPrevByAge": pars.get("alcoholPrevByAge"),
             "populationWeight": opts["N"],
         },
         sort_keys=True,

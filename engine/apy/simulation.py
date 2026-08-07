@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from engine.apy.calibration import calibrate_from_config
+from engine.apy.calibration_policy import resolve_calibration_for_config
 from engine.apy.cohort import (
     add_targeting_scores,
     draw_base_population,
@@ -199,6 +201,9 @@ def simulate_one_cohort(
         calibration["ageInfGamma"],
         rng,
     )
+    if calibration.get("zeroInfectionPrevalence"):
+        population["pInfection"] = np.zeros(n, dtype=float)
+        population["infected"] = np.zeros(n, dtype=bool)
     population = add_targeting_scores(
         population,
         calibration["lambdaEarly"],
@@ -530,7 +535,7 @@ def simulate_one_cohort_from_config(
         cfg["N"] = int(n)
     if seed is not None:
         cfg["seed"] = int(seed)
-    calibration = calibrate_from_config(cfg)
+    calibration = resolve_calibration_for_config(cfg)
     library = default_regimen_library(cfg.get("partialShortCourseMode") or "threshold80")
     reg = get_regimen_from_library(cfg["regimen"], library)
     reg = apply_regimen_overrides(reg, cfg)
@@ -1014,7 +1019,33 @@ def _build_event_ledger_data(
         "interventionTotals": totals,
         "comparatorActiveTimes": t_active[active_by_horizon],
         "interventionEventTimes": event_times,
+        "baselineFingerprint": _baseline_fingerprint(population, t_active),
     }
+
+
+def _baseline_fingerprint(population: dict[str, np.ndarray], t_active: np.ndarray) -> str:
+    columns = [
+        "ageYears",
+        "female",
+        "BCG",
+        "MJ",
+        "contact",
+        "renal",
+        "diabetes",
+        "smoking",
+        "cld",
+        "alcohol",
+        "infected",
+        "recentLTBIAtBaseline",
+        "remoteLTBIAtBaseline",
+    ]
+    payload: dict[str, Any] = {}
+    for column in columns:
+        if column in population:
+            payload[column] = np.asarray(population[column]).tolist()
+    payload["tActiveUntreated"] = np.asarray(t_active, dtype=float).round(12).tolist()
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _build_cohort_dataframe(population: dict[str, np.ndarray], *arrays) -> pd.DataFrame:

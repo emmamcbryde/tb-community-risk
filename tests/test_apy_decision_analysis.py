@@ -6,12 +6,14 @@ import unittest
 from io import BytesIO
 from unittest.mock import patch
 
+import pandas as pd
 from openpyxl import load_workbook
 
 from app.results_workbook import build_results_workbook
 from adapters.serialization import to_json_like
 from engine.apy.decision_analysis import (
     DECISION_ANALYSIS_CONTRACT_VERSION,
+    _scenario_metrics,
     build_scenario_config,
     run_scenario_comparison,
 )
@@ -131,6 +133,86 @@ class ApyDecisionAnalysisScenarioComparisonTests(unittest.TestCase):
         self.assertTrue(result["pairedComparisons"][0]["pairedCohortFingerprintMatch"])
         self.assertEqual(result["scenarios"][0]["valueType"], "simulated_count")
         self.assertIsNotNone(result["scenarios"][0]["seed"])
+        self.assertEqual(len(result["pairedReplicateComparisons"]), 3)
+        self.assertTrue(all(row["fingerprintMatch"] for row in result["pairedReplicateComparisons"]))
+
+    def test_infection_intercept_only_changes_prevalence_not_progression_hazards(self) -> None:
+        base = _reviewed_epi({"N": 120, "screenCoverage": 0.2, "ltbiPrevalence": 0.08})
+        scenarios = [
+            {"scenarioId": "reference", "changes": {}},
+            {"scenarioId": "low_prev", "changes": {"ltbiPrevalence": 0.02}},
+            {"scenarioId": "high_prev", "changes": {"ltbiPrevalence": 0.16}},
+        ]
+
+        result = run_scenario_comparison(base, None, scenarios, model_type="expected_value")
+        reference, low, high = result["scenarios"]
+
+        self.assertEqual(low["calibration"]["calibrationPolicy"], "infection_intercept_only")
+        self.assertEqual(high["calibration"]["calibrationPolicy"], "infection_intercept_only")
+        self.assertNotEqual(low["calibration"]["ageInfLogLambda"], high["calibration"]["ageInfLogLambda"])
+        self.assertEqual(reference["calibration"]["lambdaEarly"], low["calibration"]["lambdaEarly"])
+        self.assertEqual(reference["calibration"]["lambdaLate"], high["calibration"]["lambdaLate"])
+        self.assertEqual(
+            reference["calibration"]["recentToRemoteTransitionRatePerYear"],
+            high["calibration"]["recentToRemoteTransitionRatePerYear"],
+        )
+        self.assertLess(low["metrics"]["comparator_active_tb"], high["metrics"]["comparator_active_tb"])
+
+    def test_zero_prevalence_runs_full_false_positive_expected_value_pathway(self) -> None:
+        base = _reviewed_epi(
+            {
+                "N": 100,
+                "ltbiPrevalence": 0.08,
+                "screenCoverage": 0.5,
+                "testSpecificity": 0.8,
+                "pStartTPT": 1.0,
+                "regimenPComplete": 0.6,
+            }
+        )
+
+        result = run_scenario_comparison(
+            base,
+            _synthetic_econ({"threshold": 50000}),
+            [{"scenarioId": "zero_prev", "changes": {"ltbiPrevalence": 0.0}}],
+            model_type="expected_value",
+        )
+        summary = result["scenarioSummaries"][0]
+
+        self.assertEqual(summary["true_positive_recent"], 0)
+        self.assertEqual(summary["true_positive_remote"], 0)
+        self.assertGreater(summary["false_positive"], 0)
+        self.assertGreater(summary["tpt_started_total"], 0)
+        self.assertGreater(summary["tpt_completed_total"], 0)
+        self.assertEqual(summary["infection_effectively_treated_total"], 0)
+        self.assertEqual(summary["active_tb_cases_prevented"], 0)
+        self.assertEqual(summary["comparator_active_tb"], 0)
+        self.assertEqual(summary["intervention_active_tb"], 0)
+
+    def test_scenario_metrics_use_aggregate_icer_classification_not_first_replicate(self) -> None:
+        ledger = {"replicateTotals": []}
+        economics = {
+            "available": True,
+            "replicateResults": pd.DataFrame(
+                [
+                    {"discountRate": 0.03, "economicPairComplete": True, "incrementalCost": -10, "dalysAverted": 1, "classification": "dominant"},
+                    {"discountRate": 0.03, "economicPairComplete": True, "incrementalCost": 110, "dalysAverted": 1, "classification": "increased cost with health gain"},
+                ]
+            ),
+            "summaries": pd.DataFrame(
+                [
+                    {
+                        "discountRate": 0.03,
+                        "metric": "primaryICER_ratioOfMeans",
+                        "mean": 50,
+                        "classification": "increased cost with health gain",
+                    }
+                ]
+            ),
+        }
+
+        metrics = _scenario_metrics(ledger, economics)
+
+        self.assertEqual(metrics["icerClassification"], "increased cost with health gain")
 
 
 class ApyDecisionAnalysisSensitivityTests(unittest.TestCase):
@@ -206,6 +288,43 @@ class ApyDecisionAnalysisSensitivityTests(unittest.TestCase):
         self.assertTrue(row["complete"])
         self.assertGreater(row["highOutcome"], row["lowOutcome"])
 
+    def test_target_year_cost_sensitivity_preserves_source_record_and_changes_totals(self) -> None:
+        spec = {
+            "parameterId": "cost.test_igra.synthetic",
+            "label": "Synthetic target-year IGRA cost",
+            "adapter": "testIGRACost",
+            "baseValue": 10,
+            "lowValue": 1,
+            "highValue": 50,
+            "unit": "AUD 2025-26",
+            "scale": "monetary",
+            "monetaryValueBasis": "target_year_converted_cost",
+            "source": "Synthetic unit-test range",
+            "reviewStatus": "configured_reviewed",
+            "provisional": False,
+        }
+        econ = _synthetic_econ({"test_igra": 10, "program_setup": 0, "program_running": 0})
+        original = next(item for item in econ["costItems"] if item["costItemId"] == "test_igra")["originalCost"]
+
+        result = run_one_way_sensitivity(
+            _reviewed_epi({"N": 50, "screenCoverage": 0.5, "screeningStrategy": "random"}),
+            econ,
+            [spec],
+            ["incrementalCost"],
+        )
+
+        row = result["results"][0]
+        self.assertTrue(row["complete"])
+        self.assertGreater(row["highOutcome"], row["lowOutcome"])
+        high_output = next(item for item in result["rawOutputs"] if item["level"] == "high")
+        high_item = next(
+            item
+            for item in high_output["comparison"]["scenarios"][0]["economics"]["costItems"]
+            if item["costItemId"] == "test_igra"
+        )
+        self.assertEqual(high_item["originalCost"], original)
+        self.assertEqual(high_item["targetYearCostSensitivityOverride"]["value"], 50)
+
     def test_threshold_analysis_preserves_grid_and_requires_valid_threshold_for_nmb(self) -> None:
         spec = {
             "parameterId": "epi.tpt_initiation.synthetic",
@@ -248,6 +367,27 @@ class ApyDecisionAnalysisSensitivityTests(unittest.TestCase):
         self.assertEqual(len(crossings), 3)
         self.assertTrue(all(crossing["bracketed"] for crossing in crossings))
 
+    def test_threshold_crossing_does_not_bridge_incomplete_grid_gap(self) -> None:
+        grid = [
+            {"parameterValue": 0, "difference": -1, "complete": True},
+            {"parameterValue": 1, "difference": None, "complete": False},
+            {"parameterValue": 2, "difference": 1, "complete": True},
+        ]
+
+        self.assertEqual(crossings_from_evaluated_grid(grid), [])
+        self.assertEqual(monotonicity_diagnostic(grid)["direction"], "gapped_grid")
+
+    def test_threshold_exact_boundary_is_reported_without_bracket(self) -> None:
+        grid = [
+            {"parameterValue": 0, "difference": -1, "complete": True},
+            {"parameterValue": 1, "difference": 0, "complete": True},
+            {"parameterValue": 2, "difference": 1, "complete": True},
+        ]
+
+        crossings = crossings_from_evaluated_grid(grid)
+
+        self.assertEqual(crossings, [{"type": "exact", "root": 1, "bracketed": False}])
+
 
 class ApyDecisionAnalysisEarlyReviewTests(unittest.TestCase):
     def test_no_prior_means_no_posterior(self) -> None:
@@ -278,6 +418,34 @@ class ApyDecisionAnalysisEarlyReviewTests(unittest.TestCase):
         self.assertAlmostEqual(sum(row["posteriorWeight"] for row in low["priorPosteriorTable"]), 1.0)
         self.assertLess(low["posterior"]["summary"]["mean"], low["prior"]["summary"]["mean"])
         self.assertGreater(high["posterior"]["summary"]["mean"], high["prior"]["summary"]["mean"])
+        self.assertEqual(low["prior"]["discretisationMethod"], "evenly_spaced_point_mass_approximation")
+
+    def test_early_review_rejects_non_integer_observed_counts(self) -> None:
+        result = run_early_screening_review(
+            _reviewed_epi({"N": 100}),
+            None,
+            _review_input({"screenedToDate": 10.5, "testPositiveToDate": 1}),
+        )
+
+        self.assertFalse(result["validation"]["isValid"])
+        self.assertIn("integer-valued counts", result["validation"]["errors"][0]["message"])
+
+    def test_beta_prior_requires_valid_mean_strength_and_even_grid(self) -> None:
+        invalid_mean = run_early_screening_review(
+            _reviewed_epi({"N": 100}),
+            None,
+            _review_input(
+                {
+                    "prior": {"type": "beta", "mean": 0.0, "effectiveSampleSize": 10, "source": "Synthetic prior"},
+                    "prevalenceGrid": [0.01, 0.02, 0.04],
+                }
+            ),
+        )
+
+        self.assertFalse(invalid_mean["validation"]["isValid"])
+        fields = {issue["field"] for issue in invalid_mean["validation"]["errors"]}
+        self.assertIn("prior.mean", fields)
+        self.assertIn("prevalenceGrid", fields)
 
     def test_false_positives_possible_at_zero_prevalence_when_specificity_below_one(self) -> None:
         base = _reviewed_epi({"N": 20, "testType": "IGRA", "testSpecificity": 0.8, "screeningStrategy": "random"})
@@ -287,6 +455,28 @@ class ApyDecisionAnalysisEarlyReviewTests(unittest.TestCase):
         zero = next(row for row in result["priorPosteriorTable"] if row["prevalence"] == 0.0)
 
         self.assertGreater(zero["predictedPositiveProbability"], 0)
+
+    def test_zero_prevalence_early_review_uses_full_false_positive_tpt_cascade(self) -> None:
+        base = _reviewed_epi(
+            {
+                "N": 40,
+                "testSpecificity": 0.75,
+                "screeningStrategy": "random",
+                "pStartTPT": 1.0,
+                "regimenPComplete": 0.5,
+            }
+        )
+
+        result = run_early_screening_review(base, _synthetic_econ({"threshold": 50000}), _review_input({"prevalenceGrid": [0.0]}))
+
+        projection = result["projection"][0]
+        self.assertGreater(projection["additionalFalsePositives"], 0)
+        self.assertGreater(projection["additionalTPTStarts"], 0)
+        self.assertGreater(projection["additionalTPTCompletions"], 0)
+        self.assertEqual(projection["additionalInfectionsEffectivelyTreated"], 0)
+        self.assertEqual(projection["additionalActiveTBCasesPrevented"], 0)
+        self.assertEqual(projection["plannedComparatorActiveTB"], 0)
+        self.assertEqual(result["calibrationPolicy"], "infection_intercept_only")
 
     def test_perfect_test_approximates_prevalence_likelihood_for_random_screening(self) -> None:
         base = _reviewed_epi(
@@ -310,6 +500,7 @@ class ApyDecisionAnalysisEarlyReviewTests(unittest.TestCase):
                 "N": 20,
                 "testType": "TST",
                 "screeningStrategy": "random",
+                "totalBCGPrev": 1.0,
                 "riskPrev": {"BCG": 1.0},
             }
         )
@@ -318,6 +509,7 @@ class ApyDecisionAnalysisEarlyReviewTests(unittest.TestCase):
                 "N": 20,
                 "testType": "TST",
                 "screeningStrategy": "random",
+                "totalBCGPrev": 0.0,
                 "riskPrev": {"BCG": 0.0},
             }
         )
@@ -359,6 +551,7 @@ class ApyDecisionAnalysisEarlyReviewTests(unittest.TestCase):
         first = result["projection"][0]
         self.assertGreater(first["additionalPeopleScreened"], 0)
         self.assertAlmostEqual(first["additionalCoverage"], (12 - 6) / 30)
+        self.assertTrue(first["fixedProgrammeCostTimingApproximate"])
 
     def test_screened_equals_planned_total_has_no_remaining_screening(self) -> None:
         with patch("engine.apy.early_review._run_coverage_projection", _fake_prevalence_projection):

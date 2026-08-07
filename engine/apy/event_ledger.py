@@ -144,6 +144,12 @@ def metadata_from_config(
         "ltbiStateWarning": ltbi_state.get("warning"),
         "ltbiStateProvisional": ltbi_state.get("provisional"),
         "modelVersion": model_version,
+        "calibrationPolicy": config.get("calibrationPolicy"),
+        "referenceCalibrationHash": (
+            (config.get("referenceCalibrationArtifact") or {}).get("artifactHash")
+            if isinstance(config.get("referenceCalibrationArtifact"), dict)
+            else None
+        ),
         "scopeStatement": DIRECT_EFFECTS_SCOPE_STATEMENT,
         "yearBinConvention": YEAR_BIN_CONVENTION,
         "comparator": DEFAULT_COMPARATOR,

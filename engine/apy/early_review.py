@@ -86,8 +86,13 @@ def run_early_screening_review(
     prior_summary = _weighted_summary(prior["prevalenceGrid"], prior["weights"])
     posterior_summary = _weighted_summary(prior["prevalenceGrid"], posterior_weights)
     posterior_projection = _posterior_projection_summary(projection_rows, posterior_weights)
-    direction = _yield_direction(prior_summary.get("mean"), posterior_summary.get("mean"))
-    validation["warnings"].extend(_test_informativeness_warnings(base_config))
+    informativeness_warnings = _test_informativeness_warnings(base_config)
+    validation["warnings"].extend(informativeness_warnings)
+    direction = (
+        "Selected test characteristics are non-informative or direction-reversed; standard yield-to-prevalence interpretation is suppressed."
+        if informativeness_warnings
+        else _yield_direction(prior_summary.get("mean"), posterior_summary.get("mean"))
+    )
     timing_approximation = True
     return {
         "contractVersion": EARLY_REVIEW_CONTRACT_VERSION,
@@ -98,6 +103,7 @@ def run_early_screening_review(
             "type": review_input.get("prior", {}).get("type"),
             "summary": prior_summary,
             "provenance": review_input.get("prior", {}).get("source", ""),
+            "discretisationMethod": prior.get("discretisationMethod"),
         },
         "posterior": {
             "summary": posterior_summary,
@@ -127,6 +133,13 @@ def run_early_screening_review(
             "Within-window review-time scheduling is not yet exact."
         ),
         "validation": validation,
+        "calibrationPolicy": "infection_intercept_only",
+        "referenceCalibrationHash": _first_projection_field(projection_rows, "referenceCalibrationHash"),
+        "activeTBSurveillanceJointUpdate": False,
+        "activeTBSurveillanceJointUpdateNotes": (
+            "Screening-yield updating changes the LTBI-prevalence distribution only; "
+            "active-TB surveillance data are not jointly updated in this workflow."
+        ),
     }
 
 
@@ -137,8 +150,6 @@ def _run_coverage_projection(
     coverage: float,
     scenario_id: str,
 ) -> dict[str, Any]:
-    if float(prevalence) <= 0.0:
-        return {"comparison": None, "summary": _zero_prevalence_summary(base_config, coverage)}
     comparison = run_scenario_comparison(
         base_config,
         economics_config,
@@ -146,9 +157,10 @@ def _run_coverage_projection(
             {
                 "scenarioId": scenario_id,
                 "changes": {
-                    "ltbiPrevalence": float(max(prevalence, 1e-12)),
+                    "ltbiPrevalence": float(max(prevalence, 0.0)),
                     "screenCoverage": float(max(0.0, min(1.0, coverage))),
                 },
+                "calibrationPolicy": "infection_intercept_only",
             }
         ],
         model_type="expected_value",
@@ -179,36 +191,6 @@ def _cached_projection(
     return cache[key]
 
 
-def _zero_prevalence_summary(base_config: dict[str, Any], coverage: float) -> dict[str, Any]:
-    screened = float(base_config.get("N", 0)) * float(max(0.0, min(1.0, coverage)))
-    if str(base_config.get("testType", "IGRA")).upper() == "TST":
-        bcg_prev = base_config.get("riskPrev", {}).get("BCG")
-        if bcg_prev is None:
-            bcg_prev = 0.0
-        spec = float(bcg_prev) * float(base_config.get("tstSpecificityBCG", 0.55)) + (
-            1.0 - float(bcg_prev)
-        ) * float(base_config.get("tstSpecificityNoBCG", 0.97))
-    else:
-        spec = float(base_config.get("testSpecificity", 0.98))
-    false_positive = screened * max(0.0, min(1.0, 1.0 - spec))
-    return {
-        "screened": screened,
-        "test_positive_total": false_positive,
-        "true_positive_recent": 0.0,
-        "true_positive_remote": 0.0,
-        "false_positive": false_positive,
-        "tpt_started_total": false_positive * float(base_config.get("pStartTPT") or 0.85),
-        "tpt_completed_total": 0.0,
-        "infection_effectively_treated_total": 0.0,
-        "active_tb_cases_prevented": 0.0,
-        "comparator_active_tb": 0.0,
-        "intervention_active_tb": 0.0,
-        "incrementalCost": None,
-        "dalysAverted": None,
-        "nmb": None,
-    }
-
-
 def _projection_delta_row(
     prevalence: float,
     completed: dict[str, Any],
@@ -233,13 +215,24 @@ def _projection_delta_row(
         "additionalTPTCompletions": "tpt_completed_total",
         "additionalInfectionsEffectivelyTreated": "infection_effectively_treated_total",
         "additionalActiveTBCasesPrevented": "active_tb_cases_prevented",
+        "plannedComparatorActiveTB": "comparator_active_tb",
+        "plannedInterventionActiveTB": "intervention_active_tb",
+        "plannedActiveTBCasesPrevented": "active_tb_cases_prevented",
         "additionalProgrammeCost": "incrementalCost",
         "additionalDALYsAverted": "dalysAverted",
         "additionalNMB": "nmb",
     }
     for out_key, source_key in metric_map.items():
-        row[out_key] = _subtract(planned_summary.get(source_key), completed_summary.get(source_key))
+        if out_key.startswith("planned"):
+            row[out_key] = planned_summary.get(source_key)
+        else:
+            row[out_key] = _subtract(planned_summary.get(source_key), completed_summary.get(source_key))
     row["economicsComplete"] = planned_summary.get("incrementalCost") is not None and completed_summary.get("incrementalCost") is not None
+    row["calibrationPolicy"] = planned_summary.get("calibrationPolicy")
+    row["referenceCalibrationHash"] = planned_summary.get("referenceCalibrationHash")
+    row["timingApproximation"] = True
+    row["fixedProgrammeCostTimingApproximate"] = True
+    row["variableProgrammeCostTimingApproximate"] = True
     return row
 
 
@@ -252,10 +245,18 @@ def _validate_review_input(base_config: dict[str, Any], review: dict[str, Any]) 
             errors.append({"field": field, "message": f"{field} is required."})
     if errors:
         return {"isValid": False, "errors": errors, "warnings": warnings}
-    screened = float(review["screenedToDate"])
-    positives = float(review["testPositiveToDate"])
-    planned = float(review["plannedTotalScreened"])
-    eligible = float(review.get("eligiblePopulation", base_config.get("N", planned)))
+    screened = _count_value(review["screenedToDate"])
+    positives = _count_value(review["testPositiveToDate"])
+    planned = _count_value(review["plannedTotalScreened"])
+    eligible = _count_value(review.get("eligiblePopulation", base_config.get("N", planned)))
+    if any(value is None for value in [screened, positives, planned, eligible]):
+        errors.append(
+            {
+                "field": "screeningYield",
+                "message": "Screened, positive, planned and eligible values must be integer-valued counts.",
+            }
+        )
+        return {"isValid": False, "errors": errors, "warnings": warnings}
     if not 0 <= positives <= screened <= planned <= eligible:
         errors.append(
             {
@@ -277,8 +278,17 @@ def _prior_weights(review: dict[str, Any]) -> dict[str, Any]:
         return {"errors": errors}
     if np.any(grid < 0) or np.any(grid > 1):
         errors.append({"field": "prevalenceGrid", "message": "Prevalence grid values must be in [0,1]."})
+    if grid.size > 1 and np.any(np.diff(grid) <= 0):
+        errors.append({"field": "prevalenceGrid", "message": "Prevalence grid must be strictly increasing."})
     prior_type = prior.get("type")
     if prior_type == "beta":
+        if grid.size > 2 and not np.allclose(np.diff(grid), np.diff(grid)[0], rtol=1e-8, atol=1e-12):
+            errors.append(
+                {
+                    "field": "prevalenceGrid",
+                    "message": "Beta-prior prevalence grid must be evenly spaced for point-mass discretisation.",
+                }
+            )
         alpha = prior.get("alpha")
         beta = prior.get("beta")
         if alpha in (None, "") or beta in (None, ""):
@@ -287,8 +297,16 @@ def _prior_weights(review: dict[str, Any]) -> dict[str, Any]:
             if mean in (None, "") or ess in (None, ""):
                 errors.append({"field": "prior", "message": "Beta prior requires alpha/beta or mean/effective sample size."})
             else:
-                alpha = float(mean) * float(ess)
-                beta = (1.0 - float(mean)) * float(ess)
+                mean = float(mean)
+                ess = float(ess)
+                if not 0 < mean < 1:
+                    errors.append({"field": "prior.mean", "message": "Beta prior mean must be strictly between 0 and 1."})
+                if ess <= 0:
+                    errors.append({"field": "prior.effectiveSampleSize", "message": "Beta prior effective sample size must be > 0."})
+                alpha = mean * ess
+                beta = (1.0 - mean) * ess
+        if not errors and (float(alpha) <= 0 or float(beta) <= 0):
+            errors.append({"field": "prior", "message": "Beta prior alpha and beta must be > 0."})
         if not errors:
             weights = np.asarray([_beta_pdf(x, float(alpha), float(beta)) for x in grid], dtype=float)
     elif prior_type == "discrete_grid":
@@ -303,7 +321,17 @@ def _prior_weights(review: dict[str, Any]) -> dict[str, Any]:
         errors.append({"field": "prior.weights", "message": "Prior weights must be finite and sum to a positive value."})
         return {"errors": errors}
     weights = weights / weights.sum()
-    return {"errors": [], "prevalenceGrid": grid.tolist(), "weights": weights.tolist()}
+    method = (
+        "explicit_discrete_grid_weights"
+        if prior_type == "discrete_grid"
+        else "evenly_spaced_point_mass_approximation"
+    )
+    return {
+        "errors": [],
+        "prevalenceGrid": grid.tolist(),
+        "weights": weights.tolist(),
+        "discretisationMethod": method,
+    }
 
 
 def _posterior_weights(prior_weights: list[float], log_likelihoods: list[float]) -> list[float]:
@@ -359,6 +387,9 @@ def _posterior_projection_summary(rows: list[dict[str, Any]], weights: list[floa
         "additionalTPTCompletions",
         "additionalInfectionsEffectivelyTreated",
         "additionalActiveTBCasesPrevented",
+        "plannedComparatorActiveTB",
+        "plannedInterventionActiveTB",
+        "plannedActiveTBCasesPrevented",
         "additionalProgrammeCost",
         "additionalDALYsAverted",
         "additionalNMB",
@@ -408,6 +439,24 @@ def _yield_direction(prior_mean: float | None, posterior_mean: float | None) -> 
     if posterior_mean > prior_mean:
         return "Observed positive yield shifts the prevalence distribution upward under the selected prior and test assumptions."
     return "Observed positive yield leaves the posterior mean unchanged at the displayed precision."
+
+
+def _count_value(value: Any) -> int | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or not number.is_integer():
+        return None
+    return int(number)
+
+
+def _first_projection_field(rows: list[dict[str, Any]], field: str) -> Any:
+    for row in rows:
+        value = row.get(field)
+        if value not in (None, ""):
+            return value
+    return None
 
 
 def _beta_pdf(x: float, alpha: float, beta: float) -> float:

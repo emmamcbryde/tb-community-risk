@@ -458,6 +458,9 @@ def _write_decision_analysis(
                     "eventLedgerVersion": scenario.get("eventLedgerVersion"),
                     "economicResultsVersion": scenario.get("economicResultsVersion"),
                     "configurationHash": scenario.get("configurationHash"),
+                    "calibrationPolicy": scenario.get("calibrationPolicy"),
+                    "referenceCalibrationHash": scenario.get("referenceCalibrationHash"),
+                    "calibration": scenario.get("calibration"),
                     "modelVersion": scenario.get("modelVersion"),
                     "seed": scenario.get("seed"),
                     "nReps": scenario.get("nReps"),
@@ -465,6 +468,8 @@ def _write_decision_analysis(
             )
         _write_rows_sheet(wb, "Decision_scenarios", scenario_rows)
         _write_rows_sheet(wb, "Scenario_comparison", comparison.get("scenarioSummaries") or [])
+        _write_rows_sheet(wb, "Paired_replicate_comparisons", comparison.get("pairedReplicateComparisons") or [])
+        _write_rows_sheet(wb, "Paired_difference_summary", comparison.get("pairedDifferenceSummaries") or [])
         replicate_rows = []
         for scenario in comparison.get("scenarios", []) or []:
             econ = scenario.get("economics") or {}
@@ -495,6 +500,19 @@ def _write_decision_analysis(
 
     if early:
         _write_rows_sheet(wb, "Early_review_inputs", [{"Field": key, "Value": value} for key, value in (early.get("inputs") or {}).items()])
+        _write_rows_sheet(
+            wb,
+            "Early_review_calibration",
+            [
+                {"Field": "calibrationPolicy", "Value": early.get("calibrationPolicy")},
+                {"Field": "referenceCalibrationHash", "Value": early.get("referenceCalibrationHash")},
+                {"Field": "priorDiscretisationMethod", "Value": (early.get("prior") or {}).get("discretisationMethod")},
+                {"Field": "timingApproximation", "Value": early.get("timingApproximation")},
+                {"Field": "timingApproximationDescription", "Value": early.get("timingApproximationDescription")},
+                {"Field": "activeTBSurveillanceJointUpdate", "Value": early.get("activeTBSurveillanceJointUpdate")},
+                {"Field": "activeTBSurveillanceJointUpdateNotes", "Value": early.get("activeTBSurveillanceJointUpdateNotes")},
+            ],
+        )
         _write_rows_sheet(wb, "Early_review_prior_posterior", early.get("priorPosteriorTable") or [])
         _write_rows_sheet(wb, "Early_review_projection", early.get("projection") or [])
         _write_rows_sheet(wb, "Early_review_summary", early.get("posteriorProjectionSummary") or [])
