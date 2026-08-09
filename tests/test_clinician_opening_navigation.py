@@ -108,6 +108,7 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
                 "Define Strategy",
                 "Run Analysis",
                 "Results",
+                "Health Economics",
                 "Explore Decisions",
                 "Evidence & Assumptions",
             ],
@@ -124,6 +125,7 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
             ROOT / "pages" / "3_Results.py",
             ROOT / "pages" / "4_Economics.py",
             ROOT / "pages" / "5_Decision_Analysis.py",
+            ROOT / "pages" / "6_Evidence_Assumptions.py",
         ]
         visible_text = "\n".join(
             text
@@ -132,6 +134,38 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
         )
         offending = _contains_implementation_term(visible_text)
         self.assertIsNone(offending, visible_text)
+
+    def test_health_economics_and_evidence_pages_are_separate(self) -> None:
+        text = (ROOT / "streamlit_app.py").read_text(encoding="utf-8")
+
+        self.assertIn('st.Page("pages/4_Economics.py", title="Health Economics")', text)
+        self.assertIn(
+            'st.Page("pages/6_Evidence_Assumptions.py", title="Evidence & Assumptions")',
+            text,
+        )
+        self.assertLess(text.index('title="Results"'), text.index('title="Health Economics"'))
+        self.assertLess(text.index('title="Health Economics"'), text.index('title="Explore Decisions"'))
+
+    def test_results_links_to_health_economics(self) -> None:
+        text = (ROOT / "pages" / "3_Results.py").read_text(encoding="utf-8")
+
+        self.assertIn("Open Health Economics", text)
+        self.assertNotIn("Open Evidence & Assumptions", text)
+
+    def test_health_economics_page_uses_event_ledger_and_runs_existing_engine(self) -> None:
+        text = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
+
+        self.assertIn('st.title("Health Economics")', text)
+        self.assertIn("eventLedger", text)
+        self.assertIn("backend.run_economics(results_bundle, econ_config)", text)
+        self.assertIn("A valid APY event ledger is required", text)
+
+    def test_evidence_assumptions_page_is_readiness_focused(self) -> None:
+        text = (ROOT / "pages" / "6_Evidence_Assumptions.py").read_text(encoding="utf-8")
+
+        self.assertIn('st.title("Evidence & Assumptions")', text)
+        self.assertIn("assess_apy_reference_readiness", text)
+        self.assertIn("load_apy_evidence_registry", text)
 
 
 if __name__ == "__main__":

@@ -74,9 +74,9 @@ if visual_rows:
         title="What this means per 100 eligible people",
     )
 
-st.subheader("Economics")
+st.subheader("Health Economics")
 if not economics:
-    st.info("Economics has not been run for these results yet.")
+    st.info("Health-economic analysis has not been run for these results yet.")
     if economics_config:
         st.markdown("Downloads")
         st.download_button(
@@ -85,16 +85,16 @@ if not economics:
             file_name=f"{safe_download_stem(scenario_label, 'economics_assumptions')}.json",
             mime="application/json",
         )
-    st.page_link("pages/4_Economics.py", label="Open Evidence & Assumptions")
+    st.page_link("pages/4_Economics.py", label="Open Health Economics")
 else:
     if st.session_state.get("dirty_economics") or st.session_state.get("results_stale"):
-        st.warning("Economic results are stale. Open Evidence & Assumptions and rerun the analysis.")
+        st.warning("Economic results are stale. Open Health Economics and rerun the analysis.")
     else:
         st.success("Economics results are available.")
 
     summary_rows = economics.get("summaryRows") or []
     if summary_rows:
-        st.markdown("Summary")
+        st.markdown("Health-economic summary")
         st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
     else:
         st.info("No economics summary rows were returned.")
@@ -125,7 +125,7 @@ else:
         {"field": "notCalculated", "value": status.get("notCalculated")},
     ]
     st.dataframe(arrow_safe_dataframe(status_rows), width="stretch", hide_index=True)
-    st.page_link("pages/4_Economics.py", label="Open Evidence & Assumptions")
+    st.page_link("pages/4_Economics.py", label="Open Health Economics")
 
 with st.expander("Additional technical information", expanded=False):
     technical_summary = {

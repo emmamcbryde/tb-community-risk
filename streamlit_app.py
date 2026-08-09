@@ -47,8 +47,9 @@ navigation = st.navigation(
             st.Page("pages/1_Scenario.py", title="Define Strategy"),
             st.Page("pages/2_Run_Model.py", title="Run Analysis"),
             st.Page("pages/3_Results.py", title="Results"),
+            st.Page("pages/4_Economics.py", title="Health Economics"),
             st.Page("pages/5_Decision_Analysis.py", title="Explore Decisions"),
-            st.Page("pages/4_Economics.py", title="Evidence & Assumptions"),
+            st.Page("pages/6_Evidence_Assumptions.py", title="Evidence & Assumptions"),
         ],
         "Research & Development": [
             st.Page("pages/8_Technical_Settings.py", title="Technical settings"),

@@ -32,8 +32,8 @@ init_session_state()
 st.session_state["apy_backend_name"] = "python_apy"
 backend = get_backend()
 
-st.title("Evidence & Assumptions")
-st.caption("Review economic perspective, cost inputs, health outcome assumptions and readiness warnings.")
+st.title("Health Economics")
+st.caption("Review economic assumptions, run the event-ledger-based economic analysis and inspect economic results.")
 
 ECONOMICS_WIDGET_KEYS = [
     "econ_currency_code",
@@ -517,7 +517,7 @@ st.dataframe(
 )
 
 readiness = assess_apy_reference_readiness(config or {}, econ_config)
-st.subheader("APY Reference Evidence Readiness")
+st.subheader("Evidence-readiness explanation")
 status_rows = [
     {"category": "epidemiology", "ready": readiness["epidemiologyReady"]},
     {"category": "cost", "ready": readiness["costReady"]},
@@ -564,15 +564,15 @@ elif not results_bundle:
 elif st.session_state.get("results_stale"):
     st.warning("Rerun the model before running economics so the economics inputs match current results.")
 
-if st.button("Run economics", type="primary", disabled=not can_run):
+if st.button("Run health economics", type="primary", disabled=not can_run):
     try:
         econ = backend.run_economics(results_bundle, econ_config)
         st.session_state["economics_results"] = econ
         mark_economics_completed()
         sync_backend_status(backend.status())
-        st.success("Economics run completed.")
+        st.success("Health-economic analysis completed.")
     except Exception as exc:
-        message = f"Economics run failed: {exc}"
+        message = f"Health-economic analysis failed: {exc}"
         sync_backend_status(backend.status())
         record_message("error", message)
         st.error(message)
@@ -584,7 +584,7 @@ if econ_results:
         st.warning("Economic outputs are provisional. Do not interpret them as clinician-ready cost-effectiveness conclusions.")
     if econ_results.get("warnings"):
         st.warning("; ".join(str(item) for item in econ_results.get("warnings") or []))
-    st.subheader("Economics Summary")
+    st.subheader("Health-economic Summary")
     summary_rows = econ_results.get("summaryRows") or []
     if summary_rows:
         status = econ_results.get("status", {})
@@ -616,9 +616,9 @@ if econ_results:
             mime="text/csv",
         )
     else:
-        st.info("No economics summary rows were returned.")
+        st.info("No health-economic summary rows were returned.")
 
-    st.subheader("Economics Status")
+    st.subheader("Health-economic Status")
     status = econ_results.get("status", {})
     st.json(
         {
@@ -632,4 +632,4 @@ if econ_results:
         expanded=False,
     )
 else:
-    st.info("Run economics to enable the economics summary CSV download.")
+    st.info("Run health economics to enable the summary CSV download.")
