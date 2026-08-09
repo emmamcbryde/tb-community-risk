@@ -22,8 +22,17 @@ from app.state import (
     record_message,
     sync_backend_status,
 )
+from app.health_economics_inputs import (
+    assumptions_csv,
+    assumptions_workbook,
+    apply_assumptions_to_economics_config,
+    editable_assumption_rows,
+    group_rows,
+    parse_assumptions_csv,
+    validate_editable_assumptions,
+)
 from engine.apy.costing import normalise_cost_table
-from engine.apy.evidence import assess_apy_reference_readiness
+from engine.apy.evidence import assess_apy_reference_readiness, load_apy_evidence_registry
 from engine.apy.economics import update_cost_item_original_values_from_legacy_fields
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 
@@ -369,6 +378,137 @@ sync_econ_widgets_if_missing(econ_config)
 if st.session_state.get("dirty_economics") and st.session_state.get("economics_results"):
     st.warning("Economics results are stale because model results or economics inputs changed.")
 
+st.subheader("Assumptions Workspace")
+st.caption(
+    "Edit a working copy of the evidence registry. Validate before applying; "
+    "the source registry file is not changed from this page."
+)
+
+if "health_econ_assumption_rows" not in st.session_state:
+    st.session_state["health_econ_assumption_rows"] = editable_assumption_rows(
+        economics_config=econ_config
+    )
+
+uploaded_assumptions = st.file_uploader(
+    "Upload edited assumptions CSV",
+    type=["csv"],
+    help="Uploaded assumptions are loaded into the working copy and must be validated before application.",
+)
+if uploaded_assumptions is not None and st.button("Load uploaded assumptions"):
+    try:
+        st.session_state["health_econ_assumption_rows"] = parse_assumptions_csv(
+            uploaded_assumptions.getvalue()
+        )
+        st.session_state.pop("health_econ_assumption_validation", None)
+        st.success("Uploaded assumptions loaded into the working copy.")
+        st.rerun()
+    except Exception as exc:
+        st.error(f"Could not load assumptions CSV: {exc}")
+
+working_rows = st.session_state["health_econ_assumption_rows"]
+tabs = st.tabs(["Costs", "DALYs", "Threshold", "Epidemiology blockers"])
+for tab, group_name in zip(tabs, ["Costs", "DALYs", "Threshold", "Epidemiology blockers"]):
+    with tab:
+        group_data = group_rows(working_rows, group_name)
+        if not group_data:
+            st.info("No rows in this section.")
+            continue
+        edited = st.data_editor(
+            arrow_safe_dataframe(group_data),
+            width="stretch",
+            hide_index=True,
+            num_rows="fixed",
+            key=f"health_econ_assumption_editor_{group_name}",
+            disabled=["assumptionId", "category", "description", "validationMessage"],
+        )
+        edited_records = edited.to_dict(orient="records") if hasattr(edited, "to_dict") else list(edited)
+        edited_by_id = {row.get("assumptionId"): row for row in edited_records}
+        for idx, row in enumerate(working_rows):
+            replacement = edited_by_id.get(row.get("assumptionId"))
+            if replacement is not None:
+                working_rows[idx] = replacement
+
+validation_report = st.session_state.get("health_econ_assumption_validation")
+cols = st.columns(4)
+if cols[0].button("Validate assumptions", type="primary"):
+    validation_report = validate_editable_assumptions(
+        working_rows,
+        econ_config,
+        config=config or {},
+    )
+    st.session_state["health_econ_assumption_rows"] = validation_report["rows"]
+    st.session_state["health_econ_assumption_validation"] = validation_report
+    st.rerun()
+
+apply_disabled = validation_report is None or not bool(validation_report.get("isValidForApplication"))
+if cols[1].button("Apply to current analysis", disabled=apply_disabled):
+    try:
+        updated_config = apply_assumptions_to_economics_config(
+            econ_config,
+            working_rows,
+            config=config or {},
+        )
+        st.session_state["economics_config"] = updated_config
+        econ_config = updated_config
+        st.session_state["health_econ_assumption_rows"] = editable_assumption_rows(
+            updated_config.get("assumptionEvidenceRegistry") or working_rows,
+            updated_config,
+        )
+        mark_economics_changed()
+        st.success("Validated assumptions applied to the current analysis.")
+        st.rerun()
+    except Exception as exc:
+        st.error(f"Assumptions were not applied: {exc}")
+
+active_validation = validation_report or validate_editable_assumptions(
+    working_rows,
+    econ_config,
+    config=config or {},
+)
+summary = active_validation["summary"]
+summary_rows = [
+    {"Readiness item": "Cost-consequence analysis", "Complete": summary["costConsequenceReady"]},
+    {"Readiness item": "DALY analysis", "Complete": summary["dalyReady"]},
+    {"Readiness item": "ICER", "Complete": summary["icerReady"]},
+    {"Readiness item": "NMB", "Complete": summary["nmbReady"]},
+    {"Readiness item": "Epidemiology", "Complete": summary["epidemiologyReady"]},
+    {"Readiness item": "Cost", "Complete": summary["costReady"]},
+    {"Readiness item": "DALY assumptions", "Complete": summary["dalyCategoryReady"]},
+    {"Readiness item": "Threshold", "Complete": summary["thresholdReady"]},
+    {"Readiness item": "Overall clinician-ready", "Complete": summary["overallClinicianReady"]},
+]
+st.markdown("Readiness summary")
+st.dataframe(arrow_safe_dataframe(summary_rows), width="content", hide_index=True)
+if not summary["icerReady"]:
+    st.warning("ICER cannot yet be calculated.")
+    blockers = summary.get("remainingBlockers") or []
+    if blockers:
+        st.dataframe(
+            arrow_safe_dataframe([{"Blocking assumption": item} for item in blockers[:20]]),
+            width="content",
+            hide_index=True,
+        )
+elif not summary["nmbReady"]:
+    st.info("ICER inputs are complete, but NMB requires a reviewed threshold with matching currency and reference year.")
+if summary["costReady"] and not summary["dalyCategoryReady"]:
+    st.info(
+        "Cost inputs are complete but DALY inputs are incomplete. Cost-consequence outputs may be reviewed; ICER remains unavailable."
+    )
+
+download_cols = st.columns(2)
+download_cols[0].download_button(
+    "Download edited assumptions CSV",
+    data=assumptions_csv(working_rows),
+    file_name=f"{safe_download_stem(scenario_label, 'edited_assumptions')}.csv",
+    mime="text/csv",
+)
+download_cols[1].download_button(
+    "Download edited assumptions workbook",
+    data=assumptions_workbook(working_rows, active_validation),
+    file_name=f"{safe_download_stem(scenario_label, 'edited_assumptions')}.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+)
+
 st.subheader("Edit Economics Inputs")
 metadata = ensure_nested(econ_config, "metadata")
 costs = ensure_nested(econ_config, "costs")
@@ -516,7 +656,11 @@ st.dataframe(
     hide_index=True,
 )
 
-readiness = assess_apy_reference_readiness(config or {}, econ_config)
+readiness = assess_apy_reference_readiness(
+    config or {},
+    econ_config,
+    econ_config.get("assumptionEvidenceRegistry") or load_apy_evidence_registry(),
+)
 st.subheader("Evidence-readiness explanation")
 status_rows = [
     {"category": "epidemiology", "ready": readiness["epidemiologyReady"]},

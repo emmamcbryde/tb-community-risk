@@ -17,7 +17,7 @@ from app.epidemiology_inputs import (
     prevalence_source_label,
 )
 from engine.apy.costing import normalise_cost_table, unresolved_cost_warnings
-from engine.apy.evidence import assess_apy_reference_readiness
+from engine.apy.evidence import assess_apy_reference_readiness, load_apy_evidence_registry
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT, scenario_from_config
 
@@ -356,6 +356,35 @@ def _write_economics_assumptions(
         "Unresolved_assumptions",
         [{"Warning": warning} for warning in warnings] or [{"Warning": ""}],
     )
+    if isinstance(economics_config, dict):
+        edited_registry = economics_config.get("assumptionEvidenceRegistry") or []
+        validation = economics_config.get("assumptionEvidenceValidation") or {}
+        _write_rows_sheet(
+            wb,
+            "Edited_assumptions",
+            edited_registry or [{"Status": "No edited assumptions applied"}],
+        )
+        _write_rows_sheet(
+            wb,
+            "Applied_session_assumptions",
+            edited_registry or [{"Status": "No edited assumptions applied"}],
+        )
+        summary = validation if isinstance(validation, dict) else {}
+        _write_rows_sheet(
+            wb,
+            "Assumption_validation",
+            [{"Field": key, "Value": value} for key, value in summary.items()]
+            or [{"Field": "Status", "Value": "No edited assumptions validation available"}],
+        )
+        blockers = summary.get("remainingBlockers") if isinstance(summary, dict) else []
+        blockers = blockers or []
+        _write_rows_sheet(
+            wb,
+            "Assumption_blockers",
+            [{"Blocking assumption": item} for item in blockers]
+            or [{"Blocking assumption": ""}],
+        )
+    _write_rows_sheet(wb, "Original_evidence_registry", load_apy_evidence_registry())
 
 
 def _write_event_ledger_economics(
@@ -415,7 +444,12 @@ def _write_apy_evidence_readiness(
     config: dict[str, Any],
     economics_config: dict[str, Any] | None,
 ) -> None:
-    readiness = assess_apy_reference_readiness(config, economics_config or {})
+    registry = (
+        economics_config.get("assumptionEvidenceRegistry")
+        if isinstance(economics_config, dict)
+        else None
+    )
+    readiness = assess_apy_reference_readiness(config, economics_config or {}, registry)
     _write_rows_sheet(wb, "Assumption_evidence_registry", readiness["registryRows"])
     _write_rows_sheet(wb, "APY_readiness", readiness["readinessRows"])
     _write_rows_sheet(
