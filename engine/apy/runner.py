@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -43,6 +43,7 @@ def run_replicates(
     seed: int | None = None,
     n: int | None = None,
     keep_example_cohort: bool = True,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     cfg = validate_config(normalise_config(config))
     if n is not None:
@@ -71,6 +72,7 @@ def run_replicates(
     event_total_rows = []
     annual_frames = []
     example_cohort = None
+    _notify_progress(progress_callback, {"stage": "initialising", "totalReplicates": int(cfg["nReps"])})
     for idx, replicate_seed in enumerate(replicate_seeds, start=1):
         out = simulate_one_cohort(
             int(cfg["N"]),
@@ -95,7 +97,17 @@ def run_replicates(
         )
         if idx == 1:
             example_cohort = out["cohort"]
+        _notify_progress(
+            progress_callback,
+            {
+                "stage": "replicate_completed",
+                "replicate": idx,
+                "totalReplicates": int(cfg["nReps"]),
+                "seed": int(replicate_seed),
+            },
+        )
 
+    _notify_progress(progress_callback, {"stage": "summarising", "totalReplicates": int(cfg["nReps"])})
     raw = pd.DataFrame(raw_rows)
     annual = pd.concat(annual_frames, ignore_index=True) if annual_frames else pd.DataFrame()
     event_ledger = make_event_ledger_bundle(
@@ -109,6 +121,7 @@ def run_replicates(
         annual_events=annual,
     )
     summary = summarise_numeric_rows(raw)
+    _notify_progress(progress_callback, {"stage": "finalising", "totalReplicates": int(cfg["nReps"])})
     return {
         "raw": raw,
         "summary": summary,
@@ -126,17 +139,23 @@ def run_replicates(
     }
 
 
-def run_scenario(config: dict[str, Any] | None = None) -> dict[str, Any]:
-    return run_replicates(config=config)
+def run_scenario(
+    config: dict[str, Any] | None = None,
+    *,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    return run_replicates(config=config, progress_callback=progress_callback)
 
 
 def run_scenario_with_do_nothing(
     config: dict[str, Any] | None = None,
+    *,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     from engine.apy.natural_history import run_do_nothing_summary
     from engine.apy.results_bundle import build_results_bundle
 
-    results = run_scenario(config)
+    results = run_scenario(config, progress_callback=progress_callback)
     do_nothing = run_do_nothing_summary(results)
     bundle = build_results_bundle(results, do_nothing=do_nothing)
     return {
@@ -144,6 +163,14 @@ def run_scenario_with_do_nothing(
         "doNothing": do_nothing,
         "bundle": bundle,
     }
+
+
+def _notify_progress(
+    callback: Callable[[dict[str, Any]], None] | None,
+    event: dict[str, Any],
+) -> None:
+    if callback is not None:
+        callback(event)
 
 
 def build_strategy_metadata(config: dict[str, Any], reg: dict[str, Any]) -> dict[str, Any]:

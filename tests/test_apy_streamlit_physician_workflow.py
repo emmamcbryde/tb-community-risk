@@ -22,7 +22,14 @@ from app.epidemiology_inputs import (
     risk_override_from_percentages,
 )
 from app.results_workbook import build_results_workbook
+from app.run_analysis_controls import (
+    TECHNICAL_DEMONSTRATION_ROUTE,
+    prepare_run_config_for_recent_ltbi_route,
+    recent_ltbi_decision_required,
+    technical_demonstration_summary,
+)
 from engine.apy.calibration import calibrate_from_config
+from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from engine.apy.config import build_default_config
 from engine.apy.runner import run_scenario_with_do_nothing
 
@@ -96,6 +103,74 @@ class PhysicianWorkflowHelperTests(unittest.TestCase):
             rows,
         )
         self.assertIn({"Assumption": "Provisional result", "Value": True}, rows)
+
+    def test_unresolved_recent_ltbi_blocks_normal_reference_analysis(self) -> None:
+        cfg = build_default_config()
+
+        self.assertTrue(recent_ltbi_decision_required(cfg))
+        with self.assertRaisesRegex(ValueError, "Recent versus remote LTBI is unresolved"):
+            prepare_run_config_for_recent_ltbi_route(cfg, selected_route=None)
+
+    def test_technical_demonstration_explicitly_enables_compatibility_mode(self) -> None:
+        cfg = build_default_config()
+        before = resolve_ltbi_state_assumptions(cfg)
+        run_cfg = prepare_run_config_for_recent_ltbi_route(
+            cfg,
+            selected_route=TECHNICAL_DEMONSTRATION_ROUTE,
+        )
+        after = resolve_ltbi_state_assumptions(run_cfg)
+
+        self.assertFalse(before["developmentCompatibilityMode"])
+        self.assertTrue(after["developmentCompatibilityMode"])
+        self.assertEqual(after["baselineRecentLTBIProportion"], 0.0)
+        self.assertEqual(after["status"], "unresolved_development_compatibility")
+        self.assertEqual(
+            after["baselineRecentLTBIProportionStatus"],
+            "unresolved",
+        )
+        self.assertTrue(after["provisional"])
+
+    def test_technical_demonstration_summary_preserves_unreviewed_status(self) -> None:
+        summary = technical_demonstration_summary(build_default_config())
+
+        self.assertTrue(summary["developmentCompatibilityMode"])
+        self.assertTrue(summary["provisional"])
+        self.assertEqual(summary["baselineRecentLTBIProportion"], 0.0)
+        self.assertEqual(summary["status"], "unresolved_development_compatibility")
+        self.assertNotIn("configured_reviewed", summary.values())
+
+    def test_reviewed_recent_ltbi_assumption_allows_ordinary_run_config(self) -> None:
+        cfg = apply_ltbi_state_assumption_update(
+            build_default_config(),
+            baseline_recent_percent=20.0,
+            transition_rate_per_year=0.2,
+            source="Reviewed unit-test recent LTBI source",
+            status="configured_reviewed",
+            notes="Reviewed for interface guardrail test.",
+        )
+
+        self.assertFalse(recent_ltbi_decision_required(cfg))
+        run_cfg = prepare_run_config_for_recent_ltbi_route(cfg, selected_route=None)
+        state = resolve_ltbi_state_assumptions(run_cfg)
+        self.assertFalse(state["developmentCompatibilityMode"])
+        self.assertFalse(state["provisional"])
+        self.assertEqual(state["baselineRecentLTBIProportion"], 0.2)
+
+    def test_run_page_does_not_show_raw_model_failure_for_unresolved_ltbi(self) -> None:
+        page_text = (repo_root() / "pages" / "2_Run_Model.py").read_text(encoding="utf-8")
+
+        self.assertIn("Recent versus remote LTBI assumption", page_text)
+        self.assertIn("Run a technical demonstration", page_text)
+        self.assertIn("Review or enter the assumption", page_text)
+        self.assertNotIn("Model run failed", page_text)
+        self.assertNotIn("Run provisional development analysis using the 0% compatibility placeholder", page_text)
+
+    def test_new_analysis_pages_clear_prior_technical_demonstration_route(self) -> None:
+        start_text = (repo_root() / "pages" / "0_Start.py").read_text(encoding="utf-8")
+        scenario_text = (repo_root() / "pages" / "1_Scenario.py").read_text(encoding="utf-8")
+
+        self.assertGreaterEqual(start_text.count('pop("recent_ltbi_run_route", None)'), 2)
+        self.assertGreaterEqual(scenario_text.count('pop("recent_ltbi_run_route", None)'), 4)
 
 
 class PythonApyPrevalencePathTests(unittest.TestCase):
@@ -226,6 +301,30 @@ class WorkbookExportTests(unittest.TestCase):
         self.assertIn(("LTBI state provisional result", True, None), scenario_values)
         economics_values = list(wb["Economics"].iter_rows(values_only=True))
         self.assertIn(("Economics not run", None, "No zero values have been substituted for missing economics outputs."), economics_values)
+        wb.close()
+
+    def test_technical_demonstration_workbook_retains_provisional_flag(self) -> None:
+        cfg = prepare_run_config_for_recent_ltbi_route(
+            build_default_config(),
+            selected_route=TECHNICAL_DEMONSTRATION_ROUTE,
+        )
+        cfg.update({"N": 40, "nReps": 2, "seed": 11, "ltbiPrevalence": 0.02})
+        bundle = PythonApyBackend(repo_root()).run_scenario_bundle(cfg)
+        payload = build_results_workbook(
+            config=cfg,
+            bundle=bundle,
+            backend_status={"name": "python_apy", "experimental": True},
+            economics_results=None,
+            economics_config=None,
+            results_stale=False,
+        )
+
+        wb = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+        scenario_values = list(wb["Scenario_inputs"].iter_rows(values_only=True))
+        technical_values = list(wb["Technical_metadata"].iter_rows(values_only=True))
+        self.assertIn(("LTBI state development compatibility mode", True, None), scenario_values)
+        self.assertIn(("LTBI state provisional result", True, None), scenario_values)
+        self.assertIn(("ltbiState.provisional", True), technical_values)
         wb.close()
 
     def test_stale_state_function_marks_results_and_economics(self) -> None:

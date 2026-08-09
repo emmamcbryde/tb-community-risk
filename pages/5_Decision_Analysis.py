@@ -5,6 +5,7 @@ import numpy as np
 import streamlit as st
 
 from app.display import arrow_safe_dataframe, safe_download_stem
+from app.icon_arrays import build_100_person_visual_data, render_100_person_summary
 from app.state import init_session_state
 from engine.apy.decision_analysis import run_scenario_comparison
 from engine.apy.early_review import run_early_screening_review
@@ -19,15 +20,27 @@ from engine.apy.sensitivity import (
 
 init_session_state()
 
-st.title("Decision Analysis")
-st.caption("Readiness-aware APY direct-effects decision-analysis workflow.")
+st.title("Explore Decisions")
+st.caption("Compare strategies, explore supplied sensitivity ranges and review early screening results.")
+
+MODEL_TYPE_LABELS = {
+    "expected_value": "Expected outcomes",
+    "agent_based": "Simulated community variation",
+}
+STRATEGY_LABELS = {
+    "prevent": "Prioritise people most likely to avoid active TB",
+    "ltbi": "Prioritise people most likely to have LTBI",
+    "cure": "Prioritise people most likely to complete effective treatment",
+    "random": "No risk-based prioritisation",
+}
+STRATEGY_VALUES = {label: value for value, label in STRATEGY_LABELS.items()}
 
 config = st.session_state.get("config")
 economics_config = st.session_state.get("economics_config")
 results_bundle = st.session_state.get("results_bundle")
 
 if not config:
-    st.info("Load or create a scenario before using decision analysis.")
+    st.info("Create an analysis before exploring decisions.")
     st.stop()
 
 readiness = assess_apy_reference_readiness(config, economics_config or {})
@@ -56,23 +69,23 @@ tab_compare, tab_sensitivity, tab_early = st.tabs(
 with tab_compare:
     st.subheader("Compare Strategies")
     model_type = st.radio(
-        "Model",
+        "Analysis type",
         ["expected_value", "agent_based"],
         horizontal=True,
-        format_func=lambda value: "Deterministic expected value" if value == "expected_value" else "Paired stochastic individual-based",
+        format_func=lambda value: MODEL_TYPE_LABELS.get(value, str(value)),
     )
     col_a, col_b = st.columns(2)
     with col_a:
         base_test = st.selectbox("Base test", ["IGRA", "TST"], index=0)
         base_regimen = st.selectbox("Base regimen", ["3HP", "4R", "3HR", "6H", "9H"], index=0)
-        base_strategy = st.selectbox("Base targeting", ["prevent", "random", "ltbi", "cure"], index=0)
+        base_strategy_label = st.selectbox("Base prioritisation", list(STRATEGY_VALUES), index=0)
         base_coverage = st.number_input("Base coverage", min_value=0.0, max_value=1.0, value=float(config.get("screenCoverage", 0.3)), step=0.05)
     with col_b:
         alt_test = st.selectbox("Alternative test", ["IGRA", "TST"], index=1)
         alt_regimen = st.selectbox("Alternative regimen", ["3HP", "4R", "3HR", "6H", "9H"], index=0)
-        alt_strategy = st.selectbox("Alternative targeting", ["prevent", "random", "ltbi", "cure"], index=1)
+        alt_strategy_label = st.selectbox("Alternative prioritisation", list(STRATEGY_VALUES), index=1)
         alt_coverage = st.number_input("Alternative coverage", min_value=0.0, max_value=1.0, value=float(config.get("screenCoverage", 0.3)), step=0.05)
-    n_reps = st.number_input("Stochastic replicates", min_value=1, value=min(int(config.get("nReps", 10)), 20), step=1)
+    n_reps = st.number_input("Simulation replicates", min_value=1, value=min(int(config.get("nReps", 10)), 20), step=1)
     if st.button("Run strategy comparison", type="primary"):
         scenarios = [
             {
@@ -81,7 +94,7 @@ with tab_compare:
                 "changes": {
                     "test": base_test,
                     "regimen": base_regimen,
-                    "screeningStrategy": base_strategy,
+                    "screeningStrategy": STRATEGY_VALUES[base_strategy_label],
                     "screenCoverage": base_coverage,
                 },
             },
@@ -91,12 +104,12 @@ with tab_compare:
                 "changes": {
                     "test": alt_test,
                     "regimen": alt_regimen,
-                    "screeningStrategy": alt_strategy,
+                    "screeningStrategy": STRATEGY_VALUES[alt_strategy_label],
                     "screenCoverage": alt_coverage,
                 },
             },
         ]
-        with st.spinner("Running APY decision-analysis comparison..."):
+        with st.spinner("Running strategy comparison..."):
             st.session_state["decision_scenario_comparison"] = run_scenario_comparison(
                 config,
                 economics_config,
@@ -108,6 +121,20 @@ with tab_compare:
     comparison = st.session_state.get("decision_scenario_comparison")
     if comparison:
         st.dataframe(arrow_safe_dataframe(comparison["scenarioSummaries"]), width="stretch", hide_index=True)
+        scenarios = comparison.get("scenarios") or []
+        if scenarios:
+            visual_scenarios = scenarios[:2]
+            st.subheader("100-person strategy summaries")
+            st.caption("Each strategy shows outcomes per 100 eligible people using its own event ledger.")
+            visual_cols = st.columns(len(visual_scenarios))
+            for col, scenario in zip(visual_cols, visual_scenarios):
+                with col:
+                    visual_rows = build_100_person_visual_data(scenario.get("eventLedger"))
+                    if visual_rows:
+                        render_100_person_summary(
+                            visual_rows,
+                            title=str(scenario.get("label", "Selected strategy")),
+                        )
         if comparison.get("pairedComparisons"):
             st.dataframe(arrow_safe_dataframe(comparison["pairedComparisons"]), width="stretch", hide_index=True)
         if comparison.get("pairedReplicateComparisons"):
@@ -118,9 +145,9 @@ with tab_compare:
             with st.expander("Common-seed non-paired diagnostics"):
                 st.caption("Baseline-generating inputs differ; these rows are not paired clinical effect intervals.")
                 st.dataframe(arrow_safe_dataframe(comparison["commonSeedNonpairedDiagnostics"]), width="stretch", hide_index=True)
-        st.caption("Expected-value rows may be fractional. Stochastic percentiles describe finite-population simulation distributions, not confidence intervals.")
+        st.caption("Expected outcomes may be fractional. Simulation percentiles describe finite-population variation, not confidence intervals.")
         st.download_button(
-            "Download scenario comparison CSV",
+            "Download strategy comparison CSV",
             data=pd.DataFrame(comparison["scenarioSummaries"]).to_csv(index=False).encode("utf-8"),
             file_name=f"{safe_download_stem(config.get('scenarioLabel'), 'scenario_comparison')}.csv",
             mime="text/csv",
@@ -222,8 +249,10 @@ with tab_early:
             st.error(early["validation"]["errors"])
         else:
             st.dataframe(arrow_safe_dataframe([early["prior"]["summary"], early["posterior"]["summary"]]), width="stretch", hide_index=True)
-            st.caption(f"Calibration policy: {early.get('calibrationPolicy')} | reference calibration: {early.get('referenceCalibrationHash')}")
-            st.caption(f"Prior discretisation: {(early.get('prior') or {}).get('discretisationMethod')}")
+            with st.expander("Technical information", expanded=False):
+                st.caption(f"Calibration policy: {early.get('calibrationPolicy')}")
+                st.caption(f"Reference calibration: {early.get('referenceCalibrationHash')}")
+                st.caption(f"Prior discretisation: {(early.get('prior') or {}).get('discretisationMethod')}")
             st.caption(early.get("likelihoodNotes", ""))
             st.info(early.get("activeTBSurveillanceJointUpdateNotes", ""))
             if early.get("timingApproximation"):

@@ -22,13 +22,10 @@ from app.epidemiology_inputs import (
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from app.state import (
     get_backend,
-    get_backend_name,
     init_session_state,
-    matlab_backend_enabled,
     mark_config_changed,
     mark_validation_completed,
     record_message,
-    set_backend_name,
     sync_backend_status,
 )
 from adapters.paths import scenarios_dir
@@ -40,65 +37,28 @@ from engine.apy.scenario import (
 
 
 init_session_state()
-
-st.title("Scenario")
-st.caption("APY v9 scenario setup for the selected backend.")
-
-BACKEND_LABELS = {
-    "matlab": "MATLAB reference - unavailable in hosted deployment",
-    "python_apy": "Python APY v9 port (experimental)",
-}
-if matlab_backend_enabled():
-    BACKEND_LABELS["matlab"] = "MATLAB v9 reference"
-    backend_options = ["python_apy", "matlab"]
-else:
-    backend_options = ["python_apy"]
-BACKEND_NAMES = {BACKEND_LABELS[name]: name for name in backend_options}
-
-current_backend_name = get_backend_name()
-selected_backend_label = st.selectbox(
-    "APY backend",
-    list(BACKEND_NAMES),
-    index=list(BACKEND_NAMES).index(
-        BACKEND_LABELS.get(current_backend_name, BACKEND_LABELS["python_apy"])
-    ),
-)
-selected_backend_name = BACKEND_NAMES[selected_backend_label]
-if selected_backend_name != current_backend_name:
-    set_backend_name(selected_backend_name)
-    st.rerun()
+st.session_state["apy_backend_name"] = "python_apy"
 
 backend = get_backend()
 
-st.caption(
-    "The Python APY backend is the hosted workflow and is experimental. "
-    "MATLAB remains the retained reference backend for local parity testing, "
-    "but is unavailable in hosted deployment unless explicitly enabled locally. "
-    "Attributable-risk add-ons are not yet ported."
-)
-if not matlab_backend_enabled():
-    st.info("MATLAB reference backend is unavailable in this hosted deployment.")
+st.title("Define Strategy")
+st.caption("Set the population, testing, treatment and prioritisation assumptions for the analysis.")
 
-
-def display_backend_status() -> None:
-    status = backend.status()
-    sync_backend_status(status)
-    cols = st.columns(3)
-    cols[0].metric(
-        "Backend",
-        BACKEND_LABELS.get(status.get("name"), status.get("name", "unknown")),
-    )
-    if status.get("name") == "matlab":
-        cols[1].metric("MATLAB started", "yes" if status.get("started") else "no")
-    else:
-        cols[1].metric("MATLAB required", "no")
-    cols[2].metric("Adapter", "error" if status.get("error") else "ready")
-    if status.get("experimental"):
-        st.warning("Python APY backend is experimental. MATLAB remains the reference backend.")
-    if status.get("abm_path"):
-        st.caption(f"ABM path: {status.get('abm_path', '')}")
-    if status.get("error"):
-        st.error(status["error"])
+STRATEGY_LABELS = {
+    "prevent": "Prioritise people most likely to avoid active TB",
+    "ltbi": "Prioritise people most likely to have LTBI",
+    "cure": "Prioritise people most likely to complete effective treatment",
+    "random": "No risk-based prioritisation",
+}
+STRATEGY_VALUES = {label: value for value, label in STRATEGY_LABELS.items()}
+LTBI_REVIEW_LABELS = {
+    "unresolved": "Unresolved",
+    "configured_reviewed": "Reviewed direct evidence",
+    "model_derived_reviewed": "Reviewed model-derived estimate",
+    "migrated_legacy_unverified": "Migrated legacy value - not reviewed",
+    "provisional": "Provisional - not reviewed",
+}
+LTBI_REVIEW_VALUES = {label: value for value, label in LTBI_REVIEW_LABELS.items()}
 
 
 def config_overview_rows(config: dict) -> list[dict[str, object]]:
@@ -161,22 +121,20 @@ def reset_run_state() -> None:
 def scenario_path(filename: str) -> Path:
     base = scenarios_dir()
     base.mkdir(parents=True, exist_ok=True)
-    name = filename.strip() or "streamlit_scenario.json"
+    name = filename.strip() or "streamlit_analysis.json"
     path = Path(name)
     if not path.is_absolute():
         path = base / path
     return path
 
 
-st.subheader("Backend Status")
-display_backend_status()
-
-if st.button("Load backend defaults", type="primary"):
+if st.button("Create a new analysis", type="primary"):
     try:
         st.session_state["config"] = backend.default_config()
         reset_run_state()
+        st.session_state.pop("recent_ltbi_run_route", None)
         sync_backend_status(backend.status())
-        st.success("Default scenario loaded.")
+        st.success("New analysis created.")
     except Exception as exc:
         message = f"Could not load defaults: {exc}"
         sync_backend_status(backend.status())
@@ -190,8 +148,9 @@ if st.button("Load APY demonstration preset"):
         base_config.update(config_updates_from_scenario(scenario))
         st.session_state["config"] = base_config
         reset_run_state()
+        st.session_state.pop("recent_ltbi_run_route", None)
         sync_backend_status(backend.status())
-        st.success("APY demonstration preset loaded.")
+        st.success("APY demonstration loaded.")
     except Exception as exc:
         message = f"Could not load APY demonstration preset: {exc}"
         record_message("error", message)
@@ -200,18 +159,18 @@ if st.button("Load APY demonstration preset"):
 config = st.session_state.get("config")
 if config:
     if st.session_state.get("dirty_config"):
-        st.warning("Config has unvalidated changes.")
+        st.warning("Inputs have unvalidated changes.")
     if st.session_state.get("results_stale"):
-        st.warning("Existing results are stale because config changed after the last run.")
+        st.warning("Existing results are stale because inputs changed after the last run.")
 
-    st.subheader("Edit Scenario")
+    st.subheader("Edit Strategy")
     test_options = ["IGRA", "TST"]
     regimen_options = ["3HP", "4R", "3HR", "6H", "9H"]
-    strategy_options = ["random", "ltbi", "cure", "prevent"]
+    strategy_options = list(STRATEGY_VALUES)
 
     with st.form("scenario_edits"):
         scenario_label = st.text_input(
-            "Scenario label",
+            "Analysis label",
             value=str(config.get("scenarioLabel", "")),
         )
         population_preset_id = st.text_input(
@@ -280,9 +239,13 @@ if config:
             index=choice_index(config.get("regimen"), regimen_options),
         )
         screening_strategy = st.selectbox(
-            "Screening strategy",
+            "Prioritisation approach",
             strategy_options,
-            index=choice_index(config.get("screeningStrategy"), strategy_options, 3),
+            index=choice_index(
+                STRATEGY_LABELS.get(str(config.get("screeningStrategy")), ""),
+                strategy_options,
+                0,
+            ),
         )
         st.subheader("Epidemiological assumptions")
         st.caption(
@@ -373,11 +336,11 @@ if config:
                 value=str(ltbi_state.get("source") or ""),
             )
             ltbi_status = st.selectbox(
-                "LTBI-state assumption status",
-                ["unresolved", "configured_reviewed", "model_derived_reviewed", "migrated_legacy_unverified", "provisional"],
+                "LTBI-state assumption review",
+                list(LTBI_REVIEW_VALUES),
                 index=choice_index(
-                    ltbi_state.get("status"),
-                    ["unresolved", "configured_reviewed", "model_derived_reviewed", "migrated_legacy_unverified", "provisional"],
+                    LTBI_REVIEW_LABELS.get(str(ltbi_state.get("status")), "Unresolved"),
+                    list(LTBI_REVIEW_VALUES),
                 ),
             )
             ltbi_notes = st.text_area(
@@ -500,7 +463,7 @@ if config:
             "tstSpecificityNoBCG": float(tst_specificity_no_bcg),
             "tstSpecificityBCG": float(tst_specificity_bcg),
             "regimen": regimen,
-            "screeningStrategy": screening_strategy,
+            "screeningStrategy": STRATEGY_VALUES[screening_strategy],
         }
         updated_config = dict(config)
         updated_config.update(updates)
@@ -530,28 +493,27 @@ if config:
             baseline_recent_percent=ltbi_recent_percent,
             transition_rate_per_year=float(ltbi_transition_rate),
             source=ltbi_source,
-            status="unresolved" if ltbi_unresolved else ltbi_status,
+            status="unresolved" if ltbi_unresolved else LTBI_REVIEW_VALUES[ltbi_status],
             notes=ltbi_notes,
         )
         changed = updated_config != config
         if changed:
             st.session_state["config"] = updated_config
+            st.session_state.pop("recent_ltbi_run_route", None)
             mark_config_changed()
-            st.success("Scenario edits applied.")
+            st.success("Strategy edits applied.")
         else:
-            st.info("No scenario fields changed.")
+            st.info("No strategy fields changed.")
 
-    st.subheader("Current Config")
-    st.dataframe(
-        arrow_safe_dataframe(config_overview_rows(config)),
-        width="content",
-        hide_index=True,
-    )
-
-    with st.expander("Full config"):
+    with st.expander("Technical information", expanded=False):
+        st.dataframe(
+            arrow_safe_dataframe(config_overview_rows(config)),
+            width="content",
+            hide_index=True,
+        )
         st.json(config, expanded=False)
 
-    if st.button("Validate current config"):
+    if st.button("Validate inputs"):
         try:
             st.session_state["validation_report"] = backend.validate_config(config)
             sync_backend_status(backend.status())
@@ -565,12 +527,12 @@ if config:
 
     report = st.session_state.get("validation_report")
     if report:
-        st.subheader("Validation Report")
+        st.subheader("Input Checks")
         valid = report.get("isValid")
         if valid is True:
-            st.success("Config is valid.")
+            st.success("Inputs are valid.")
         elif valid is False:
-            st.error("Config has validation errors.")
+            st.error("Inputs have validation errors.")
 
         rows = validation_rows(report)
         if rows:
@@ -582,10 +544,10 @@ if config:
         else:
             st.json(report, expanded=False)
 
-    st.subheader("Scenario Files")
-    file_name = st.text_input("Scenario file", value="streamlit_scenario.json")
+    st.subheader("Analysis Files")
+    file_name = st.text_input("Analysis file", value="streamlit_analysis.json")
     cols = st.columns(2)
-    if cols[0].button("Save scenario"):
+    if cols[0].button("Save analysis"):
         try:
             path = scenario_path(file_name)
             st.session_state["save_info"] = backend.save_scenario(
@@ -594,22 +556,23 @@ if config:
                 st.session_state.get("economics_config"),
             )
             sync_backend_status(backend.status())
-            st.success(f"Saved scenario to {path}")
+            st.success(f"Saved analysis to {path}")
         except Exception as exc:
             message = f"Save failed: {exc}"
             sync_backend_status(backend.status())
             record_message("error", message)
             st.error(message)
 
-    if cols[1].button("Load scenario"):
+    if cols[1].button("Load analysis"):
         try:
             path = scenario_path(file_name)
             payload = json.loads(path.read_text(encoding="utf-8"))
             loaded_config = payload.get("config")
             if not isinstance(loaded_config, dict):
-                raise ValueError("Scenario JSON does not contain a config object.")
+                raise ValueError("Analysis JSON does not contain an input object.")
             st.session_state["config"] = loaded_config
             st.session_state["economics_config"] = payload.get("economics")
+            st.session_state.pop("recent_ltbi_run_route", None)
             st.session_state["validation_report"] = None
             st.session_state["load_info"] = {
                 "filename": str(path),
@@ -620,7 +583,7 @@ if config:
             st.session_state["results_stale"] = False
             st.session_state["dirty_config"] = True
             sync_backend_status(backend.status())
-            st.success(f"Loaded scenario from {path}")
+            st.success(f"Loaded analysis from {path}")
             st.rerun()
         except Exception as exc:
             message = f"Load failed: {exc}"
@@ -628,4 +591,4 @@ if config:
             record_message("error", message)
             st.error(message)
 else:
-    st.info("Load backend defaults to initialize the scenario state.")
+    st.info("Create a new analysis or load the APY demonstration to begin.")

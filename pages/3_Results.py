@@ -10,6 +10,7 @@ from app.display import (
     economics_summary_csv,
     safe_download_stem,
 )
+from app.icon_arrays import build_100_person_visual_data, render_100_person_summary
 from app.results_workbook import build_results_workbook
 from app.state import init_session_state
 from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
@@ -18,11 +19,11 @@ from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
 init_session_state()
 
 st.title("Results")
-st.caption("Displays the portable app-facing results bundle.")
+st.caption("Review analysis outputs, assumptions, downloads and readiness warnings.")
 
 bundle = st.session_state.get("results_bundle")
 if not bundle:
-    st.info("Run the model to create a results bundle.")
+    st.info("Run the analysis to create results.")
     st.stop()
 
 metadata = bundle.get("metadata", {})
@@ -34,7 +35,7 @@ economics_config = st.session_state.get("economics_config")
 scenario_label = metadata.get("scenarioLabel")
 
 if st.session_state.get("results_stale"):
-    st.warning("These results are stale because scenario inputs changed after the last run.")
+    st.warning("These results are stale because analysis inputs changed after the last run.")
 
 scope_statement = (
     technical.get("interfaceConfig", {})
@@ -43,12 +44,12 @@ scope_statement = (
 )
 st.info(scope_statement)
 
-st.subheader("Metadata")
-metadata_rows = [
-    {"field": key, "value": value}
-    for key, value in metadata.items()
-]
-st.dataframe(arrow_safe_dataframe(metadata_rows), width="content", hide_index=True)
+with st.expander("Technical information", expanded=False):
+    metadata_rows = [
+        {"field": key, "value": value}
+        for key, value in metadata.items()
+    ]
+    st.dataframe(arrow_safe_dataframe(metadata_rows), width="content", hide_index=True)
 
 st.subheader("Headline")
 if headline.get("keyMetricsRows"):
@@ -66,6 +67,13 @@ if headline.get("summaryRows"):
 if not headline.get("keyMetricsRows") and not headline.get("summaryRows"):
     st.json(headline, expanded=False)
 
+visual_rows = build_100_person_visual_data(technical.get("eventLedger"))
+if visual_rows:
+    render_100_person_summary(
+        visual_rows,
+        title="What this means per 100 eligible people",
+    )
+
 st.subheader("Economics")
 if not economics:
     st.info("Economics has not been run for these results yet.")
@@ -77,10 +85,10 @@ if not economics:
             file_name=f"{safe_download_stem(scenario_label, 'economics_assumptions')}.json",
             mime="application/json",
         )
-    st.page_link("pages/4_Economics.py", label="Open Economics page")
+    st.page_link("pages/4_Economics.py", label="Open Evidence & Assumptions")
 else:
     if st.session_state.get("dirty_economics") or st.session_state.get("results_stale"):
-        st.warning("Economics results are stale. Open the Economics page and rerun economics.")
+        st.warning("Economic results are stale. Open Evidence & Assumptions and rerun the analysis.")
     else:
         st.success("Economics results are available.")
 
@@ -117,32 +125,29 @@ else:
         {"field": "notCalculated", "value": status.get("notCalculated")},
     ]
     st.dataframe(arrow_safe_dataframe(status_rows), width="stretch", hide_index=True)
-    st.page_link("pages/4_Economics.py", label="Open Economics page")
+    st.page_link("pages/4_Economics.py", label="Open Evidence & Assumptions")
 
-st.subheader("Technical Details")
-technical_summary = {
-    "available": technical.get("available"),
-    "source": technical.get("source"),
-    "exampleCohortMeta": technical.get("exampleCohortMeta"),
-    "rawMeta": technical.get("rawMeta"),
-}
-st.dataframe(
-    arrow_safe_dataframe(
-        [{"field": key, "value": value}
-        for key, value in technical_summary.items()
-        ]
-    ),
-    width="stretch",
-    hide_index=True,
-)
-
-with st.expander("Calibration"):
+with st.expander("Additional technical information", expanded=False):
+    technical_summary = {
+        "available": technical.get("available"),
+        "source": technical.get("source"),
+        "exampleCohortMeta": technical.get("exampleCohortMeta"),
+        "rawMeta": technical.get("rawMeta"),
+    }
+    st.dataframe(
+        arrow_safe_dataframe(
+            [{"field": key, "value": value}
+            for key, value in technical_summary.items()
+            ]
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+    st.markdown("Calibration")
     st.json(technical.get("calibration", {}), expanded=False)
-
-with st.expander("Interface config"):
+    st.markdown("Interface config")
     st.json(technical.get("interfaceConfig", {}), expanded=False)
-
-with st.expander("Dynamic comparison"):
+    st.markdown("Dynamic comparison")
     dynamic_comparison = technical.get("dynamicComparison", {})
     if isinstance(dynamic_comparison, dict):
         metric_rows = dynamic_comparison.get("metricRows") or []
@@ -159,7 +164,7 @@ with st.expander("Dynamic comparison"):
 
 st.subheader("Downloads")
 if st.session_state.get("results_stale"):
-    st.warning("Excel workbook download is disabled until the model is rerun with the current inputs.")
+    st.warning("Excel workbook download is disabled until the analysis is rerun with the current inputs.")
 else:
     workbook_bytes = build_results_workbook(
         config=technical.get("interfaceConfig", {}),
@@ -177,7 +182,7 @@ else:
         },
     )
     st.download_button(
-        "Download consolidated APY results workbook",
+        "Download consolidated results workbook",
         data=workbook_bytes,
         file_name=f"{safe_download_stem(scenario_label, 'APY_results')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -205,4 +210,4 @@ if downloads.get("available"):
                 mime="text/csv",
             )
 else:
-    st.info("No downloads are available in the current results bundle.")
+    st.info("No downloads are available for the current results.")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from adapters.backend import JsonDict
 from adapters.serialization import to_json_like
@@ -64,8 +64,12 @@ class PythonApyBackend:
         self,
         config: JsonDict,
         validation_report: JsonDict | None = None,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> JsonDict:
-        out = run_scenario_with_do_nothing(_matlab_empty_to_none(config))
+        out = run_scenario_with_do_nothing(
+            _matlab_empty_to_none(config),
+            progress_callback=progress_callback,
+        )
         bundle = out["bundle"]
         if validation_report is not None:
             bundle["validation"] = {"report": validation_report}

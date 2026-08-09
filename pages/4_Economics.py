@@ -10,9 +10,12 @@ from app.display import (
     economics_summary_csv,
     safe_download_stem,
 )
+from app.epidemiology_inputs import (
+    apply_ltbi_state_assumption_update,
+    fraction_to_percent,
+)
 from app.state import (
     get_backend,
-    get_backend_name,
     init_session_state,
     mark_economics_changed,
     mark_economics_completed,
@@ -22,21 +25,15 @@ from app.state import (
 from engine.apy.costing import normalise_cost_table
 from engine.apy.evidence import assess_apy_reference_readiness
 from engine.apy.economics import update_cost_item_original_values_from_legacy_fields
+from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 
 
 init_session_state()
+st.session_state["apy_backend_name"] = "python_apy"
 backend = get_backend()
-backend_name = get_backend_name()
 
-st.title("Economics")
-if backend_name == "python_apy":
-    st.caption("Economics workflow using the experimental Python APY backend.")
-    st.warning(
-        "Python APY economics is newly ported. MATLAB remains the reference "
-        "backend for economics parity checks."
-    )
-else:
-    st.caption("Economics workflow using the MATLAB APY backend.")
+st.title("Evidence & Assumptions")
+st.caption("Review economic perspective, cost inputs, health outcome assumptions and readiness warnings.")
 
 ECONOMICS_WIDGET_KEYS = [
     "econ_currency_code",
@@ -276,6 +273,92 @@ config = st.session_state.get("config")
 results_bundle = st.session_state.get("results_bundle")
 econ_config = st.session_state.get("economics_config")
 scenario_label = (results_bundle or {}).get("metadata", {}).get("scenarioLabel")
+
+if config:
+    st.subheader("Recent versus remote LTBI assumption")
+    ltbi_state = resolve_ltbi_state_assumptions(config)
+    current_recent = ltbi_state.get("baselineRecentLTBIProportion")
+    current_review_label = (
+        "Reviewed model-derived estimate"
+        if ltbi_state.get("baselineRecentLTBIProportionStatus") == "model_derived_reviewed"
+        else "Reviewed direct evidence"
+    )
+    st.dataframe(
+        arrow_safe_dataframe(
+            [
+                {
+                    "Assumption": "Baseline recent-LTBI proportion",
+                    "Value": current_recent,
+                },
+                {
+                    "Assumption": "Source",
+                    "Value": ltbi_state.get("baselineRecentLTBIProportionSource") or "",
+                },
+                {
+                    "Assumption": "Provisional",
+                    "Value": ltbi_state.get("provisional"),
+                },
+                {
+                    "Assumption": "Warning",
+                    "Value": ltbi_state.get("warning") or "",
+                },
+            ]
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+    with st.form("ltbi_recent_reviewed_assumption"):
+        st.write(
+            "Enter a reviewed recent-LTBI proportion or a documented model-derived "
+            "estimate. This updates the authoritative LTBI-state assumption."
+        )
+        recent_percent = st.number_input(
+            "Baseline recent-LTBI proportion (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(fraction_to_percent(current_recent, 0.0) or 0.0),
+            step=1.0,
+            format="%.2f",
+        )
+        review_method = st.selectbox(
+            "How was this value established?",
+            ["Reviewed direct evidence", "Reviewed model-derived estimate"],
+            index=0
+            if current_review_label == "Reviewed direct evidence"
+            else 1,
+        )
+        recent_source = st.text_input(
+            "Source or derivation reference",
+            value=str(ltbi_state.get("baselineRecentLTBIProportionSource") or ""),
+        )
+        recent_notes = st.text_area(
+            "Notes",
+            value=str(ltbi_state.get("notes") or ""),
+        )
+        save_recent = st.form_submit_button("Save recent-LTBI assumption")
+    if save_recent:
+        if not str(recent_source).strip():
+            st.error("Provide a source or documented derivation before saving a reviewed assumption.")
+        else:
+            status = (
+                "model_derived_reviewed"
+                if review_method == "Reviewed model-derived estimate"
+                else "configured_reviewed"
+            )
+            updated = apply_ltbi_state_assumption_update(
+                config,
+                baseline_recent_percent=float(recent_percent),
+                transition_rate_per_year=float(
+                    ltbi_state["recentToRemoteTransitionRatePerYear"]
+                ),
+                source=str(recent_source).strip(),
+                status=status,
+                notes=str(recent_notes).strip(),
+            )
+            st.session_state["config"] = updated
+            st.session_state.pop("recent_ltbi_run_route", None)
+            st.success("Recent-LTBI assumption saved.")
+            st.rerun()
 
 if not econ_config:
     st.info("Load economics defaults or the KWAB150 preset to begin.")

@@ -22,47 +22,38 @@ if str(REPO_ROOT) not in sys.path:
 # ---------------------------------------------------------------------
 # App imports
 # ---------------------------------------------------------------------
-from app.state import get_backend, init_session_state
+from app.state import init_session_state
 
 # ---------------------------------------------------------------------
 # Page config (must come before any UI)
 # ---------------------------------------------------------------------
 st.set_page_config(
-    page_title="TB Community Risk Models",
+    page_title="LTBI Screening Decision Tool",
     layout="wide",
 )
 
 # ---------------------------------------------------------------------
-# Initialize session + backend
+# Initialize session state
 # ---------------------------------------------------------------------
 init_session_state()
-backend = get_backend()
-
-# ---------------------------------------------------------------------
-# Sidebar (light, model-aware)
-# ---------------------------------------------------------------------
-with st.sidebar:
-    st.markdown("### APY backend")
-    status = st.session_state.get("backend_status", "unknown")
-    st.write(status)
 
 # ---------------------------------------------------------------------
 # Navigation structure
 # ---------------------------------------------------------------------
 navigation = st.navigation(
     {
-        "APY v9 ABM": [
-            st.Page("pages/1_Scenario.py", title="Scenario"),
-            st.Page("pages/2_Run_Model.py", title="Run Model"),
+        "LTBI Screening Tool": [
+            st.Page("pages/0_Start.py", title="Start"),
+            st.Page("pages/1_Scenario.py", title="Define Strategy"),
+            st.Page("pages/2_Run_Model.py", title="Run Analysis"),
             st.Page("pages/3_Results.py", title="Results"),
-            st.Page("pages/4_Economics.py", title="Economics"),
-            st.Page("pages/6_Compare.py", title="Compare"),
+            st.Page("pages/5_Decision_Analysis.py", title="Explore Decisions"),
+            st.Page("pages/4_Economics.py", title="Evidence & Assumptions"),
         ],
-        "Dynamic Model": [
-            st.Page("pages/5_Dynamic_Model.py", title="Dynamic Workflow"),
-        ],
-        "Integrated workflow": [
-            st.Page("pages/7_Dynamic_ABM_Compare.py", title="Dynamic + ABM Compare"),
+        "Research & Development": [
+            st.Page("pages/8_Technical_Settings.py", title="Technical settings"),
+            st.Page("pages/5_Dynamic_Model.py", title="Dynamic transmission model"),
+            st.Page("pages/7_Dynamic_ABM_Compare.py", title="Model comparison"),
         ],
     }
 )
