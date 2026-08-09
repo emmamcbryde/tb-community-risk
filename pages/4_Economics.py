@@ -23,12 +23,22 @@ from app.state import (
     sync_backend_status,
 )
 from app.health_economics_inputs import (
+    ADVANCED_EVIDENCE_COLUMNS,
+    DERIVED_CONVERSION_COLUMNS,
+    INCLUSION_LABEL_TO_CODE,
+    STATUS_LABEL_TO_CODE,
     assumptions_csv,
     assumptions_workbook,
     apply_assumptions_to_economics_config,
     editable_assumption_rows,
     group_rows,
+    mark_workspace_applied,
+    mark_workspace_validated,
+    new_workspace_state,
     parse_assumptions_csv,
+    reconcile_workspace_state,
+    rows_from_display_rows,
+    update_workspace_rows,
     validate_editable_assumptions,
 )
 from engine.apy.costing import normalise_cost_table
@@ -247,15 +257,22 @@ def economics_overview_rows(config: dict) -> list[dict[str, object]]:
     ]
 
 
+def load_economics_config(new_config: dict) -> None:
+    st.session_state["economics_config"] = new_config
+    st.session_state["economics_results"] = None
+    st.session_state["dirty_economics"] = False
+    st.session_state["health_econ_workspace"] = reconcile_workspace_state(
+        st.session_state.get("health_econ_workspace"),
+        new_config,
+    )
+    sync_backend_status(backend.status())
+    sync_econ_widgets_from_config(new_config)
+
+
 cols = st.columns(2)
 if cols[0].button("Load economics defaults", type="primary"):
     try:
-        econ_config = backend.default_economics_config()
-        st.session_state["economics_config"] = econ_config
-        st.session_state["economics_results"] = None
-        st.session_state["dirty_economics"] = False
-        sync_backend_status(backend.status())
-        sync_econ_widgets_from_config(econ_config)
+        load_economics_config(backend.default_economics_config())
         st.rerun()
     except Exception as exc:
         message = f"Could not load economics defaults: {exc}"
@@ -265,12 +282,7 @@ if cols[0].button("Load economics defaults", type="primary"):
 
 if cols[1].button("Load KWAB150 preset"):
     try:
-        econ_config = backend.economics_preset_kwab150()
-        st.session_state["economics_config"] = econ_config
-        st.session_state["economics_results"] = None
-        st.session_state["dirty_economics"] = False
-        sync_backend_status(backend.status())
-        sync_econ_widgets_from_config(econ_config)
+        load_economics_config(backend.economics_preset_kwab150())
         st.rerun()
     except Exception as exc:
         message = f"Could not load KWAB150 preset: {exc}"
@@ -384,10 +396,39 @@ st.caption(
     "the source registry file is not changed from this page."
 )
 
-if "health_econ_assumption_rows" not in st.session_state:
-    st.session_state["health_econ_assumption_rows"] = editable_assumption_rows(
-        economics_config=econ_config
+workspace_state = reconcile_workspace_state(
+    st.session_state.get("health_econ_workspace"),
+    econ_config,
+)
+st.session_state["health_econ_workspace"] = workspace_state
+if workspace_state.get("hasUnsavedEdits"):
+    st.warning("Unsaved changes")
+if workspace_state.get("presetConflict"):
+    st.warning(
+        "The economics preset or configuration changed while the assumptions "
+        "workspace has unsaved edits. Choose how to handle the working copy."
     )
+    conflict_cols = st.columns(3)
+    conflict_cols[0].download_button(
+        "Download edits before replacing",
+        data=assumptions_csv(workspace_state.get("rows") or []),
+        file_name=f"{safe_download_stem(scenario_label, 'unsaved_assumption_edits')}.csv",
+        mime="text/csv",
+    )
+    if conflict_cols[1].button("Keep current working edits"):
+        st.session_state["health_econ_workspace"] = reconcile_workspace_state(
+            workspace_state,
+            econ_config,
+            action="keep",
+        )
+        st.rerun()
+    if conflict_cols[2].button("Discard and reload from the new preset"):
+        st.session_state["health_econ_workspace"] = reconcile_workspace_state(
+            workspace_state,
+            econ_config,
+            action="discard",
+        )
+        st.rerun()
 
 uploaded_assumptions = st.file_uploader(
     "Upload edited assumptions CSV",
@@ -396,16 +437,35 @@ uploaded_assumptions = st.file_uploader(
 )
 if uploaded_assumptions is not None and st.button("Load uploaded assumptions"):
     try:
-        st.session_state["health_econ_assumption_rows"] = parse_assumptions_csv(
-            uploaded_assumptions.getvalue()
+        st.session_state["health_econ_workspace"] = update_workspace_rows(
+            workspace_state,
+            parse_assumptions_csv(uploaded_assumptions.getvalue()),
         )
-        st.session_state.pop("health_econ_assumption_validation", None)
         st.success("Uploaded assumptions loaded into the working copy.")
         st.rerun()
     except Exception as exc:
         st.error(f"Could not load assumptions CSV: {exc}")
 
-working_rows = st.session_state["health_econ_assumption_rows"]
+if st.button("Reset working copy from current analysis"):
+    st.session_state["health_econ_workspace"] = reconcile_workspace_state(
+        workspace_state,
+        econ_config,
+        action="reset",
+    )
+    st.rerun()
+if st.button("Discard working edits"):
+    st.session_state["health_econ_workspace"] = reconcile_workspace_state(
+        workspace_state,
+        econ_config,
+        action="discard",
+    )
+    st.rerun()
+
+working_rows = workspace_state["rows"]
+show_advanced_columns = st.checkbox("Advanced evidence columns", value=False)
+hidden_columns = ["reviewStatus", "inclusionStatus"]
+if not show_advanced_columns:
+    hidden_columns.extend(ADVANCED_EVIDENCE_COLUMNS)
 tabs = st.tabs(["Costs", "DALYs", "Threshold", "Epidemiology blockers"])
 for tab, group_name in zip(tabs, ["Costs", "DALYs", "Threshold", "Epidemiology blockers"]):
     with tab:
@@ -419,7 +479,25 @@ for tab, group_name in zip(tabs, ["Costs", "DALYs", "Threshold", "Epidemiology b
             hide_index=True,
             num_rows="fixed",
             key=f"health_econ_assumption_editor_{group_name}",
-            disabled=["assumptionId", "category", "description", "validationMessage"],
+            disabled=[
+                "assumptionId",
+                "category",
+                "description",
+                *hidden_columns,
+                *DERIVED_CONVERSION_COLUMNS,
+                "validationMessage",
+            ],
+            column_config={
+                "reviewStatusLabel": st.column_config.SelectboxColumn(
+                    "Review status",
+                    options=list(STATUS_LABEL_TO_CODE),
+                ),
+                "inclusionStatusLabel": st.column_config.SelectboxColumn(
+                    "Inclusion status",
+                    options=list(INCLUSION_LABEL_TO_CODE),
+                ),
+                "provisional": st.column_config.CheckboxColumn("Provisional"),
+            },
         )
         edited_records = edited.to_dict(orient="records") if hasattr(edited, "to_dict") else list(edited)
         edited_by_id = {row.get("assumptionId"): row for row in edited_records}
@@ -427,8 +505,14 @@ for tab, group_name in zip(tabs, ["Costs", "DALYs", "Threshold", "Epidemiology b
             replacement = edited_by_id.get(row.get("assumptionId"))
             if replacement is not None:
                 working_rows[idx] = replacement
+        st.session_state["health_econ_workspace"] = update_workspace_rows(
+            st.session_state["health_econ_workspace"],
+            rows_from_display_rows(working_rows),
+        )
+        workspace_state = st.session_state["health_econ_workspace"]
+        working_rows = workspace_state["rows"]
 
-validation_report = st.session_state.get("health_econ_assumption_validation")
+validation_report = workspace_state.get("validation")
 cols = st.columns(4)
 if cols[0].button("Validate assumptions", type="primary"):
     validation_report = validate_editable_assumptions(
@@ -436,8 +520,10 @@ if cols[0].button("Validate assumptions", type="primary"):
         econ_config,
         config=config or {},
     )
-    st.session_state["health_econ_assumption_rows"] = validation_report["rows"]
-    st.session_state["health_econ_assumption_validation"] = validation_report
+    st.session_state["health_econ_workspace"] = mark_workspace_validated(
+        workspace_state,
+        validation_report,
+    )
     st.rerun()
 
 apply_disabled = validation_report is None or not bool(validation_report.get("isValidForApplication"))
@@ -450,10 +536,21 @@ if cols[1].button("Apply to current analysis", disabled=apply_disabled):
         )
         st.session_state["economics_config"] = updated_config
         econ_config = updated_config
-        st.session_state["health_econ_assumption_rows"] = editable_assumption_rows(
+        applied_state = new_workspace_state(
+            updated_config,
+            updated_config.get("assumptionEvidenceRegistry") or working_rows,
+        )
+        applied_state = mark_workspace_validated(
+            applied_state,
+            validate_editable_assumptions(applied_state["rows"], updated_config, config=config or {}),
+        )
+        applied_state = mark_workspace_applied(applied_state, updated_config)
+        applied_state["rows"] = editable_assumption_rows(
             updated_config.get("assumptionEvidenceRegistry") or working_rows,
             updated_config,
         )
+        applied_state = mark_workspace_applied(applied_state, updated_config)
+        st.session_state["health_econ_workspace"] = applied_state
         mark_economics_changed()
         st.success("Validated assumptions applied to the current analysis.")
         st.rerun()
@@ -509,128 +606,75 @@ download_cols[1].download_button(
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
 
-st.subheader("Edit Economics Inputs")
-metadata = ensure_nested(econ_config, "metadata")
-costs = ensure_nested(econ_config, "costs")
-ensure_nested(econ_config, "costs", "test")
-ensure_nested(econ_config, "costs", "regimen")
-ensure_nested(econ_config, "discounting")
-ensure_nested(econ_config, "threshold")
+with st.expander("Legacy/developer economic controls", expanded=False):
+    st.caption(
+        "The assumptions workspace above is the authoritative standard editing route. "
+        "These compatibility controls are retained for local development only."
+    )
+    workspace_applied = bool((st.session_state.get("health_econ_workspace") or {}).get("applied"))
+    if workspace_applied:
+        st.info("Workspace assumptions have been applied. Legacy controls are disabled to avoid conflicting overrides.")
+    metadata = ensure_nested(econ_config, "metadata")
+    costs = ensure_nested(econ_config, "costs")
+    ensure_nested(econ_config, "costs", "test")
+    ensure_nested(econ_config, "costs", "regimen")
+    ensure_nested(econ_config, "discounting")
+    ensure_nested(econ_config, "threshold")
 
-with st.form("economics_edits"):
-    st.markdown("Metadata")
-    st.text_input(
-        "Currency code",
-        key="econ_currency_code",
-    )
-    optional_number_input(
-        "Price year",
-        "econ_price_year",
-    )
-    st.text_input(
-        "Location label",
-        key="econ_location_label",
-    )
-    st.text_input(
-        "Economic perspective",
-        key="econ_perspective",
-        disabled=True,
-    )
-    st.text_input(
-        "Target currency",
-        key="econ_target_currency",
-    )
-    st.text_input(
-        "Target price year",
-        key="econ_target_price_year",
-    )
-    st.selectbox(
-        "Discount rate",
-        ["0.03", "0.0"],
-        index=0 if str(st.session_state.get("econ_discount_rate", "0.03")) != "0.0" else 1,
-        key="econ_discount_rate",
-    )
-    st.markdown("Primary outcome and benchmark")
-    st.info("Default health outcome: DALYs averted.")
-    optional_number_input(
-        "Illustrative GDP-per-capita threshold value",
-        "econ_threshold_value",
-    )
-    st.text_input(
-        "Threshold currency",
-        key="econ_threshold_currency",
-    )
-    optional_number_input(
-        "Threshold reference year",
-        "econ_threshold_year",
-    )
-    st.text_input(
-        "Threshold source",
-        key="econ_threshold_source",
-    )
-    st.caption("The GDP-per-capita benchmark is illustrative, not an official Australian funding threshold.")
-    st.markdown("Test costs")
-    optional_number_input(
-        "IGRA test cost",
-        "econ_test_igra",
-    )
-    optional_number_input(
-        "TST cost",
-        "econ_test_tst",
-    )
-    st.markdown("Regimen costs")
-    optional_number_input(
-        "3HP regimen cost",
-        "econ_regimen_3hp",
-    )
-    optional_number_input(
-        "4R regimen cost",
-        "econ_regimen_4r",
-    )
-    optional_number_input(
-        "3HR regimen cost",
-        "econ_regimen_3hr",
-    )
-    optional_number_input(
-        "6H regimen cost",
-        "econ_regimen_6h",
-    )
-    optional_number_input(
-        "9H regimen cost",
-        "econ_regimen_9h",
-    )
-    st.markdown("Program and disease costs")
-    optional_number_input(
-        "False-positive incremental cost per person",
-        "econ_false_positive_incremental",
-    )
-    optional_number_input(
-        "Active TB disease cost per case",
-        "econ_active_tb_cost",
-    )
-    optional_number_input(
-        "Program setup total",
-        "econ_setup_total",
-    )
-    optional_number_input(
-        "Program running total",
-        "econ_running_total",
-    )
-    submitted = st.form_submit_button("Apply economics edits")
+    with st.form("economics_edits"):
+        st.markdown("Metadata")
+        st.text_input("Currency code", key="econ_currency_code")
+        optional_number_input("Price year", "econ_price_year")
+        st.text_input("Location label", key="econ_location_label")
+        st.text_input("Economic perspective", key="econ_perspective", disabled=True)
+        st.text_input("Target currency", key="econ_target_currency")
+        st.text_input("Target price year", key="econ_target_price_year")
+        st.selectbox(
+            "Discount rate",
+            ["0.03", "0.0"],
+            index=0 if str(st.session_state.get("econ_discount_rate", "0.03")) != "0.0" else 1,
+            key="econ_discount_rate",
+        )
+        st.markdown("Primary outcome and benchmark")
+        st.info("Default health outcome: DALYs averted.")
+        optional_number_input("Illustrative GDP-per-capita threshold value", "econ_threshold_value")
+        st.text_input("Threshold currency", key="econ_threshold_currency")
+        optional_number_input("Threshold reference year", "econ_threshold_year")
+        st.text_input("Threshold source", key="econ_threshold_source")
+        st.caption("The GDP-per-capita benchmark is illustrative, not an official Australian funding threshold.")
+        st.markdown("Test costs")
+        optional_number_input("IGRA test cost", "econ_test_igra")
+        optional_number_input("TST cost", "econ_test_tst")
+        st.markdown("Regimen costs")
+        optional_number_input("3HP regimen cost", "econ_regimen_3hp")
+        optional_number_input("4R regimen cost", "econ_regimen_4r")
+        optional_number_input("3HR regimen cost", "econ_regimen_3hr")
+        optional_number_input("6H regimen cost", "econ_regimen_6h")
+        optional_number_input("9H regimen cost", "econ_regimen_9h")
+        st.markdown("Program and disease costs")
+        optional_number_input("False-positive incremental cost per person", "econ_false_positive_incremental")
+        optional_number_input("Active TB disease cost per case", "econ_active_tb_cost")
+        optional_number_input("Program setup total", "econ_setup_total")
+        optional_number_input("Program running total", "econ_running_total")
+        submitted = st.form_submit_button("Apply legacy economics edits", disabled=workspace_applied)
 
-if submitted:
-    try:
-        updated_config = economics_config_from_widgets(econ_config)
-        changed = updated_config != econ_config
-        st.session_state["economics_config"] = updated_config
-        econ_config = updated_config
-        if changed:
-            mark_economics_changed()
-            st.success("Economics edits applied.")
-        else:
-            st.info("No economics fields changed.")
-    except ValueError as exc:
-        st.error(f"Invalid economics number: {exc}")
+    if submitted and not workspace_applied:
+        try:
+            updated_config = economics_config_from_widgets(econ_config)
+            changed = updated_config != econ_config
+            st.session_state["economics_config"] = updated_config
+            econ_config = updated_config
+            st.session_state["health_econ_workspace"] = reconcile_workspace_state(
+                st.session_state.get("health_econ_workspace"),
+                econ_config,
+            )
+            if changed:
+                mark_economics_changed()
+                st.success("Legacy economics edits applied.")
+            else:
+                st.info("No legacy economics fields changed.")
+        except ValueError as exc:
+            st.error(f"Invalid economics number: {exc}")
 
 st.subheader("Current Assumptions")
 warnings = []

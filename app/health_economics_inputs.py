@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from io import BytesIO, StringIO
 import csv
+import hashlib
+import json
 from typing import Any
 
 from openpyxl import Workbook
@@ -33,14 +35,56 @@ EDITABLE_ASSUMPTION_COLUMNS = [
     "sourceCitation",
     "sourceLocation",
     "reviewStatus",
+    "reviewStatusLabel",
     "provisional",
     "inclusionStatus",
+    "inclusionStatusLabel",
     "bundledIntoAssumptionId",
     "doubleCountingGroup",
     "notes",
     "unresolvedReason",
+    "conversionStatus",
+    "inflationIndexId",
+    "sourceYearIndexValue",
+    "targetYearIndexValue",
+    "inflationFactor",
+    "convertedTargetYearCost",
+    "conversionWarnings",
     "validationMessage",
 ]
+
+ADVANCED_EVIDENCE_COLUMNS = [
+    "bundledIntoAssumptionId",
+    "doubleCountingGroup",
+]
+
+DERIVED_CONVERSION_COLUMNS = [
+    "conversionStatus",
+    "inflationIndexId",
+    "sourceYearIndexValue",
+    "targetYearIndexValue",
+    "inflationFactor",
+    "convertedTargetYearCost",
+    "conversionWarnings",
+]
+
+STATUS_LABEL_TO_CODE = {
+    "Unresolved": "unresolved",
+    "Reviewed numerical assumption": "configured_reviewed",
+    "Reviewed model-derived assumption": "model_derived_reviewed",
+    "Reviewed exclusion": "reviewed_exclusion",
+    "Unreviewed repository input": "unreviewed_repository_input",
+    "Legacy placeholder": "legacy_placeholder",
+    "Migrated legacy unverified": "migrated_legacy_unverified",
+}
+STATUS_CODE_TO_LABEL = {value: key for key, value in STATUS_LABEL_TO_CODE.items()}
+
+INCLUSION_LABEL_TO_CODE = {
+    "Included": "included",
+    "Excluded": "excluded",
+    "Bundled into another item": "bundled",
+}
+INCLUSION_CODE_TO_LABEL = {value: key for key, value in INCLUSION_LABEL_TO_CODE.items()}
 
 DALY_ROW_TO_CONFIG = {
     "daly.active_tb_disability_weight": ("activeTBDisabilityWeight", "numeric"),
@@ -59,13 +103,158 @@ def editable_assumption_rows(
 ) -> list[dict[str, Any]]:
     rows = deepcopy(registry) if registry is not None else load_apy_evidence_registry()
     cost_basis_by_id = _cost_basis_lookup(economics_config or {})
+    conversion_by_id = _conversion_lookup(economics_config or {})
     out = []
     for row in rows:
         item = {column: _clean_value(row.get(column)) for column in EDITABLE_ASSUMPTION_COLUMNS}
         item["provisional"] = _bool(row.get("provisional"))
+        item["reviewStatus"] = normalise_status_value(item.get("reviewStatus"))
+        item["reviewStatusLabel"] = status_label(item["reviewStatus"])
+        item["inclusionStatus"] = normalise_inclusion_value(item.get("inclusionStatus"))
+        item["inclusionStatusLabel"] = inclusion_label(item["inclusionStatus"])
         item["costBasis"] = row.get("costBasis") or cost_basis_by_id.get(row.get("assumptionId"), "")
+        item.update(conversion_by_id.get(row.get("assumptionId"), {}))
         item["validationMessage"] = row.get("validationMessage", "")
         out.append(item)
+    return out
+
+
+def status_label(value: Any) -> str:
+    code = normalise_status_value(value)
+    return STATUS_CODE_TO_LABEL.get(code, code or "Unresolved")
+
+
+def inclusion_label(value: Any) -> str:
+    code = normalise_inclusion_value(value)
+    return INCLUSION_CODE_TO_LABEL.get(code, code or "Included")
+
+
+def normalise_status_value(value: Any) -> str:
+    text = str(value or "").strip()
+    return STATUS_LABEL_TO_CODE.get(text, text or "unresolved")
+
+
+def normalise_inclusion_value(value: Any) -> str:
+    text = str(value or "").strip()
+    return INCLUSION_LABEL_TO_CODE.get(text, text or "included")
+
+
+def rows_from_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out = []
+    for row in rows:
+        item = dict(row)
+        if item.get("reviewStatusLabel"):
+            item["reviewStatus"] = normalise_status_value(item["reviewStatusLabel"])
+        else:
+            item["reviewStatus"] = normalise_status_value(item.get("reviewStatus"))
+            item["reviewStatusLabel"] = status_label(item["reviewStatus"])
+        if item.get("inclusionStatusLabel"):
+            item["inclusionStatus"] = normalise_inclusion_value(item["inclusionStatusLabel"])
+        else:
+            item["inclusionStatus"] = normalise_inclusion_value(item.get("inclusionStatus"))
+            item["inclusionStatusLabel"] = inclusion_label(item["inclusionStatus"])
+        out.append(item)
+    return out
+
+
+def workspace_source_hash(economics_config: dict[str, Any] | None) -> str:
+    source = deepcopy(economics_config or {})
+    for transient in (
+        "assumptionEvidenceRegistry",
+        "assumptionEvidenceValidation",
+    ):
+        source.pop(transient, None)
+    payload = json.dumps(source, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def rows_hash(rows: list[dict[str, Any]]) -> str:
+    comparable = []
+    ignored = {"validationMessage", *DERIVED_CONVERSION_COLUMNS}
+    for row in rows_from_display_rows(rows):
+        comparable.append({key: value for key, value in row.items() if key not in ignored})
+    payload = json.dumps(comparable, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def new_workspace_state(
+    economics_config: dict[str, Any] | None,
+    registry: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    rows = editable_assumption_rows(registry, economics_config or {})
+    return {
+        "rows": rows,
+        "sourceHash": workspace_source_hash(economics_config or {}),
+        "baselineRowsHash": rows_hash(rows),
+        "hasUnsavedEdits": False,
+        "validated": False,
+        "applied": False,
+        "validation": None,
+        "presetConflict": False,
+        "pendingSourceHash": "",
+    }
+
+
+def reconcile_workspace_state(
+    state: dict[str, Any] | None,
+    economics_config: dict[str, Any] | None,
+    *,
+    action: str | None = None,
+    registry: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    current_hash = workspace_source_hash(economics_config or {})
+    if not state or not isinstance(state.get("rows"), list):
+        return new_workspace_state(economics_config, registry)
+    out = deepcopy(state)
+    out["hasUnsavedEdits"] = rows_hash(out.get("rows") or []) != out.get("baselineRowsHash")
+
+    if action in {"reset", "discard"}:
+        return new_workspace_state(economics_config, registry)
+    if action == "keep":
+        out["sourceHash"] = current_hash
+        out["pendingSourceHash"] = ""
+        out["presetConflict"] = False
+        out["validated"] = False
+        out["validation"] = None
+        return out
+
+    if out.get("sourceHash") != current_hash:
+        if out.get("hasUnsavedEdits"):
+            out["presetConflict"] = True
+            out["pendingSourceHash"] = current_hash
+            out["validated"] = False
+            out["validation"] = None
+        else:
+            return new_workspace_state(economics_config, registry)
+    return out
+
+
+def update_workspace_rows(state: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    out = deepcopy(state)
+    out["rows"] = rows_from_display_rows(rows)
+    out["hasUnsavedEdits"] = rows_hash(out["rows"]) != out.get("baselineRowsHash")
+    out["validated"] = False
+    out["validation"] = None
+    out["applied"] = False
+    return out
+
+
+def mark_workspace_validated(state: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+    out = deepcopy(state)
+    out["rows"] = validation["rows"]
+    out["validation"] = validation
+    out["validated"] = True
+    return out
+
+
+def mark_workspace_applied(state: dict[str, Any], economics_config: dict[str, Any]) -> dict[str, Any]:
+    out = deepcopy(state)
+    out["sourceHash"] = workspace_source_hash(economics_config)
+    out["baselineRowsHash"] = rows_hash(out.get("rows") or [])
+    out["hasUnsavedEdits"] = False
+    out["applied"] = True
+    out["presetConflict"] = False
+    out["pendingSourceHash"] = ""
     return out
 
 
@@ -393,6 +582,10 @@ def _fatal_application_messages(messages: list[str]) -> bool:
 def _normalise_edit_row(row: dict[str, Any]) -> dict[str, Any]:
     out = {column: _clean_value(row.get(column)) for column in EDITABLE_ASSUMPTION_COLUMNS}
     out["provisional"] = _bool(row.get("provisional"))
+    out["reviewStatus"] = normalise_status_value(out.get("reviewStatusLabel") or out.get("reviewStatus"))
+    out["reviewStatusLabel"] = status_label(out["reviewStatus"])
+    out["inclusionStatus"] = normalise_inclusion_value(out.get("inclusionStatusLabel") or out.get("inclusionStatus"))
+    out["inclusionStatusLabel"] = inclusion_label(out["inclusionStatus"])
     return out
 
 
@@ -402,6 +595,22 @@ def _cost_basis_lookup(economics_config: dict[str, Any]) -> dict[str, str]:
         f"cost.{item.get('costItemId')}": str((item.get("resourceUse") or {}).get("costBasis") or "")
         for item in items
     }
+
+
+def _conversion_lookup(economics_config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    out = {}
+    for item in normalise_cost_table(ensure_authoritative_cost_items(economics_config.get("costItems") or [])):
+        warnings = item.get("warnings") or []
+        out[f"cost.{item.get('costItemId')}"] = {
+            "conversionStatus": item.get("conversionStatus", ""),
+            "inflationIndexId": item.get("inflationIndexId", ""),
+            "sourceYearIndexValue": item.get("sourceYearIndexValue", ""),
+            "targetYearIndexValue": item.get("targetYearIndexValue", ""),
+            "inflationFactor": item.get("inflationFactor", ""),
+            "convertedTargetYearCost": item.get("convertedTargetYearCost", ""),
+            "conversionWarnings": "; ".join(str(warning) for warning in warnings),
+        }
+    return out
 
 
 def _row_reviewed(row: dict[str, Any]) -> bool:

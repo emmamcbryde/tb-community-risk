@@ -2,17 +2,28 @@ from __future__ import annotations
 
 from copy import deepcopy
 from io import BytesIO
+from pathlib import Path
 import unittest
 
 from openpyxl import load_workbook
 
 from app.health_economics_inputs import (
+    STATUS_LABEL_TO_CODE,
     assumptions_csv,
     assumptions_workbook,
     apply_assumptions_to_economics_config,
     editable_assumption_rows,
+    inclusion_label,
+    mark_workspace_applied,
+    mark_workspace_validated,
+    new_workspace_state,
     parse_assumptions_csv,
+    reconcile_workspace_state,
+    rows_from_display_rows,
+    status_label,
+    update_workspace_rows,
     validate_editable_assumptions,
+    workspace_source_hash,
 )
 from app.results_workbook import build_results_workbook
 from engine.apy.config import build_default_config
@@ -20,6 +31,9 @@ from engine.apy.economics import build_default_economics_config
 from engine.apy.evidence import load_apy_evidence_registry
 from tests.test_apy_event_ledger_economics import _synthetic_econ
 from tests.test_apy_evidence_registry import _minimal_reviewed_registry, _reviewed_epi_config
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class HealthEconomicsInputsWorkspaceTests(unittest.TestCase):
@@ -180,6 +194,98 @@ class HealthEconomicsInputsWorkspaceTests(unittest.TestCase):
         self.assertIn("Applied_session_assumptions", names)
         self.assertIn("Original_evidence_registry", names)
         self.assertIn("Assumption_validation", names)
+
+    def test_preset_change_without_edits_reloads_workspace_and_clears_validation(self) -> None:
+        state = new_workspace_state(build_default_economics_config())
+        state = mark_workspace_validated(
+            state,
+            validate_editable_assumptions(state["rows"], build_default_economics_config(), config=_reviewed_epi_config()),
+        )
+        new_config = _synthetic_econ()
+
+        updated = reconcile_workspace_state(state, new_config)
+
+        self.assertEqual(updated["sourceHash"], workspace_source_hash(new_config))
+        self.assertFalse(updated["hasUnsavedEdits"])
+        self.assertFalse(updated["validated"])
+        self.assertIsNone(updated["validation"])
+
+    def test_preset_change_with_unsaved_edits_does_not_silently_overwrite(self) -> None:
+        state = new_workspace_state(build_default_economics_config())
+        rows = list(state["rows"])
+        rows[0] = {**rows[0], "notes": "unsaved local edit"}
+        state = update_workspace_rows(state, rows)
+        state = mark_workspace_validated(
+            state,
+            validate_editable_assumptions(state["rows"], build_default_economics_config(), config=_reviewed_epi_config()),
+        )
+
+        updated = reconcile_workspace_state(state, _synthetic_econ())
+
+        self.assertTrue(updated["hasUnsavedEdits"])
+        self.assertTrue(updated["presetConflict"])
+        self.assertEqual(updated["rows"][0]["notes"], "unsaved local edit")
+        self.assertFalse(updated["validated"])
+        self.assertIsNone(updated["validation"])
+
+    def test_reset_and_discard_reload_from_current_analysis(self) -> None:
+        state = new_workspace_state(build_default_economics_config())
+        rows = list(state["rows"])
+        rows[0] = {**rows[0], "notes": "unsaved local edit"}
+        state = update_workspace_rows(state, rows)
+
+        reset = reconcile_workspace_state(state, _synthetic_econ(), action="reset")
+        discarded = reconcile_workspace_state(state, _synthetic_econ(), action="discard")
+
+        self.assertFalse(reset["hasUnsavedEdits"])
+        self.assertFalse(discarded["hasUnsavedEdits"])
+        self.assertNotEqual(reset["rows"][0]["notes"], "unsaved local edit")
+        self.assertEqual(reset["sourceHash"], workspace_source_hash(_synthetic_econ()))
+
+    def test_status_and_inclusion_labels_map_to_internal_values(self) -> None:
+        row = {
+            "assumptionId": "daly.active_tb_duration",
+            "reviewStatusLabel": "Reviewed numerical assumption",
+            "inclusionStatusLabel": "Bundled into another item",
+        }
+
+        mapped = rows_from_display_rows([row])[0]
+
+        self.assertEqual(STATUS_LABEL_TO_CODE["Reviewed numerical assumption"], "configured_reviewed")
+        self.assertEqual(mapped["reviewStatus"], "configured_reviewed")
+        self.assertEqual(mapped["inclusionStatus"], "bundled")
+        self.assertEqual(status_label("model_derived_reviewed"), "Reviewed model-derived assumption")
+        self.assertEqual(inclusion_label("excluded"), "Excluded")
+
+    def test_conversion_status_and_converted_cost_are_displayed(self) -> None:
+        rows = editable_assumption_rows(_minimal_reviewed_registry(), _synthetic_econ())
+        row = next(item for item in rows if item["assumptionId"] == "cost.test_igra")
+
+        self.assertEqual(row["conversionStatus"], "valid")
+        self.assertEqual(row["convertedTargetYearCost"], 10)
+        self.assertEqual(row["inflationFactor"], 1.0)
+
+    def test_unresolved_inflation_remains_unresolved_in_workspace(self) -> None:
+        rows = editable_assumption_rows(economics_config=build_default_economics_config())
+        row = next(item for item in rows if item["assumptionId"] == "cost.test_igra")
+
+        self.assertNotEqual(row["conversionStatus"], "valid")
+        self.assertIn("Original cost is missing", row["conversionWarnings"])
+
+    def test_legacy_controls_cannot_override_applied_workspace_assumptions(self) -> None:
+        page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
+
+        self.assertIn('st.expander("Legacy/developer economic controls"', page)
+        self.assertNotIn('st.subheader("Edit Economics Inputs")', page)
+        self.assertIn('disabled=workspace_applied', page)
+        self.assertIn("Workspace assumptions have been applied. Legacy controls are disabled", page)
+
+    def test_standard_page_has_one_authoritative_editing_route(self) -> None:
+        page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
+
+        self.assertIn('st.subheader("Assumptions Workspace")', page)
+        self.assertEqual(page.count("Validate assumptions"), 1)
+        self.assertEqual(page.count("Apply to current analysis"), 1)
 
 
 if __name__ == "__main__":
