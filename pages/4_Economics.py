@@ -27,14 +27,18 @@ from app.health_economics_inputs import (
     DERIVED_CONVERSION_COLUMNS,
     INCLUSION_LABEL_TO_CODE,
     STATUS_LABEL_TO_CODE,
+    assess_current_analysis_economic_readiness,
     assumptions_csv,
     assumptions_workbook,
     apply_assumptions_to_economics_config,
+    conversion_audit_rows,
     editable_assumption_rows,
+    fatal_validation_rows,
     group_rows,
     mark_workspace_applied,
     mark_workspace_validated,
     new_workspace_state,
+    ordered_editor_rows,
     parse_assumptions_csv,
     reconcile_workspace_state,
     rows_from_display_rows,
@@ -269,6 +273,96 @@ def load_economics_config(new_config: dict) -> None:
     sync_econ_widgets_from_config(new_config)
 
 
+def run_authoritative_health_economics(results_bundle: dict, econ_config: dict) -> None:
+    try:
+        econ = backend.run_economics(results_bundle, econ_config)
+        st.session_state["economics_results"] = econ
+        mark_economics_completed()
+        sync_backend_status(backend.status())
+        st.success("Health-economic analysis completed.")
+    except Exception as exc:
+        message = f"Health-economic analysis failed: {exc}"
+        sync_backend_status(backend.status())
+        record_message("error", message)
+        st.error(message)
+
+
+def render_assumption_editor(
+    *,
+    rows: list[dict],
+    working_rows: list[dict],
+    group_names: list[str],
+    editor_prefix: str,
+    show_advanced_columns: bool,
+) -> tuple[list[dict], dict]:
+    hidden_columns = ["reviewStatus", "inclusionStatus"]
+    if not show_advanced_columns:
+        hidden_columns.extend(ADVANCED_EVIDENCE_COLUMNS)
+    tabs = st.tabs(group_names)
+    latest_rows = list(working_rows)
+    for tab, group_name in zip(tabs, group_names):
+        with tab:
+            group_data = group_rows(rows, group_name)
+            if not group_data:
+                st.info("No rows in this section.")
+                continue
+            display_rows = ordered_editor_rows(group_data, advanced=show_advanced_columns)
+            edited = st.data_editor(
+                arrow_safe_dataframe(display_rows),
+                width="stretch",
+                hide_index=True,
+                num_rows="fixed",
+                key=f"{editor_prefix}_{group_name}",
+                disabled=[
+                    "assumptionId",
+                    "category",
+                    "description",
+                    *hidden_columns,
+                    *DERIVED_CONVERSION_COLUMNS,
+                    "convertedTargetYearCost",
+                    "validationMessage",
+                ],
+                column_config={
+                    **(
+                        {
+                            "assumptionId": None,
+                            "category": None,
+                            "sourceLocation": None,
+                            "targetCurrency": None,
+                            "targetPriceYear": None,
+                            "sourceYearIndexValue": None,
+                            "targetYearIndexValue": None,
+                            "bundledIntoAssumptionId": None,
+                            "doubleCountingGroup": None,
+                            "unresolvedReason": None,
+                        }
+                        if not show_advanced_columns
+                        else {}
+                    ),
+                    "reviewStatusLabel": st.column_config.SelectboxColumn(
+                        "Review status",
+                        options=list(STATUS_LABEL_TO_CODE),
+                    ),
+                    "inclusionStatusLabel": st.column_config.SelectboxColumn(
+                        "Inclusion status",
+                        options=list(INCLUSION_LABEL_TO_CODE),
+                    ),
+                    "provisional": st.column_config.CheckboxColumn("Provisional"),
+                },
+            )
+            edited_records = edited.to_dict(orient="records") if hasattr(edited, "to_dict") else list(edited)
+            edited_by_id = {row.get("assumptionId"): row for row in edited_records}
+            for idx, row in enumerate(latest_rows):
+                replacement = edited_by_id.get(row.get("assumptionId"))
+                if replacement is not None:
+                    latest_rows[idx] = {**row, **replacement}
+    updated_state = update_workspace_rows(
+        st.session_state["health_econ_workspace"],
+        rows_from_display_rows(latest_rows),
+    )
+    return updated_state["rows"], updated_state
+
+
 cols = st.columns(2)
 if cols[0].button("Load economics defaults", type="primary"):
     try:
@@ -390,10 +484,12 @@ sync_econ_widgets_if_missing(econ_config)
 if st.session_state.get("dirty_economics") and st.session_state.get("economics_results"):
     st.warning("Economics results are stale because model results or economics inputs changed.")
 
-st.subheader("Assumptions Workspace")
+ledger = (results_bundle or {}).get("technical", {}).get("eventLedger", {}) if isinstance(results_bundle, dict) else {}
+
+st.subheader("Inputs required for this analysis")
 st.caption(
-    "Edit a working copy of the evidence registry. Validate before applying; "
-    "the source registry file is not changed from this page."
+    "Edit the assumptions that apply to the currently selected test, regimen and economic outcome. "
+    "The source registry file is not changed from this page."
 )
 
 workspace_state = reconcile_workspace_state(
@@ -401,6 +497,8 @@ workspace_state = reconcile_workspace_state(
     econ_config,
 )
 st.session_state["health_econ_workspace"] = workspace_state
+if st.session_state.pop("health_econ_apply_message", None):
+    st.success("Validated assumptions applied to the current analysis.")
 if workspace_state.get("hasUnsavedEdits"):
     st.warning("Unsaved changes")
 if workspace_state.get("presetConflict"):
@@ -462,55 +560,85 @@ if st.button("Discard working edits"):
     st.rerun()
 
 working_rows = workspace_state["rows"]
+current_readiness = assess_current_analysis_economic_readiness(
+    config or {},
+    econ_config,
+    ledger,
+    working_rows,
+)
+readiness_flags = [
+    {"Readiness item": "Current cost inputs", "Complete": current_readiness["currentAnalysisCostReady"]},
+    {"Readiness item": "Current DALY inputs", "Complete": current_readiness["currentAnalysisDALYReady"]},
+    {"Readiness item": "Current ICER", "Complete": current_readiness["currentAnalysisICERReady"]},
+    {"Readiness item": "Current NMB", "Complete": current_readiness["currentAnalysisNMBReady"]},
+    {"Readiness item": "Full strategy library", "Complete": current_readiness["fullStrategyLibraryReady"]},
+    {"Readiness item": "Overall reference evidence", "Complete": current_readiness["overallReferenceEvidenceReady"]},
+]
+st.dataframe(arrow_safe_dataframe(readiness_flags), width="content", hide_index=True)
+if st.button("Edit blocking assumptions", type="primary"):
+    st.session_state["health_econ_show_blocking_editor"] = True
+
+current_ids = set(current_readiness["currentApplicableAssumptionIds"])
+current_rows = [row for row in working_rows if row.get("assumptionId") in current_ids]
 show_advanced_columns = st.checkbox("Advanced evidence columns", value=False)
-hidden_columns = ["reviewStatus", "inclusionStatus"]
-if not show_advanced_columns:
-    hidden_columns.extend(ADVANCED_EVIDENCE_COLUMNS)
-tabs = st.tabs(["Costs", "DALYs", "Threshold", "Epidemiology blockers"])
-for tab, group_name in zip(tabs, ["Costs", "DALYs", "Threshold", "Epidemiology blockers"]):
-    with tab:
-        group_data = group_rows(working_rows, group_name)
-        if not group_data:
-            st.info("No rows in this section.")
+working_rows, workspace_state = render_assumption_editor(
+    rows=current_rows,
+    working_rows=working_rows,
+    group_names=["Costs", "DALYs", "Threshold", "Epidemiology blockers"],
+    editor_prefix="health_econ_current_assumption_editor",
+    show_advanced_columns=show_advanced_columns,
+)
+st.session_state["health_econ_workspace"] = workspace_state
+st.markdown("Price-year conversion audit")
+current_rows = [row for row in working_rows if row.get("assumptionId") in current_ids]
+audit_rows = conversion_audit_rows(current_rows)
+if audit_rows:
+    st.dataframe(arrow_safe_dataframe(audit_rows), width="stretch", hide_index=True)
+else:
+    st.info("No current cost rows require price-year conversion audit.")
+
+current_readiness = assess_current_analysis_economic_readiness(
+    config or {},
+    econ_config,
+    ledger,
+    working_rows,
+)
+if current_readiness["currentBlockers"]:
+    st.warning(f"{len(current_readiness['currentBlockers'])} current-analysis blockers require review.")
+    for group_name in [
+        "Current selected test and regimen",
+        "Programme and delivery costs",
+        "Active-TB care",
+        "DALY assumptions",
+        "Threshold for NMB",
+    ]:
+        group_blockers = [
+            blocker for blocker in current_readiness["currentBlockers"]
+            if blocker.get("group") == group_name
+        ]
+        if not group_blockers:
             continue
-        edited = st.data_editor(
-            arrow_safe_dataframe(group_data),
+        with st.expander(group_name, expanded=True):
+            st.dataframe(arrow_safe_dataframe(group_blockers), width="stretch", hide_index=True)
+else:
+    st.success("No current-analysis assumption blockers were found.")
+
+with st.expander("All assumptions and alternative strategies", expanded=False):
+    if current_readiness["alternativeStrategyBlockers"]:
+        st.markdown("Inputs needed for additional strategy comparisons")
+        st.dataframe(
+            arrow_safe_dataframe(current_readiness["alternativeStrategyBlockers"]),
             width="stretch",
             hide_index=True,
-            num_rows="fixed",
-            key=f"health_econ_assumption_editor_{group_name}",
-            disabled=[
-                "assumptionId",
-                "category",
-                "description",
-                *hidden_columns,
-                *DERIVED_CONVERSION_COLUMNS,
-                "validationMessage",
-            ],
-            column_config={
-                "reviewStatusLabel": st.column_config.SelectboxColumn(
-                    "Review status",
-                    options=list(STATUS_LABEL_TO_CODE),
-                ),
-                "inclusionStatusLabel": st.column_config.SelectboxColumn(
-                    "Inclusion status",
-                    options=list(INCLUSION_LABEL_TO_CODE),
-                ),
-                "provisional": st.column_config.CheckboxColumn("Provisional"),
-            },
         )
-        edited_records = edited.to_dict(orient="records") if hasattr(edited, "to_dict") else list(edited)
-        edited_by_id = {row.get("assumptionId"): row for row in edited_records}
-        for idx, row in enumerate(working_rows):
-            replacement = edited_by_id.get(row.get("assumptionId"))
-            if replacement is not None:
-                working_rows[idx] = replacement
-        st.session_state["health_econ_workspace"] = update_workspace_rows(
-            st.session_state["health_econ_workspace"],
-            rows_from_display_rows(working_rows),
-        )
-        workspace_state = st.session_state["health_econ_workspace"]
-        working_rows = workspace_state["rows"]
+    working_rows, workspace_state = render_assumption_editor(
+        rows=working_rows,
+        working_rows=working_rows,
+        group_names=["Costs", "DALYs", "Threshold", "Epidemiology blockers"],
+        editor_prefix="health_econ_all_assumption_editor",
+        show_advanced_columns=show_advanced_columns,
+    )
+    st.session_state["health_econ_workspace"] = workspace_state
 
 validation_report = workspace_state.get("validation")
 cols = st.columns(4)
@@ -527,7 +655,20 @@ if cols[0].button("Validate assumptions", type="primary"):
     st.rerun()
 
 apply_disabled = validation_report is None or not bool(validation_report.get("isValidForApplication"))
-if cols[1].button("Apply to current analysis", disabled=apply_disabled):
+if validation_report:
+    if validation_report.get("isValidForApplication"):
+        st.success("Assumptions are structurally safe to apply.")
+    else:
+        st.error("Assumptions contain errors that must be corrected before applying.")
+        fatal_rows = fatal_validation_rows(validation_report)
+        if fatal_rows:
+            st.dataframe(arrow_safe_dataframe(fatal_rows), width="stretch", hide_index=True)
+if apply_disabled and validation_report is not None:
+    fatal_rows = fatal_validation_rows(validation_report)
+    if fatal_rows:
+        st.caption("Application is disabled because these rows contain fatal validation errors.")
+        st.dataframe(arrow_safe_dataframe(fatal_rows), width="stretch", hide_index=True)
+if cols[1].button("Apply assumptions to current analysis", disabled=apply_disabled):
     try:
         updated_config = apply_assumptions_to_economics_config(
             econ_config,
@@ -552,10 +693,17 @@ if cols[1].button("Apply to current analysis", disabled=apply_disabled):
         applied_state = mark_workspace_applied(applied_state, updated_config)
         st.session_state["health_econ_workspace"] = applied_state
         mark_economics_changed()
-        st.success("Validated assumptions applied to the current analysis.")
+        st.session_state["health_econ_apply_message"] = True
         st.rerun()
     except Exception as exc:
         st.error(f"Assumptions were not applied: {exc}")
+
+can_run = bool(config and results_bundle and not st.session_state.get("results_stale"))
+if cols[2].button(
+    "Recalculate Health Economics",
+    disabled=not (can_run and bool((st.session_state.get("health_econ_workspace") or {}).get("applied"))),
+):
+    run_authoritative_health_economics(results_bundle, econ_config)
 
 active_validation = validation_report or validate_editable_assumptions(
     working_rows,
@@ -563,31 +711,23 @@ active_validation = validation_report or validate_editable_assumptions(
     config=config or {},
 )
 summary = active_validation["summary"]
-summary_rows = [
-    {"Readiness item": "Cost-consequence analysis", "Complete": summary["costConsequenceReady"]},
-    {"Readiness item": "DALY analysis", "Complete": summary["dalyReady"]},
-    {"Readiness item": "ICER", "Complete": summary["icerReady"]},
-    {"Readiness item": "NMB", "Complete": summary["nmbReady"]},
-    {"Readiness item": "Epidemiology", "Complete": summary["epidemiologyReady"]},
-    {"Readiness item": "Cost", "Complete": summary["costReady"]},
-    {"Readiness item": "DALY assumptions", "Complete": summary["dalyCategoryReady"]},
-    {"Readiness item": "Threshold", "Complete": summary["thresholdReady"]},
-    {"Readiness item": "Overall clinician-ready", "Complete": summary["overallClinicianReady"]},
-]
-st.markdown("Readiness summary")
-st.dataframe(arrow_safe_dataframe(summary_rows), width="content", hide_index=True)
-if not summary["icerReady"]:
+current_readiness = assess_current_analysis_economic_readiness(
+    config or {},
+    econ_config,
+    ledger,
+    working_rows,
+)
+if not current_readiness["currentAnalysisICERReady"]:
     st.warning("ICER cannot yet be calculated.")
-    blockers = summary.get("remainingBlockers") or []
-    if blockers:
+    if current_readiness["currentBlockers"]:
         st.dataframe(
-            arrow_safe_dataframe([{"Blocking assumption": item} for item in blockers[:20]]),
-            width="content",
+            arrow_safe_dataframe(current_readiness["currentBlockers"]),
+            width="stretch",
             hide_index=True,
         )
-elif not summary["nmbReady"]:
+elif not current_readiness["currentAnalysisNMBReady"]:
     st.info("ICER inputs are complete, but NMB requires a reviewed threshold with matching currency and reference year.")
-if summary["costReady"] and not summary["dalyCategoryReady"]:
+if current_readiness["currentAnalysisCostReady"] and not current_readiness["currentAnalysisDALYReady"]:
     st.info(
         "Cost inputs are complete but DALY inputs are incomplete. Cost-consequence outputs may be reviewed; ICER remains unavailable."
     )
@@ -753,17 +893,7 @@ elif st.session_state.get("results_stale"):
     st.warning("Rerun the model before running economics so the economics inputs match current results.")
 
 if st.button("Run health economics", type="primary", disabled=not can_run):
-    try:
-        econ = backend.run_economics(results_bundle, econ_config)
-        st.session_state["economics_results"] = econ
-        mark_economics_completed()
-        sync_backend_status(backend.status())
-        st.success("Health-economic analysis completed.")
-    except Exception as exc:
-        message = f"Health-economic analysis failed: {exc}"
-        sync_backend_status(backend.status())
-        record_message("error", message)
-        st.error(message)
+    run_authoritative_health_economics(results_bundle, econ_config)
 
 econ_results = st.session_state.get("economics_results")
 if econ_results:

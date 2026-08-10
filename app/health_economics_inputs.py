@@ -54,8 +54,16 @@ EDITABLE_ASSUMPTION_COLUMNS = [
 ]
 
 ADVANCED_EVIDENCE_COLUMNS = [
+    "assumptionId",
+    "category",
+    "sourceLocation",
+    "targetCurrency",
+    "targetPriceYear",
+    "sourceYearIndexValue",
+    "targetYearIndexValue",
     "bundledIntoAssumptionId",
     "doubleCountingGroup",
+    "unresolvedReason",
 ]
 
 DERIVED_CONVERSION_COLUMNS = [
@@ -67,6 +75,61 @@ DERIVED_CONVERSION_COLUMNS = [
     "convertedTargetYearCost",
     "conversionWarnings",
 ]
+
+STANDARD_EDITOR_COLUMNS = [
+    "description",
+    "currentValue",
+    "unit",
+    "originalCurrency",
+    "originalPriceYear",
+    "costBasis",
+    "sourceCitation",
+    "reviewStatusLabel",
+    "provisional",
+    "inclusionStatusLabel",
+    "notes",
+    "validationMessage",
+]
+
+CONVERSION_AUDIT_COLUMNS = [
+    "assumptionId",
+    "description",
+    "conversionStatus",
+    "inflationIndexId",
+    "inflationFactor",
+    "convertedTargetYearCost",
+    "conversionWarnings",
+]
+
+CURRENT_COST_ASSUMPTION_GROUPS = {
+    "selected": "Current selected test and regimen",
+    "program": "Programme and delivery costs",
+    "active_tb": "Active-TB care",
+}
+
+TEST_COST_IDS = {
+    "IGRA": "cost.test_igra",
+    "TST": "cost.test_tst",
+}
+
+REGIMEN_COST_IDS = {
+    "3HP": "cost.regimen_3hp",
+    "4R": "cost.regimen_4r",
+    "3HR": "cost.regimen_3hr",
+    "6H": "cost.regimen_6h",
+    "9H": "cost.regimen_9h",
+}
+
+DALY_ASSUMPTION_IDS = {
+    "daly.active_tb_disability_weight",
+    "daly.active_tb_duration",
+    "daly.tb_case_fatality_risk",
+    "daly.yll_per_tb_death",
+    "daly.tpt_health_loss",
+    "daly.adr_health_loss",
+    "daly.post_tb_sequelae",
+}
+THRESHOLD_ASSUMPTION_ID = "threshold.gdp_per_capita"
 
 STATUS_LABEL_TO_CODE = {
     "Unresolved": "unresolved",
@@ -230,12 +293,16 @@ def reconcile_workspace_state(
 
 
 def update_workspace_rows(state: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    incoming_rows = rows_from_display_rows(rows)
+    incoming_hash = rows_hash(incoming_rows)
+    current_hash = rows_hash(state.get("rows") or [])
     out = deepcopy(state)
-    out["rows"] = rows_from_display_rows(rows)
-    out["hasUnsavedEdits"] = rows_hash(out["rows"]) != out.get("baselineRowsHash")
-    out["validated"] = False
-    out["validation"] = None
-    out["applied"] = False
+    out["rows"] = incoming_rows
+    out["hasUnsavedEdits"] = incoming_hash != out.get("baselineRowsHash")
+    if incoming_hash != current_hash:
+        out["validated"] = False
+        out["validation"] = None
+        out["applied"] = False
     return out
 
 
@@ -276,6 +343,9 @@ def validate_editable_assumptions(
         messages: list[str] = []
         category = row.get("category")
         if category == "cost":
+            value = _number_or_none(row.get("currentValue"))
+            if value is not None and value < 0:
+                messages.append("Cost value must be non-negative.")
             if row.get("inclusionStatus") == "bundled":
                 messages.extend(_validate_bundled_row(row, working_rows))
             elif row.get("inclusionStatus") == "excluded":
@@ -420,6 +490,115 @@ def group_rows(rows: list[dict[str, Any]], group: str) -> list[dict[str, Any]]:
     return rows
 
 
+def ordered_editor_rows(rows: list[dict[str, Any]], *, advanced: bool = False) -> list[dict[str, Any]]:
+    columns = list(STANDARD_EDITOR_COLUMNS)
+    if advanced:
+        columns.extend(column for column in EDITABLE_ASSUMPTION_COLUMNS if column not in columns)
+    else:
+        columns.append("assumptionId")
+        columns.extend(
+            column
+            for column in EDITABLE_ASSUMPTION_COLUMNS
+            if column not in columns and column not in ADVANCED_EVIDENCE_COLUMNS and column not in DERIVED_CONVERSION_COLUMNS
+        )
+    return [{column: row.get(column, "") for column in columns} for row in rows]
+
+
+def conversion_audit_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {column: row.get(column, "") for column in CONVERSION_AUDIT_COLUMNS}
+        for row in rows
+        if row.get("category") == "cost"
+    ]
+
+
+def fatal_validation_rows(validation: dict[str, Any] | None) -> list[dict[str, Any]]:
+    out = []
+    for assumption_id, messages in (validation or {}).get("rowMessages", {}).items():
+        fatal = [message for message in messages if _fatal_application_messages([message])]
+        if fatal:
+            out.append(
+                {
+                    "assumptionId": assumption_id,
+                    "messages": "; ".join(fatal),
+                }
+            )
+    return out
+
+
+def assess_current_analysis_economic_readiness(
+    config: dict[str, Any] | None,
+    economics_config: dict[str, Any] | None,
+    event_ledger: dict[str, Any] | None = None,
+    evidence_registry: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Assess economic readiness for the selected analysis pathway only.
+
+    Full-library readiness remains available separately. This function filters
+    cost blockers to the currently selected diagnostic test, regimen and
+    always-applicable programme/disease cost components.
+    """
+    rows = editable_assumption_rows(evidence_registry, economics_config or {})
+    validation = validate_editable_assumptions(rows, economics_config or {}, config=config or {})
+    row_by_id = {row.get("assumptionId"): row for row in validation["rows"]}
+    messages_by_id = validation.get("rowMessages") or {}
+    current_ids = _current_analysis_assumption_ids(config or {}, event_ledger or {})
+    alternative_ids = _alternative_strategy_assumption_ids(current_ids)
+
+    blockers = []
+    for assumption_id in sorted(current_ids):
+        row = row_by_id.get(assumption_id)
+        if not row:
+            continue
+        messages = messages_by_id.get(assumption_id) or []
+        if messages:
+            blockers.append(_blocker_record(row, messages, _current_blocker_group(assumption_id), True))
+
+    alternative_blockers = []
+    for assumption_id in sorted(alternative_ids):
+        row = row_by_id.get(assumption_id)
+        if not row:
+            continue
+        messages = messages_by_id.get(assumption_id) or []
+        if messages:
+            alternative_blockers.append(
+                _blocker_record(row, messages, "Alternative strategies", False)
+            )
+
+    cost_ids = {assumption_id for assumption_id in current_ids if assumption_id.startswith("cost.")}
+    daly_ids = {assumption_id for assumption_id in current_ids if assumption_id.startswith("daly.")}
+    threshold_messages = messages_by_id.get(THRESHOLD_ASSUMPTION_ID) or []
+    current_cost_ready = not any(messages_by_id.get(assumption_id) for assumption_id in cost_ids)
+    current_daly_ready = not any(messages_by_id.get(assumption_id) for assumption_id in daly_ids)
+    current_icer_ready = bool(current_cost_ready and current_daly_ready)
+    current_nmb_ready = bool(current_icer_ready and not threshold_messages)
+    full_readiness = assess_apy_reference_readiness(
+        config or {},
+        economics_config or {},
+        evidence_registry or load_apy_evidence_registry(),
+    )
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for blocker in blockers + alternative_blockers:
+        grouped.setdefault(blocker["group"], []).append(blocker)
+
+    return {
+        "currentAnalysisCostReady": current_cost_ready,
+        "currentAnalysisDALYReady": current_daly_ready,
+        "currentAnalysisICERReady": current_icer_ready,
+        "currentAnalysisNMBReady": current_nmb_ready,
+        "fullStrategyLibraryReady": bool(full_readiness.get("costReady") and full_readiness.get("dalyReady")),
+        "overallReferenceEvidenceReady": bool(full_readiness.get("overallClinicianReady")),
+        "currentApplicableAssumptionIds": sorted(current_ids),
+        "alternativeApplicableAssumptionIds": sorted(alternative_ids),
+        "currentBlockers": blockers,
+        "alternativeStrategyBlockers": alternative_blockers,
+        "blockerGroups": grouped,
+        "validation": validation,
+        "fullReadiness": full_readiness,
+    }
+
+
 def _apply_cost_rows(econ: dict[str, Any], rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     items = ensure_authoritative_cost_items(econ.get("costItems") or [])
     by_id = {item["costItemId"]: deepcopy(item) for item in items}
@@ -448,6 +627,113 @@ def _apply_cost_rows(econ: dict[str, Any], rows: list[dict[str, Any]]) -> list[d
         item["costRecordType"] = "source"
         item["warnings"] = []
     return list(by_id.values())
+
+
+def _current_analysis_assumption_ids(config: dict[str, Any], event_ledger: dict[str, Any]) -> set[str]:
+    test = _selected_test(config, event_ledger)
+    regimen = _selected_regimen(config, event_ledger)
+    ids = {
+        TEST_COST_IDS.get(test, TEST_COST_IDS["IGRA"]),
+        REGIMEN_COST_IDS.get(regimen, REGIMEN_COST_IDS["3HP"]),
+        "cost.active_tb_disease",
+        "cost.false_positive_incremental",
+        "cost.program_setup",
+        "cost.program_running",
+        "cost.tpt_adr_management",
+        *DALY_ASSUMPTION_IDS,
+        THRESHOLD_ASSUMPTION_ID,
+    }
+    return {assumption_id for assumption_id in ids if assumption_id}
+
+
+def _alternative_strategy_assumption_ids(current_ids: set[str]) -> set[str]:
+    alternatives = set(TEST_COST_IDS.values()) | set(REGIMEN_COST_IDS.values())
+    return alternatives - current_ids
+
+
+def _selected_test(config: dict[str, Any], event_ledger: dict[str, Any]) -> str:
+    for value in (
+        config.get("test"),
+        config.get("screeningTest"),
+        config.get("testType"),
+        (config.get("screening") or {}).get("test"),
+        (event_ledger.get("metadata") or {}).get("test"),
+    ):
+        text = str(value or "").strip().upper()
+        if text in TEST_COST_IDS:
+            return text
+    return "IGRA"
+
+
+def _selected_regimen(config: dict[str, Any], event_ledger: dict[str, Any]) -> str:
+    for value in (
+        config.get("regimen"),
+        config.get("preventiveRegimen"),
+        config.get("regimenKey"),
+        (config.get("treatment") or {}).get("regimen"),
+        (config.get("intervention") or {}).get("regimen"),
+        (event_ledger.get("metadata") or {}).get("regimen"),
+    ):
+        text = str(value or "").strip().upper().removeprefix("X")
+        if text in REGIMEN_COST_IDS:
+            return text
+    return "3HP"
+
+
+def _current_blocker_group(assumption_id: str) -> str:
+    if assumption_id in {TEST_COST_IDS["IGRA"], TEST_COST_IDS["TST"]} or assumption_id in set(REGIMEN_COST_IDS.values()):
+        return "Current selected test and regimen"
+    if assumption_id in {"cost.program_setup", "cost.program_running", "cost.false_positive_incremental", "cost.tpt_adr_management"}:
+        return "Programme and delivery costs"
+    if assumption_id == "cost.active_tb_disease":
+        return "Active-TB care"
+    if assumption_id.startswith("daly."):
+        return "DALY assumptions"
+    if assumption_id == THRESHOLD_ASSUMPTION_ID:
+        return "Threshold for NMB"
+    return "Current selected test and regimen"
+
+
+def _blocker_record(
+    row: dict[str, Any],
+    messages: list[str],
+    group: str,
+    current_analysis: bool,
+) -> dict[str, Any]:
+    return {
+        "assumptionId": row.get("assumptionId", ""),
+        "description": row.get("description", ""),
+        "group": group,
+        "whyBlocking": "; ".join(messages),
+        "missingFields": ", ".join(_missing_fields_from_messages(messages)),
+        "editableRowId": row.get("assumptionId", ""),
+        "currentAnalysis": current_analysis,
+    }
+
+
+def _missing_fields_from_messages(messages: list[str]) -> list[str]:
+    fields: set[str] = set()
+    for message in messages:
+        lower = message.lower()
+        if "source" in lower:
+            fields.add("source citation")
+        if "price year" in lower:
+            fields.add("original price year")
+        if "currency" in lower:
+            fields.add("currency")
+        if "cost basis" in lower or "basis" in lower:
+            fields.add("cost basis")
+        if "value" in lower or "cost is missing" in lower:
+            fields.add("current value")
+        if "reviewed" in lower or "status" in lower:
+            fields.add("review status")
+        if "provisional" in lower:
+            fields.add("provisional flag")
+        if "rationale" in lower or "notes" in lower:
+            fields.add("notes")
+        if "bundled" in lower:
+            fields.add("bundling details")
+    return sorted(fields) or ["see validation message"]
 
 
 def _apply_threshold_rows(econ: dict[str, Any], rows: list[dict[str, Any]]) -> None:

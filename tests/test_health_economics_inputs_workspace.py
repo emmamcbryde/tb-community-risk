@@ -9,14 +9,17 @@ from openpyxl import load_workbook
 
 from app.health_economics_inputs import (
     STATUS_LABEL_TO_CODE,
+    assess_current_analysis_economic_readiness,
     assumptions_csv,
     assumptions_workbook,
     apply_assumptions_to_economics_config,
     editable_assumption_rows,
+    fatal_validation_rows,
     inclusion_label,
     mark_workspace_applied,
     mark_workspace_validated,
     new_workspace_state,
+    ordered_editor_rows,
     parse_assumptions_csv,
     reconcile_workspace_state,
     rows_from_display_rows,
@@ -34,6 +37,19 @@ from tests.test_apy_evidence_registry import _minimal_reviewed_registry, _review
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _complete_daly_units(rows: list[dict]) -> list[dict]:
+    for row in rows:
+        if row.get("assumptionId") == "daly.active_tb_disability_weight":
+            row["unit"] = "disability weight"
+        elif row.get("assumptionId") == "daly.active_tb_duration":
+            row["unit"] = "years"
+        elif row.get("assumptionId") == "daly.tb_case_fatality_risk":
+            row["unit"] = "probability"
+        elif row.get("assumptionId") == "daly.yll_per_tb_death":
+            row["unit"] = "years"
+    return rows
 
 
 class HealthEconomicsInputsWorkspaceTests(unittest.TestCase):
@@ -283,9 +299,228 @@ class HealthEconomicsInputsWorkspaceTests(unittest.TestCase):
     def test_standard_page_has_one_authoritative_editing_route(self) -> None:
         page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
 
-        self.assertIn('st.subheader("Assumptions Workspace")', page)
+        self.assertIn('st.subheader("Inputs required for this analysis")', page)
         self.assertEqual(page.count("Validate assumptions"), 1)
-        self.assertEqual(page.count("Apply to current analysis"), 1)
+        self.assertEqual(page.count("Apply assumptions to current analysis"), 1)
+        self.assertIn("Legacy/developer economic controls", page)
+
+    def test_validate_rerun_retains_validation_when_rows_unchanged(self) -> None:
+        econ_config = _synthetic_econ()
+        state = new_workspace_state(econ_config, _minimal_reviewed_registry())
+        report = validate_editable_assumptions(state["rows"], econ_config, config=_reviewed_epi_config())
+        state = mark_workspace_validated(state, report)
+
+        updated = update_workspace_rows(state, deepcopy(state["rows"]))
+
+        self.assertTrue(updated["validated"])
+        self.assertIsNotNone(updated["validation"])
+        self.assertEqual(updated["validation"]["summary"], report["summary"])
+
+    def test_genuine_edit_clears_stale_validation(self) -> None:
+        econ_config = _synthetic_econ()
+        state = new_workspace_state(econ_config, _minimal_reviewed_registry())
+        state = mark_workspace_validated(
+            state,
+            validate_editable_assumptions(state["rows"], econ_config, config=_reviewed_epi_config()),
+        )
+        rows = deepcopy(state["rows"])
+        rows[0]["notes"] = "changed by user"
+
+        updated = update_workspace_rows(state, rows)
+
+        self.assertFalse(updated["validated"])
+        self.assertIsNone(updated["validation"])
+
+    def test_validation_and_conversion_fields_do_not_clear_validation(self) -> None:
+        econ_config = _synthetic_econ()
+        state = new_workspace_state(econ_config, _minimal_reviewed_registry())
+        state = mark_workspace_validated(
+            state,
+            validate_editable_assumptions(state["rows"], econ_config, config=_reviewed_epi_config()),
+        )
+        rows = deepcopy(state["rows"])
+        rows[0]["validationMessage"] = "rerendered validation text"
+        rows[0]["convertedTargetYearCost"] = 999999
+
+        updated = update_workspace_rows(state, rows)
+
+        self.assertTrue(updated["validated"])
+        self.assertIsNotNone(updated["validation"])
+
+    def test_incomplete_but_structurally_safe_assumptions_can_be_applied(self) -> None:
+        econ_config = _synthetic_econ()
+        rows = editable_assumption_rows(_minimal_reviewed_registry(), econ_config)
+        row = next(item for item in rows if item["assumptionId"] == "daly.active_tb_duration")
+        row["sourceCitation"] = ""
+
+        report = validate_editable_assumptions(rows, econ_config, config=_reviewed_epi_config())
+        updated = apply_assumptions_to_economics_config(econ_config, rows, config=_reviewed_epi_config())
+
+        self.assertTrue(report["isValidForApplication"])
+        self.assertFalse(report["summary"]["icerReady"])
+        self.assertIn("assumptionEvidenceValidation", updated)
+
+    def test_negative_cost_prevents_application(self) -> None:
+        rows = editable_assumption_rows(_minimal_reviewed_registry(), _synthetic_econ())
+        row = next(item for item in rows if item["assumptionId"] == "cost.test_igra")
+        row["currentValue"] = "-1"
+
+        report = validate_editable_assumptions(rows, _synthetic_econ(), config=_reviewed_epi_config())
+
+        self.assertFalse(report["isValidForApplication"])
+        self.assertIn("cost.test_igra", {item["assumptionId"] for item in fatal_validation_rows(report)})
+
+    def test_probability_above_one_prevents_application(self) -> None:
+        rows = editable_assumption_rows(_minimal_reviewed_registry(), _synthetic_econ())
+        row = next(item for item in rows if item["assumptionId"] == "daly.active_tb_disability_weight")
+        row["currentValue"] = "1.2"
+
+        report = validate_editable_assumptions(rows, _synthetic_econ(), config=_reviewed_epi_config())
+
+        self.assertFalse(report["isValidForApplication"])
+
+    def test_target_currency_year_mismatch_prevents_application(self) -> None:
+        rows = editable_assumption_rows(_minimal_reviewed_registry(), _synthetic_econ())
+        row = next(item for item in rows if item["assumptionId"] == "threshold.gdp_per_capita")
+        row["targetPriceYear"] = "2024-25"
+
+        report = validate_editable_assumptions(rows, _synthetic_econ(), config=_reviewed_epi_config())
+
+        self.assertFalse(report["isValidForApplication"])
+
+    def test_invalid_bundling_prevents_application(self) -> None:
+        rows = editable_assumption_rows(_minimal_reviewed_registry(), _synthetic_econ())
+        row = next(item for item in rows if item["assumptionId"] == "cost.tpt_adr_management")
+        row["inclusionStatus"] = "bundled"
+        row["bundledIntoAssumptionId"] = "cost.not_real"
+
+        report = validate_editable_assumptions(rows, _synthetic_econ(), config=_reviewed_epi_config())
+
+        self.assertFalse(report["isValidForApplication"])
+
+    def test_igra_3hp_icer_not_blocked_by_unresolved_alternative_costs(self) -> None:
+        registry = _complete_daly_units(_minimal_reviewed_registry())
+        for assumption_id in ["cost.test_tst", "cost.regimen_4r", "cost.regimen_3hr", "cost.regimen_6h", "cost.regimen_9h"]:
+            row = next(item for item in registry if item["assumptionId"] == assumption_id)
+            row["sourceCitation"] = ""
+            row["reviewStatus"] = "unresolved"
+            row["provisional"] = True
+
+        readiness = assess_current_analysis_economic_readiness(
+            {"testType": "IGRA", "regimen": "3HP"},
+            _synthetic_econ({"threshold": 100000}),
+            {},
+            registry,
+        )
+
+        self.assertTrue(readiness["currentAnalysisICERReady"])
+        self.assertFalse(readiness["fullStrategyLibraryReady"])
+        self.assertNotIn("cost.test_tst", {item["assumptionId"] for item in readiness["currentBlockers"]})
+        self.assertIn("cost.test_tst", {item["assumptionId"] for item in readiness["alternativeStrategyBlockers"]})
+
+    def test_selecting_tst_makes_tst_cost_applicable(self) -> None:
+        registry = _complete_daly_units(_minimal_reviewed_registry())
+        row = next(item for item in registry if item["assumptionId"] == "cost.test_tst")
+        row["sourceCitation"] = ""
+        row["reviewStatus"] = "unresolved"
+        row["provisional"] = True
+
+        readiness = assess_current_analysis_economic_readiness(
+            {"testType": "TST", "regimen": "3HP"},
+            _synthetic_econ({"threshold": 100000}),
+            {},
+            registry,
+        )
+
+        self.assertFalse(readiness["currentAnalysisCostReady"])
+        self.assertIn("cost.test_tst", {item["assumptionId"] for item in readiness["currentBlockers"]})
+
+    def test_selecting_another_regimen_makes_only_that_regimen_applicable(self) -> None:
+        registry = _complete_daly_units(_minimal_reviewed_registry())
+        for assumption_id in ["cost.regimen_3hp", "cost.regimen_4r"]:
+            row = next(item for item in registry if item["assumptionId"] == assumption_id)
+            row["sourceCitation"] = ""
+            row["reviewStatus"] = "unresolved"
+            row["provisional"] = True
+
+        readiness = assess_current_analysis_economic_readiness(
+            {"testType": "IGRA", "regimen": "4R"},
+            _synthetic_econ({"threshold": 100000}),
+            {},
+            registry,
+        )
+        current_ids = {item["assumptionId"] for item in readiness["currentBlockers"]}
+
+        self.assertIn("cost.regimen_4r", current_ids)
+        self.assertNotIn("cost.regimen_3hp", current_ids)
+
+    def test_missing_daly_blocks_icer_but_missing_threshold_blocks_only_nmb(self) -> None:
+        registry = _complete_daly_units(_minimal_reviewed_registry())
+        daly_row = next(item for item in registry if item["assumptionId"] == "daly.active_tb_duration")
+        daly_row["sourceCitation"] = ""
+        readiness = assess_current_analysis_economic_readiness(
+            {"testType": "IGRA", "regimen": "3HP"},
+            _synthetic_econ({"threshold": 100000}),
+            {},
+            registry,
+        )
+        self.assertFalse(readiness["currentAnalysisICERReady"])
+
+        registry = _complete_daly_units(_minimal_reviewed_registry())
+        threshold_row = next(item for item in registry if item["assumptionId"] == "threshold.gdp_per_capita")
+        threshold_row["sourceCitation"] = ""
+        readiness = assess_current_analysis_economic_readiness(
+            {"testType": "IGRA", "regimen": "3HP"},
+            _synthetic_econ(),
+            {},
+            registry,
+        )
+        self.assertTrue(readiness["currentAnalysisICERReady"])
+        self.assertFalse(readiness["currentAnalysisNMBReady"])
+
+    def test_standard_editor_orders_editable_fields_before_technical_fields(self) -> None:
+        rows = editable_assumption_rows(_minimal_reviewed_registry(), _synthetic_econ())
+        ordered = ordered_editor_rows(rows[:1], advanced=True)[0]
+        keys = list(ordered)
+
+        self.assertLess(keys.index("description"), keys.index("assumptionId"))
+        self.assertLess(keys.index("currentValue"), keys.index("doubleCountingGroup"))
+
+    def test_standard_editor_keeps_hidden_row_key_for_safe_mapping(self) -> None:
+        rows = editable_assumption_rows(_minimal_reviewed_registry(), _synthetic_econ())
+        ordered = ordered_editor_rows(rows[:1], advanced=False)[0]
+        keys = list(ordered)
+
+        self.assertIn("assumptionId", ordered)
+        self.assertLess(keys.index("description"), keys.index("assumptionId"))
+        self.assertNotIn("doubleCountingGroup", ordered)
+
+    def test_every_current_blocker_maps_to_editable_row_and_is_not_truncated(self) -> None:
+        registry = _minimal_reviewed_registry()
+        for row in registry:
+            if row["assumptionId"].startswith("daly."):
+                row["sourceCitation"] = ""
+                row["reviewStatus"] = "unresolved"
+                row["provisional"] = True
+
+        readiness = assess_current_analysis_economic_readiness(
+            {"testType": "IGRA", "regimen": "3HP"},
+            _synthetic_econ({"threshold": 100000}),
+            {},
+            registry,
+        )
+        editable_ids = {row["assumptionId"] for row in editable_assumption_rows(registry, _synthetic_econ())}
+
+        self.assertEqual(len(readiness["currentBlockers"]), len([item for item in readiness["currentBlockers"]]))
+        self.assertGreater(len(readiness["currentBlockers"]), 3)
+        self.assertTrue(all(blocker["editableRowId"] in editable_ids for blocker in readiness["currentBlockers"]))
+
+    def test_converted_costs_are_read_only_and_derived_in_page(self) -> None:
+        page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
+
+        self.assertIn("*DERIVED_CONVERSION_COLUMNS", page)
+        self.assertIn('"convertedTargetYearCost"', page)
+        self.assertIn("Price-year conversion audit", page)
 
 
 if __name__ == "__main__":
