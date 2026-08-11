@@ -30,7 +30,7 @@ from app.health_economics_inputs import (
 )
 from app.results_workbook import build_results_workbook
 from engine.apy.config import build_default_config
-from engine.apy.economics import build_default_economics_config
+from engine.apy.economics import build_default_economics_config, build_economics_preset_dale2019_aud
 from engine.apy.evidence import load_apy_evidence_registry
 from tests.test_apy_event_ledger_economics import _synthetic_econ
 from tests.test_apy_evidence_registry import _minimal_reviewed_registry, _reviewed_epi_config
@@ -287,6 +287,84 @@ class HealthEconomicsInputsWorkspaceTests(unittest.TestCase):
 
         self.assertNotEqual(row["conversionStatus"], "valid")
         self.assertIn("Original cost is missing", row["conversionWarnings"])
+
+    def test_dale_2019_workspace_uses_embedded_registry_and_is_current_pathway_ready(self) -> None:
+        econ_config = build_economics_preset_dale2019_aud("3HP")
+        rows = editable_assumption_rows(economics_config=econ_config)
+        row_by_id = {row["assumptionId"]: row for row in rows}
+
+        self.assertEqual(row_by_id["cost.test_igra"]["currentValue"], 113.48)
+        self.assertEqual(row_by_id["cost.test_igra"]["targetPriceYear"], "2019")
+        self.assertEqual(row_by_id["cost.test_igra"]["convertedTargetYearCost"], 113.48)
+        readiness = assess_current_analysis_economic_readiness(
+            {"testType": "IGRA", "regimen": "3HP"},
+            econ_config,
+            {},
+            rows,
+        )
+
+        self.assertTrue(readiness["currentAnalysisCostReady"])
+        self.assertTrue(readiness["currentAnalysisDALYReady"])
+        self.assertTrue(readiness["currentAnalysisICERReady"])
+        self.assertFalse(readiness["currentAnalysisNMBReady"])
+        self.assertFalse(readiness["overallReferenceEvidenceReady"])
+
+    def test_dale_2019_selected_pathway_not_blocked_by_unresolved_alternatives(self) -> None:
+        econ_config = build_economics_preset_dale2019_aud("3HP")
+        rows = editable_assumption_rows(economics_config=econ_config)
+        for assumption_id in ["cost.test_tst", "cost.regimen_4r", "cost.regimen_3hr", "cost.regimen_6h", "cost.regimen_9h"]:
+            row = next(item for item in rows if item["assumptionId"] == assumption_id)
+            row["sourceCitation"] = ""
+            row["reviewStatus"] = "unresolved"
+            row["reviewStatusLabel"] = "Unresolved"
+            row["provisional"] = True
+
+        readiness = assess_current_analysis_economic_readiness(
+            {"testType": "IGRA", "regimen": "3HP"},
+            econ_config,
+            {},
+            rows,
+        )
+
+        self.assertTrue(readiness["currentAnalysisICERReady"])
+        self.assertFalse(readiness["fullStrategyLibraryReady"])
+        self.assertNotIn("cost.test_tst", {item["assumptionId"] for item in readiness["currentBlockers"]})
+
+    def test_dale_2019_selecting_tst_or_alternate_regimen_changes_applicable_cost(self) -> None:
+        econ_config = build_economics_preset_dale2019_aud("3HP")
+        rows = editable_assumption_rows(economics_config=econ_config)
+        row_by_id = {row["assumptionId"]: row for row in rows}
+        row_by_id["cost.test_tst"]["sourceCitation"] = ""
+        row_by_id["cost.test_tst"]["reviewStatus"] = "unresolved"
+        row_by_id["cost.test_tst"]["provisional"] = True
+        row_by_id["cost.regimen_4r"]["sourceCitation"] = ""
+        row_by_id["cost.regimen_4r"]["reviewStatus"] = "unresolved"
+        row_by_id["cost.regimen_4r"]["provisional"] = True
+
+        tst_readiness = assess_current_analysis_economic_readiness({"testType": "TST", "regimen": "3HP"}, econ_config, {}, rows)
+        four_r_readiness = assess_current_analysis_economic_readiness({"testType": "IGRA", "regimen": "4R"}, econ_config, {}, rows)
+
+        self.assertIn("cost.test_tst", {item["assumptionId"] for item in tst_readiness["currentBlockers"]})
+        self.assertIn("cost.regimen_4r", {item["assumptionId"] for item in four_r_readiness["currentBlockers"]})
+
+    def test_new_workspace_state_prefers_dale_embedded_registry(self) -> None:
+        state = new_workspace_state(build_economics_preset_dale2019_aud("3HP"))
+        row = next(item for item in state["rows"] if item["assumptionId"] == "cost.test_igra")
+
+        self.assertEqual(row["originalPriceYear"], "2019")
+        self.assertEqual(row["targetPriceYear"], "2019")
+        self.assertEqual(row["reviewStatus"], "configured_reviewed")
+
+    def test_apply_preserves_reviewed_bundled_false_positive_cost_as_zero_item(self) -> None:
+        econ_config = build_economics_preset_dale2019_aud("3HP")
+        rows = editable_assumption_rows(economics_config=econ_config)
+
+        updated = apply_assumptions_to_economics_config(econ_config, rows, config=_reviewed_epi_config())
+        by_id = {item["costItemId"]: item for item in updated["costItems"]}
+
+        self.assertEqual(by_id["false_positive_incremental"]["originalCost"], 0.0)
+        self.assertEqual(by_id["program_setup"]["originalCost"], 0.0)
+        self.assertEqual(by_id["program_running"]["originalCost"], 0.0)
 
     def test_legacy_controls_cannot_override_applied_workspace_assumptions(self) -> None:
         page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")

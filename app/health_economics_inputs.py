@@ -164,6 +164,8 @@ def editable_assumption_rows(
     registry: list[dict[str, Any]] | None = None,
     economics_config: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    if registry is None and isinstance(economics_config, dict):
+        registry = economics_config.get("assumptionEvidenceRegistry")
     rows = deepcopy(registry) if registry is not None else load_apy_evidence_registry()
     cost_basis_by_id = _cost_basis_lookup(economics_config or {})
     conversion_by_id = _conversion_lookup(economics_config or {})
@@ -244,6 +246,8 @@ def new_workspace_state(
     economics_config: dict[str, Any] | None,
     registry: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    if registry is None and isinstance(economics_config, dict):
+        registry = economics_config.get("assumptionEvidenceRegistry")
     rows = editable_assumption_rows(registry, economics_config or {})
     return {
         "rows": rows,
@@ -335,6 +339,9 @@ def validate_editable_assumptions(
     econ = _economics_config_with_rows(economics_config or {}, working_rows)
     readiness = assess_apy_reference_readiness(config or {}, econ, working_rows)
     row_messages: dict[str, list[str]] = {}
+    metadata = econ.get("metadata") or {}
+    analysis_target_currency = str(metadata.get("targetCurrency") or TARGET_CURRENCY)
+    analysis_target_year = str(metadata.get("targetPriceYear") or TARGET_PRICE_YEAR)
 
     cost_items = normalise_cost_table(econ.get("costItems") or [])
     item_by_assumption = {f"cost.{item.get('costItemId')}": item for item in cost_items}
@@ -351,7 +358,14 @@ def validate_editable_assumptions(
             elif row.get("inclusionStatus") == "excluded":
                 messages.extend(_validate_exclusion_row(row))
             else:
-                messages.extend(validate_cost_item_evidence(item_by_assumption.get(assumption_id, {}), row))
+                messages.extend(
+                    validate_cost_item_evidence(
+                        item_by_assumption.get(assumption_id, {}),
+                        row,
+                        target_currency=analysis_target_currency,
+                        target_price_year=analysis_target_year,
+                    )
+                )
         elif category == "daly":
             messages.extend(_validate_daly_row(row))
         elif category == "threshold":
@@ -610,7 +624,10 @@ def _apply_cost_rows(econ: dict[str, Any], rows: list[dict[str, Any]]) -> list[d
         item = by_id.get(item_id)
         if not item:
             continue
-        item["originalCost"] = _number_or_none(row.get("currentValue"))
+        value = _number_or_none(row.get("currentValue"))
+        if value is None and row.get("inclusionStatus") in {"excluded", "bundled"}:
+            value = 0.0
+        item["originalCost"] = value
         item["originalCurrency"] = row.get("originalCurrency", "")
         item["originalPriceYear"] = row.get("originalPriceYear", "")
         item["targetCurrency"] = row.get("targetCurrency") or TARGET_CURRENCY

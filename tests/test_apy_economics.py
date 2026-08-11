@@ -4,7 +4,9 @@ from copy import deepcopy
 import unittest
 
 from engine.apy.economics import (
+    DALE_2019_PRESET_NAME,
     build_default_economics_config,
+    build_economics_preset_dale2019_aud,
     build_economics_preset_kwab150,
     update_cost_item_original_values_from_legacy_fields,
     run_health_economics,
@@ -96,6 +98,86 @@ class ApyEconomicsTests(unittest.TestCase):
             config["costItems"][0]["conversionStatus"],
             "not_converted",
         )
+
+    def test_dale_2019_working_preset_has_expected_metadata_and_discounting(self) -> None:
+        config = build_economics_preset_dale2019_aud()
+
+        self.assertEqual(config["metadata"]["presetName"], DALE_2019_PRESET_NAME)
+        self.assertEqual(config["metadata"]["currencyCode"], "AUD")
+        self.assertEqual(config["metadata"]["priceYear"], "2019")
+        self.assertEqual(config["metadata"]["targetCurrency"], "AUD")
+        self.assertEqual(config["metadata"]["targetPriceYear"], "2019")
+        self.assertEqual(config["metadata"]["perspective"], "Australian health-care system")
+        self.assertTrue(config["metadata"]["workingDefault"])
+        self.assertEqual(config["metadata"]["referenceStatus"], "working_default_not_final_apy_evidence")
+        self.assertEqual(config["discounting"]["primaryDisplayedRate"], 0.03)
+        self.assertEqual(config["discounting"]["comparisonRate"], 0.0)
+        self.assertIsNone(config["threshold"]["value"])
+
+    def test_dale_2019_working_preset_populates_exact_cost_values(self) -> None:
+        config = build_economics_preset_dale2019_aud()
+        by_id = {item["costItemId"]: item for item in config["costItems"]}
+
+        expected = {
+            "test_igra": 113.48,
+            "test_tst": 116.07,
+            "regimen_3hp": 165.5072,
+            "regimen_4r": 123.3172,
+            "regimen_3hr": 134.2272,
+            "regimen_6h": 187.7508,
+            "regimen_9h": 254.8544,
+            "active_tb_disease": 19079.60,
+        }
+        for item_id, value in expected.items():
+            with self.subTest(item_id=item_id):
+                item = by_id[item_id]
+                self.assertAlmostEqual(item["originalCost"], value)
+                self.assertEqual(item["originalCurrency"], "AUD")
+                self.assertEqual(item["originalPriceYear"], "2019")
+                self.assertEqual(item["targetCurrency"], "AUD")
+                self.assertEqual(item["targetPriceYear"], "2019")
+                self.assertEqual(item["sourceYearStatus"], "explicit")
+
+    def test_dale_2019_working_preset_converted_costs_equal_originals(self) -> None:
+        from engine.apy.costing import normalise_cost_table
+
+        config = build_economics_preset_dale2019_aud()
+        by_id = {item["costItemId"]: item for item in normalise_cost_table(config["costItems"])}
+
+        for item_id in ["test_igra", "test_tst", "regimen_3hp", "active_tb_disease", "program_setup"]:
+            with self.subTest(item_id=item_id):
+                item = by_id[item_id]
+                self.assertEqual(item["conversionStatus"], "valid")
+                self.assertEqual(item["inflationFactor"], 1.0)
+                self.assertEqual(item["convertedTargetYearCost"], item["originalCost"])
+
+    def test_dale_2019_adr_management_maps_selected_regimen(self) -> None:
+        three_hp = {item["costItemId"]: item for item in build_economics_preset_dale2019_aud("3HP")["costItems"]}
+        four_r = {item["costItemId"]: item for item in build_economics_preset_dale2019_aud("4R")["costItems"]}
+        three_hr = {item["costItemId"]: item for item in build_economics_preset_dale2019_aud("3HR")["costItems"]}
+
+        self.assertAlmostEqual(three_hp["tpt_adr_management"]["originalCost"], 39.4059)
+        self.assertEqual(three_hp["tpt_adr_management"]["pageTableItem"], "csae3HP")
+        self.assertAlmostEqual(four_r["tpt_adr_management"]["originalCost"], 23.141)
+        self.assertEqual(four_r["tpt_adr_management"]["pageTableItem"], "csae4R")
+        self.assertIsNone(three_hr["tpt_adr_management"]["originalCost"])
+        self.assertEqual(three_hr["tpt_adr_management"]["sourceYearStatus"], "unknown")
+
+    def test_dale_2019_working_preset_records_exclusions_and_dalys(self) -> None:
+        config = build_economics_preset_dale2019_aud()
+        rows = {row["assumptionId"]: row for row in config["assumptionEvidenceRegistry"]}
+
+        self.assertEqual(rows["cost.false_positive_incremental"]["inclusionStatus"], "bundled")
+        self.assertEqual(rows["cost.program_setup"]["inclusionStatus"], "excluded")
+        self.assertIn("not evidence that implementation costs are truly zero", rows["cost.program_setup"]["notes"])
+        self.assertEqual(config["dalyAssumptions"]["activeTBDisabilityWeight"]["value"], 0.333)
+        self.assertEqual(config["dalyAssumptions"]["activeTBDurationYears"]["value"], 0.5)
+        self.assertEqual(config["dalyAssumptions"]["tbCaseFatalityRisk"]["value"], 0.074)
+        self.assertEqual(config["dalyAssumptions"]["yllPerTBDeath"]["value"], 20.0)
+        self.assertEqual(config["dalyAssumptions"]["tptHealthLossExclusionStatus"], "reviewed_exclusion")
+        self.assertTrue(config["dalyAssumptions"]["tptHealthLossExclusionRationale"])
+        self.assertTrue(config["dalyAssumptions"]["adrHealthLossExclusionRationale"])
+        self.assertTrue(config["dalyAssumptions"]["postTBSequelaeExclusionRationale"])
 
     def test_valid_default_economics_config_passes_validation(self) -> None:
         report = validate_economics_config(build_default_economics_config())

@@ -9,6 +9,7 @@ from adapters.serialization import to_json_like
 from engine.apy.config import build_default_config
 from engine.apy.economics import (
     build_default_economics_config,
+    build_economics_preset_dale2019_aud,
     build_economics_preset_kwab150,
     run_health_economics,
     run_health_economics_for_config,
@@ -119,6 +120,9 @@ class PythonApyBackend:
 
     def economics_preset_kwab150(self) -> JsonDict:
         return to_json_like(build_economics_preset_kwab150())
+
+    def economics_preset_dale2019_aud(self, regimen: str | None = None) -> JsonDict:
+        return to_json_like(build_economics_preset_dale2019_aud(regimen))
 
     def run_economics(self, results: JsonDict, economics_config: JsonDict) -> JsonDict:
         return to_json_like(

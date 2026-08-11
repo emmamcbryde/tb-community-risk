@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import csv
 from copy import deepcopy
 import math
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -42,6 +44,43 @@ LEGACY_COST_ITEM_MAP = {
     ("costs", "programSetupTotal"): "program_setup",
     ("costs", "programRunningTotal"): "program_running",
 }
+
+DALE_2019_PRESET_NAME = "Dale 2019 AUD working defaults"
+DALE_2019_REFERENCE_STATUS = "working_default_not_final_apy_evidence"
+DALE_2019_CITATION = (
+    "Dale KD, Abayawardana MJ, McBryde ES, Trauer JM, Carvalho N. "
+    "Modeling the Cost-Effectiveness of Latent Tuberculosis Screening and "
+    "Treatment Strategies in Recent Migrants to a Low-Incidence Setting. "
+    "Am J Epidemiol. 2022;191(2):255-270. doi:10.1093/aje/kwab150."
+)
+DALE_2019_SOURCE_LOCATION = "Dale et al. 2022 Web Appendix 3 and Web Tables 16-24; data/costs.csv"
+DALE_2019_COST_VALUES = {
+    "test_igra": (113.48, "cscreenqft"),
+    "test_tst": (116.07, "cscreentst"),
+    "regimen_3hp": (165.5072, "ctreat3HP"),
+    "regimen_4r": (123.3172, "ctreat4R"),
+    "regimen_3hr": (134.2272, "ctreat3HR"),
+    "regimen_6h": (187.7508, "ctreat6H"),
+    "regimen_9h": (254.8544, "ctreat9H"),
+    "active_tb_disease": (19079.60, "ctb"),
+}
+DALE_2019_ADR_COST_VALUES = {
+    "3HP": (39.4059, "csae3HP"),
+    "4R": (23.141, "csae4R"),
+    "6H": (71.42, "csae6H"),
+    "9H": (71.42, "csae9H"),
+}
+DALE_2019_PROGRAM_EXCLUSION_NOTE = (
+    "Reviewed exclusion for this Dale-reproduction working default. The Dale "
+    "model did not include the costs and logistics of programme implementation "
+    "and expansion; this is not evidence that implementation costs are truly zero."
+)
+DALE_2019_FALSE_POSITIVE_BUNDLING_NOTE = (
+    "Reviewed bundling decision: additional false-positive-specific costs are "
+    "represented through screening-test cost, preventive-treatment course cost "
+    "and applicable ADR-management cost. No additional false-positive-only cost "
+    "is added."
+)
 
 
 def build_default_economics_config() -> dict[str, Any]:
@@ -190,6 +229,76 @@ def build_economics_preset_kwab150() -> dict[str, Any]:
     return sync_legacy_cost_fields_from_cost_items(config)
 
 
+def build_economics_preset_dale2019_aud(regimen: str | None = "3HP") -> dict[str, Any]:
+    """Build the user-selectable Dale/KWAB150 2019 AUD working preset.
+
+    The preset is a transparent working default for reproducing a first APY
+    ICER analysis. It does not make the overall APY evidence base
+    clinician-ready.
+    """
+    selected_regimen = _normalise_regimen(regimen)
+    config = build_default_economics_config()
+    config["metadata"].update(
+        {
+            "presetName": DALE_2019_PRESET_NAME,
+            "currencyCode": "AUD",
+            "priceYear": "2019",
+            "targetCurrency": "AUD",
+            "targetPriceYear": "2019",
+            "perspective": "Australian health-care system",
+            "locationLabel": "Australia",
+            "programCostBasis": "Dale reproduction working default; programme implementation costs excluded.",
+            "sourceCitation": DALE_2019_CITATION,
+            "sourceNotes": (
+                "Cost rows use the existing KWAB150 model inputs from data/costs.csv. "
+                "Dale et al. specify 2019 AUD and refer to Web Appendix 3 and Web "
+                "Tables 16-24 for detailed costs; the main article does not print "
+                "each unit cost."
+            ),
+            "workingDefault": True,
+            "referenceStatus": DALE_2019_REFERENCE_STATUS,
+            "provisional": True,
+            "provisionalReason": "Working defaults do not resolve the full APY evidence-readiness gate.",
+        }
+    )
+    config["discounting"].update(
+        {
+            "selectedAnnualRate": 0.03,
+            "availableAnnualRates": [0.03, 0.0],
+            "primaryDisplayedRate": 0.03,
+            "comparisonRate": 0.0,
+        }
+    )
+    config["threshold"].update(
+        {
+            "value": None,
+            "currency": "AUD",
+            "referenceYear": None,
+            "source": "",
+            "status": "unresolved",
+            "notes": (
+                "GDP-per-capita DALY threshold remains unresolved. Dale QALY "
+                "thresholds are not silently reused as the authoritative DALY threshold."
+            ),
+        }
+    )
+    config["dalyAssumptions"] = _dale_2019_daly_assumptions()
+    config["costItems"] = default_cost_items(_dale_2019_cost_overrides(selected_regimen))
+    config["assumptionEvidenceRegistry"] = _dale_2019_registry(selected_regimen)
+    config["assumptionEvidenceValidation"] = {
+        "workingDefault": True,
+        "referenceStatus": DALE_2019_REFERENCE_STATUS,
+        "overallClinicianReady": False,
+        "thresholdReady": False,
+        "notes": "ICER may be calculable, but NMB and overall APY clinician readiness remain unavailable.",
+    }
+    config = sync_legacy_cost_fields_from_cost_items(config)
+    config["costs"]["falsePositiveIncrementalPerPerson"] = 0.0
+    config["costs"]["programSetupTotal"] = 0.0
+    config["costs"]["programRunningTotal"] = 0.0
+    return config
+
+
 def default_cost_items(overrides: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     overrides = overrides or {}
     specs = [
@@ -235,6 +344,9 @@ def default_cost_items(overrides: dict[str, dict[str, Any]] | None = None) -> li
                 page_table_item=str(override.get("pageTableItem", "")),
                 source_year_status=str(override.get("sourceYearStatus", "unknown")),
                 resource_category=str(override.get("resourceCategory", category)),
+                target_currency=str(override.get("targetCurrency", TARGET_CURRENCY)),
+                target_price_year=str(override.get("targetPriceYear", TARGET_PRICE_YEAR)),
+                inflation_index_id=str(override.get("inflationIndexId", "AUD_HEALTH_SYSTEM_CPI")),
                 notes=str(
                     override.get(
                         "notes",
@@ -245,6 +357,392 @@ def default_cost_items(overrides: dict[str, dict[str, Any]] | None = None) -> li
             )
         )
     return items
+
+
+def _dale_2019_cost_overrides(regimen: str) -> dict[str, dict[str, Any]]:
+    base = {
+        item_id: _dale_2019_cost_override(item_id, value, variable)
+        for item_id, (value, variable) in DALE_2019_COST_VALUES.items()
+    }
+    base["false_positive_incremental"] = {
+        "originalCost": 0.0,
+        "originalCurrency": "AUD",
+        "originalPriceYear": "2019",
+        "targetCurrency": "AUD",
+        "targetPriceYear": "2019",
+        "sourceCitation": DALE_2019_CITATION,
+        "pageTableItem": "reviewed false-positive bundling decision",
+        "sourceYearStatus": "explicit",
+        "notes": DALE_2019_FALSE_POSITIVE_BUNDLING_NOTE,
+        "resourceUse": {"costBasis": "per_false_positive_tpt_started"},
+    }
+    base["program_setup"] = {
+        "originalCost": 0.0,
+        "originalCurrency": "AUD",
+        "originalPriceYear": "2019",
+        "targetCurrency": "AUD",
+        "targetPriceYear": "2019",
+        "sourceCitation": DALE_2019_CITATION,
+        "pageTableItem": "reviewed programme setup exclusion",
+        "sourceYearStatus": "explicit",
+        "notes": DALE_2019_PROGRAM_EXCLUSION_NOTE,
+        "resourceUse": {"costBasis": "total_once_at_program_start"},
+    }
+    base["program_running"] = {
+        "originalCost": 0.0,
+        "originalCurrency": "AUD",
+        "originalPriceYear": "2019",
+        "targetCurrency": "AUD",
+        "targetPriceYear": "2019",
+        "sourceCitation": DALE_2019_CITATION,
+        "pageTableItem": "reviewed programme running exclusion",
+        "sourceYearStatus": "explicit",
+        "notes": DALE_2019_PROGRAM_EXCLUSION_NOTE,
+        "resourceUse": {"costBasis": "annual_during_screening_window"},
+    }
+    adr = DALE_2019_ADR_COST_VALUES.get(regimen)
+    if adr:
+        value, variable = adr
+        base["tpt_adr_management"] = {
+            "originalCost": value,
+            "originalCurrency": "AUD",
+            "originalPriceYear": "2019",
+            "targetCurrency": "AUD",
+            "targetPriceYear": "2019",
+            "sourceCitation": DALE_2019_CITATION,
+            "pageTableItem": variable,
+            "sourceYearStatus": "explicit",
+            "notes": (
+                f"Dale/KWAB150 ADR-management cost mapped from {variable}. "
+                "The APY event is an ADR-related treatment stop and may not "
+                "exactly reproduce the severe-adverse-event definition in Dale et al."
+            ),
+            "resourceUse": {"costBasis": "per_adr_stop"},
+        }
+    else:
+        base["tpt_adr_management"] = {
+            "originalCost": None,
+            "originalCurrency": "AUD",
+            "originalPriceYear": None,
+            "targetCurrency": "AUD",
+            "targetPriceYear": "2019",
+            "sourceCitation": "",
+            "pageTableItem": "no Dale/KWAB150 3HR ADR-management mapping supplied",
+            "sourceYearStatus": "unknown",
+            "notes": "No 3HR ADR-management cost is supplied by this working default.",
+            "resourceUse": {"costBasis": "per_adr_stop"},
+        }
+    return base
+
+
+def _dale_2019_cost_override(item_id: str, value: float, variable: str) -> dict[str, Any]:
+    notes = (
+        f"Existing KWAB150 model input {variable} from data/costs.csv; "
+        "treated as 2019 AUD only when the Dale 2019 AUD working-default preset is explicitly selected."
+    )
+    if item_id == "test_tst":
+        notes += " TST row includes the reading visit according to the local row description."
+    return {
+        "originalCost": value,
+        "originalCurrency": "AUD",
+        "originalPriceYear": "2019",
+        "targetCurrency": "AUD",
+        "targetPriceYear": "2019",
+        "sourceCitation": DALE_2019_CITATION,
+        "pageTableItem": variable,
+        "sourceYearStatus": "explicit",
+        "notes": notes,
+    }
+
+
+def _dale_2019_daly_assumptions() -> dict[str, Any]:
+    def rec(value: float, unit: str, source: str, notes: str) -> dict[str, Any]:
+        return {
+            "value": value,
+            "unit": unit,
+            "source": source,
+            "status": "configured_reviewed",
+            "notes": notes,
+            "provisional": False,
+        }
+
+    return {
+        "activeTBDisabilityWeight": rec(
+            0.333,
+            "disability weight",
+            DALE_2019_CITATION,
+            "Dale et al. discuss the GBD disability weight of 0.333 for active TB.",
+        ),
+        "activeTBDurationYears": rec(
+            0.5,
+            "years",
+            DALE_2019_CITATION,
+            "Dale et al. discuss active-TB disability experienced for six months.",
+        ),
+        "tbCaseFatalityRisk": rec(
+            0.074,
+            "probability",
+            "User-approved APY working assumption",
+            "Scalar model assumption requiring sensitivity analysis; not a Dale-derived age-specific mortality estimate.",
+        ),
+        "yllPerTBDeath": rec(
+            20.0,
+            "years",
+            "User-approved APY working assumption",
+            "Scalar model assumption requiring sensitivity analysis; not a Dale-derived age-specific mortality estimate.",
+        ),
+        "includeTPTHealthLoss": False,
+        "tptHealthLossExclusionStatus": "reviewed_exclusion",
+        "tptHealthLossExclusionRationale": (
+            "Primary working analysis follows the Dale base case of no general "
+            "LTBI-treatment health decrement beyond adverse events."
+        ),
+        "includeADRHealthLoss": False,
+        "adrHealthLossExclusionStatus": "reviewed_exclusion",
+        "adrHealthLossExclusionRationale": (
+            "The APY ledger currently records ADR-related treatment stopping, "
+            "which is not an unambiguous match to the severe-adverse-event utility "
+            "state in Dale et al. ADR health loss will be explored when an "
+            "appropriate severity mapping is available."
+        ),
+        "includePostTBSequelae": False,
+        "postTBSequelaeStatus": "reviewed_exclusion",
+        "postTBSequelaeExclusionRationale": (
+            "Primary analysis estimates acute active-TB disability and mortality. "
+            "Post-TB sequelae will be considered as a separate sensitivity scenario."
+        ),
+        "method": "scalar_expected_daly_per_active_tb_case",
+        "notes": "Dale 2019 AUD working defaults; DALY assumptions remain working assumptions, not final APY evidence.",
+    }
+
+
+def _dale_2019_registry(regimen: str) -> list[dict[str, Any]]:
+    rows = _load_evidence_registry_rows()
+    by_id = {row.get("assumptionId"): row for row in rows}
+    for item_id, (value, variable) in DALE_2019_COST_VALUES.items():
+        _update_registry_cost_row(
+            by_id,
+            f"cost.{item_id}",
+            value=value,
+            variable=variable,
+            status="configured_reviewed",
+            provisional=False,
+            inclusion_status="included",
+            notes=(
+                f"Reviewed working-default value from existing KWAB150 input {variable}; "
+                "Dale et al. specify 2019 AUD and Web Appendix cost tables. "
+                "This remains a working default, not final APY evidence."
+            ),
+        )
+    adr = DALE_2019_ADR_COST_VALUES.get(regimen)
+    if adr:
+        value, variable = adr
+        _update_registry_cost_row(
+            by_id,
+            "cost.tpt_adr_management",
+            value=value,
+            variable=variable,
+            status="configured_reviewed",
+            provisional=False,
+            inclusion_status="included",
+            notes=(
+                f"Regimen-specific Dale/KWAB150 ADR-management mapping from {variable}. "
+                "APY ADR stops may not exactly match Dale severe-adverse-event definitions."
+            ),
+        )
+    else:
+        _update_registry_cost_row(
+            by_id,
+            "cost.tpt_adr_management",
+            value=None,
+            variable="",
+            status="unresolved",
+            provisional=True,
+            inclusion_status="included",
+            source_citation="",
+            notes="No Dale/KWAB150 ADR-management cost is supplied for 3HR.",
+            unresolved_reason="3HR ADR-management cost remains unresolved.",
+        )
+    _update_registry_cost_row(
+        by_id,
+        "cost.false_positive_incremental",
+        value="",
+        variable="reviewed false-positive bundling decision",
+        status="reviewed_exclusion",
+        provisional=False,
+        inclusion_status="bundled",
+        bundled_into=f"cost.regimen_{regimen.lower()}",
+        notes=DALE_2019_FALSE_POSITIVE_BUNDLING_NOTE,
+    )
+    _update_registry_cost_row(
+        by_id,
+        "cost.program_setup",
+        value=0.0,
+        variable="reviewed programme setup exclusion",
+        status="reviewed_exclusion",
+        provisional=False,
+        inclusion_status="excluded",
+        notes=DALE_2019_PROGRAM_EXCLUSION_NOTE
+        + " This working default is likely optimistic where a new programme requires additional setup, staffing, engagement or delivery expenditure.",
+    )
+    _update_registry_cost_row(
+        by_id,
+        "cost.program_running",
+        value=0.0,
+        variable="reviewed programme running exclusion",
+        status="reviewed_exclusion",
+        provisional=False,
+        inclusion_status="excluded",
+        notes=DALE_2019_PROGRAM_EXCLUSION_NOTE
+        + " This working default is likely optimistic where a new programme requires additional setup, staffing, engagement or delivery expenditure.",
+    )
+    _update_registry_daly_rows(by_id)
+    row = by_id.get("threshold.gdp_per_capita")
+    if row:
+        row.update(
+            {
+                "currentValue": "",
+                "targetCurrency": "AUD",
+                "targetPriceYear": "2019",
+                "originalPriceYear": "",
+                "sourceCitation": "",
+                "sourceLocation": "Not supplied in Dale 2019 AUD working defaults",
+                "reviewStatus": "unresolved",
+                "provisional": True,
+                "notes": "No verified GDP-per-capita DALY threshold is supplied by this working default.",
+                "unresolvedReason": "Threshold value, currency/year and source remain unresolved; NMB unavailable.",
+            }
+        )
+    return [by_id.get(row.get("assumptionId"), row) for row in rows]
+
+
+def _update_registry_cost_row(
+    by_id: dict[str, dict[str, Any]],
+    assumption_id: str,
+    *,
+    value: Any,
+    variable: str,
+    status: str,
+    provisional: bool,
+    inclusion_status: str,
+    notes: str,
+    source_citation: str | None = None,
+    bundled_into: str = "",
+    unresolved_reason: str = "",
+) -> None:
+    row = by_id.get(assumption_id)
+    if not row:
+        return
+    row.update(
+        {
+            "currentValue": value,
+            "originalCurrency": "AUD",
+            "targetCurrency": "AUD",
+            "originalPriceYear": "2019",
+            "targetPriceYear": "2019",
+            "sourceCitation": DALE_2019_CITATION if source_citation is None else source_citation,
+            "sourceLocation": DALE_2019_SOURCE_LOCATION,
+            "pageTableItem": variable,
+            "repositoryPath": "data/costs.csv",
+            "repositoryVariable": variable,
+            "inflationIndexId": "AUD_HEALTH_SYSTEM_CPI",
+            "inclusionStatus": inclusion_status,
+            "reviewStatus": status,
+            "provisional": provisional,
+            "bundledIntoAssumptionId": bundled_into,
+            "notes": notes,
+            "unresolvedReason": unresolved_reason,
+        }
+    )
+
+
+def _update_registry_daly_rows(by_id: dict[str, dict[str, Any]]) -> None:
+    daly_rows = {
+        "daly.active_tb_disability_weight": (
+            0.333,
+            "disability weight",
+            DALE_2019_CITATION,
+            "Dale et al. discussion of the GBD disability weight of 0.333.",
+            "configured_reviewed",
+            "included",
+        ),
+        "daly.active_tb_duration": (
+            0.5,
+            "years",
+            DALE_2019_CITATION,
+            "Dale et al. discussion of six months active-TB disability duration.",
+            "configured_reviewed",
+            "included",
+        ),
+        "daly.tb_case_fatality_risk": (
+            0.074,
+            "probability",
+            "User-approved APY working assumption",
+            "Scalar working assumption requiring sensitivity analysis.",
+            "configured_reviewed",
+            "included",
+        ),
+        "daly.yll_per_tb_death": (
+            20.0,
+            "years",
+            "User-approved APY working assumption",
+            "Scalar working assumption requiring sensitivity analysis.",
+            "configured_reviewed",
+            "included",
+        ),
+        "daly.tpt_health_loss": (
+            "",
+            "DALYs per TPT start",
+            DALE_2019_CITATION,
+            "Primary working analysis follows the Dale base case of no general LTBI-treatment health decrement beyond adverse events.",
+            "reviewed_exclusion",
+            "excluded",
+        ),
+        "daly.adr_health_loss": (
+            "",
+            "DALYs per ADR stop",
+            DALE_2019_CITATION,
+            "APY ADR-related stopping is not an unambiguous match to Dale severe-adverse-event utility state.",
+            "reviewed_exclusion",
+            "excluded",
+        ),
+        "daly.post_tb_sequelae": (
+            "",
+            "DALYs",
+            "User-approved APY working assumption",
+            "Primary analysis estimates acute active-TB disability and mortality; post-TB sequelae reserved for sensitivity scenarios.",
+            "reviewed_exclusion",
+            "excluded",
+        ),
+    }
+    for assumption_id, (value, unit, source, notes, status, inclusion) in daly_rows.items():
+        row = by_id.get(assumption_id)
+        if not row:
+            continue
+        row.update(
+            {
+                "currentValue": value,
+                "unit": unit,
+                "sourceCitation": source,
+                "sourceLocation": "Dale 2019 AUD working-default preset" if source == DALE_2019_CITATION else "APY working assumption",
+                "reviewStatus": status,
+                "provisional": False,
+                "inclusionStatus": inclusion,
+                "notes": notes,
+                "unresolvedReason": "",
+            }
+        )
+
+
+def _load_evidence_registry_rows() -> list[dict[str, Any]]:
+    path = Path(__file__).resolve().parents[2] / "data" / "apy_assumption_evidence_registry.csv"
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def _normalise_regimen(regimen: str | None) -> str:
+    text = str(regimen or "3HP").strip().upper().removeprefix("X")
+    return text if text in {"3HP", "4R", "3HR", "6H", "9H"} else "3HP"
 
 
 def sync_legacy_cost_fields_from_cost_items(econ_config: dict[str, Any]) -> dict[str, Any]:

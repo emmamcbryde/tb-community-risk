@@ -135,9 +135,15 @@ def run_event_ledger_health_economics(
     summaries = _summaries(replicate_results, ledger_metadata, threshold)
     validation_report = _validate_economic_result(annual, replicate_results, summaries, threshold)
 
-    provisional = bool(ledger_metadata.get("ltbiStateProvisional") or ledger_metadata.get("ltbiStateWarning"))
+    econ_metadata = econ_config.get("metadata") or {}
+    provisional = bool(
+        ledger_metadata.get("ltbiStateProvisional")
+        or ledger_metadata.get("ltbiStateWarning")
+        or econ_metadata.get("provisional")
+        or econ_metadata.get("workingDefault")
+    )
     if provisional:
-        warnings.append("Epidemiological inputs are provisional; no clinician-ready cost-effectiveness conclusion is produced.")
+        warnings.append("Inputs are provisional; no clinician-ready cost-effectiveness conclusion is produced.")
     if unresolved:
         warnings.append("One or more economic inputs are unresolved; unavailable components are not replaced with zero.")
     if not bool(validation_report.get("economicallyComplete")):
@@ -171,6 +177,8 @@ def run_event_ledger_health_economics(
             "primaryDiscountRate": PRIMARY_DISCOUNT_RATE,
             "comparisonDiscountRate": COMPARISON_DISCOUNT_RATE,
             "isProvisional": bool(provisional or unresolved_daly_inputs or not economically_complete),
+            "workingDefault": econ_metadata.get("workingDefault", False),
+            "referenceStatus": econ_metadata.get("referenceStatus", ""),
             "conclusionPermitted": conclusion_permitted,
         },
         "assumptions": assumptions,

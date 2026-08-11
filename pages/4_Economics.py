@@ -261,14 +261,22 @@ def economics_overview_rows(config: dict) -> list[dict[str, object]]:
     ]
 
 
-def load_economics_config(new_config: dict) -> None:
+def load_economics_config(new_config: dict, *, mark_workspace_unsaved: bool = False) -> None:
     st.session_state["economics_config"] = new_config
     st.session_state["economics_results"] = None
     st.session_state["dirty_economics"] = False
-    st.session_state["health_econ_workspace"] = reconcile_workspace_state(
+    workspace = reconcile_workspace_state(
         st.session_state.get("health_econ_workspace"),
         new_config,
+        registry=new_config.get("assumptionEvidenceRegistry"),
     )
+    if mark_workspace_unsaved:
+        workspace["hasUnsavedEdits"] = True
+        workspace["validated"] = False
+        workspace["validation"] = None
+        workspace["applied"] = False
+        workspace["baselineRowsHash"] = ""
+    st.session_state["health_econ_workspace"] = workspace
     sync_backend_status(backend.status())
     sync_econ_widgets_from_config(new_config)
 
@@ -363,7 +371,7 @@ def render_assumption_editor(
     return updated_state["rows"], updated_state
 
 
-cols = st.columns(2)
+cols = st.columns(3)
 if cols[0].button("Load economics defaults", type="primary"):
     try:
         load_economics_config(backend.default_economics_config())
@@ -384,10 +392,52 @@ if cols[1].button("Load KWAB150 preset"):
         record_message("error", message)
         st.error(message)
 
+if cols[2].button("Load Dale 2019 AUD working defaults"):
+    try:
+        current_config = st.session_state.get("config") or {}
+        selected_regimen = (
+            current_config.get("regimen")
+            or current_config.get("preventiveRegimen")
+            or (current_config.get("treatment") or {}).get("regimen")
+            or "3HP"
+        )
+        load_economics_config(
+            backend.economics_preset_dale2019_aud(selected_regimen),
+            mark_workspace_unsaved=True,
+        )
+        st.session_state["dale_2019_working_defaults_loaded"] = True
+        st.rerun()
+    except Exception as exc:
+        message = f"Could not load Dale 2019 AUD working defaults: {exc}"
+        sync_backend_status(backend.status())
+        record_message("error", message)
+        st.error(message)
+
 config = st.session_state.get("config")
 results_bundle = st.session_state.get("results_bundle")
 econ_config = st.session_state.get("economics_config")
 scenario_label = (results_bundle or {}).get("metadata", {}).get("scenarioLabel")
+
+if (econ_config or {}).get("metadata", {}).get("presetName") == "Dale 2019 AUD working defaults":
+    st.success("Dale 2019 AUD working defaults loaded.")
+    st.dataframe(
+        arrow_safe_dataframe(
+            [
+                {"Item": "Costs", "Value": "2019 AUD"},
+                {"Item": "Perspective", "Value": "Australian health-care system"},
+                {"Item": "Discounting", "Value": "3% primary and 0% comparison"},
+                {"Item": "Active-TB DALY", "Value": "0.333 for 0.5 years plus mortality"},
+                {"Item": "Programme implementation costs", "Value": "Excluded in this working default"},
+                {"Item": "Overall APY evidence status", "Value": "Still provisional"},
+            ]
+        ),
+        width="content",
+        hide_index=True,
+    )
+    st.warning(
+        "This working default is likely optimistic where a new programme "
+        "requires additional setup, staffing, engagement or delivery expenditure."
+    )
 
 if config:
     st.subheader("Recent versus remote LTBI assumption")
@@ -495,6 +545,7 @@ st.caption(
 workspace_state = reconcile_workspace_state(
     st.session_state.get("health_econ_workspace"),
     econ_config,
+    registry=econ_config.get("assumptionEvidenceRegistry"),
 )
 st.session_state["health_econ_workspace"] = workspace_state
 if st.session_state.pop("health_econ_apply_message", None):

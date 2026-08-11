@@ -66,6 +66,14 @@ class PythonApyBackendTests(unittest.TestCase):
             "not_converted",
         )
 
+    def test_economics_preset_dale2019_returns_working_default(self) -> None:
+        config = self.backend.economics_preset_dale2019_aud("4R")
+
+        self.assertEqual(config["metadata"]["presetName"], "Dale 2019 AUD working defaults")
+        self.assertEqual(config["metadata"]["targetPriceYear"], "2019")
+        adr = {item["costItemId"]: item for item in config["costItems"]}["tpt_adr_management"]
+        self.assertAlmostEqual(adr["originalCost"], 23.141)
+
     def test_run_economics_for_config_small_run(self) -> None:
         config = self.backend.default_config()
         config.update({"N": 100, "nReps": 5, "seed": 1})

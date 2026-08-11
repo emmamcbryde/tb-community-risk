@@ -21,6 +21,9 @@ class Backend(Protocol):
     def economics_preset_kwab150(self) -> JsonDict:
         ...
 
+    def economics_preset_dale2019_aud(self, regimen: str | None = None) -> JsonDict:
+        ...
+
     def validate_config(self, config: JsonDict) -> JsonDict:
         ...
 

@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 
 from app.results_workbook import build_results_workbook
 from engine.apy.config import build_default_config
-from engine.apy.economics import build_default_economics_config, run_health_economics
+from engine.apy.economics import build_default_economics_config, build_economics_preset_dale2019_aud, run_health_economics
 from engine.apy.event_ledger import EVENT_LEDGER_CONTRACT_VERSION
 from engine.apy.event_ledger_economics import (
     HEALTH_ECONOMICS_CONTRACT_VERSION,
@@ -234,6 +234,80 @@ class ApyEventLedgerEconomicsTests(unittest.TestCase):
             intervention["tpt_adr_stop_total"].sum() * 7,
         )
         self.assertLessEqual(intervention["active_tb_cases_prevented"].sum(), intervention["infection_effectively_treated_total"].sum())
+
+    def test_dale_2019_working_defaults_calculate_icer_but_not_nmb(self) -> None:
+        econ = run_event_ledger_health_economics(
+            _toy_ledger(screened=500, starts=200, adr_stops=10),
+            build_economics_preset_dale2019_aud("3HP"),
+        )
+        primary = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.03].iloc[0]
+
+        self.assertTrue(primary["economicPairComplete"])
+        self.assertIsNotNone(primary["incrementalCost"])
+        self.assertIsNotNone(primary["dalysAverted"])
+        self.assertIsNotNone(primary["replicateICER"])
+        self.assertIsNone(primary["netMonetaryBenefit"])
+        self.assertIn("threshold.value", {item["field"] for item in econ["unresolvedInputs"]})
+        self.assertTrue(econ["metadata"]["isProvisional"])
+
+    def test_dale_2019_false_positive_people_still_incur_ordinary_costs(self) -> None:
+        econ = run_event_ledger_health_economics(
+            _toy_ledger(screened=10, starts=5, adr_stops=1),
+            build_economics_preset_dale2019_aud("3HP"),
+        )
+        annual = econ["annualByArm"]
+        intervention = annual[(annual["arm"] == "intervention") & (annual["discountRate"] == 0.0)]
+
+        self.assertGreater(intervention["screeningTestCost"].sum(), 0)
+        self.assertGreater(intervention["tptRegimenCost"].sum(), 0)
+        self.assertGreater(intervention["adrManagementCost"].sum(), 0)
+        self.assertEqual(intervention["falsePositiveIncrementalCost"].sum(), 0)
+        self.assertAlmostEqual(intervention["adrManagementCost"].sum(), 39.4059)
+
+    def test_dale_2019_3hr_leaves_adr_management_unresolved(self) -> None:
+        econ = run_event_ledger_health_economics(_toy_ledger(adr_stops=1), build_economics_preset_dale2019_aud("3HR"))
+        primary = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.03].iloc[0]
+
+        self.assertFalse(primary["costPairComplete"])
+        self.assertIn("adrManagementCost", primary["exclusionReasons"])
+
+    def test_dale_2019_workbook_records_costs_and_authoritative_icer(self) -> None:
+        cfg = build_economics_preset_dale2019_aud("3HP")
+        ledger = _toy_ledger(screened=500, starts=200, adr_stops=10)
+        econ = run_event_ledger_health_economics(ledger, cfg)
+        payload = build_results_workbook(
+            config=_reviewed_epi({"testType": "IGRA", "regimen": "3HP"}),
+            bundle=ledger,
+            economics_results=econ,
+            economics_config=cfg,
+        )
+        wb = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+        cost_ws = wb["Cost_normalisation"]
+        headers = [cell.value for cell in next(cost_ws.iter_rows(min_row=1, max_row=1))]
+        rows = {
+            row[headers.index("costItemId")].value: row
+            for row in cost_ws.iter_rows(min_row=2)
+        }
+        igra = rows["test_igra"]
+        self.assertEqual(igra[headers.index("originalPriceYear")].value, "2019")
+        self.assertEqual(igra[headers.index("targetPriceYear")].value, "2019")
+        self.assertEqual(igra[headers.index("inflationFactor")].value, 1)
+        self.assertAlmostEqual(igra[headers.index("convertedTargetYearCost")].value, 113.48)
+
+        summary_ws = wb["Economic_summary"]
+        summary_headers = [cell.value for cell in next(summary_ws.iter_rows(min_row=1, max_row=1))]
+        workbook_icer = None
+        for row in summary_ws.iter_rows(min_row=2):
+            if row[summary_headers.index("discountRate")].value == 0.03 and row[summary_headers.index("metric")].value == "primaryICER_ratioOfMeans":
+                workbook_icer = row[summary_headers.index("mean")].value
+                break
+        primary = econ["summaries"][
+            (econ["summaries"]["discountRate"] == 0.03)
+            & (econ["summaries"]["metric"] == "primaryICER_ratioOfMeans")
+        ].iloc[0]["mean"]
+        wb.close()
+
+        self.assertAlmostEqual(workbook_icer, primary)
 
     def test_missing_adr_cost_and_harm_require_reviewed_decisions(self) -> None:
         config = _synthetic_econ({"adr": None, "adr_loss": None})
