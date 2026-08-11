@@ -71,8 +71,9 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
         offending = _contains_implementation_term(visible_text)
         self.assertIsNone(offending, visible_text)
         self.assertIn("LTBI Screening Decision Tool", visible_text)
-        self.assertIn("Start with APY demonstration", visible_text)
-        self.assertIn("Create a new analysis", visible_text)
+        self.assertIn("Use default parameters", visible_text)
+        self.assertIn("Review or change parameters", visible_text)
+        self.assertIn("Run with these defaults", visible_text)
         self.assertIn("Continue to current results", visible_text)
 
     def test_standard_navigation_labels_avoid_implementation_terms(self) -> None:

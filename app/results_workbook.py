@@ -16,6 +16,7 @@ from app.epidemiology_inputs import (
     RISK_FACTOR_LABELS,
     prevalence_source_label,
 )
+from app.parameter_workspace import build_parameter_workspace
 from engine.apy.costing import normalise_cost_table, unresolved_cost_warnings
 from engine.apy.evidence import assess_apy_reference_readiness, load_apy_evidence_registry
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
@@ -67,6 +68,7 @@ def build_results_workbook(
     _write_technical_metadata(wb, config, bundle, backend_status, results_stale)
     _write_economics(wb, economics_results, economics_config, dirty_economics, results_stale)
     _write_apy_evidence_readiness(wb, config, economics_config)
+    _write_parameter_workspace(wb, config, economics_config)
     _write_decision_analysis(wb, decision_analysis_results)
     _autosize_all(wb)
     output = BytesIO()
@@ -461,6 +463,65 @@ def _write_apy_evidence_readiness(
         wb,
         "Bundling_conflicts",
         readiness["bundlingConflicts"] or [{"assumptionId": "", "message": ""}],
+    )
+
+
+def _write_parameter_workspace(
+    wb: Workbook,
+    config: dict[str, Any],
+    economics_config: dict[str, Any] | None,
+) -> None:
+    if not isinstance(economics_config, dict):
+        return
+    workspace = build_parameter_workspace(config, economics_config)
+    rows = workspace.get("rows") or []
+    metadata_rows = [
+        {"Field": "workspaceContractVersion", "Value": workspace.get("contractVersion")},
+        {"Field": "unifiedPresetId", "Value": workspace.get("presetId")},
+        {"Field": "unifiedPresetVersion", "Value": workspace.get("presetVersion")},
+        {"Field": "unifiedPresetLabel", "Value": workspace.get("presetLabel")},
+        {"Field": "configurationHash", "Value": workspace.get("configurationHash")},
+        {"Field": "changedFromDefaultCount", "Value": workspace.get("changedCount")},
+        {"Field": "analysisLabel", "Value": "APY / SA Health working-default analysis"},
+        {"Field": "resultStatus", "Value": "Working-default analysis; not final or clinician-ready unless readiness gates pass."},
+    ]
+    _write_rows_sheet(wb, "Parameter_workspace", metadata_rows)
+    _write_rows_sheet(
+        wb,
+        "Parameter_defaults",
+        [
+            {
+                "parameterId": row.get("parameterId"),
+                "group": row.get("group"),
+                "label": row.get("label"),
+                "defaultValue": row.get("defaultValue"),
+                "unit": row.get("unit"),
+                "source": row.get("source"),
+                "reviewStatus": row.get("reviewStatus"),
+                "provisional": row.get("provisional"),
+                "notes": row.get("notes"),
+            }
+            for row in rows
+        ],
+    )
+    _write_rows_sheet(
+        wb,
+        "Parameter_overrides",
+        [
+            {
+                "parameterId": row.get("parameterId"),
+                "group": row.get("group"),
+                "label": row.get("label"),
+                "defaultValue": row.get("defaultValue"),
+                "currentValue": row.get("currentValue"),
+                "changedFromDefault": row.get("changedFromDefault"),
+                "unit": row.get("unit"),
+                "source": row.get("source"),
+                "reviewStatus": row.get("reviewStatus"),
+                "provisional": row.get("provisional"),
+            }
+            for row in rows
+        ],
     )
 
 
