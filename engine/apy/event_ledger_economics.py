@@ -17,7 +17,7 @@ from engine.apy.event_ledger import EVENT_LEDGER_CONTRACT_VERSION
 from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
 
 
-HEALTH_ECONOMICS_CONTRACT_VERSION = "ltbi_health_economics_results_v2"
+HEALTH_ECONOMICS_CONTRACT_VERSION = "ltbi_health_economics_results_v3"
 PRIMARY_DISCOUNT_RATE = 0.03
 COMPARISON_DISCOUNT_RATE = 0.0
 NUMERIC_REVIEWED_STATUSES = {"configured_reviewed", "model_derived_reviewed"}
@@ -47,6 +47,10 @@ EXPECTED_COST_BASES = {
     "program_setup": {"total_once_at_program_start"},
     "program_running": {"annual_during_screening_window", "total_over_screening_programme"},
     "tpt_adr_management": {"per_adr_stop"},
+    "return_for_results": {"per_person_screened"},
+    "clinical_review": {"per_tpt_started"},
+    "active_tb_exclusion_workup": {"per_tpt_started"},
+    "travel_outreach_staff_support": {"per_person_screened"},
 }
 
 COMPONENT_SPECS = {
@@ -57,6 +61,10 @@ COMPONENT_SPECS = {
     "programSetupCost": ("setup", "_setup_quantity"),
     "programRunningCost": ("running", "_running_quantity"),
     "adrManagementCost": ("adr", "tpt_adr_stop_total"),
+    "returnForResultsCost": ("return_results", "screened"),
+    "clinicalReviewCost": ("clinical_review", "tpt_started_total"),
+    "activeTBExclusionWorkupCost": ("active_tb_exclusion", "tpt_started_total"),
+    "travelOutreachStaffSupportCost": ("travel_outreach", "screened"),
 }
 
 PROGRAM_COMPONENTS = [
@@ -66,10 +74,24 @@ PROGRAM_COMPONENTS = [
     "programSetupCost",
     "programRunningCost",
     "adrManagementCost",
+    "returnForResultsCost",
+    "clinicalReviewCost",
+    "activeTBExclusionWorkupCost",
+    "travelOutreachStaffSupportCost",
 ]
 COST_COMPONENTS = PROGRAM_COMPONENTS + ["activeTBDiseaseCost"]
-DALY_COMPONENTS = ["activeTBYLD", "activeTBYLL", "tptHealthLossDALYs", "adrHealthLossDALYs"]
-ID_COLS = ["discountRate", "modelType", "valueType", "replicateId", "pairedReplicateId", "replicateSeed"]
+DALY_COMPONENTS = ["activeTBYLD", "activeTBYLL", "postTBDALYs", "tptHealthLossDALYs", "adrHealthLossDALYs"]
+ID_COLS = [
+    "discountProfile",
+    "discountRate",
+    "costDiscountRate",
+    "healthDiscountRate",
+    "modelType",
+    "valueType",
+    "replicateId",
+    "pairedReplicateId",
+    "replicateSeed",
+]
 
 
 def default_daly_assumptions() -> dict[str, Any]:
@@ -107,9 +129,9 @@ def run_event_ledger_health_economics(
     if not ledger or validation.get("isValid") is not True:
         raise ValueError("Authoritative health economics requires a valid APY event ledger.")
 
-    discount_rates = discount_rates or [PRIMARY_DISCOUNT_RATE, COMPARISON_DISCOUNT_RATE]
     ledger_metadata = deepcopy(ledger.get("metadata") or {})
     assumptions = _build_assumptions(econ_config, ledger_metadata)
+    discount_profiles = _discount_profiles(econ_config, discount_rates)
     cost_items = normalise_cost_table(econ_config.get("costItems") or [])
     unresolved: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -124,9 +146,9 @@ def run_event_ledger_health_economics(
     annual_events = _complete_calendar(_events_wide(ledger["annualEvents"]), ledger_metadata, assumptions)
 
     annual_rows = [
-        _annual_economic_row(row, ledger_metadata, cost_lookup, daly_inputs, assumptions, float(rate))
+        _annual_economic_row(row, ledger_metadata, cost_lookup, daly_inputs, assumptions, profile)
         for _, row in annual_events.iterrows()
-        for rate in discount_rates
+        for profile in discount_profiles
     ]
     annual = pd.DataFrame(annual_rows)
     _allocate_program_running_total(annual, cost_lookup, ledger_metadata)
@@ -174,8 +196,11 @@ def run_event_ledger_health_economics(
                 ledger_metadata.get("ltbiStateAssumptionStatus")
                 == "unresolved_development_compatibility"
             ),
-            "primaryDiscountRate": PRIMARY_DISCOUNT_RATE,
-            "comparisonDiscountRate": COMPARISON_DISCOUNT_RATE,
+            "primaryDiscountRate": discount_profiles[0]["costRate"],
+            "primaryCostDiscountRate": discount_profiles[0]["costRate"],
+            "primaryHealthDiscountRate": discount_profiles[0]["healthRate"],
+            "comparisonDiscountRate": discount_profiles[1]["costRate"] if len(discount_profiles) > 1 else None,
+            "discountProfiles": discount_profiles,
             "isProvisional": bool(provisional or unresolved_daly_inputs or not economically_complete),
             "workingDefault": econ_metadata.get("workingDefault", False),
             "referenceStatus": econ_metadata.get("referenceStatus", ""),
@@ -255,6 +280,10 @@ def _cost_lookup(
         "setup": "program_setup",
         "running": "program_running",
         "adr": "tpt_adr_management",
+        "return_results": "return_for_results",
+        "clinical_review": "clinical_review",
+        "active_tb_exclusion": "active_tb_exclusion_workup",
+        "travel_outreach": "travel_outreach_staff_support",
     }
     by_id = {item.get("costItemId"): item for item in cost_items}
     out: dict[str, Any] = {"ids": ids, "items": by_id, "basisIssues": {}, "exclusions": {}}
@@ -266,6 +295,9 @@ def _cost_lookup(
             out[name] = None
             continue
         item = by_id.get(item_id, {})
+        if not item and name in {"return_results", "clinical_review", "active_tb_exclusion", "travel_outreach"}:
+            out[name] = 0.0
+            continue
         basis = _basis(item)
         expected = EXPECTED_COST_BASES.get(item_id, set())
         if expected and basis not in expected:
@@ -381,9 +413,17 @@ def _resolve_daly_inputs(daly: dict[str, Any], unresolved: list[dict[str, Any]])
             unresolved,
         )
 
-    if bool(daly.get("includePostTBSequelae")):
-        unresolved.append(_unresolved("dalyAssumptions.includePostTBSequelae", "Post-TB sequelae are outside the Milestone 3 acute primary analysis."))
+    include_post_tb = bool(daly.get("includePostTBSequelae"))
+    out["includePostTBSequelae"] = include_post_tb
+    if include_post_tb:
+        out["postTBDALYsPerActiveTBCase"] = _reviewed_numeric(
+            daly,
+            "postTBDALYsPerActiveTBCase",
+            (0.0, None),
+            unresolved,
+        )
     else:
+        out["postTBDALYsPerActiveTBCase"] = None
         _reviewed_exclusion(
             daly,
             "postTBSequelaeStatus",
@@ -392,6 +432,59 @@ def _resolve_daly_inputs(daly: dict[str, Any], unresolved: list[dict[str, Any]])
             unresolved,
         )
     return out
+
+
+def _discount_profiles(econ_config: dict[str, Any], legacy_discount_rates: list[float] | None) -> list[dict[str, Any]]:
+    if legacy_discount_rates:
+        return [
+            {
+                "profile": "custom",
+                "discountRate": float(rate),
+                "costRate": float(rate),
+                "healthRate": float(rate),
+            }
+            for rate in legacy_discount_rates
+        ]
+    discounting = econ_config.get("discounting") or {}
+    profiles = discounting.get("profiles")
+    if isinstance(profiles, dict) and profiles:
+        out = []
+        for name, profile in profiles.items():
+            cost_rate = _num((profile or {}).get("costRate"))
+            health_rate = _num((profile or {}).get("healthRate"))
+            if cost_rate is None:
+                cost_rate = PRIMARY_DISCOUNT_RATE if name == "primary" else COMPARISON_DISCOUNT_RATE
+            if health_rate is None:
+                health_rate = cost_rate
+            out.append(
+                {
+                    "profile": str(name),
+                    "discountRate": float(cost_rate),
+                    "costRate": float(cost_rate),
+                    "healthRate": float(health_rate),
+                }
+            )
+        return out
+    primary_cost = _num(discounting.get("primaryCostRate"))
+    primary_health = _num(discounting.get("primaryHealthRate"))
+    if primary_cost is None:
+        primary_cost = _num(discounting.get("primaryDisplayedRate"))
+    if primary_health is None:
+        primary_health = _num(discounting.get("healthOutcomeAnnualRate"))
+    comparison_cost = _num(discounting.get("comparisonCostRate"))
+    comparison_health = _num(discounting.get("comparisonHealthRate"))
+    if comparison_cost is None:
+        comparison_cost = _num(discounting.get("comparisonRate"))
+    if comparison_health is None:
+        comparison_health = comparison_cost
+    primary_cost = PRIMARY_DISCOUNT_RATE if primary_cost is None else primary_cost
+    primary_health = primary_cost if primary_health is None else primary_health
+    comparison_cost = COMPARISON_DISCOUNT_RATE if comparison_cost is None else comparison_cost
+    comparison_health = comparison_cost if comparison_health is None else comparison_health
+    return [
+        {"profile": "primary", "discountRate": float(primary_cost), "costRate": float(primary_cost), "healthRate": float(primary_health)},
+        {"profile": "comparison", "discountRate": float(comparison_cost), "costRate": float(comparison_cost), "healthRate": float(comparison_health)},
+    ]
 
 
 def _resolve_threshold(threshold: dict[str, Any], assumptions: dict[str, Any], unresolved: list[dict[str, Any]]) -> float | None:
@@ -467,9 +560,12 @@ def _complete_calendar(events: pd.DataFrame, metadata: dict[str, Any], assumptio
     return merged
 
 
-def _annual_economic_row(row: pd.Series, metadata: dict[str, Any], costs: dict[str, Any], daly: dict[str, Any], assumptions: dict[str, Any], rate: float) -> dict[str, Any]:
+def _annual_economic_row(row: pd.Series, metadata: dict[str, Any], costs: dict[str, Any], daly: dict[str, Any], assumptions: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
     year = int(row.get("modelYear", 0))
-    factor = 1.0 / ((1.0 + rate) ** year)
+    cost_rate = float(profile["costRate"])
+    health_rate = float(profile["healthRate"])
+    cost_factor = 1.0 / ((1.0 + cost_rate) ** year)
+    health_factor = 1.0 / ((1.0 + health_rate) ** year)
     arm = row.get("arm")
     economic_horizon = _num(assumptions["metadata"].get("economicHorizonYears")) or 0.0
     within_economic_horizon = year < economic_horizon and bool(row.get("withinFollowUp", True))
@@ -492,6 +588,10 @@ def _annual_economic_row(row: pd.Series, metadata: dict[str, Any], costs: dict[s
         "programSetupCost": _component_cost(setup_qty, costs, "setup"),
         "programRunningCost": _component_cost(running_qty, costs, "running"),
         "adrManagementCost": _component_cost(quantities["tpt_adr_stop_total"], costs, "adr"),
+        "returnForResultsCost": _component_cost(quantities["screened"], costs, "return_results"),
+        "clinicalReviewCost": _component_cost(quantities["tpt_started_total"], costs, "clinical_review"),
+        "activeTBExclusionWorkupCost": _component_cost(quantities["tpt_started_total"], costs, "active_tb_exclusion"),
+        "travelOutreachStaffSupportCost": _component_cost(quantities["screened"], costs, "travel_outreach"),
     }
     missing_cost = _missing_cost_components(component_values, quantities, setup_qty, running_qty, costs)
     yld = _mul3(quantities["active_tb_cases"], daly.get("activeTBDisabilityWeight"), daly.get("activeTBDurationYears"))
@@ -507,9 +607,15 @@ def _annual_economic_row(row: pd.Series, metadata: dict[str, Any], costs: dict[s
         if daly.get("includeADRHealthLoss")
         else 0.0
     )
+    post_tb = (
+        _mul(quantities["active_tb_cases"], daly.get("postTBDALYsPerActiveTBCase"))
+        if daly.get("includePostTBSequelae")
+        else 0.0
+    )
     daly_values = {
         "activeTBYLD": yld,
         "activeTBYLL": yll,
+        "postTBDALYs": post_tb,
         "tptHealthLossDALYs": tpt_loss,
         "adrHealthLossDALYs": adr_loss,
     }
@@ -533,8 +639,13 @@ def _annual_economic_row(row: pd.Series, metadata: dict[str, Any], costs: dict[s
         "timeInterval": row.get("timeInterval"),
         "withinFollowUp": bool(row.get("withinFollowUp", True)),
         "withinEconomicHorizon": bool(within_economic_horizon),
-        "discountRate": rate,
-        "discountFactor": factor,
+        "discountProfile": profile.get("profile"),
+        "discountRate": cost_rate,
+        "discountFactor": cost_factor,
+        "costDiscountRate": cost_rate,
+        "healthDiscountRate": health_rate,
+        "costDiscountFactor": cost_factor,
+        "healthDiscountFactor": health_factor,
         **quantities,
         **component_values,
         **daly_values,
@@ -545,9 +656,9 @@ def _annual_economic_row(row: pd.Series, metadata: dict[str, Any], costs: dict[s
         "includedInEconomicAnalysis": included,
         "economicExclusionReason": exclusion_reason,
         "totalUndiscountedCost": total_cost,
-        "totalDiscountedCost": None if total_cost is None else total_cost * factor,
+        "totalDiscountedCost": None if total_cost is None else total_cost * cost_factor,
         "totalUndiscountedDALYs": total_dalys,
-        "totalDiscountedDALYs": None if total_dalys is None else total_dalys * factor,
+        "totalDiscountedDALYs": None if total_dalys is None else total_dalys * health_factor,
     }
 
 
@@ -585,6 +696,10 @@ def _missing_cost_components(
         "programSetupCost": setup_qty,
         "programRunningCost": running_qty,
         "adrManagementCost": quantities["tpt_adr_stop_total"],
+        "returnForResultsCost": quantities["screened"],
+        "clinicalReviewCost": quantities["tpt_started_total"],
+        "activeTBExclusionWorkupCost": quantities["tpt_started_total"],
+        "travelOutreachStaffSupportCost": quantities["screened"],
     }
     cost_keys = {component: key for component, (key, _) in COMPONENT_SPECS.items()}
     missing = []
@@ -634,9 +749,9 @@ def _recompute_completeness_and_totals(annual: pd.DataFrame) -> None:
         cost_total = None if missing_cost else float(sum(_num(row.get(col)) or 0.0 for col in COST_COMPONENTS))
         daly_total = None if missing_daly else float(sum(_num(row.get(col)) or 0.0 for col in DALY_COMPONENTS))
         annual.at[idx, "totalUndiscountedCost"] = cost_total
-        annual.at[idx, "totalDiscountedCost"] = None if cost_total is None else cost_total * float(row.get("discountFactor", 1.0))
+        annual.at[idx, "totalDiscountedCost"] = None if cost_total is None else cost_total * float(row.get("costDiscountFactor", row.get("discountFactor", 1.0)))
         annual.at[idx, "totalUndiscountedDALYs"] = daly_total
-        annual.at[idx, "totalDiscountedDALYs"] = None if daly_total is None else daly_total * float(row.get("discountFactor", 1.0))
+        annual.at[idx, "totalDiscountedDALYs"] = None if daly_total is None else daly_total * float(row.get("healthDiscountFactor", row.get("discountFactor", 1.0)))
 
 
 def _replicate_results(annual: pd.DataFrame, threshold: float | None) -> pd.DataFrame:
@@ -719,10 +834,13 @@ def _replicate_results(annual: pd.DataFrame, threshold: float | None) -> pd.Data
 def _component_totals(group: pd.DataFrame) -> dict[str, Any]:
     out = {}
     for component in COST_COMPONENTS:
-        out[f"{component}Discounted"] = _strict_sum(group[component] * group["discountFactor"])
+        out[f"{component}Discounted"] = _strict_sum(group[component] * group["costDiscountFactor"])
         out[f"{component}Undiscounted"] = _strict_sum(group[component])
-    out["totalProgrammeCostDiscounted"] = _strict_sum(sum(group[col] for col in PROGRAM_COMPONENTS) * group["discountFactor"])
+    out["totalProgrammeCostDiscounted"] = _strict_sum(sum(group[col] for col in PROGRAM_COMPONENTS) * group["costDiscountFactor"])
     out["totalProgrammeCostUndiscounted"] = _strict_sum(sum(group[col] for col in PROGRAM_COMPONENTS))
+    for component in DALY_COMPONENTS:
+        out[f"{component}Discounted"] = _strict_sum(group[component] * group["healthDiscountFactor"])
+        out[f"{component}Undiscounted"] = _strict_sum(group[component])
     return out
 
 
@@ -730,6 +848,9 @@ def _paired_component_totals(comp: pd.Series, inter: pd.Series) -> dict[str, Any
     out = {}
     for side, row in {"comparator": comp, "intervention": inter}.items():
         for component in COST_COMPONENTS:
+            out[f"{side}_{component}Discounted"] = row.get(f"{component}Discounted")
+            out[f"{side}_{component}Undiscounted"] = row.get(f"{component}Undiscounted")
+        for component in DALY_COMPONENTS:
             out[f"{side}_{component}Discounted"] = row.get(f"{component}Discounted")
             out[f"{side}_{component}Undiscounted"] = row.get(f"{component}Undiscounted")
         out[f"{side}_totalProgrammeCostDiscounted"] = row.get("totalProgrammeCostDiscounted")
@@ -754,13 +875,18 @@ def _summaries(reps: pd.DataFrame, metadata: dict[str, Any], threshold: float | 
     ]
     if reps.empty:
         return _frame(rows)
-    for rate, group in reps.groupby("discountRate", dropna=False):
+    summary_group_cols = ["discountProfile", "discountRate", "costDiscountRate", "healthDiscountRate"]
+    for keys, group in reps.groupby(summary_group_cols, dropna=False):
+        profile, rate, cost_rate, health_rate = keys
         complete = group[group["economicPairComplete"].astype(bool)]
         total_pairs = int(len(group))
         complete_pairs = int(len(complete))
         rows.append(
             {
+                "discountProfile": profile,
                 "discountRate": rate,
+                "costDiscountRate": cost_rate,
+                "healthDiscountRate": health_rate,
                 "metric": "pairedReplicateCompleteness",
                 "totalPairedReplicates": total_pairs,
                 "completePairedReplicates": complete_pairs,
@@ -774,7 +900,10 @@ def _summaries(reps: pd.DataFrame, metadata: dict[str, Any], threshold: float | 
         primary_icer = _div(mean_inc, mean_daly) if classification == INTERPRETABLE_ICER_CLASSIFICATION else None
         rows.append(
             {
+                "discountProfile": profile,
                 "discountRate": rate,
+                "costDiscountRate": cost_rate,
+                "healthDiscountRate": health_rate,
                 "metric": "primaryICER_ratioOfMeans",
                 "mean": primary_icer,
                 "classification": classification,
@@ -791,7 +920,10 @@ def _summaries(reps: pd.DataFrame, metadata: dict[str, Any], threshold: float | 
             numerator = int((valid_nmb["netMonetaryBenefit"] > 0).sum()) if denominator else 0
             rows.append(
                 {
+                    "discountProfile": profile,
                     "discountRate": rate,
+                    "costDiscountRate": cost_rate,
+                    "healthDiscountRate": health_rate,
                     "metric": "probabilityPositiveNMB_fixedParameterSimulation",
                     "mean": None if denominator == 0 else numerator / denominator,
                     "n": denominator,
@@ -811,7 +943,10 @@ def _summaries(reps: pd.DataFrame, metadata: dict[str, Any], threshold: float | 
                 continue
             rows.append(
                 {
+                    "discountProfile": profile,
                     "discountRate": rate,
+                    "costDiscountRate": cost_rate,
+                    "healthDiscountRate": health_rate,
                     "metric": metric,
                     "n": int(values.count()),
                     "mean": float(values.mean()),
@@ -863,11 +998,11 @@ def _validate_economic_result(annual: pd.DataFrame, reps: pd.DataFrame, summarie
             if bool(row.get("costComplete")):
                 expected = sum(_num(row.get(col)) or 0.0 for col in COST_COMPONENTS)
                 _check_close(errors, "annual.totalUndiscountedCost", row.get("totalUndiscountedCost"), expected)
-                _check_close(errors, "annual.totalDiscountedCost", row.get("totalDiscountedCost"), expected * float(row.get("discountFactor")))
+                _check_close(errors, "annual.totalDiscountedCost", row.get("totalDiscountedCost"), expected * float(row.get("costDiscountFactor", row.get("discountFactor"))))
             if bool(row.get("dalyComplete")):
                 expected = sum(_num(row.get(col)) or 0.0 for col in DALY_COMPONENTS)
                 _check_close(errors, "annual.totalUndiscountedDALYs", row.get("totalUndiscountedDALYs"), expected)
-                _check_close(errors, "annual.totalDiscountedDALYs", row.get("totalDiscountedDALYs"), expected * float(row.get("discountFactor")))
+                _check_close(errors, "annual.totalDiscountedDALYs", row.get("totalDiscountedDALYs"), expected * float(row.get("healthDiscountFactor", row.get("discountFactor"))))
             if not bool(row.get("includedInEconomicAnalysis")) and (
                 _num(row.get("totalDiscountedCost")) or _num(row.get("totalDiscountedDALYs"))
             ):
@@ -920,7 +1055,12 @@ def _not_calculated(result: dict[str, Any]) -> list[str]:
 
 def _attach_legacy_compatibility_fields(result: dict[str, Any], econ_config: dict[str, Any], costs: dict[str, Any]) -> None:
     annual = result["annualByArm"]
-    primary = annual[annual["discountRate"] == PRIMARY_DISCOUNT_RATE] if isinstance(annual, pd.DataFrame) and not annual.empty else pd.DataFrame()
+    primary = pd.DataFrame()
+    if isinstance(annual, pd.DataFrame) and not annual.empty:
+        if "discountProfile" in annual:
+            primary = annual[annual["discountProfile"] == "primary"]
+        if primary.empty:
+            primary = annual[annual["discountRate"] == PRIMARY_DISCOUNT_RATE]
     comp = primary[primary["arm"] == "comparator"] if not primary.empty else pd.DataFrame()
     inter = primary[primary["arm"] == "intervention"] if not primary.empty else pd.DataFrame()
 
@@ -950,11 +1090,29 @@ def _attach_legacy_compatibility_fields(result: dict[str, Any], econ_config: dic
         "programSetupCost": mean_sum(inter, "programSetupCost"),
         "programRunningCost": mean_sum(inter, "programRunningCost"),
         "adrManagementCost": mean_sum(inter, "adrManagementCost"),
+        "returnForResultsCost": mean_sum(inter, "returnForResultsCost"),
+        "clinicalReviewCost": mean_sum(inter, "clinicalReviewCost"),
+        "activeTBExclusionWorkupCost": mean_sum(inter, "activeTBExclusionWorkupCost"),
+        "travelOutreachStaffSupportCost": mean_sum(inter, "travelOutreachStaffSupportCost"),
         "baselineTBDiseaseCost": mean_sum(comp, "activeTBDiseaseCost"),
         "interventionTBDiseaseCost": mean_sum(inter, "activeTBDiseaseCost"),
     }
     cost_values["tbDiseaseCostsAverted"] = _subtract_if_number(cost_values["baselineTBDiseaseCost"], cost_values["interventionTBDiseaseCost"])
-    cost_values["totalProgramCost"] = _sum_optional([cost_values[col] for col in ["testingCost", "treatmentCost", "falsePositiveIncrementalCost", "programSetupCost", "programRunningCost", "adrManagementCost"]])
+    programme_cost_fields = [
+        "testingCost",
+        "treatmentCost",
+        "falsePositiveIncrementalCost",
+        "programSetupCost",
+        "programRunningCost",
+        "adrManagementCost",
+        "returnForResultsCost",
+        "clinicalReviewCost",
+        "activeTBExclusionWorkupCost",
+        "travelOutreachStaffSupportCost",
+    ]
+    cost_values["totalProgramCost"] = _sum_optional(
+        [cost_values[col] for col in programme_cost_fields]
+    )
     cost_values["netCostVsBaseline"] = _subtract_if_number(cost_values["totalProgramCost"], cost_values["tbDiseaseCostsAverted"])
     legacy_status = {
         "missingInputs": [item["field"] for item in result["unresolvedInputs"]],
@@ -982,6 +1140,10 @@ def _attach_legacy_compatibility_fields(result: dict[str, Any], econ_config: dic
         "treatmentPerStarted": costs.get("regimen"),
         "falsePositiveIncrementalPerPerson": costs.get("false_positive"),
         "activeTBDiseasePerCase": costs.get("active_tb"),
+        "returnForResultsPerScreened": costs.get("return_results"),
+        "clinicalReviewPerTPTStarted": costs.get("clinical_review"),
+        "activeTBExclusionWorkupPerTPTStarted": costs.get("active_tb_exclusion"),
+        "travelOutreachStaffSupportPerScreened": costs.get("travel_outreach"),
     }
     result["costs"] = cost_values
     result["costEffectiveness"] = {

@@ -17,7 +17,9 @@ from app.parameter_workspace import (
     unified_default_session_state,
     validate_parameter_workspace,
 )
+from app.run_analysis_controls import TECHNICAL_DEMONSTRATION_ROUTE
 from app.state import get_backend, init_session_state, record_message, sync_backend_status
+from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 
 
 init_session_state()
@@ -114,7 +116,25 @@ def _render_parameter_workspace() -> None:
                 "reviewStatus",
                 "provisional",
                 "changedFromDefault",
+                "operationalStatus",
                 "notes",
+            ]
+            disabled_columns = [
+                "parameterId",
+                "group",
+                "label",
+                "defaultValue",
+                "unit",
+                "source",
+                "reviewStatus",
+                "provisional",
+                "changedFromDefault",
+                "editableType",
+                "validation",
+                "notes",
+                "advanced",
+                "selectOptions",
+                "operationalStatus",
             ]
             edited = st.data_editor(
                 standard_rows,
@@ -122,27 +142,19 @@ def _render_parameter_workspace() -> None:
                 use_container_width=True,
                 hide_index=True,
                 column_order=shown_columns,
-                disabled=[
-                    "parameterId",
-                    "group",
-                    "label",
-                    "defaultValue",
-                    "unit",
-                    "source",
-                    "reviewStatus",
-                    "provisional",
-                    "changedFromDefault",
-                    "editableType",
-                    "validation",
-                    "notes",
-                    "advanced",
-                    "selectOptions",
-                ],
+                disabled=disabled_columns,
             )
             edited_rows.extend(_rows_from_editor(edited))
             with st.expander("Advanced"):
-                st.dataframe(advanced_rows, use_container_width=True, hide_index=True)
-                edited_rows.extend(advanced_rows)
+                advanced_edited = st.data_editor(
+                    advanced_rows,
+                    key=f"parameter_advanced_editor_{group}",
+                    use_container_width=True,
+                    hide_index=True,
+                    column_order=shown_columns,
+                    disabled=disabled_columns,
+                )
+                edited_rows.extend(_rows_from_editor(advanced_edited))
 
     if edited_rows:
         _set_workspace_rows(edited_rows)
@@ -236,8 +248,32 @@ if isinstance(config, dict) and isinstance(econ, dict):
     st.subheader("Current working defaults")
     st.caption("These are editable working defaults. Some APY-specific evidence inputs remain provisional.")
     arrow_safe_dataframe(parameter_summary(config, econ), use_container_width=True, hide_index=True)
+    ltbi_state = resolve_ltbi_state_assumptions(config)
+    unresolved_recent_ltbi = ltbi_state.get("baselineRecentLTBIProportion") is None
+    if unresolved_recent_ltbi:
+        st.subheader("Recent versus remote LTBI assumption remains provisional")
+        st.write(
+            "The proportion of baseline infections that were acquired relatively "
+            "recently has not yet been established for this demonstration population. "
+            "A default run therefore needs an explicit provisional route before "
+            "analysis."
+        )
+        st.caption(
+            "Run provisional working defaults uses the existing 0% compatibility "
+            "assumption, temporarily representing all baseline infection as remote. "
+            "Outputs remain provisional and evidence-review status is unchanged."
+        )
+        route_cols = st.columns(2)
+        if route_cols[0].button("Run provisional working defaults", use_container_width=True):
+            st.session_state["recent_ltbi_run_route"] = TECHNICAL_DEMONSTRATION_ROUTE
+            st.success("Provisional working-default route selected.")
+            st.page_link("pages/2_Run_Model.py", label="Continue to Run Analysis")
+        route_cols[1].page_link("pages/4_Economics.py", label="Review this assumption")
     action_cols = st.columns(2)
-    st.page_link("pages/2_Run_Model.py", label="Run with these defaults")
+    if not unresolved_recent_ltbi or st.session_state.get("recent_ltbi_run_route") == TECHNICAL_DEMONSTRATION_ROUTE:
+        st.page_link("pages/2_Run_Model.py", label="Run with these defaults")
+    else:
+        st.info("Choose Run provisional working defaults or review this assumption before running.")
     if action_cols[1].button("Review or change parameters", key="show_workspace_secondary", use_container_width=True):
         st.session_state["parameter_workspace_visible"] = True
         st.rerun()

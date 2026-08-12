@@ -318,7 +318,7 @@ def _write_economics(
     ws.cell(start + 1, 1, "Economics config supplied").font = Font(bold=True)
     ws.cell(start + 1, 2, bool(economics_config))
     _write_economics_assumptions(wb, economics_results, economics_config)
-    if economics_results and economics_results.get("contractVersion") == "ltbi_health_economics_results_v2":
+    if economics_results and str(economics_results.get("contractVersion", "")).startswith("ltbi_health_economics_results_v"):
         _write_event_ledger_economics(wb, economics_results)
 
 

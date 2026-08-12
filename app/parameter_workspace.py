@@ -123,6 +123,13 @@ def validate_parameter_workspace(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 messages.append({"parameterId": parameter_id, "message": "Value must be positive."})
             elif kind in {"nonnegative_number", "years", "money"} and number < 0:
                 messages.append({"parameterId": parameter_id, "message": "Value must be non-negative."})
+    age_rows = [row for row in rows if str(row.get("parameterId", "")).startswith("demography.age.")]
+    age_values = [_number_or_none(row.get("currentValue")) for row in age_rows]
+    if any(value is not None for value in age_values):
+        if any(value is None for value in age_values):
+            messages.append({"parameterId": "demography.age", "message": "All age-distribution bands are required when overriding age structure."})
+        elif abs(sum(float(value) for value in age_values) - 1.0) > 1e-6:
+            messages.append({"parameterId": "demography.age", "message": "Age-distribution probabilities must sum to 1."})
     return {"isValid": not messages, "messages": messages}
 
 
@@ -179,6 +186,14 @@ def reset_all_parameters(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def parameter_summary(config: dict[str, Any], economics_config: dict[str, Any]) -> list[dict[str, Any]]:
     metadata = economics_config.get("metadata") or {}
     method = MODEL_METHOD_LABELS.get(str(config.get("analysisMethod") or "expected_value"), "Expected outcomes")
+    discounting = economics_config.get("discounting") or {}
+    profiles = discounting.get("profiles") or {}
+    primary = profiles.get("primary") or {}
+    comparison = profiles.get("comparison") or {}
+    primary_cost = primary.get("costRate", discounting.get("primaryCostRate", discounting.get("primaryDisplayedRate", 0.03)))
+    primary_health = primary.get("healthRate", discounting.get("primaryHealthRate", discounting.get("healthOutcomeAnnualRate", primary_cost)))
+    comparison_cost = comparison.get("costRate", discounting.get("comparisonCostRate", discounting.get("comparisonRate", 0.0)))
+    comparison_health = comparison.get("healthRate", discounting.get("comparisonHealthRate", comparison_cost))
     return [
         {"Item": "Population", "Value": config.get("populationPresetId")},
         {"Item": "Selected test", "Value": config.get("testType")},
@@ -187,7 +202,13 @@ def parameter_summary(config: dict[str, Any], economics_config: dict[str, Any]) 
         {"Item": "Intervention duration", "Value": f"{config.get('screeningWindowYears')} years"},
         {"Item": "Follow-up horizon", "Value": f"{config.get('followUpHorizonYears')} years"},
         {"Item": "Cost currency/year", "Value": f"{metadata.get('targetCurrency')} {metadata.get('targetPriceYear')}"},
-        {"Item": "Discount rates", "Value": "3% primary and 0% comparison"},
+        {
+            "Item": "Discount rates",
+            "Value": (
+                f"Primary cost {_percent(primary_cost)}, primary health {_percent(primary_health)}; "
+                f"comparison cost {_percent(comparison_cost)}, comparison health {_percent(comparison_health)}"
+            ),
+        },
         {"Item": "Health outcome", "Value": "DALYs"},
         {"Item": "Analysis method", "Value": method},
         {"Item": "Number of simulations", "Value": "Not applicable" if method == "Expected outcomes" else config.get("nReps")},
@@ -217,11 +238,14 @@ def _parameter_row(
 
 def _parameter_specs() -> list[dict[str, Any]]:
     return [
-        _spec("demography.population_preset", "Demography", "Population preset", "config", ["populationPresetId"], "", "APY demonstration preset", "unreviewed_repository_input", True, "text"),
+        _spec("demography.population_preset", "Demography", "Population preset", "config", ["populationPresetId"], "", "APY demonstration preset", "unreviewed_repository_input", True, "text", operational_status="authoritative_model_input"),
         _spec("demography.population_size", "Demography", "Population size", "config", ["N"], "people", "APY working default", "configured_reviewed", False, "positive_integer"),
         _spec("demography.eligible_population", "Demography", "Eligible population", "config", ["scenario", "eligible", "number"], "people", "Scenario contract", "unreviewed_repository_input", True, "nonnegative_number"),
+        _spec("demography.age.0_4", "Demography", "Age distribution: 0-4 years", "ageDistributionBand", ["0-4"], "probability", "APY age-distribution input", "unreviewed_repository_input", True, "probability", advanced=True, operational_status="authoritative_model_input"),
+        _spec("demography.age.5_14", "Demography", "Age distribution: 5-14 years", "ageDistributionBand", ["5-14"], "probability", "APY age-distribution input", "unreviewed_repository_input", True, "probability", advanced=True, operational_status="authoritative_model_input"),
+        _spec("demography.age.15_plus", "Demography", "Age distribution: 15+ years", "ageDistributionBand", ["15+"], "probability", "APY age-distribution input", "unreviewed_repository_input", True, "probability", advanced=True, operational_status="authoritative_model_input"),
         *[
-            _spec(f"demography.risk.{key}", "Demography", label, "config", ["riskPrev", key], "prevalence", "APY data inputs", "unreviewed_repository_input", True, "text")
+            _spec(f"demography.risk.{key}", "Demography", label, "config", ["riskPrev", key], "prevalence", "APY data inputs", "unreviewed_repository_input", True, "probability")
             for key, label in [
                 ("female", "Sex distribution - female"),
                 ("contact", "Contact history"),
@@ -240,8 +264,8 @@ def _parameter_specs() -> list[dict[str, Any]]:
         _spec("tb.transition_rate", "TB epidemiology", "Recent-to-remote transition rate", "config", ["ltbiStateAssumptions", "recentToRemoteTransitionRatePerYear"], "per year", "Inherited model structure", "configured_reviewed", False, "nonnegative_number"),
         _spec("tb.active_tb_target", "TB epidemiology", "Active-TB calibration target", "config", ["targetActive2y"], "probability", "APY calibration input", "unreviewed_repository_input", True, "probability", advanced=True),
         _spec("tb.active_tb_horizon", "TB epidemiology", "Active-TB calibration horizon", "config", ["activeTBCalibrationHorizonYears"], "years", "APY calibration setting", "configured_reviewed", False, "years", advanced=True),
-        _spec("tb.direct_scope", "TB epidemiology", "Direct-effects-only scope statement", "static", ["directScope"], "", "Model scope", "configured_reviewed", False, "read_only"),
-        _spec("service.comparator", "Health-service provision and intervention", "Comparator", "static", ["comparator"], "", "Scenario contract", "configured_reviewed", False, "read_only"),
+        _spec("tb.direct_scope", "TB epidemiology", "Direct-effects-only scope statement", "static", ["directScope"], "", "Model scope", "configured_reviewed", False, "read_only", operational_status="descriptive_metadata"),
+        _spec("service.comparator", "Health-service provision and intervention", "Comparator", "static", ["comparator"], "", "Scenario contract", "configured_reviewed", False, "read_only", operational_status="descriptive_metadata"),
         _spec("service.targeting", "Health-service provision and intervention", "Targeting method", "config", ["screeningStrategy"], "", "APY intervention setting", "unreviewed_repository_input", True, "select"),
         _spec("service.coverage", "Health-service provision and intervention", "Screening coverage", "config", ["screenCoverage"], "proportion eligible", "APY intervention setting", "configured_reviewed", False, "probability"),
         _spec("service.test", "Health-service provision and intervention", "Screening test", "config", ["testType"], "", "APY intervention setting", "configured_reviewed", False, "select"),
@@ -269,10 +293,10 @@ def _parameter_specs() -> list[dict[str, Any]]:
             ("active_tb_disease", "Active-TB disease care cost"),
             ("tpt_adr_management", "ADR-management cost"),
         ]],
-        _spec("cost.return_results", "Costs and outcomes", "Return-for-results cost", "econ", ["localSAHealthPathwayCosts", "returnForResults", "value"], "AUD per person screened", "SA Health local working assumption", "local_working_assumption", True, "money"),
-        _spec("cost.clinical_review", "Costs and outcomes", "Clinical-review cost", "econ", ["localSAHealthPathwayCosts", "clinicalReview", "value"], "AUD per TPT start", "SA Health local working assumption", "local_working_assumption", True, "money"),
-        _spec("cost.active_tb_exclusion", "Costs and outcomes", "Active-TB exclusion / CXR / laboratory cost", "econ", ["localSAHealthPathwayCosts", "activeTBExclusionWorkup", "value"], "AUD per TPT start", "SA Health local working assumption", "local_working_assumption", True, "money"),
-        _spec("cost.travel_outreach", "Costs and outcomes", "Travel/outreach/staff-support cost", "econ", ["localSAHealthPathwayCosts", "travelOutreachStaffSupport", "value"], "AUD per person screened", "Not yet locally costed", "local_working_assumption", True, "money"),
+        _cost_spec("return_for_results", "Return-for-results cost"),
+        _cost_spec("clinical_review", "Clinical-review cost"),
+        _cost_spec("active_tb_exclusion_workup", "Active-TB exclusion / CXR / laboratory cost"),
+        _cost_spec("travel_outreach_staff_support", "Travel/outreach/staff-support cost"),
         _spec("cost.program_setup_preset", "Costs and outcomes", "Programme setup preset", "econ", ["localSAHealthPathwayCosts", "selectedProgramSetupPreset"], "", "SA Health local working assumption", "configured_reviewed", False, "select"),
         _spec("cost.program_running", "Costs and outcomes", "Programme running cost", "econ", ["localSAHealthPathwayCosts", "programRunning", "value"], "AUD", "Not yet locally costed", "local_working_assumption", True, "money"),
         _spec("outcome.daly_preset", "Costs and outcomes", "Outcome preset", "econ", ["dalyAssumptions", "outcomePreset"], "", "APY outcome working defaults", "configured_reviewed", False, "select"),
@@ -306,6 +330,7 @@ def _spec(
     editable_type: str,
     *,
     advanced: bool = False,
+    operational_status: str | None = None,
 ) -> dict[str, Any]:
     select_options = {
         "service.targeting": list(TARGETING_LABELS.values()),
@@ -317,6 +342,14 @@ def _spec(
         "outcome.daly_preset": [PRIMARY_DALY_OUTCOME_PRESET, HIGHER_BURDEN_DALY_OUTCOME_PRESET],
         "tb.transition_model": ["continuous_markov_recent_remote"],
     }.get(parameter_id, [])
+    if operational_status is None:
+        operational_status = {
+            "config": "authoritative_model_input",
+            "econ": "authoritative_economic_input",
+            "costItem": "authoritative_economic_input",
+            "dalyAssumption": "authoritative_economic_input",
+            "static": "descriptive_metadata",
+        }.get(source_object, "descriptive_metadata")
     return {
         "parameterId": parameter_id,
         "group": group,
@@ -332,6 +365,7 @@ def _spec(
         "notes": "",
         "advanced": advanced,
         "selectOptions": select_options,
+        "operationalStatus": operational_status,
     }
 
 
@@ -377,6 +411,9 @@ def _get_value(config: dict[str, Any], econ: dict[str, Any], spec: dict[str, Any
             return TARGETING_LABELS.get(str(value), value)
         return value
     if source == "econ":
+        discount_value = _discount_profile_value(econ, spec["parameterId"])
+        if discount_value is not None:
+            return discount_value
         value = _nested_get(econ, spec["path"])
         if spec["parameterId"] == "cost.program_setup_preset":
             return PROGRAMME_SETUP_PRESET_LABELS.get(str(value), value)
@@ -387,6 +424,8 @@ def _get_value(config: dict[str, Any], econ: dict[str, Any], spec: dict[str, Any
     if source == "dalyAssumption":
         rec = (econ.get("dalyAssumptions") or {}).get(spec["path"][0])
         return (rec or {}).get("value") if isinstance(rec, dict) else rec
+    if source == "ageDistributionBand":
+        return _age_band_value(config, spec["path"][0])
     if source == "static" and spec["path"] == ["directScope"]:
         return "Direct benefits, harms and costs only; transmission-mediated benefits are not included."
     if source == "static" and spec["path"] == ["comparator"]:
@@ -407,6 +446,7 @@ def _set_value(config: dict[str, Any], econ: dict[str, Any], spec: dict[str, Any
             config["followHorizon"] = converted
     elif source == "econ":
         _nested_set(econ, spec["path"], converted)
+        _sync_discount_profile_value(econ, spec["parameterId"], converted)
     elif source == "costItem":
         item = _cost_item(econ, spec["path"][0])
         if item:
@@ -415,10 +455,13 @@ def _set_value(config: dict[str, Any], econ: dict[str, Any], spec: dict[str, Any
             item["conversionApplied"] = False
             item["costRecordType"] = "source"
             item["warnings"] = []
+            _sync_local_pathway_value(econ, spec["path"][0], converted)
     elif source == "dalyAssumption":
         rec = (econ.setdefault("dalyAssumptions", {}).setdefault(spec["path"][0], {}))
         if isinstance(rec, dict):
             rec["value"] = converted
+    elif source == "ageDistributionBand":
+        _set_age_band_value(config, spec["path"][0], converted)
 
 
 def _apply_simulation_mode(config: dict[str, Any], value: str) -> None:
@@ -441,6 +484,75 @@ def _cost_item(econ: dict[str, Any], item_id: str) -> dict[str, Any] | None:
         if item.get("costItemId") == item_id:
             return item
     return None
+
+
+def _sync_local_pathway_value(econ: dict[str, Any], cost_item_id: str, value: Any) -> None:
+    mapping = {
+        "return_for_results": "returnForResults",
+        "clinical_review": "clinicalReview",
+        "active_tb_exclusion_workup": "activeTBExclusionWorkup",
+        "travel_outreach_staff_support": "travelOutreachStaffSupport",
+    }
+    key = mapping.get(cost_item_id)
+    if key:
+        econ.setdefault("localSAHealthPathwayCosts", {}).setdefault(key, {})["value"] = value
+
+
+def _discount_profile_value(econ: dict[str, Any], parameter_id: str) -> Any:
+    profiles = (econ.get("discounting") or {}).get("profiles") or {}
+    if parameter_id == "analysis.cost_discount":
+        return ((profiles.get("primary") or {}).get("costRate"))
+    if parameter_id == "analysis.health_discount":
+        return ((profiles.get("primary") or {}).get("healthRate"))
+    if parameter_id == "analysis.comparison_discount":
+        comparison = profiles.get("comparison") or {}
+        cost = comparison.get("costRate")
+        health = comparison.get("healthRate")
+        return cost if cost == health or health is None else cost
+    return None
+
+
+def _sync_discount_profile_value(econ: dict[str, Any], parameter_id: str, value: Any) -> None:
+    if parameter_id not in {"analysis.cost_discount", "analysis.health_discount", "analysis.comparison_discount"}:
+        return
+    discounting = econ.setdefault("discounting", {})
+    profiles = discounting.setdefault("profiles", {})
+    primary = profiles.setdefault("primary", {})
+    comparison = profiles.setdefault("comparison", {})
+    if parameter_id == "analysis.cost_discount":
+        primary["costRate"] = value
+        discounting["primaryCostRate"] = value
+        discounting["primaryDisplayedRate"] = value
+    elif parameter_id == "analysis.health_discount":
+        primary["healthRate"] = value
+        discounting["primaryHealthRate"] = value
+        discounting["healthOutcomeAnnualRate"] = value
+    elif parameter_id == "analysis.comparison_discount":
+        comparison["costRate"] = value
+        comparison["healthRate"] = value
+        discounting["comparisonCostRate"] = value
+        discounting["comparisonHealthRate"] = value
+        discounting["comparisonRate"] = value
+
+
+def _age_band_value(config: dict[str, Any], band: str) -> Any:
+    for row in config.get("ageDistributionTable") or []:
+        if str(row.get("age") or row.get("Age") or "").strip() == band:
+            return row.get("proportion", row.get("Proportion"))
+    return None
+
+
+def _set_age_band_value(config: dict[str, Any], band: str, value: Any) -> None:
+    table = list(config.get("ageDistributionTable") or [])
+    by_band = {
+        str(row.get("age") or row.get("Age") or "").strip(): dict(row)
+        for row in table
+        if str(row.get("age") or row.get("Age") or "").strip()
+    }
+    by_band[band] = {"age": band, "proportion": value}
+    ordered = ["0-4", "5-14", "15+"]
+    config["ageDistributionTable"] = [by_band[item] for item in ordered if item in by_band]
+    config["ageDistributionFile"] = ""
 
 
 def _nested_get(root: dict[str, Any], path: list[str]) -> Any:
@@ -482,3 +594,10 @@ def _number_or_none(value: Any) -> float | None:
 
 def _normalise_compare(value: Any) -> str:
     return json.dumps(value, sort_keys=True, default=str)
+
+
+def _percent(value: Any) -> str:
+    try:
+        return f"{float(value) * 100:g}%"
+    except (TypeError, ValueError):
+        return "not set"

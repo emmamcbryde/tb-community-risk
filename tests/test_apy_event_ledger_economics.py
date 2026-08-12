@@ -361,6 +361,30 @@ class ApyEventLedgerEconomicsTests(unittest.TestCase):
         ].iloc[0]
         self.assertEqual(row["active_tb_cases"], same["active_tb_cases"])
 
+    def test_discount_profiles_with_same_cost_rate_keep_distinct_health_rates(self) -> None:
+        config = _synthetic_econ()
+        config["discounting"] = {
+            "profiles": {
+                "primary": {"costRate": 0.03, "healthRate": 0.03},
+                "same_cost_lower_health": {"costRate": 0.03, "healthRate": 0.0},
+            }
+        }
+
+        econ = run_event_ledger_health_economics(_toy_ledger(comp_tb=2, int_tb=1, prevented=1), config)
+        summaries = econ["summaries"]
+        primary = summaries[
+            (summaries["discountProfile"] == "primary")
+            & (summaries["metric"] == "comparatorDALYs")
+        ].iloc[0]
+        lower_health = summaries[
+            (summaries["discountProfile"] == "same_cost_lower_health")
+            & (summaries["metric"] == "comparatorDALYs")
+        ].iloc[0]
+
+        self.assertEqual(primary["discountRate"], lower_health["discountRate"])
+        self.assertNotEqual(primary["healthDiscountRate"], lower_health["healthDiscountRate"])
+        self.assertNotEqual(primary["mean"], lower_health["mean"])
+
     def test_daly_equations_and_treatment_harms(self) -> None:
         result = run_expected_value(_reviewed_epi({"N": 80}))
         econ = run_event_ledger_health_economics(result, _synthetic_econ({"tpt_loss": 0.5}))
@@ -461,6 +485,82 @@ class ApyEventLedgerEconomicsTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(row["intervention_totalProgrammeCostDiscounted"], expected)
+
+    def test_sa_health_pathway_cost_items_are_authoritative_components(self) -> None:
+        from engine.apy.working_defaults import build_unified_working_default_preset
+
+        econ_config = build_unified_working_default_preset()["economicsConfig"]
+        econ = run_event_ledger_health_economics(_toy_ledger(screened=10, starts=5), econ_config)
+        annual = econ["annualByArm"]
+        intervention = annual[(annual["arm"] == "intervention") & (annual["discountRate"] == 0.0)]
+
+        self.assertAlmostEqual(intervention["returnForResultsCost"].sum(), 10 * 50)
+        self.assertAlmostEqual(intervention["clinicalReviewCost"].sum(), 5 * 50)
+        self.assertAlmostEqual(intervention["activeTBExclusionWorkupCost"].sum(), 5 * 150)
+        self.assertAlmostEqual(intervention["travelOutreachStaffSupportCost"].sum(), 0)
+        row = econ["replicateResults"][econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+        self.assertIn("intervention_returnForResultsCostDiscounted", row)
+        self.assertAlmostEqual(row["intervention_returnForResultsCostDiscounted"], 500)
+
+    def test_sa_health_programme_setup_alternative_changes_cost_by_500000(self) -> None:
+        from engine.apy.working_defaults import apply_program_setup_preset, build_unified_working_default_preset
+
+        base = build_unified_working_default_preset()["economicsConfig"]
+        new = apply_program_setup_preset(base, "new_programme_implementation")
+        base_econ = run_event_ledger_health_economics(_toy_ledger(screened=10, starts=5), base)
+        new_econ = run_event_ledger_health_economics(_toy_ledger(screened=10, starts=5), new)
+        base_row = base_econ["replicateResults"][base_econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+        new_row = new_econ["replicateResults"][new_econ["replicateResults"]["discountRate"] == 0.0].iloc[0]
+
+        self.assertAlmostEqual(new_row["intervention_programSetupCostUndiscounted"] - base_row["intervention_programSetupCostUndiscounted"], 500000)
+        self.assertAlmostEqual(new_row["incrementalCost"] - base_row["incrementalCost"], 500000)
+
+    def test_higher_post_tb_daly_option_is_operational_and_complete(self) -> None:
+        from engine.apy.working_defaults import (
+            HIGHER_BURDEN_DALY_OUTCOME_PRESET,
+            apply_outcome_preset,
+            build_unified_working_default_preset,
+        )
+
+        primary_config = build_unified_working_default_preset()["economicsConfig"]
+        higher_config = apply_outcome_preset(primary_config, HIGHER_BURDEN_DALY_OUTCOME_PRESET)
+        ledger = _toy_ledger(comp_tb=2, int_tb=1, prevented=1)
+        primary = run_event_ledger_health_economics(ledger, primary_config)
+        higher = run_event_ledger_health_economics(ledger, higher_config)
+        primary_row = primary["replicateResults"][primary["replicateResults"]["discountRate"] == 0.0].iloc[0]
+        higher_row = higher["replicateResults"][higher["replicateResults"]["discountRate"] == 0.0].iloc[0]
+
+        self.assertTrue(higher_row["dalyPairComplete"])
+        self.assertAlmostEqual(higher_row["comparator_postTBDALYsUndiscounted"], 2 * 5.8)
+        self.assertAlmostEqual(higher_row["intervention_postTBDALYsUndiscounted"], 1 * 5.8)
+        self.assertAlmostEqual(higher_row["dalysAverted"] - primary_row["dalysAverted"], 5.8)
+        self.assertGreater(higher_row["dalysAverted"], primary_row["dalysAverted"])
+        self.assertEqual(higher["assumptions"]["daly"]["standardOutcomeMetric"], "DALYs")
+
+    def test_separate_cost_and_health_discount_profiles_are_authoritative(self) -> None:
+        config = _synthetic_econ()
+        config["discounting"]["profiles"] = {
+            "primary": {"costRate": 0.10, "healthRate": 0.0},
+            "comparison": {"costRate": 0.0, "healthRate": 0.10},
+        }
+        econ = run_event_ledger_health_economics(_toy_ledger(active_year=10), config)
+        annual = econ["annualByArm"]
+        primary = annual[
+            (annual["discountProfile"] == "primary")
+            & (annual["modelYear"] == 10)
+            & (annual["active_tb_cases"] > 0)
+        ].iloc[0]
+        comparison = annual[
+            (annual["discountProfile"] == "comparison")
+            & (annual["modelYear"] == 10)
+            & (annual["active_tb_cases"] > 0)
+        ].iloc[0]
+
+        self.assertAlmostEqual(primary["costDiscountFactor"], 1 / (1.10 ** 10))
+        self.assertAlmostEqual(primary["healthDiscountFactor"], 1.0)
+        self.assertAlmostEqual(comparison["costDiscountFactor"], 1.0)
+        self.assertAlmostEqual(comparison["healthDiscountFactor"], 1 / (1.10 ** 10))
+        self.assertAlmostEqual(primary["active_tb_cases"], comparison["active_tb_cases"])
 
     def test_provisional_epidemiology_propagates(self) -> None:
         result = run_expected_value(enable_development_compatibility_mode({"N": 80}))

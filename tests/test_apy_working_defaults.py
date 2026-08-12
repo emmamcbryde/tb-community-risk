@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 import unittest
 
 from openpyxl import load_workbook
@@ -22,6 +23,9 @@ from engine.apy.working_defaults import (
     UNIFIED_WORKING_DEFAULT_PRESET_ID,
     build_unified_working_default_preset,
 )
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class APYWorkingDefaultsTests(unittest.TestCase):
@@ -98,6 +102,107 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertEqual(econ["localSAHealthPathwayCosts"]["returnForResults"]["value"], 50.0)
         self.assertEqual(econ["localSAHealthPathwayCosts"]["clinicalReview"]["value"], 50.0)
         self.assertEqual(econ["localSAHealthPathwayCosts"]["activeTBExclusionWorkup"]["value"], 150.0)
+        self.assertEqual(items["return_for_results"]["originalCost"], 50.0)
+        self.assertEqual(items["clinical_review"]["originalCost"], 50.0)
+        self.assertEqual(items["active_tb_exclusion_workup"]["originalCost"], 150.0)
+        self.assertEqual(items["travel_outreach_staff_support"]["originalCost"], 0.0)
+
+    def test_local_pathway_overrides_update_authoritative_cost_items(self) -> None:
+        state = unified_default_session_state()
+        rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
+        next(row for row in rows if row["parameterId"] == "cost.return_for_results")["currentValue"] = 75.0
+
+        _, econ = apply_parameter_workspace(state["config"], state["economics_config"], rows)
+        item = next(item for item in econ["costItems"] if item["costItemId"] == "return_for_results")
+
+        self.assertEqual(item["originalCost"], 75.0)
+        self.assertEqual(econ["localSAHealthPathwayCosts"]["returnForResults"]["value"], 75.0)
+
+    def test_discount_overrides_update_authoritative_profiles(self) -> None:
+        state = unified_default_session_state()
+        rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
+        next(row for row in rows if row["parameterId"] == "analysis.cost_discount")["currentValue"] = 0.1
+        next(row for row in rows if row["parameterId"] == "analysis.health_discount")["currentValue"] = 0.02
+        next(row for row in rows if row["parameterId"] == "analysis.comparison_discount")["currentValue"] = 0.01
+
+        _, econ = apply_parameter_workspace(state["config"], state["economics_config"], rows)
+        profiles = econ["discounting"]["profiles"]
+
+        self.assertEqual(profiles["primary"]["costRate"], 0.1)
+        self.assertEqual(profiles["primary"]["healthRate"], 0.02)
+        self.assertEqual(profiles["comparison"]["costRate"], 0.01)
+        self.assertEqual(profiles["comparison"]["healthRate"], 0.01)
+
+    def test_risk_factor_overrides_are_structured_probabilities(self) -> None:
+        state = unified_default_session_state()
+        rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
+        diabetes = next(row for row in rows if row["parameterId"] == "demography.risk.diabetes")
+
+        self.assertEqual(diabetes["editableType"], "probability")
+        diabetes["currentValue"] = 0.9
+        config, _ = apply_parameter_workspace(state["config"], state["economics_config"], rows)
+        self.assertEqual(config["riskPrev"]["diabetes"], 0.9)
+
+        diabetes["currentValue"] = 1.2
+        validation = validate_parameter_workspace(rows)
+        self.assertFalse(validation["isValid"])
+        self.assertIn("demography.risk.diabetes", {row["parameterId"] for row in validation["messages"]})
+
+    def test_age_distribution_override_updates_authoritative_table(self) -> None:
+        state = unified_default_session_state()
+        rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
+        next(row for row in rows if row["parameterId"] == "demography.age.0_4")["currentValue"] = 0.1
+        next(row for row in rows if row["parameterId"] == "demography.age.5_14")["currentValue"] = 0.2
+        next(row for row in rows if row["parameterId"] == "demography.age.15_plus")["currentValue"] = 0.7
+
+        config, _ = apply_parameter_workspace(state["config"], state["economics_config"], rows)
+
+        self.assertEqual(config["ageDistributionFile"], "")
+        self.assertEqual(
+            config["ageDistributionTable"],
+            [
+                {"age": "0-4", "proportion": 0.1},
+                {"age": "5-14", "proportion": 0.2},
+                {"age": "15+", "proportion": 0.7},
+            ],
+        )
+
+    def test_age_distribution_override_must_sum_to_one(self) -> None:
+        workspace = unified_default_session_state()["parameter_workspace"]
+        rows = [dict(row) for row in workspace["rows"]]
+        next(row for row in rows if row["parameterId"] == "demography.age.0_4")["currentValue"] = 0.1
+        next(row for row in rows if row["parameterId"] == "demography.age.5_14")["currentValue"] = 0.2
+        next(row for row in rows if row["parameterId"] == "demography.age.15_plus")["currentValue"] = 0.6
+
+        validation = validate_parameter_workspace(rows)
+
+        self.assertFalse(validation["isValid"])
+        self.assertIn("demography.age", {row["parameterId"] for row in validation["messages"]})
+
+    def test_editable_rows_have_operational_status(self) -> None:
+        workspace = unified_default_session_state()["parameter_workspace"]
+        editable_rows = [row for row in workspace["rows"] if row["editableType"] != "read_only"]
+
+        self.assertTrue(editable_rows)
+        for row in editable_rows:
+            self.assertIn(
+                row["operationalStatus"],
+                {"authoritative_model_input", "authoritative_economic_input"},
+                row["parameterId"],
+            )
+
+    def test_advanced_fields_are_rendered_as_editable_controls(self) -> None:
+        text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
+
+        self.assertIn("parameter_advanced_editor_", text)
+        self.assertNotIn("st.dataframe(advanced_rows", text)
+
+    def test_start_page_exposes_provisional_default_run_acknowledgement(self) -> None:
+        text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
+
+        self.assertIn("Recent versus remote LTBI assumption remains provisional", text)
+        self.assertIn("Run provisional working defaults", text)
+        self.assertIn("0% compatibility", text)
 
     def test_programme_setup_base_and_new_programme_options_apply(self) -> None:
         state = unified_default_session_state()

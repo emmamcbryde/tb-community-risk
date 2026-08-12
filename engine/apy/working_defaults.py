@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from engine.apy.config import build_default_config
+from engine.apy.costing import build_cost_item
 from engine.apy.economics import build_economics_preset_dale2019_aud
 from engine.apy.scenario import (
     DEFAULT_POPULATION_PRESET_ID,
@@ -40,6 +41,13 @@ def build_unified_working_default_preset() -> dict[str, Any]:
     )
     economics_config = build_economics_preset_dale2019_aud(config.get("regimen", "3HP"))
     _add_sa_health_pathway_assumptions(economics_config)
+    economics_config.setdefault("discounting", {}).setdefault(
+        "profiles",
+        {
+            "primary": {"costRate": 0.03, "healthRate": 0.03},
+            "comparison": {"costRate": 0.0, "healthRate": 0.0},
+        },
+    )
     _apply_outcome_preset(economics_config, PRIMARY_DALY_OUTCOME_PRESET)
     preset = {
         "contractVersion": "apy_unified_working_default_preset_v1",
@@ -122,9 +130,9 @@ def _apply_outcome_preset(economics_config: dict[str, Any], preset_name: str) ->
         daly["postTBDALYsPerActiveTBCase"] = {
             "value": 5.8,
             "unit": "DALYs per active-TB case",
-            "source": "Named higher-burden working scenario",
+            "source": "APY health-economic assumptions register post-TB DALY estimate citing Menzies provenance.",
             "status": "configured_reviewed",
-            "notes": "Post-TB DALY sensitivity option; DALYs and QALYs are not combined.",
+            "notes": "Post-TB DALY sensitivity option attached to active-TB onset year; DALYs and QALYs are not combined.",
             "provisional": False,
         }
     else:
@@ -139,6 +147,12 @@ def _apply_outcome_preset(economics_config: dict[str, Any], preset_name: str) ->
 
 
 def _add_sa_health_pathway_assumptions(economics_config: dict[str, Any]) -> None:
+    pathway_item_ids = {
+        "returnForResults": "return_for_results",
+        "clinicalReview": "clinical_review",
+        "activeTBExclusionWorkup": "active_tb_exclusion_workup",
+        "travelOutreachStaffSupport": "travel_outreach_staff_support",
+    }
     economics_config["localSAHealthPathwayCosts"] = {
         "currency": "AUD",
         "priceYear": "2019",
@@ -146,24 +160,33 @@ def _add_sa_health_pathway_assumptions(economics_config: dict[str, Any]) -> None
         "returnForResults": {
             "value": 50.0,
             "basis": "per_person_screened",
-            "engineMapping": "not_separately_mapped",
+            "engineMapping": "return_for_results",
+            "inclusionStatus": "separately_costed",
+            "rationale": "SA Health working default includes this non-overlapping pathway component separately.",
             "notes": "Do not double count if already included in the selected test cost.",
         },
         "clinicalReview": {
             "value": 50.0,
-            "basis": "per_tpt_start",
-            "engineMapping": "not_separately_mapped",
+            "basis": "per_tpt_started",
+            "engineMapping": "clinical_review",
+            "inclusionStatus": "separately_costed",
+            "rationale": "SA Health working default includes this non-overlapping pathway component separately.",
             "notes": "Do not double count if already included in the selected regimen cost.",
         },
         "activeTBExclusionWorkup": {
             "value": 150.0,
-            "basis": "per_tpt_start",
-            "engineMapping": "not_separately_mapped",
+            "basis": "per_tpt_started",
+            "engineMapping": "active_tb_exclusion_workup",
+            "inclusionStatus": "separately_costed",
+            "rationale": "SA Health working default includes this non-overlapping positive-test work-up component separately.",
             "notes": "CXR/laboratory work-up assumption; not added unless a non-overlapping mapping is configured.",
         },
         "travelOutreachStaffSupport": {
             "value": 0.0,
             "basis": "per_person_screened",
+            "engineMapping": "travel_outreach_staff_support",
+            "inclusionStatus": "separately_costed",
+            "rationale": "Local working placeholder not yet locally costed; retained as editable pathway component.",
             "status": "local_working_assumption_not_yet_locally_costed",
             "notes": "Not yet locally costed.",
         },
@@ -189,8 +212,39 @@ def _add_sa_health_pathway_assumptions(economics_config: dict[str, Any]) -> None
         },
         "selectedProgramSetupPreset": "existing_service_base",
     }
+    pathway_specs = [
+        ("return_for_results", "Return-for-results pathway cost", 50.0, "per_person_screened"),
+        ("clinical_review", "Clinical-review pathway cost", 50.0, "per_tpt_started"),
+        ("active_tb_exclusion_workup", "Active-TB exclusion / CXR / laboratory pathway cost", 150.0, "per_tpt_started"),
+        ("travel_outreach_staff_support", "Travel/outreach/staff-support pathway cost", 0.0, "per_person_screened"),
+    ]
+    economics_config.setdefault("costItems", [])
+    existing = {item.get("costItemId"): item for item in economics_config["costItems"]}
+    for item_id, description, value, basis in pathway_specs:
+        if item_id in existing:
+            item = existing[item_id]
+            item["originalCost"] = value
+            item["resourceUse"] = {"costBasis": basis}
+        else:
+            economics_config["costItems"].append(
+                build_cost_item(
+                    cost_item_id=item_id,
+                    description=description,
+                    original_cost=value,
+                    original_currency="AUD",
+                    original_price_year="2019",
+                    source="SA Health local working assumption",
+                    source_year_status="explicit",
+                    target_currency="AUD",
+                    target_price_year="2019",
+                    resource_category="local_pathway_cost",
+                    notes="SA Health editable working-default pathway cost; verify non-overlap before clinician-ready use.",
+                    resource_use={"costBasis": basis},
+                )
+            )
     economics_config.setdefault("metadata", {})["saHealthPathwayCosts"] = "working_defaults_v1"
     economics_config["metadata"]["costFramework"] = "2019 AUD"
+    economics_config["metadata"]["localPathwayCostItemIds"] = list(pathway_item_ids.values())
 
 
 def _provisional_assumptions(config: dict[str, Any], economics_config: dict[str, Any]) -> list[str]:
