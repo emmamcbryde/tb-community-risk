@@ -199,7 +199,11 @@ def _render_parameter_workspace() -> None:
             st.error("Could not apply the selected parameters.")
     if not can_apply and validation and validation.get("messages"):
         st.warning("Apply is disabled until the listed parameter errors are fixed.")
-        arrow_safe_dataframe(validation["messages"], use_container_width=True)
+        st.dataframe(
+            arrow_safe_dataframe(validation["messages"]),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     if col_run.button("Run analysis", disabled=not isinstance(st.session_state.get("config"), dict), use_container_width=True):
         st.page_link("pages/2_Run_Model.py", label="Open Run Analysis")
@@ -247,7 +251,11 @@ econ = st.session_state.get("economics_config")
 if isinstance(config, dict) and isinstance(econ, dict):
     st.subheader("Current working defaults")
     st.caption("These are editable working defaults. Some APY-specific evidence inputs remain provisional.")
-    arrow_safe_dataframe(parameter_summary(config, econ), use_container_width=True, hide_index=True)
+    st.dataframe(
+        arrow_safe_dataframe(parameter_summary(config, econ)),
+        use_container_width=True,
+        hide_index=True,
+    )
     ltbi_state = resolve_ltbi_state_assumptions(config)
     unresolved_recent_ltbi = ltbi_state.get("baselineRecentLTBIProportion") is None
     if unresolved_recent_ltbi:

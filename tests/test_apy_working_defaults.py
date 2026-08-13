@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from io import BytesIO
 from pathlib import Path
 import unittest
@@ -203,6 +204,47 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertIn("Recent versus remote LTBI assumption remains provisional", text)
         self.assertIn("Run provisional working defaults", text)
         self.assertIn("0% compatibility", text)
+
+    def test_start_page_wraps_arrow_safe_tables_in_streamlit_dataframe(self) -> None:
+        text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
+        tree = ast.parse(text)
+        for parent in ast.walk(tree):
+            for child in ast.iter_child_nodes(parent):
+                child.parent = parent
+        arrow_calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "arrow_safe_dataframe"
+        ]
+
+        self.assertGreaterEqual(len(arrow_calls), 2)
+        self.assertTrue(all(not call.keywords for call in arrow_calls))
+        for call in arrow_calls:
+            self.assertIsInstance(call.parent, ast.Call)
+            parent_func = call.parent.func
+            self.assertIsInstance(parent_func, ast.Attribute)
+            self.assertEqual(parent_func.attr, "dataframe")
+
+    def test_arrow_safe_dataframe_is_never_passed_streamlit_display_keywords(self) -> None:
+        display_keywords = {"use_container_width", "hide_index", "width", "height", "column_config"}
+        offenders = []
+        for path in [*ROOT.glob("app/**/*.py"), *ROOT.glob("pages/**/*.py")]:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for parent in ast.walk(tree):
+                for child in ast.iter_child_nodes(parent):
+                    child.parent = parent
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "arrow_safe_dataframe"
+                ):
+                    bad = sorted({keyword.arg for keyword in node.keywords if keyword.arg in display_keywords})
+                    if bad:
+                        offenders.append((path.relative_to(ROOT).as_posix(), bad))
+        self.assertEqual(offenders, [])
 
     def test_programme_setup_base_and_new_programme_options_apply(self) -> None:
         state = unified_default_session_state()
