@@ -18,6 +18,7 @@ from engine.apy.timing import resolve_time_settings
 
 
 EPS = np.finfo(float).eps
+MATLAB_V9_IMPLICIT_EARLY_LATE = "matlab_v9_implicit_early_late"
 
 
 def bern_prob(x: int | bool, p: float) -> float:
@@ -226,6 +227,22 @@ def expected_active_within_window(
     return prev
 
 
+def expected_active_within_window_matlab_v9(
+    lambda_early: float,
+    pars: dict[str, Any],
+    log_lambda: float,
+    gamma: float,
+    screen_window: float,
+) -> float:
+    """MATLAB v9 compatibility target: all infections begin in the early phase.
+
+    This preserves the reference software semantics for stored APY v9
+    validation scenarios. It is not a scientific recent-LTBI estimate.
+    """
+    weights, multipliers = _progression_weighted_multipliers(pars, log_lambda, gamma)
+    return float((weights * (1.0 - np.exp(-float(screen_window) * lambda_early * multipliers))).sum())
+
+
 def calibrate_early_hazard(
     pars: dict[str, Any],
     log_lambda: float,
@@ -236,6 +253,7 @@ def calibrate_early_hazard(
     early_progression_period_years: float | None = None,
     baseline_recent_proportion: float = 1.0,
     recent_to_remote_rate: float | None = None,
+    natural_history_semantics: str | None = None,
 ) -> dict[str, float]:
     if early_late_ratio < 1:
         raise ValueError("earlyLateRatio must be >= 1")
@@ -243,6 +261,17 @@ def calibrate_early_hazard(
 
     def objective(lambda_early: float) -> float:
         lambda_late = lambda_early / early_late_ratio
+        if natural_history_semantics == MATLAB_V9_IMPLICIT_EARLY_LATE:
+            return (
+                expected_active_within_window_matlab_v9(
+                    lambda_early,
+                    pars,
+                    log_lambda,
+                    gamma,
+                    screen_window,
+                )
+                - target_active_2y
+            )
         return (
             float(
                 (
@@ -334,6 +363,7 @@ def calibrate_from_config(config: dict[str, Any]) -> dict[str, Any]:
         timing["earlyProgressionPeriodYears"],
         ltbi_state["baselineRecentLTBIProportion"],
         ltbi_state["recentToRemoteTransitionRatePerYear"],
+        cfg.get("naturalHistorySemantics"),
     )
     return {
         "parameters": pars,

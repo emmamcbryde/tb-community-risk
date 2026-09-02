@@ -18,8 +18,11 @@ from engine.apy.event_ledger_economics import (
     PROGRAM_COMPONENTS,
     run_event_ledger_health_economics,
 )
+from engine.apy.distributional_validation import portable_config_from_reference
 from engine.apy.expected_value import run_expected_value
 from engine.apy.ltbi_state import enable_development_compatibility_mode, resolve_ltbi_state_assumptions
+from engine.apy.reference_loader import load_reference_scenario_config, load_reference_summary
+from engine.apy.runner import run_scenario_with_do_nothing
 from engine.apy.working_defaults import (
     HIGHER_BURDEN_DALY_OUTCOME_PRESET,
     UNIFIED_WORKING_DEFAULT_PRESET_ID,
@@ -31,29 +34,44 @@ from engine.apy.working_defaults import (
 
 
 SA_HEALTH_REFERENCE_PACKAGE_VERSION = "sa_health_apy_reference_package_v1"
-SA_HEALTH_REFERENCE_PACKAGE_ID = "sa_health_apy_working_reference_igra_3hp_prevent_30pct"
+SA_HEALTH_REFERENCE_PACKAGE_ID = "sa_health_apy_matlab_v9_compatible_working_reference_igra_3hp_prevent_30pct"
+SA_HEALTH_TECHNICAL_RECENT_REMOTE_PACKAGE_ID = "sa_health_apy_technical_recent_remote_igra_3hp_prevent_30pct"
 SA_HEALTH_REFERENCE_OUTPUT_DIR = (
     Path("outputs")
     / "sa_health_reference"
     / SA_HEALTH_REFERENCE_PACKAGE_ID
 )
-REFERENCE_LABEL = "SA Health APY working-reference analysis"
+MATLAB_REFERENCE_DIR = Path("validation") / "matlab_reference" / "prevent_igra_3hp_N1500_seed1"
+REFERENCE_LABEL = "SA Health APY MATLAB-v9-compatible working-reference analysis"
+TECHNICAL_RECENT_REMOTE_LABEL = "SA Health APY technical explicit recent/remote calibration scenario"
 PROVISIONAL_LABEL = "working-default analysis for planning - provisional"
 PROGRAMME_NOT_COSTED_LABEL = "not yet locally costed; zero compatibility value used"
+MATLAB_COMPATIBILITY_SEMANTICS = "matlab_v9_implicit_early_late"
 
 
-def build_sa_health_reference_package() -> dict[str, Any]:
-    """Build the deterministic SA Health APY working-reference package.
+def build_sa_health_reference_package(
+    *,
+    n_reps: int = 2000,
+    seed: int = 1,
+    include_technical_recent_remote: bool = False,
+) -> dict[str, Any]:
+    """Build the MATLAB-v9-compatible SA Health APY working-reference package.
 
-    This is an export layer over the validated APY expected-value event ledger
-    and health-economics engine. It deliberately uses the explicit LTBI-state
-    development-compatibility pathway because the APY baseline recent-LTBI
-    proportion is unresolved.
+    This is an export layer over the Python stochastic event ledger and
+    health-economics engine using MATLAB v9's implicit early/late natural
+    history semantics for compatibility with the earlier plain SA Health
+    report. It does not treat the inherited calibration target or implicit
+    early phase as reviewed APY evidence.
     """
     preset = build_unified_working_default_preset()
-    config = _reference_config(preset["config"])
+    config = _matlab_compatible_reference_config(
+        preset["config"],
+        n_reps=n_reps,
+        seed=seed,
+    )
     economics_config = _reference_economics_config(preset["economicsConfig"])
-    epi = run_expected_value(config)
+    epi_bundle = run_scenario_with_do_nothing(config)
+    epi = epi_bundle["results"]
     ledger = epi["eventLedger"]
     economics = run_event_ledger_health_economics(epi, economics_config)
     readiness = assess_apy_reference_readiness(
@@ -63,12 +81,21 @@ def build_sa_health_reference_package() -> dict[str, Any]:
     )
 
     scenarios = _economic_scenarios(epi, economics_config)
+    technical_recent_remote = (
+        build_sa_health_technical_recent_remote_package()
+        if include_technical_recent_remote
+        else technical_recent_remote_metadata()
+    )
+    validation = matlab_reference_validation_rows(epi)
     tables = {
         "executive_summary": executive_summary_rows(config, ledger, economics, readiness),
         "cost_categories": cost_category_rows(economics, scenario_label="Primary working reference"),
         "annual_budget_impact": annual_budget_impact_rows(economics, scenario_label="Primary working reference"),
+        "gross_delivery_ratios": gross_delivery_ratio_rows(ledger, economics),
+        "net_health_system_ratios": net_health_system_ratio_rows(ledger, economics),
         "assumptions_readiness": assumptions_readiness_rows(config, economics_config, readiness),
         "economic_scenarios": economic_scenario_rows(scenarios),
+        "matlab_reference_validation": validation,
     }
     figures = {
         "screening_treatment_cascade.svg": cascade_svg(tables["executive_summary"]),
@@ -94,9 +121,48 @@ def build_sa_health_reference_package() -> dict[str, Any]:
         "economics": economics,
         "readiness": readiness,
         "economicScenarios": scenarios,
+        "technicalRecentRemoteScenario": technical_recent_remote,
+        "matlabReferenceValidation": validation,
         "tables": tables,
         "figures": figures,
         "manifest": manifest,
+    }
+
+
+def build_sa_health_technical_recent_remote_package() -> dict[str, Any]:
+    """Build the superseded deterministic recent/remote technical scenario."""
+    preset = build_unified_working_default_preset()
+    config = _technical_recent_remote_config(preset["config"])
+    economics_config = _reference_economics_config(preset["economicsConfig"])
+    epi = run_expected_value(config)
+    economics = run_event_ledger_health_economics(epi, economics_config)
+    return {
+        "packageId": SA_HEALTH_TECHNICAL_RECENT_REMOTE_PACKAGE_ID,
+        "label": TECHNICAL_RECENT_REMOTE_LABEL,
+        "primarySAHealthAnchor": False,
+        "suitableAsPrimaryEstimate": False,
+        "reason": (
+            "This scenario uses the explicit recent/remote Markov structure with "
+            "the 0% recent-LTBI compatibility placeholder. It is preserved for "
+            "technical comparison and is not the primary SA Health epidemiological anchor."
+        ),
+        "config": config,
+        "epidemiology": epi,
+        "economics": economics,
+    }
+
+
+def technical_recent_remote_metadata() -> dict[str, Any]:
+    return {
+        "packageId": SA_HEALTH_TECHNICAL_RECENT_REMOTE_PACKAGE_ID,
+        "label": TECHNICAL_RECENT_REMOTE_LABEL,
+        "primarySAHealthAnchor": False,
+        "suitableAsPrimaryEstimate": False,
+        "reason": (
+            "The deterministic explicit recent/remote package generated before "
+            "the epidemiological-anchor correction is preserved under the prior "
+            "output directory and can be rebuilt explicitly for technical review."
+        ),
     }
 
 
@@ -118,10 +184,15 @@ def build_same_ledger_economic_scenario_comparison(
     }
 
 
-def write_sa_health_reference_package(output_dir: str | Path | None = None) -> dict[str, Any]:
+def write_sa_health_reference_package(
+    output_dir: str | Path | None = None,
+    *,
+    n_reps: int = 2000,
+    seed: int = 1,
+) -> dict[str, Any]:
     from app.results_workbook import build_results_workbook
 
-    package = build_sa_health_reference_package()
+    package = build_sa_health_reference_package(n_reps=n_reps, seed=seed)
     root = Path(output_dir) if output_dir is not None else SA_HEALTH_REFERENCE_OUTPUT_DIR
     tables_dir = root / "tables"
     figures_dir = root / "figures"
@@ -131,6 +202,7 @@ def write_sa_health_reference_package(output_dir: str | Path | None = None) -> d
     _write_json(root / "scenario_config.json", package["config"])
     _write_json(root / "economics_config.json", package["economicsConfig"])
     _write_json(root / "manifest.json", package["manifest"])
+    _write_json(root / "technical_recent_remote_scenario.json", package["technicalRecentRemoteScenario"])
     _write_csv(root / "evidence_registry_snapshot.csv", load_apy_evidence_registry())
     _write_csv(root / "event_ledger_totals.csv", _table_rows(package["eventLedger"]["replicateTotals"]))
     _write_csv(root / "event_ledger_annual.csv", _table_rows(package["eventLedger"]["annualEvents"]))
@@ -149,10 +221,18 @@ def write_sa_health_reference_package(output_dir: str | Path | None = None) -> d
             "backend": package["epidemiology"].get("backend"),
         },
         "headline": {},
-        "technical": {"eventLedger": package["eventLedger"]},
+        "technical": {
+            "eventLedger": {
+                "metadata": package["eventLedger"].get("metadata"),
+                "definitions": package["eventLedger"].get("definitions"),
+                "replicateTotals": package["eventLedger"].get("replicateTotals"),
+                "annualEvents": [],
+                "validation": package["eventLedger"].get("validation"),
+            }
+        },
         "downloads": {
             "eventLedgerTotals": _table_rows(package["eventLedger"]["replicateTotals"]),
-            "eventLedgerAnnual": _table_rows(package["eventLedger"]["annualEvents"]),
+            "eventLedgerAnnual": [],
             "eventDefinitions": _table_rows(package["eventLedger"]["definitions"]),
         },
     }
@@ -168,11 +248,45 @@ def write_sa_health_reference_package(output_dir: str | Path | None = None) -> d
     return {"outputDir": str(root), "manifest": package["manifest"], "package": package}
 
 
-def _reference_config(config: dict[str, Any]) -> dict[str, Any]:
-    cfg = deepcopy(config)
+def _matlab_compatible_reference_config(
+    config: dict[str, Any],
+    *,
+    n_reps: int,
+    seed: int,
+) -> dict[str, Any]:
+    reference_cfg = load_reference_scenario_config(MATLAB_REFERENCE_DIR / "scenario_config.json")
+    cfg = portable_config_from_reference(reference_cfg)
     cfg.update(
         {
             "scenarioLabel": REFERENCE_LABEL,
+            "analysisMethod": "agent_based",
+            "N": 1500,
+            "nReps": int(n_reps),
+            "seed": int(seed),
+            "screenCoverage": 0.30,
+            "screeningStrategy": "prevent",
+            "testType": "IGRA",
+            "regimen": "3HP",
+            "screeningWindowYears": 2,
+            "screenWindow": 2,
+            "followUpHorizonYears": 20,
+            "followHorizon": 20,
+            "naturalHistorySemantics": MATLAB_COMPATIBILITY_SEMANTICS,
+            "eligible": {"proportion": 1.0, "number": 1500, "description": "All APY demonstration residents eligible"},
+        }
+    )
+    return cfg
+
+
+def _reference_config(config: dict[str, Any]) -> dict[str, Any]:
+    return _technical_recent_remote_config(config)
+
+
+def _technical_recent_remote_config(config: dict[str, Any]) -> dict[str, Any]:
+    cfg = deepcopy(config)
+    cfg.update(
+        {
+            "scenarioLabel": TECHNICAL_RECENT_REMOTE_LABEL,
             "analysisMethod": "expected_value",
             "N": 1500,
             "screenCoverage": 0.30,
@@ -196,7 +310,7 @@ def _reference_economics_config(economics_config: dict[str, Any]) -> dict[str, A
         "regimen": "3HP",
         "screeningStrategy": "prevent",
         "screenCoverage": 0.30,
-        "screeningWindowYears": 3,
+        "screeningWindowYears": 2,
         "followUpHorizonYears": 20,
     }
     econ.setdefault("metadata", {}).update(
@@ -334,10 +448,11 @@ def executive_summary_rows(
     inter = totals.get("intervention", {})
     primary = _replicate_row(economics, "primary")
     comparison = _replicate_row(economics, "comparison")
+    gross_delivery = _gross_delivery_expenditure(primary)
     ltbi = resolve_ltbi_state_assumptions(config)
     rows = [
         _summary("Population", "Eligible population", inter.get("eligible_population"), "people", "All 1,500 APY demonstration residents are eligible."),
-        _summary("Population", "People screened", inter.get("screened"), "people", "30% coverage over three years."),
+        _summary("Population", "People screened", inter.get("screened"), "people", "30% coverage over two years."),
         _summary("Screening cascade", "True-positive latent results", inter.get("true_positive_latent"), "people", ""),
         _summary("Screening cascade", "False-positive results", inter.get("false_positive"), "people", ""),
         _summary("Treatment cascade", "Preventive treatments initiated", inter.get("tpt_started_total"), "people", ""),
@@ -350,16 +465,70 @@ def executive_summary_rows(
         _summary("Costs, 3% discounted", "Intervention total cost", primary.get("interventionCost"), "AUD 2019", ""),
         _summary("Costs, 3% discounted", "Incremental cost", primary.get("incrementalCost"), "AUD 2019", "Intervention minus comparator."),
         _summary("Costs, 3% discounted", "Active-TB treatment cost offset", _tb_cost_offset(primary), "AUD 2019", "Comparator active-TB care cost minus intervention active-TB care cost."),
-        _summary("Cost-consequence", "Cost per person screened", _divide(primary.get("incrementalCost"), inter.get("screened")), "AUD 2019 per person screened", "Uses net incremental cost."),
-        _summary("Cost-consequence", "Cost per TPT completion", _divide(primary.get("incrementalCost"), inter.get("tpt_completed_total")), "AUD 2019 per completed course", "Uses net incremental cost."),
-        _summary("Cost-consequence", "Cost per active TB case averted", primary.get("costPerActiveTBCasePrevented"), "AUD 2019 per case averted", "Primary cost-consequence ratio."),
+        _summary(
+            "Gross delivery measures",
+            "Intervention delivery expenditure per person screened",
+            _divide(gross_delivery, inter.get("screened")),
+            "AUD 2019 per person screened",
+            "Programme/pathway expenditure before active-TB care offsets.",
+        ),
+        _summary(
+            "Gross delivery measures",
+            "Intervention delivery expenditure per TPT start",
+            _divide(gross_delivery, inter.get("tpt_started_total")),
+            "AUD 2019 per treatment start",
+            "Programme/pathway expenditure before active-TB care offsets.",
+        ),
+        _summary(
+            "Gross delivery measures",
+            "Intervention delivery expenditure per TPT completion",
+            _divide(gross_delivery, inter.get("tpt_completed_total")),
+            "AUD 2019 per completed course",
+            "Programme/pathway expenditure before active-TB care offsets.",
+        ),
+        _summary(
+            "Gross delivery measures",
+            "Intervention delivery expenditure per active TB case averted",
+            _divide(gross_delivery, inter.get("active_tb_cases_prevented")),
+            "AUD 2019 per case averted",
+            "Programme/pathway expenditure before active-TB care offsets.",
+        ),
+        _summary(
+            "Net health-system measures",
+            "Net health-system cost or saving per person screened",
+            _divide(primary.get("incrementalCost"), inter.get("screened")),
+            "AUD 2019 per person screened",
+            "Net incremental cost after active-TB care offsets.",
+        ),
+        _summary(
+            "Net health-system measures",
+            "Net health-system cost or saving per TPT completion",
+            _divide(primary.get("incrementalCost"), inter.get("tpt_completed_total")),
+            "AUD 2019 per completed course",
+            "Net incremental cost after active-TB care offsets.",
+        ),
+        _summary(
+            "Net health-system measures",
+            "Net health-system cost or saving per active TB case averted",
+            primary.get("costPerActiveTBCasePrevented"),
+            "AUD 2019 per case averted",
+            "Net incremental cost after active-TB care offsets.",
+        ),
         _summary("Secondary DALY/ICER", "DALYs averted, 3% discounted", primary.get("dalysAverted"), "DALYs", "Provisional secondary output; primary calculation excludes post-TB sequelae."),
         _summary("Secondary DALY/ICER", "ICER classification, 3% discounted", primary.get("classification"), "", "No cost-effectiveness conclusion is permitted while evidence remains provisional and threshold is unresolved."),
         _summary("Secondary DALY/ICER", "Numerical ICER, 3% discounted", primary.get("replicateICER"), "AUD 2019 per DALY averted", "Blank when the quadrant is dominant/dominated or otherwise not interpretable."),
         _summary("Secondary DALY/ICER", "NMB", primary.get("netMonetaryBenefit"), "AUD 2019", "Unavailable because no reviewed WTP threshold is supplied."),
         _summary("Comparison, 0% undiscounted", "Incremental cost, 0% discounting", comparison.get("incrementalCost"), "AUD 2019", ""),
-        _summary("Evidence/readiness", "Analysis status", PROVISIONAL_LABEL, "", "Recent-LTBI compatibility assumption is explicit and provisional."),
-        _summary("Evidence/readiness", "Baseline recent-LTBI proportion used", ltbi.get("baselineRecentLTBIProportion"), "proportion", "Compatibility value only; not an APY estimate."),
+        _summary("Evidence/readiness", "Epidemiological anchor", "MATLAB-v9-compatible stochastic APY reference", "", "Compatible with the frozen earlier plain SA Health APY v9 report."),
+        _summary("Evidence/readiness", "Analysis status", PROVISIONAL_LABEL, "", "Inherited calibration semantics and evidence gaps remain provisional."),
+        _summary(
+            "Evidence/readiness",
+            "Baseline recent-LTBI proportion used",
+            ltbi.get("baselineRecentLTBIProportion"),
+            "proportion",
+            "Compatibility metadata only; the primary anchor uses MATLAB v9 "
+            "implicit early/late semantics rather than measured recent-LTBI composition.",
+        ),
         _summary("Evidence/readiness", "Overall clinician-ready", readiness.get("overallClinicianReady"), "boolean", "False until unresolved evidence is reviewed."),
     ]
     return rows
@@ -407,6 +576,58 @@ def cost_category_rows(economics: dict[str, Any], *, scenario_label: str) -> lis
             }
         )
     return rows
+
+
+def gross_delivery_ratio_rows(ledger: dict[str, Any], economics: dict[str, Any]) -> list[dict[str, Any]]:
+    totals = _totals_by_arm(ledger)
+    inter = totals.get("intervention", {})
+    primary = _replicate_row(economics, "primary")
+    gross = _gross_delivery_expenditure(primary)
+    denominators = [
+        ("person_screened", "Intervention delivery expenditure per person screened", inter.get("screened")),
+        ("tpt_start", "Intervention delivery expenditure per TPT start", inter.get("tpt_started_total")),
+        ("tpt_completion", "Intervention delivery expenditure per TPT completion", inter.get("tpt_completed_total")),
+        ("infection_effectively_treated", "Intervention delivery expenditure per infection effectively treated", inter.get("infection_effectively_treated_total")),
+        ("active_tb_case_averted", "Intervention delivery expenditure per active TB case averted", inter.get("active_tb_cases_prevented")),
+    ]
+    return [
+        {
+            "ratioId": ratio_id,
+            "label": label,
+            "numerator": gross,
+            "denominator": denominator,
+            "value": _divide(gross, denominator),
+            "unit": "AUD 2019",
+            "interpretation": "Gross programme/pathway expenditure before active-TB care offsets.",
+        }
+        for ratio_id, label, denominator in denominators
+    ]
+
+
+def net_health_system_ratio_rows(ledger: dict[str, Any], economics: dict[str, Any]) -> list[dict[str, Any]]:
+    totals = _totals_by_arm(ledger)
+    inter = totals.get("intervention", {})
+    primary = _replicate_row(economics, "primary")
+    net = primary.get("incrementalCost")
+    denominators = [
+        ("person_screened", "Net health-system cost or saving per person screened", inter.get("screened")),
+        ("tpt_completion", "Net health-system cost or saving per TPT completion", inter.get("tpt_completed_total")),
+        ("active_tb_case_averted", "Net health-system cost or saving per active TB case averted", inter.get("active_tb_cases_prevented")),
+        ("daly_averted", "Net incremental cost per DALY averted", primary.get("dalysAverted")),
+    ]
+    return [
+        {
+            "ratioId": ratio_id,
+            "label": label,
+            "numerator": net,
+            "denominator": denominator,
+            "value": _divide(net, denominator),
+            "unit": "AUD 2019",
+            "classification": primary.get("classification"),
+            "interpretation": "Net incremental health-system cost after active-TB care offsets.",
+        }
+        for ratio_id, label, denominator in denominators
+    ]
 
 
 def annual_budget_impact_rows(economics: dict[str, Any], *, scenario_label: str) -> list[dict[str, Any]]:
@@ -489,8 +710,8 @@ def assumptions_readiness_rows(config: dict[str, Any], economics_config: dict[st
             "sourceProvenance": ltbi.get("baselineRecentLTBIProportionSource") or ltbi.get("source"),
             "reviewStatus": ltbi.get("status"),
             "provisional": ltbi.get("provisional"),
-            "inclusionStatus": "compatibility placeholder",
-            "effectOnInterpretation": "Blocks clinician-ready interpretation; working run uses explicit 0% compatibility value.",
+            "inclusionStatus": "unresolved compatibility metadata",
+            "effectOnInterpretation": "Blocks clinician-ready interpretation; primary anchor uses MATLAB v9 implicit early/late semantics rather than a reviewed recent-LTBI fraction.",
         }
     )
     rows.append(
@@ -531,6 +752,45 @@ def economic_scenario_rows(scenarios: list[dict[str, Any]]) -> list[dict[str, An
     return rows
 
 
+def matlab_reference_validation_rows(epi: dict[str, Any]) -> list[dict[str, Any]]:
+    reference = load_reference_summary(MATLAB_REFERENCE_DIR / "matlab_summary.csv")
+    reference_rows = {str(row["Metric"]): row for row in reference.to_dict(orient="records")}
+    raw = epi.get("raw")
+    if not isinstance(raw, pd.DataFrame):
+        raw = pd.DataFrame(raw)
+    metrics = [
+        "nScreened",
+        "nTestPositive",
+        "nTestPositiveNonActive",
+        "nFalsePositiveTests",
+        "nStartTPT",
+        "nCompleteTPT",
+        "nADRstop",
+        "nCuredInfection",
+        "nPreventedActiveTB",
+        "nActiveBy20y",
+    ]
+    rows = []
+    for metric in metrics:
+        ref = reference_rows.get(metric, {})
+        py_median = _number_or_none(raw[metric].median()) if metric in raw else None
+        low = _number_or_none(ref.get("Low95"))
+        high = _number_or_none(ref.get("High95"))
+        rows.append(
+            {
+                "metric": metric,
+                "pythonMean": _number_or_none(raw[metric].mean()) if metric in raw else None,
+                "pythonMedian": py_median,
+                "matlabMedian": _number_or_none(ref.get("Median")),
+                "matlabLow95": low,
+                "matlabHigh95": high,
+                "withinMatlabInterval": None if py_median is None or low is None or high is None else low <= py_median <= high,
+                "notes": "Distributional validation against frozen MATLAB APY v9 reference; row-for-row RNG identity is not expected.",
+            }
+        )
+    return rows
+
+
 def manifest_payload(
     *,
     config: dict[str, Any],
@@ -548,7 +808,20 @@ def manifest_payload(
         "analysisStatus": PROVISIONAL_LABEL,
         "codeCommit": _git_value(["git", "rev-parse", "HEAD"]),
         "branch": _git_value(["git", "branch", "--show-current"]),
-        "modelType": "expected_value",
+        "modelType": "agent_based",
+        "nReps": config.get("nReps"),
+        "seed": config.get("seed"),
+        "epidemiologicalAnchor": {
+            "type": "matlab_v9_compatible_python_stochastic_event_ledger",
+            "storedReferenceDirectory": str(MATLAB_REFERENCE_DIR),
+            "naturalHistorySemantics": MATLAB_COMPATIBILITY_SEMANTICS,
+            "interpretation": "Compatibility with frozen MATLAB APY v9 reference; not evidence that the inherited calibration target is scientifically validated.",
+        },
+        "technicalRecentRemoteScenario": {
+            "packageId": SA_HEALTH_TECHNICAL_RECENT_REMOTE_PACKAGE_ID,
+            "label": TECHNICAL_RECENT_REMOTE_LABEL,
+            "suitableAsPrimaryEstimate": False,
+        },
         "dynamicTransmissionIncluded": False,
         "eventLedgerContractVersion": EVENT_LEDGER_CONTRACT_VERSION,
         "healthEconomicsContractVersion": HEALTH_ECONOMICS_CONTRACT_VERSION,
@@ -577,7 +850,10 @@ def manifest_payload(
         },
         "interpretationGuardrails": [
             "Working-default analysis for planning; provisional.",
-            "Recent-LTBI proportion uses explicit 0% compatibility placeholder and is not an estimate.",
+            "Primary epidemiology uses MATLAB-v9-compatible implicit early/late semantics for compatibility with the earlier plain SA Health report.",
+            "The inherited 10/770 active-TB calibration target remains unresolved and must not be described as validated incident progression from LTBI.",
+            "The implicit early phase is not measured APY recent-LTBI composition.",
+            "Multiplicative OR-as-hazard and joint-risk assumptions are preserved for compatibility and remain scientifically provisional.",
             "Programme setup, running, travel, outreach and staff-support costs are not yet locally costed.",
             "NMB and probability cost-effective are unavailable without a reviewed threshold.",
             "No dynamic transmission effects are included.",
@@ -596,14 +872,17 @@ Run from the repository root:
 python scripts/build_sa_health_reference_package.py
 ```
 
-This package is generated from the non-dynamic Python APY expected-value
-model, the APY event ledger, and the event-ledger health-economics engine.
+This package is generated from the non-dynamic Python APY stochastic event
+ledger and the event-ledger health-economics engine. The epidemiological
+anchor uses MATLAB v9 compatible implicit early/late natural-history
+semantics for compatibility with the frozen earlier plain SA Health report.
 It excludes the dynamic community transmission model.
 
-Interpretation: {PROVISIONAL_LABEL}. The baseline recent-LTBI proportion is
-unresolved, so the run explicitly uses the 0% compatibility assumption. This
-is a conservative working scenario and not evidence for the true recent-LTBI
-fraction. Programme setup, programme running, travel, outreach and staff
+Interpretation: {PROVISIONAL_LABEL}. The inherited `10/770` active-TB target
+is treated only as a MATLAB software calibration target for active TB observed
+over the historical two-year screening window. Its scientific provenance and
+interpretation remain unresolved. The implicit early phase is not measured
+recent LTBI. Programme setup, programme running, travel, outreach and staff
 support remain not locally costed. No willingness-to-pay threshold is supplied,
 so NMB and probability cost-effective are unavailable.
 
@@ -680,9 +959,12 @@ def _totals_by_arm(ledger: dict[str, Any]) -> dict[str, dict[str, Any]]:
             index=["arm"],
             columns="eventName",
             values="value",
-            aggfunc="sum",
+            aggfunc="mean",
         ).reset_index()
         totals = wide
+    elif "arm" in totals.columns:
+        numeric = [col for col in totals.columns if col != "arm" and pd.api.types.is_numeric_dtype(totals[col])]
+        totals = totals.groupby("arm", dropna=False)[numeric].mean().reset_index()
     out = {}
     for _, row in totals.iterrows():
         out[str(row.get("arm"))] = row.to_dict()
@@ -694,7 +976,39 @@ def _replicate_row(economics: dict[str, Any], profile: str) -> dict[str, Any]:
     if not isinstance(reps, pd.DataFrame):
         reps = pd.DataFrame(reps)
     subset = reps[reps["discountProfile"] == profile]
-    return {} if subset.empty else subset.iloc[0].to_dict()
+    if subset.empty:
+        return {}
+    if len(subset) == 1:
+        return subset.iloc[0].to_dict()
+    if "economicPairComplete" in subset:
+        complete = subset[subset["economicPairComplete"].astype(bool)].copy()
+    else:
+        complete = subset.copy()
+    if complete.empty:
+        return {"classification": "incomplete / not calculated"}
+    out: dict[str, Any] = {"discountProfile": profile}
+    for col in complete.columns:
+        if col in {"replicateId", "pairedReplicateId", "replicateSeed"}:
+            continue
+        numeric = pd.to_numeric(complete[col], errors="coerce").dropna()
+        if not numeric.empty:
+            out[col] = _number_or_none(numeric.mean())
+    out["incrementalCost"] = _subtract(out.get("interventionCost"), out.get("comparatorCost"))
+    out["dalysAverted"] = _subtract(out.get("comparatorDALYs"), out.get("interventionDALYs"))
+    out["costPerActiveTBCasePrevented"] = _divide(out.get("incrementalCost"), out.get("activeTBCasesPrevented"))
+    out["costPerInfectionEffectivelyTreated"] = _divide(out.get("incrementalCost"), out.get("infectionsEffectivelyTreated"))
+    summaries = economics.get("summaries")
+    if not isinstance(summaries, pd.DataFrame):
+        summaries = pd.DataFrame(summaries)
+    primary = summaries[
+        (summaries.get("discountProfile") == profile)
+        & (summaries.get("metric") == "primaryICER_ratioOfMeans")
+    ] if not summaries.empty else pd.DataFrame()
+    if not primary.empty:
+        row = primary.iloc[0].to_dict()
+        out["classification"] = row.get("classification")
+        out["replicateICER"] = row.get("mean")
+    return out
 
 
 def _summary(section: str, metric: str, value: Any, unit: str, interpretation: str) -> dict[str, Any]:
@@ -716,6 +1030,18 @@ def _category_interpretation(category_id: str) -> str:
     if category_id == "active_tb_care":
         return "Ordinary active-TB care included independently in both arms."
     return "Included in authoritative economics when mapped event quantity is present."
+
+
+def _gross_delivery_expenditure(row: dict[str, Any]) -> float | None:
+    if not row:
+        return None
+    total = 0.0
+    for component in PROGRAM_COMPONENTS:
+        value = _number_or_none(row.get(f"intervention_{component}Discounted"))
+        if value is None:
+            return None
+        total += value
+    return total
 
 
 def _assumption_effect(row: dict[str, Any]) -> str:
@@ -761,7 +1087,11 @@ def _divide(a: Any, b: Any) -> float | None:
 
 
 def _number_or_none(value: Any) -> float | None:
-    if value in (None, "", []):
+    if value is None:
+        return None
+    if isinstance(value, str) and value == "":
+        return None
+    if isinstance(value, list) and value == []:
         return None
     try:
         number = float(value)

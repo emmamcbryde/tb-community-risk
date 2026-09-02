@@ -943,6 +943,18 @@ elif not results_bundle:
     st.info("Run the model before running economics.")
 elif st.session_state.get("results_stale"):
     st.warning("Rerun the model before running economics so the economics inputs match current results.")
+else:
+    semantics = str((config or {}).get("naturalHistorySemantics") or "")
+    if semantics == "matlab_v9_implicit_early_late":
+        st.info(
+            "Epidemiological anchor: frozen APY stochastic compatibility reference. "
+            "Economic edits use the current event ledger and do not rerun epidemiology."
+        )
+    else:
+        st.warning(
+            "This run uses the explicit recent/remote technical scenario, not the "
+            "frozen SA Health epidemiological compatibility anchor."
+        )
 
 if st.button("Run health economics", type="primary", disabled=not can_run):
     run_authoritative_health_economics(results_bundle, econ_config)
@@ -968,6 +980,10 @@ if economic_scenario_comparison:
         arrow_safe_dataframe(economic_scenario_comparison.get("rows") or []),
         width="stretch",
         hide_index=True,
+    )
+    st.caption(
+        "Gross delivery expenditure ratios are before active-TB care offsets; net health-system "
+        "ratios include active-TB care offsets."
     )
     st.caption(
         "The AUD 500,000 setup case is illustrative only. The bundled pathway case is a sensitivity "

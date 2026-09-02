@@ -1,7 +1,11 @@
 # SA Health APY Working-Reference Package
 
-This package freezes a deterministic, non-dynamic APY LTBI screening
-health-economic working-reference run for planning.
+This package freezes a non-dynamic APY LTBI screening health-economic
+working-reference run for planning. The primary epidemiological anchor is a
+Python stochastic event-ledger run using MATLAB-v9-compatible implicit
+early/late natural-history semantics, validated distributionally against the
+frozen MATLAB APY v9 reference scenario underlying the earlier plain SA Health
+report.
 
 Generate it from the repository root:
 
@@ -13,7 +17,7 @@ The generator uses the existing authoritative path:
 
 ```text
 APY configuration
-  -> expected-value APY model
+  -> MATLAB-v9-compatible Python stochastic APY model
   -> ltbi_screening_event_ledger_v3
   -> ltbi_health_economics_results_v3
   -> report-ready tables, figures and workbook
@@ -31,9 +35,10 @@ the MATLAB reference file.
 - Population: APY demonstration population of 1,500 residents.
 - Eligibility: all 1,500 people are eligible; targeting determines who is
   screened.
-- Coverage: 30% over a three-year screening window.
+- Coverage: 30% over a two-year screening window.
 - Follow-up: 20 years.
-- Primary model: deterministic expected outcomes.
+- Primary model: stochastic APY v9-compatible simulation, 2,000 simulations,
+  seed 1. Expected costs and effects use means across paired replicates.
 
 ## Economic Approach
 
@@ -41,8 +46,8 @@ the MATLAB reference file.
 - Currency and price year: AUD 2019.
 - Primary discounting: 3% for costs and health outcomes.
 - Comparison discounting: 0%.
-- Primary outputs: cost-consequence results and cost per active TB case
-  averted.
+- Primary outputs: cost-consequence results, gross intervention delivery
+  expenditure ratios and net health-system ratios after active-TB care offsets.
 - Secondary outputs: provisional DALYs and ICER classification.
 - No willingness-to-pay threshold is supplied; NMB and probability
   cost-effective are unavailable.
@@ -53,19 +58,22 @@ compatibility values only so the calculation can proceed; this is not evidence
 that implementation is costless. An illustrative AUD 500,000 setup scenario
 is exported separately.
 
-## Provisional Recent-LTBI Assumption
+## Provisional Epidemiological Anchor
 
-The APY baseline recent-LTBI proportion remains unresolved. The package uses
-the explicit 0% compatibility pathway to permit a conservative working
-scenario. This value is not an estimate of the true APY recent-LTBI fraction,
-and every report-ready output remains provisional.
+The inherited `10/770` active-TB target is treated only as a MATLAB software
+calibration target for active TB observed over the historical two-year
+screening window. Its scientific provenance and interpretation remain
+unresolved. The implicit early phase is not measured APY recent-LTBI
+composition. The older deterministic explicit recent/remote scenario is
+preserved as a technical scenario and is not the primary SA Health
+epidemiological estimate.
 
 ## Outputs
 
 The default output directory is:
 
 ```text
-outputs/sa_health_reference/sa_health_apy_working_reference_igra_3hp_prevent_30pct/
+outputs/sa_health_reference/sa_health_apy_matlab_v9_compatible_working_reference_igra_3hp_prevent_30pct/
 ```
 
 The generated directory contains:
@@ -79,6 +87,7 @@ The generated directory contains:
 - `economic_replicates.csv`
 - `economic_annual_by_arm.csv`
 - `economic_summary.csv`
+- `technical_recent_remote_scenario.json`
 - `sa_health_apy_working_reference_outputs.xlsx`
 - report-ready CSV tables in `tables/`
 - portable SVG figures in `figures/`

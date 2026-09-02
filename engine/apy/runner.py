@@ -352,5 +352,6 @@ def _calibration_key_payload(config: dict[str, Any]) -> dict[str, Any]:
         "recentToRemoteTransitionRatePerYear",
         "calibrationPolicy",
         "referenceCalibrationArtifact",
+        "naturalHistorySemantics",
     ]
     return {field: config.get(field) for field in fields}

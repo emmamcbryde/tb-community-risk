@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from engine.apy.calibration_policy import resolve_calibration_for_config
+from engine.apy.calibration import MATLAB_V9_IMPLICIT_EARLY_LATE
 from engine.apy.cohort import (
     add_targeting_scores,
     draw_base_population,
@@ -222,6 +223,8 @@ def simulate_one_cohort(
             calibration["lambdaLate"],
             opts["baselineRecentLTBIProportion"],
             opts["recentToRemoteTransitionRatePerYear"],
+            opts["screenWindow"],
+            opts.get("naturalHistorySemantics"),
             rng,
         )
     )
@@ -590,6 +593,8 @@ def _draw_ltbi_state_history(
     lambda_late: float,
     baseline_recent_proportion: float,
     recent_to_remote_rate: float,
+    screen_window: float,
+    natural_history_semantics: str | None,
     rng,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     infected_array = np.asarray(infected, dtype=bool)
@@ -600,6 +605,21 @@ def _draw_ltbi_state_history(
     active_time = np.full(infected_array.shape, np.inf, dtype=float)
     idx_inf = np.flatnonzero(infected_array)
     if len(idx_inf) == 0:
+        return recent, remote, transition_time, active_time
+
+    if natural_history_semantics == MATLAB_V9_IMPLICIT_EARLY_LATE:
+        recent[idx_inf] = True
+        early_rate = lambda_early * mult[idx_inf]
+        t_active_early = rng.exponential(scale=1.0 / early_rate)
+        active_in_early = t_active_early <= float(screen_window)
+        active_time[idx_inf[active_in_early]] = t_active_early[active_in_early]
+        late_idx = idx_inf[~active_in_early]
+        remote[late_idx] = True
+        recent[late_idx] = False
+        transition_time[late_idx] = float(screen_window)
+        if len(late_idx) > 0:
+            late_rate = lambda_late * mult[late_idx]
+            active_time[late_idx] = float(screen_window) + rng.exponential(scale=1.0 / late_rate)
         return recent, remote, transition_time, active_time
 
     recent_draw = rng.random(len(idx_inf)) < float(baseline_recent_proportion)
@@ -678,6 +698,7 @@ def _simulation_options(config: dict[str, Any]) -> dict[str, Any]:
         ),
         "ltbiStateAssumptionStatus": ltbi_state["status"],
         "ltbiStateWarning": ltbi_state.get("warning"),
+        "naturalHistorySemantics": cfg.get("naturalHistorySemantics") or "explicit_recent_remote_markov",
     }
 
 
