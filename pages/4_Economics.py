@@ -49,6 +49,7 @@ from engine.apy.costing import normalise_cost_table
 from engine.apy.evidence import assess_apy_reference_readiness, load_apy_evidence_registry
 from engine.apy.economics import update_cost_item_original_values_from_legacy_fields
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
+from engine.apy.sa_health_reference_package import build_same_ledger_economic_scenario_comparison
 
 
 init_session_state()
@@ -945,6 +946,33 @@ elif st.session_state.get("results_stale"):
 
 if st.button("Run health economics", type="primary", disabled=not can_run):
     run_authoritative_health_economics(results_bundle, econ_config)
+
+st.subheader("Compare economic scenarios")
+st.caption(
+    "Compare alternative cost assumptions against the current screening and treatment outcomes. "
+    "Changing only economic assumptions does not rerun the epidemiological analysis."
+)
+scenario_disabled = not can_run
+if st.button("Compare economic scenarios using current results", disabled=scenario_disabled):
+    try:
+        st.session_state["economic_scenario_comparison"] = build_same_ledger_economic_scenario_comparison(
+            results_bundle,
+            econ_config,
+        )
+        st.success("Economic scenarios recalculated from the current event ledger.")
+    except Exception as exc:
+        st.error(f"Economic scenario comparison failed: {exc}")
+economic_scenario_comparison = st.session_state.get("economic_scenario_comparison")
+if economic_scenario_comparison:
+    st.dataframe(
+        arrow_safe_dataframe(economic_scenario_comparison.get("rows") or []),
+        width="stretch",
+        hide_index=True,
+    )
+    st.caption(
+        "The AUD 500,000 setup case is illustrative only. The bundled pathway case is a sensitivity "
+        "for possible overlap between test, regimen and pathway costs."
+    )
 
 econ_results = st.session_state.get("economics_results")
 if econ_results:

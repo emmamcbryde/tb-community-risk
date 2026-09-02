@@ -657,6 +657,10 @@ def _current_analysis_assumption_ids(config: dict[str, Any], event_ledger: dict[
         "cost.program_setup",
         "cost.program_running",
         "cost.tpt_adr_management",
+        "cost.return_for_results",
+        "cost.clinical_review",
+        "cost.active_tb_exclusion_workup",
+        "cost.travel_outreach_staff_support",
         *DALY_ASSUMPTION_IDS,
         THRESHOLD_ASSUMPTION_ID,
     }
@@ -700,7 +704,16 @@ def _selected_regimen(config: dict[str, Any], event_ledger: dict[str, Any]) -> s
 def _current_blocker_group(assumption_id: str) -> str:
     if assumption_id in {TEST_COST_IDS["IGRA"], TEST_COST_IDS["TST"]} or assumption_id in set(REGIMEN_COST_IDS.values()):
         return "Current selected test and regimen"
-    if assumption_id in {"cost.program_setup", "cost.program_running", "cost.false_positive_incremental", "cost.tpt_adr_management"}:
+    if assumption_id in {
+        "cost.program_setup",
+        "cost.program_running",
+        "cost.false_positive_incremental",
+        "cost.tpt_adr_management",
+        "cost.return_for_results",
+        "cost.clinical_review",
+        "cost.active_tb_exclusion_workup",
+        "cost.travel_outreach_staff_support",
+    }:
         return "Programme and delivery costs"
     if assumption_id == "cost.active_tb_disease":
         return "Active-TB care"

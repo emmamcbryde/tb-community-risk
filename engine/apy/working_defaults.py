@@ -242,9 +242,94 @@ def _add_sa_health_pathway_assumptions(economics_config: dict[str, Any]) -> None
                     resource_use={"costBasis": basis},
                 )
             )
+    _add_sa_health_registry_rows(economics_config)
     economics_config.setdefault("metadata", {})["saHealthPathwayCosts"] = "working_defaults_v1"
     economics_config["metadata"]["costFramework"] = "2019 AUD"
     economics_config["metadata"]["localPathwayCostItemIds"] = list(pathway_item_ids.values())
+
+
+def _add_sa_health_registry_rows(economics_config: dict[str, Any]) -> None:
+    registry = economics_config.setdefault("assumptionEvidenceRegistry", [])
+    by_id = {row.get("assumptionId"): row for row in registry}
+    specs = [
+        (
+            "cost.return_for_results",
+            "Return/results pathway cost per screened person",
+            50.0,
+            "AUD per person screened",
+            "per_person_screened",
+            "SA Health local working assumption",
+            "Included separately in the working default; verify non-overlap with test cost before final interpretation.",
+            "included",
+            False,
+        ),
+        (
+            "cost.clinical_review",
+            "Clinical-review pathway cost per TPT start",
+            50.0,
+            "AUD per TPT start",
+            "per_tpt_started",
+            "SA Health local working assumption",
+            "Included separately in the working default; verify non-overlap with regimen cost before final interpretation.",
+            "included",
+            False,
+        ),
+        (
+            "cost.active_tb_exclusion_workup",
+            "Active-TB exclusion / CXR / laboratory work-up per TPT start",
+            150.0,
+            "AUD per TPT start",
+            "per_tpt_started",
+            "SA Health local working assumption",
+            "Included separately in the working default; verify non-overlap with other positive-test pathway costs.",
+            "included",
+            False,
+        ),
+        (
+            "cost.travel_outreach_staff_support",
+            "Travel, outreach and staff-support cost per screened person",
+            0.0,
+            "AUD per person screened",
+            "per_person_screened",
+            "SA Health local working assumption",
+            "Zero compatibility value retained for calculation; not yet locally costed and not evidence that this resource is costless.",
+            "included",
+            False,
+        ),
+    ]
+    for assumption_id, description, value, unit, basis, source, notes, inclusion, provisional in specs:
+        row = by_id.get(assumption_id)
+        if not row:
+            row = {"assumptionId": assumption_id}
+            registry.append(row)
+            by_id[assumption_id] = row
+        row.update(
+            {
+                "category": "cost",
+                "description": description,
+                "currentValue": value,
+                "unit": unit,
+                "originalCurrency": "AUD",
+                "targetCurrency": "AUD",
+                "originalPriceYear": "2019",
+                "targetPriceYear": "2019",
+                "costBasis": basis,
+                "sourceCitation": source,
+                "sourceLocation": "SA Health local pathway working assumptions",
+                "pageTableItem": "",
+                "repositoryPath": "",
+                "repositoryVariable": "",
+                "derivationMethod": "local working default",
+                "inflationIndexId": "AUD_HEALTH_SYSTEM_CPI",
+                "inclusionStatus": inclusion,
+                "reviewStatus": "configured_reviewed",
+                "provisional": provisional,
+                "bundledIntoAssumptionId": "",
+                "doubleCountingGroup": "sa_health_pathway_costs",
+                "notes": notes,
+                "unresolvedReason": "",
+            }
+        )
 
 
 def _provisional_assumptions(config: dict[str, Any], economics_config: dict[str, Any]) -> list[str]:
