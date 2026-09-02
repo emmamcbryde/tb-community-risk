@@ -491,7 +491,7 @@ def build_docx_report(
     doc.add_paragraph("Targeted latent tuberculosis infection screening in the APY Lands", "Title")
     doc.add_paragraph("Working health-economic analysis for SA Health planning and refinement", "Subtitle")
     doc.add_paragraph(f"Analysis date: {today_label()}")
-    doc.add_paragraph(f"Code commit: {manifest.get('codeCommit')}")
+    doc.add_paragraph(f"Reference package commit: {manifest.get('codeCommit')}")
     doc.add_paragraph("Important use note", "Heading1")
     doc.add_paragraph(
         "This working analysis supports programme planning and refinement. It is not final "

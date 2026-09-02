@@ -19,7 +19,7 @@
     "cost_categories": "reports\\sa_health_apy_health_economic_working_report_v1\\figures\\figure_4_cost_category_comparison.png",
     "scenarios": "reports\\sa_health_apy_health_economic_working_report_v1\\figures\\figure_5_scenario_comparison.png"
   },
-  "generatedAt": "2026-09-02T13:48:07.754007+00:00",
+  "generatedAt": "2026-09-02T13:51:13.240257+00:00",
   "healthEconomicsContractVersion": "ltbi_health_economics_results_v3",
   "nReps": 2000,
   "pageCount": 11,
