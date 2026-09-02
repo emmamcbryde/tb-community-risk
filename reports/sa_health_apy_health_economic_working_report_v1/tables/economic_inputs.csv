@@ -1,0 +1,12 @@
+Cost item,Value,Unit,Status,Caveat
+IGRA screening test per person,AUD 113,cost per person screened,Reviewed working numerical assumption,Supports current cost-consequence calculation.
+3HP preventive regimen per started course,AUD 166,cost per started course,Reviewed working numerical assumption,Supports current cost-consequence calculation.
+Active-TB disease care per case,"AUD 19,080",cost per active TB case,Reviewed working numerical assumption,Supports current cost-consequence calculation.
+TPT ADR management per ADR stop,AUD 39,cost per ADR stop,Reviewed working numerical assumption,Supports current cost-consequence calculation.
+Return/results pathway cost per screened person,AUD 50,AUD per person screened,Reviewed working numerical assumption,Supports current cost-consequence calculation.
+Clinical-review pathway cost per TPT start,AUD 50,AUD per TPT start,Reviewed working numerical assumption,Supports current cost-consequence calculation.
+Active-TB exclusion / CXR / laboratory work-up per TPT start,AUD 150,AUD per TPT start,Reviewed working numerical assumption,Supports current cost-consequence calculation.
+False-positive incremental care per false-positive TPT start,Reviewed as bundled/no additional cost,cost per false-positive TPT started,Reviewed as bundled/no additional cost,Supports current cost-consequence calculation.
+Programme setup total cost,Reviewed exclusion,total once at programme start,Reviewed exclusion,Not yet locally costed; zero compatibility value in the primary working reference.
+Programme running cost,Reviewed exclusion,annual or total over screening programme,Reviewed exclusion,Not yet locally costed; zero compatibility value in the primary working reference.
+"Travel, outreach and staff-support cost per screened person",AUD 0,AUD per person screened,Reviewed working numerical assumption,Not yet locally costed; zero compatibility value in the primary working reference.

@@ -1,0 +1,85 @@
+{
+  "analysisStatus": "working-default analysis for planning - provisional",
+  "branch": "codex/apy-sa-health-matlab-compatible-anchor",
+  "codeCommit": "12f697aa7caccad9a9290a7c7eef2dad54257e46",
+  "configurationHash": "a84f98039b269502d17f9c6e4b1e97fb6e9d35a211294bb8bccb637f7af7c9f1",
+  "dynamicTransmissionIncluded": false,
+  "economicScenarioIds": [
+    "primary_working_reference",
+    "illustrative_500k_setup",
+    "pathway_components_bundled",
+    "higher_burden_post_tb_daly"
+  ],
+  "economicsConfigurationHash": "57ce96656c71ac1d2e1a4e8fbc77578d9e292ed02737e926529ed97c80e4ce67",
+  "epidemiologicalAnchor": {
+    "interpretation": "Compatibility with frozen MATLAB APY v9 reference; not evidence that the inherited calibration target is scientifically validated.",
+    "naturalHistorySemantics": "matlab_v9_implicit_early_late",
+    "storedReferenceDirectory": "validation\\matlab_reference\\prevent_igra_3hp_N1500_seed1",
+    "type": "matlab_v9_compatible_python_stochastic_event_ledger"
+  },
+  "eventLedgerContractVersion": "ltbi_screening_event_ledger_v3",
+  "evidenceRegistryHash": "72a9410cff2f41b7b252e28a87527d3c9683cfa810b2a83179fa460635f14e43",
+  "generatedFiles": {
+    "economicsConfig": "economics_config.json",
+    "figures": [
+      "figures/screening_treatment_cascade.svg",
+      "figures/annual_budget_impact.svg",
+      "figures/cost_category_comparison.svg"
+    ],
+    "manifest": "manifest.json",
+    "scenarioConfig": "scenario_config.json",
+    "tables": [
+      "tables/executive_summary.csv",
+      "tables/cost_categories.csv",
+      "tables/annual_budget_impact.csv",
+      "tables/gross_delivery_ratios.csv",
+      "tables/net_health_system_ratios.csv",
+      "tables/assumptions_readiness.csv",
+      "tables/economic_scenarios.csv",
+      "tables/matlab_reference_validation.csv"
+    ],
+    "workbook": "sa_health_apy_working_reference_outputs.xlsx"
+  },
+  "healthEconomicsContractVersion": "ltbi_health_economics_results_v3",
+  "interpretationGuardrails": [
+    "Working-default analysis for planning; provisional.",
+    "Primary epidemiology uses MATLAB-v9-compatible implicit early/late semantics for compatibility with the earlier plain SA Health report.",
+    "The inherited 10/770 active-TB calibration target remains unresolved and must not be described as validated incident progression from LTBI.",
+    "The implicit early phase is not measured APY recent-LTBI composition.",
+    "Multiplicative OR-as-hazard and joint-risk assumptions are preserved for compatibility and remain scientifically provisional.",
+    "Programme setup, running, travel, outreach and staff-support costs are not yet locally costed.",
+    "NMB and probability cost-effective are unavailable without a reviewed threshold.",
+    "No dynamic transmission effects are included."
+  ],
+  "label": "SA Health APY MATLAB-v9-compatible working-reference analysis",
+  "modelType": "agent_based",
+  "nReps": 2000,
+  "packageId": "sa_health_apy_matlab_v9_compatible_working_reference_igra_3hp_prevent_30pct",
+  "packageVersion": "sa_health_apy_reference_package_v1",
+  "readiness": {
+    "costReady": false,
+    "dalyReady": true,
+    "epidemiologyReady": false,
+    "overallClinicianReady": false,
+    "thresholdReady": false
+  },
+  "seed": 1,
+  "technicalRecentRemoteScenario": {
+    "label": "SA Health APY technical explicit recent/remote calibration scenario",
+    "packageId": "sa_health_apy_technical_recent_remote_igra_3hp_prevent_30pct",
+    "suitableAsPrimaryEstimate": false
+  },
+  "unresolvedInputs": [
+    {
+      "field": "threshold.value",
+      "message": "Willingness-to-pay threshold must be > 0; NMB unavailable.",
+      "severity": "unresolved"
+    }
+  ],
+  "warnings": [
+    "Inputs are provisional; no clinician-ready cost-effectiveness conclusion is produced.",
+    "One or more economic inputs are unresolved; unavailable components are not replaced with zero."
+  ],
+  "workingDefaultPresetId": "apy_sa_health_working_defaults",
+  "workingDefaultPresetVersion": "apy_sa_health_working_defaults_v1"
+}

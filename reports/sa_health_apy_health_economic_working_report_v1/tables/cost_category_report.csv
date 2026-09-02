@@ -1,0 +1,12 @@
+Category,Comparator,Intervention,Incremental,Interpretation
+Screening test,AUD 0,"AUD 50,323","AUD 50,323",Included mapped event cost.
+Return/results,AUD 0,"AUD 22,173","AUD 22,173",SA Health pathway working cost; possible bundle overlap should be reviewed.
+Clinical review,AUD 0,"AUD 3,069","AUD 3,069",SA Health pathway working cost; possible bundle overlap should be reviewed.
+Active-TB exclusion/work-up,AUD 0,"AUD 9,208","AUD 9,208",SA Health pathway working cost; possible bundle overlap should be reviewed.
+Preventive regimen,AUD 0,"AUD 10,159","AUD 10,159",Included mapped event cost.
+ADR management,AUD 0,AUD 120,AUD 120,Included mapped event cost.
+Programme setup,AUD 0,AUD 0,AUD 0,Not yet locally costed in primary reference.
+Programme running,AUD 0,AUD 0,AUD 0,Not yet locally costed in primary reference.
+Travel/outreach/staff,AUD 0,AUD 0,AUD 0,Not yet locally costed in primary reference.
+Active-TB care,"AUD 626,261","AUD 438,839","AUD -187,422",Offset from fewer modelled active-TB cases.
+Total,"AUD 626,261","AUD 533,891","AUD -92,370",Included mapped event cost.

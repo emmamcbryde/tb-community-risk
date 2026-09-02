@@ -57,7 +57,11 @@ st.session_state["apy_backend_name"] = "python_apy"
 backend = get_backend()
 
 st.title("Health Economics")
-st.caption("Review economic assumptions, run the event-ledger-based economic analysis and inspect economic results.")
+st.caption("Review economic assumptions, recalculate costs from the current screening outcomes and inspect results.")
+st.info(
+    "Changing economic inputs recalculates costs, DALYs and economic ratios from the current screening outcomes. "
+    "It does not rerun the screening model unless you change population, testing, treatment or targeting inputs."
+)
 
 ECONOMICS_WIDGET_KEYS = [
     "econ_currency_code",
@@ -874,11 +878,10 @@ ledger = (results_bundle or {}).get("technical", {}).get("eventLedger", {}) if i
 if results_bundle:
     if ledger and ledger.get("validation", {}).get("isValid") is True:
         st.success(
-            f"Event ledger available: {ledger.get('metadata', {}).get('contractVersion')} "
-            f"({ledger.get('metadata', {}).get('modelType')})."
+            "Current screening outcomes are available for economic recalculation."
         )
     else:
-        st.warning("A valid APY event ledger is required for authoritative economics.")
+        st.warning("Run the screening analysis before recalculating health economics.")
 for item in normalise_cost_table(econ_config.get("costItems") or []):
     if item.get("conversionStatus") != "valid":
         warnings.append(f"{item.get('costItemId')}: {item.get('conversionStatus')}")
@@ -948,7 +951,7 @@ else:
     if semantics == "matlab_v9_implicit_early_late":
         st.info(
             "Epidemiological anchor: frozen APY stochastic compatibility reference. "
-            "Economic edits use the current event ledger and do not rerun epidemiology."
+            "Economic edits use the current screening outcomes and do not rerun epidemiology."
         )
     else:
         st.warning(
@@ -971,7 +974,7 @@ if st.button("Compare economic scenarios using current results", disabled=scenar
             results_bundle,
             econ_config,
         )
-        st.success("Economic scenarios recalculated from the current event ledger.")
+        st.success("Economic scenarios recalculated from the current screening outcomes.")
     except Exception as exc:
         st.error(f"Economic scenario comparison failed: {exc}")
 economic_scenario_comparison = st.session_state.get("economic_scenario_comparison")

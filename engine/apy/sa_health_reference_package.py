@@ -642,10 +642,10 @@ def annual_budget_impact_rows(economics: dict[str, Any], *, scenario_label: str)
         by_year = primary[primary["modelYear"] == year]
         comp = by_year[by_year["arm"] == "comparator"]
         inter = by_year[by_year["arm"] == "intervention"]
-        comp_total = _strict_numeric_sum(comp["totalDiscountedCost"])
-        inter_total = _strict_numeric_sum(inter["totalDiscountedCost"])
-        comp_total_u = _strict_numeric_sum(comp["totalUndiscountedCost"])
-        inter_total_u = _strict_numeric_sum(inter["totalUndiscountedCost"])
+        comp_total = _strict_numeric_mean(comp["totalDiscountedCost"])
+        inter_total = _strict_numeric_mean(inter["totalDiscountedCost"])
+        comp_total_u = _strict_numeric_mean(comp["totalUndiscountedCost"])
+        inter_total_u = _strict_numeric_mean(inter["totalUndiscountedCost"])
         annual_inc = _subtract(inter_total, comp_total)
         annual_inc_u = _subtract(inter_total_u, comp_total_u)
         if annual_inc is not None:
@@ -656,9 +656,13 @@ def annual_budget_impact_rows(economics: dict[str, Any], *, scenario_label: str)
             {
                 "scenario": scenario_label,
                 "modelYear": int(year),
-                "comparatorActiveTBCareDiscounted": _strict_numeric_sum(comp["activeTBDiseaseCost"] * comp["costDiscountFactor"]),
+                "comparatorActiveTBCareDiscounted": _strict_numeric_mean(
+                    comp["activeTBDiseaseCost"] * comp["costDiscountFactor"]
+                ),
                 "interventionProgramPathwayDiscounted": _annual_programme_cost(inter, discounted=True),
-                "interventionActiveTBCareDiscounted": _strict_numeric_sum(inter["activeTBDiseaseCost"] * inter["costDiscountFactor"]),
+                "interventionActiveTBCareDiscounted": _strict_numeric_mean(
+                    inter["activeTBDiseaseCost"] * inter["costDiscountFactor"]
+                ),
                 "comparatorTotalCostDiscounted": comp_total,
                 "interventionTotalCostDiscounted": inter_total,
                 "annualIncrementalCostDiscounted": annual_inc,
@@ -678,7 +682,7 @@ def _annual_programme_cost(frame: pd.DataFrame, *, discounted: bool) -> float | 
     values = sum(frame[component] for component in PROGRAM_COMPONENTS if component in frame)
     if discounted:
         values = values * frame["costDiscountFactor"]
-    return _strict_numeric_sum(values)
+    return _strict_numeric_mean(values)
 
 
 def assumptions_readiness_rows(config: dict[str, Any], economics_config: dict[str, Any], readiness: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1068,6 +1072,13 @@ def _strict_numeric_sum(values: Any) -> float | None:
     if series.isna().any():
         return None
     return float(series.sum())
+
+
+def _strict_numeric_mean(values: Any) -> float | None:
+    series = pd.to_numeric(pd.Series(values), errors="coerce")
+    if series.isna().any():
+        return None
+    return float(series.mean())
 
 
 def _subtract(a: Any, b: Any) -> float | None:

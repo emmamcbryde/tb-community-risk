@@ -1,0 +1,5 @@
+Scenario,Incremental cost,Active TB cases averted,DALYs averted,Interpretation
+Primary working reference,"AUD 92,370 net saving",11.97,16.2,Primary working reference; local programme resources remain not locally costed.
+"Illustrative AUD 500,000 setup","AUD 407,630 net cost",11.97,16.2,Adds illustrative setup cost; epidemiological outcomes unchanged.
+Bundled/excluded pathway costs,"AUD 126,819 net saving",11.97,16.2,Excludes selected pathway components to test possible overlap with bundled costs.
+Higher post-TB DALY burden,"AUD 92,370 net saving",11.97,73.1,Costs unchanged; DALY gain increases under secondary post-TB burden assumption.

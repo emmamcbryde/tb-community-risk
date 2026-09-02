@@ -1,0 +1,13 @@
+Measure,Value,Interpretation
+Eligible population,"1,500",people
+Screened,450,people
+True-positive latent results,65.9,people
+False-positive results,7.4,people
+Preventive treatments initiated,62.2,people
+Preventive treatments completed,49.7,people
+ADR-related treatment stops,3.1,people
+Infections effectively treated,36.7,people
+Comparator active TB,37.3,cases
+Intervention active TB,25.3,cases
+Active TB cases averted,12.0,cases
+Relative reduction,32.1%,direct active-TB outcomes

@@ -1,0 +1,46 @@
+{
+  "branch": "codex/apy-sa-health-matlab-compatible-anchor",
+  "codeCommit": "12f697aa7caccad9a9290a7c7eef2dad54257e46",
+  "configurationHash": "a84f98039b269502d17f9c6e4b1e97fb6e9d35a211294bb8bccb637f7af7c9f1",
+  "docx": "reports\\sa_health_apy_health_economic_working_report_v1\\APY_targeted_LTBI_screening_health_economic_working_report_SA_Health.docx",
+  "economicsConfigurationHash": "57ce96656c71ac1d2e1a4e8fbc77578d9e292ed02737e926529ed97c80e4ce67",
+  "epidemiologicalAnchor": {
+    "interpretation": "Compatibility with frozen MATLAB APY v9 reference; not evidence that the inherited calibration target is scientifically validated.",
+    "naturalHistorySemantics": "matlab_v9_implicit_early_late",
+    "storedReferenceDirectory": "validation\\matlab_reference\\prevent_igra_3hp_N1500_seed1",
+    "type": "matlab_v9_compatible_python_stochastic_event_ledger"
+  },
+  "eventLedgerContractVersion": "ltbi_screening_event_ledger_v3",
+  "evidenceRegistryHash": "72a9410cff2f41b7b252e28a87527d3c9683cfa810b2a83179fa460635f14e43",
+  "figures": {
+    "active_tb": "reports\\sa_health_apy_health_economic_working_report_v1\\figures\\figure_2_active_tb_outcomes.png",
+    "budget": "reports\\sa_health_apy_health_economic_working_report_v1\\figures\\figure_3_annual_budget_impact.png",
+    "cascade": "reports\\sa_health_apy_health_economic_working_report_v1\\figures\\figure_1_screening_treatment_cascade.png",
+    "cost_categories": "reports\\sa_health_apy_health_economic_working_report_v1\\figures\\figure_4_cost_category_comparison.png",
+    "scenarios": "reports\\sa_health_apy_health_economic_working_report_v1\\figures\\figure_5_scenario_comparison.png"
+  },
+  "generatedAt": "2026-09-02T13:48:07.754007+00:00",
+  "healthEconomicsContractVersion": "ltbi_health_economics_results_v3",
+  "nReps": 2000,
+  "pageCount": 11,
+  "pdf": "reports\\sa_health_apy_health_economic_working_report_v1\\APY_targeted_LTBI_screening_health_economic_working_report_SA_Health.pdf",
+  "previewPages": [
+    "reports\\sa_health_apy_health_economic_working_report_v1\\preview_pages\\page_01.png",
+    "reports\\sa_health_apy_health_economic_working_report_v1\\preview_pages\\page_02.png",
+    "reports\\sa_health_apy_health_economic_working_report_v1\\preview_pages\\page_03.png",
+    "reports\\sa_health_apy_health_economic_working_report_v1\\preview_pages\\page_04.png",
+    "reports\\sa_health_apy_health_economic_working_report_v1\\preview_pages\\page_05.png",
+    "reports\\sa_health_apy_health_economic_working_report_v1\\preview_pages\\page_06.png",
+    "reports\\sa_health_apy_health_economic_working_report_v1\\preview_pages\\page_07.png",
+    "reports\\sa_health_apy_health_economic_working_report_v1\\preview_pages\\page_08.png",
+    "reports\\sa_health_apy_health_economic_working_report_v1\\preview_pages\\page_09.png",
+    "reports\\sa_health_apy_health_economic_working_report_v1\\preview_pages\\page_10.png",
+    "reports\\sa_health_apy_health_economic_working_report_v1\\preview_pages\\page_11.png"
+  ],
+  "reportPackageVersion": "sa_health_apy_health_economic_report_v1",
+  "repository": "github.com/emmamcbryde/tb-community-risk",
+  "seed": 1,
+  "streamlitDeploymentStatus": "public URL could not be verified from this environment; confirm branch deployment before circulation",
+  "streamlitUrl": "https://tb-community-risk.streamlit.app",
+  "technicalCsvArchive": "reports\\sa_health_apy_health_economic_working_report_v1\\technical_event_ledger_and_economics_csv.zip"
+}

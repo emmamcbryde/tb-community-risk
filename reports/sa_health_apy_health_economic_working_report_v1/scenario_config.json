@@ -1,0 +1,214 @@
+{
+  "N": 1500,
+  "activeTBCalibrationHorizonYears": 2,
+  "activeTBPrevalence": null,
+  "age85PlusMax": 89,
+  "ageDistributionFile": "abm/default_age_distribution.csv",
+  "ageDistributionSheet": 1,
+  "ageDistributionTable": [],
+  "analysisMethod": "agent_based",
+  "baselineRecentLTBIProportion": null,
+  "configVersion": "apy_v9_config_v1",
+  "csvFile": "abm/default_data.csv",
+  "diseaseOR": {
+    "MJ": null,
+    "alcohol": null,
+    "cld": null,
+    "contact": null,
+    "diabetes": null,
+    "renal": 3.6,
+    "smoking": null
+  },
+  "earlyLateRatio": null,
+  "earlyProgressionPeriodYears": 2,
+  "eligible": {
+    "description": "All APY demonstration residents eligible",
+    "number": 1500,
+    "proportion": 1.0
+  },
+  "followHorizon": 20,
+  "followUpHorizonYears": 20,
+  "ltbiPrevalence": null,
+  "ltbiStateAssumptions": {
+    "baselineRecentLTBIDerivationMethod": "",
+    "baselineRecentLTBIProportion": null,
+    "baselineRecentLTBIProportionSource": "",
+    "baselineRecentLTBIProportionStatus": "unresolved",
+    "developmentCompatibilityMode": true,
+    "impliedMeanResidenceTimeYears": 5.0,
+    "notes": "Development compatibility mode explicitly selected; using 0% placeholder.",
+    "provisional": true,
+    "recentDefinitionYears": null,
+    "recentToRemoteTransitionRatePerYear": 0.2,
+    "source": "Transition structure from older static/transmission-dynamic architecture; APY-specific baseline recent fraction unresolved.",
+    "stateDefinition": "fast/recent latent state with mean residence time of five years before transition to remote latent infection",
+    "status": "unresolved_development_compatibility",
+    "transitionModel": "continuous_markov_recent_remote",
+    "transitionModelSource": "Transition structure from older static/transmission-dynamic architecture.",
+    "transitionModelStatus": "configured_reviewed",
+    "warnings": []
+  },
+  "modelVersion": "v9",
+  "nReps": 2000,
+  "naturalHistorySemantics": "matlab_v9_implicit_early_late",
+  "outputDir": "abm/output",
+  "pStartTPT": null,
+  "partialDoseFractionADR": null,
+  "partialDoseFractionOther": null,
+  "partialShortCourseMode": null,
+  "populationPresetId": "apy_demonstration",
+  "recentToRemoteTransitionRatePerYear": 0.2,
+  "regimen": "3HP",
+  "regimenADRstop": null,
+  "regimenAssumptions": {
+    "availableRegimens": [
+      "3HP",
+      "4R",
+      "3HR",
+      "6H",
+      "9H"
+    ],
+    "defaultRegimen": "3HP",
+    "notes": "Treatment offered, started, completed, adverse-event discontinuation, regimen efficacy and effectively treated true infection remain distinct model quantities."
+  },
+  "regimenEffFull": null,
+  "regimenPComplete": null,
+  "riskPrev": {
+    "BCG": null,
+    "MJ": null,
+    "alcohol": null,
+    "cld": null,
+    "contact": null,
+    "diabetes": null,
+    "female": null,
+    "renal": null,
+    "smoking": null
+  },
+  "scenario": {
+    "activeTBCalibrationHorizonYears": 2,
+    "ageProfileSource": {
+      "description": "Bundled APY age distribution used by the APY v9 exemplar workflow.",
+      "path": "abm/default_age_distribution.csv",
+      "type": "file"
+    },
+    "comparator": {
+      "name": "current practice / no additional systematic LTBI screening",
+      "notes": "Comparator includes ordinary background clinical care already represented in the model; it is not absence of all TB care."
+    },
+    "contractVersion": "ltbi_screening_scenario_v1",
+    "earlyProgressionPeriodYears": 2,
+    "eligible": {
+      "notes": "All simulated cohort members are considered potentially eligible unless future scenarios restrict eligibility.",
+      "number": null,
+      "proportion": 1.0
+    },
+    "followUpHorizonYears": 20,
+    "intervention": {
+      "name": "targeted LTBI screening and preventive treatment",
+      "notes": "Systematic targeted LTBI screening with preventive treatment."
+    },
+    "ltbiPrevalenceAssumptions": {
+      "notes": "Null means the existing APY calibration target is used by the generic APY adapter.",
+      "source": "APY default_data.csv calibration target unless overridden",
+      "value": null
+    },
+    "ltbiStateAssumptions": {
+      "baselineRecentLTBIDerivationMethod": "",
+      "baselineRecentLTBIProportion": null,
+      "baselineRecentLTBIProportionSource": "",
+      "baselineRecentLTBIProportionStatus": "unresolved",
+      "developmentCompatibilityMode": false,
+      "notes": "",
+      "provisional": true,
+      "recentToRemoteTransitionRatePerYear": 0.2,
+      "source": "Transition structure from older static/transmission-dynamic architecture; APY-specific baseline recent fraction unresolved.",
+      "stateDefinition": "fast/recent latent state with mean residence time of five years before transition to remote latent infection",
+      "status": "unresolved",
+      "transitionModel": "continuous_markov_recent_remote",
+      "transitionModelSource": "Transition structure from older static/transmission-dynamic architecture.",
+      "transitionModelStatus": "configured_reviewed"
+    },
+    "populationPresetId": "apy_demonstration",
+    "populationSize": 1500,
+    "riskFactorAssumptions": {
+      "diseaseOR": {
+        "MJ": null,
+        "alcohol": null,
+        "cld": null,
+        "contact": null,
+        "diabetes": null,
+        "renal": 3.6,
+        "smoking": null
+      },
+      "riskPrev": {
+        "BCG": null,
+        "MJ": null,
+        "alcohol": null,
+        "cld": null,
+        "contact": null,
+        "diabetes": null,
+        "female": null,
+        "renal": null,
+        "smoking": null
+      },
+      "source": "APY default_data.csv unless explicitly overridden."
+    },
+    "scenarioName": "APY demonstration LTBI screening scenario",
+    "scenarioVersion": "m1",
+    "scopeStatement": "The current static and individual-based analyses estimate direct benefits, harms and costs for screened and treated individuals. Transmission-mediated benefits are not yet included.",
+    "screened": {
+      "notes": "Screening volume is controlled independently from the screening window.",
+      "number": null,
+      "proportion": 0.3
+    },
+    "screeningWindowYears": 3,
+    "sourcesAndNotes": [
+      "APY is a demonstration preset loaded through the generic population-preset contract, not a separate hard-coded pathway."
+    ],
+    "targetingCriteria": {
+      "description": "Targeted screening by predicted preventable active-TB risk.",
+      "strategy": "prevent"
+    }
+  },
+  "scenarioLabel": "SA Health APY MATLAB-v9-compatible working-reference analysis",
+  "screenCoverage": 0.3,
+  "screenWindow": 2,
+  "screeningStrategy": "prevent",
+  "screeningWindowYears": 2,
+  "seed": 1,
+  "sourceDataFiles": {
+    "ageDistributionFile": "default_age_distribution.csv",
+    "tbDataFile": "default_data.csv"
+  },
+  "targetAgeOR": 7.54,
+  "testCharacteristics": {
+    "IGRA": {
+      "name": "IGRA",
+      "notes": "Editable; not folded into coverage or regimen effectiveness.",
+      "resourceUse": {},
+      "sensitivity": 0.95,
+      "source": "Existing APY default parameter",
+      "specificity": 0.98,
+      "units": "probability"
+    },
+    "TST": {
+      "name": "TST",
+      "notes": "Specificity can differ by BCG status. TST may require a return visit for reading; no extra resource-use value is invented here.",
+      "resourceUse": {
+        "returnVisitForReading": true
+      },
+      "sensitivity": 0.8,
+      "source": "Existing APY default parameter",
+      "specificity": 0.97,
+      "specificityBCG": 0.55,
+      "units": "probability"
+    }
+  },
+  "testSensitivity": 0.95,
+  "testSpecificity": 0.98,
+  "testType": "IGRA",
+  "tstSensitivity": 0.8,
+  "tstSpecificityBCG": 0.55,
+  "tstSpecificityNoBCG": 0.97,
+  "useDefaults": true
+}

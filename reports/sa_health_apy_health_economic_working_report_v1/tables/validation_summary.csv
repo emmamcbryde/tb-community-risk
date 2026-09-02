@@ -1,0 +1,11 @@
+Metric,Compatibility mean,Compatibility median,Frozen median,Frozen 2.5-97.5%
+nScreened,450.00,450.0,450.0,450.0 to 450.0
+nTestPositive,83.29,83.0,84.0,68.0 to 100.0
+nTestPositiveNonActive,73.28,73.0,73.0,59.0 to 89.0
+nFalsePositiveTests,7.40,7.0,7.0,3.0 to 13.0
+nStartTPT,62.24,62.0,62.0,48.0 to 77.0
+nCompleteTPT,49.72,50.0,50.0,37.0 to 63.0
+nADRstop,3.08,3.0,3.0,0.0 to 7.0
+nCuredInfection,36.71,36.0,37.0,26.0 to 49.0
+nPreventedActiveTB,11.97,12.0,12.0,6.0 to 19.0
+nActiveBy20y,37.30,37.0,37.0,26.0 to 49.0

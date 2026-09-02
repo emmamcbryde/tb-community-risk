@@ -117,6 +117,11 @@ class SAHealthReferencePackageTests(unittest.TestCase):
             executive["Net health-system cost or saving per active TB case averted"]["value"],
             primary["costPerActiveTBCasePrevented"],
         )
+        annual = tables["annual_budget_impact"]
+        self.assertAlmostEqual(
+            annual[-1]["cumulativeIncrementalCostDiscounted"],
+            primary["incrementalCost"],
+        )
 
         category_total = next(row for row in tables["cost_categories"] if row["categoryId"] == "total")
         self.assertAlmostEqual(category_total["incrementalDiscountedCost"], primary["incrementalCost"])

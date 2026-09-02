@@ -1,0 +1,8 @@
+Assumption,Value,Unit,Status,Caveat
+Active-TB disability weight,0.333,disability weight,Reviewed working numerical assumption,Supports secondary provisional DALY/ICER outputs.
+daly.active_tb_duration_years,Excluded in primary analysis,,Unresolved,
+TB case-fatality risk,0.074,probability,Reviewed working numerical assumption,Supports secondary provisional DALY/ICER outputs.
+YLL per TB death,20.0,years,Reviewed working numerical assumption,Supports secondary provisional DALY/ICER outputs.
+TPT health loss inclusion or exclusion,Excluded in primary analysis,DALYs per TPT start,Reviewed exclusion,Supports secondary provisional DALY/ICER outputs.
+ADR health loss inclusion or exclusion,Excluded in primary analysis,DALYs per ADR stop,Reviewed exclusion,Supports secondary provisional DALY/ICER outputs.
+Post-TB sequelae inclusion or exclusion,Excluded in primary analysis,DALYs,Reviewed exclusion,Supports secondary provisional DALY/ICER outputs.
