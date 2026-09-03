@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-from engine.dynamic.exec_dynamic import run_dynamic_model
+from engine.static.static_model import run_static_mechanistic
 from engine.infection_backcast import (
     calc_ari_from_incidence,
     infection_prob_by_age_split,
@@ -59,15 +59,45 @@ def load_population_data(
     return df_age_groups, df_country
 
 
+def run_static_projection(params, years):
+    """Run the legacy one-year static approximation over a projection horizon."""
+    rows = []
+    l_fast = None
+    l_slow = None
+
+    total_coverage = float(params.get("ltbi_coverage", 0.0) or 0.0)
+    rollout_years = int(params.get("rollout_years", 0) or 0)
+    annual_coverage = total_coverage / rollout_years if rollout_years > 0 else 0.0
+
+    for year in range(int(years)):
+        year_params = dict(params)
+        year_params["ltbi_coverage"] = annual_coverage if year < rollout_years else 0.0
+        out = run_static_mechanistic(year_params, L_fast0=l_fast, L_slow0=l_slow)
+        rows.append(
+            {
+                "Year": year + 1,
+                "Incidence_count": out["Incidence_count"],
+                "Incidence_per100k": out["Incidence_per100k"],
+                "Prevalence_count": out["Prevalence_count"],
+                "Prevalence_per100k": out["Prevalence_per100k"],
+            }
+        )
+        l_fast = out["L_fast1"]
+        l_slow = out["L_slow1"]
+
+    return pd.DataFrame(rows)
+
+
 # =====================================================
-# Main Dynamic Model UI
+# Legacy static approximation UI
 # =====================================================
 def render_static_ui():
-    st.subheader("Static TB Model")
+    st.subheader("Legacy static TB approximation")
     st.warning(
-        "The static model is a simplified approximation of the dynamic model. "
-        "It does not simulate transmission feedback and should be interpreted "
-        "as an approximate projection."
+        "This Research and Development page is a legacy static approximation. "
+        "The standard non-dynamic screening workflow is the LTBI Screening Tool. "
+        "This page does not simulate transmission feedback and should be interpreted "
+        "only as an approximate projection. "
         "This model estimates TB incidence based on LTBI, risk factors, and interventions.\n\n"
         "• Baseline = no new LTBI test-and-treat\n"
         "• Intervention = selected LTBI testing and treatment\n"
@@ -342,20 +372,22 @@ def render_static_ui():
     # --------------------------------------------------
     # RUN SIMULATIONS
     # --------------------------------------------------
-    if st.sidebar.button("Run Dynamic Simulation"):
+    if st.sidebar.button("Run Static Projection"):
 
         st.info("Running baseline and intervention...")
 
-        params_base = load_dynamic_parameters()
+        params_base = {}
         params_int = params_base.copy()
 
         # shared parameters
         for p in (params_base, params_int):
             p["beta"] = beta
             p["smoker_pct"] = smoker_pct
+            p["alcohol_pct"] = alcohol_pct
             p["diabetes_pct"] = diabetes_pct
             p["renal_pct"] = renal_pct
-            p["immune_pct"] = immune_pct
+            p["HIV_treated_pct"] = HIV_treated_pct
+            p["HIV_untreated_pct"] = HIV_untreated_pct
             p["ltbi_ever"] = ltbi_ever
             p["ltbi_recent"] = ltbi_recent
             p["age_counts"] = age_counts
@@ -377,20 +409,16 @@ def render_static_ui():
         params_int["rollout_years"] = rollout_years
 
         try:
-            baseline = run_dynamic_model(
-                params_base, years=time_horizon, intervention=False
-            )
-            intervention = run_dynamic_model(
-                params_int, years=time_horizon, intervention=True
-            )
+            baseline = run_static_projection(params_base, years=time_horizon)
+            intervention = run_static_projection(params_int, years=time_horizon)
 
             total_pop = sum(age_counts.values())
-            base_I = baseline["incidence"]
-            int_I = intervention["incidence"]
+            base_I = baseline["Incidence_count"]
+            int_I = intervention["Incidence_count"]
 
             df_out = pd.DataFrame(
                 {
-                    "Year": baseline["time"],
+                    "Year": baseline["Year"],
                     "Baseline_inc_count": base_I,
                     "Intervention_inc_count": int_I,
                     "Baseline_inc_per100k": base_I * 100000 / total_pop,
@@ -419,4 +447,4 @@ def render_static_ui():
             st.write(df_out[["Year", "Cases_averted_count", "Cases_averted_per100k"]])
 
         except Exception as e:
-            st.error(f"Dynamic model failed: {e}")
+            st.error(f"Static projection failed: {e}")

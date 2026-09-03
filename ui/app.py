@@ -16,10 +16,10 @@ st.title("🧮 TB Community Risk Models")
 
 model_choice = st.radio(
     "Select model type:",
-    ["Dynamic Model", "Static Model"]
+    ["Dynamic transmission model (R&D)", "Legacy static approximation (R&D)"]
 )
 
-if model_choice == "Dynamic Model":
+if model_choice == "Dynamic transmission model (R&D)":
     render_dynamic_ui()
 else:
     render_static_ui()
