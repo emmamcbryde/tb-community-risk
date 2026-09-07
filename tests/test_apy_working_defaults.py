@@ -209,13 +209,15 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         start_text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
         strategy_text = (ROOT / "pages" / "1_Scenario.py").read_text(encoding="utf-8")
 
-        self.assertIn("APY demographic profile", start_text)
-        self.assertIn("APY demographic profile", strategy_text)
+        self.assertIn("Demography currently used by the model", start_text)
+        self.assertIn("Demography currently used by the model", strategy_text)
         self.assertIn("demographic_summary_rows", start_text)
         self.assertIn("demographic_summary_rows", strategy_text)
         self.assertIn("Restore APY demographic defaults", strategy_text)
-        self.assertIn("Blank demographic or risk-factor override fields mean use source defaults", start_text)
+        self.assertIn("Blank demographic or risk-factor override fields mean use source defaults shown above", start_text)
+        self.assertIn("they are not missing model inputs", start_text)
         self.assertIn("Blank or default risk-factor override fields mean use source defaults", strategy_text)
+        self.assertIn("Blank optional override fields mean these source-default values remain in use", strategy_text)
 
     def test_start_page_wraps_arrow_safe_tables_in_streamlit_dataframe(self) -> None:
         text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")

@@ -89,7 +89,8 @@ def _render_parameter_workspace() -> None:
     st.caption(
         "These grouped inputs update the same configuration used by the analysis. "
         "Changing a value does not change its evidence source or review status. "
-        "Blank demographic or risk-factor override fields mean use source defaults."
+        "Blank demographic or risk-factor override fields mean use source defaults shown above; "
+        "they are not missing model inputs."
     )
     st.metric("Parameters changed from working defaults", changed_parameter_count(workspace))
     top_cols = st.columns([1, 1, 3])
@@ -216,9 +217,10 @@ def _render_parameter_workspace() -> None:
 
 
 def _render_demographic_profile(config: dict[str, Any]) -> None:
-    st.subheader("APY demographic profile")
+    st.subheader("Demography currently used by the model")
     st.caption(
         "These values are resolved through the same APY data loaders used by the analysis. "
+        "They are the populated source-default values, independent of the optional blank override fields below. "
         "Changing demographic inputs requires rerunning epidemiology."
     )
     st.dataframe(

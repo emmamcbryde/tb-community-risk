@@ -126,10 +126,11 @@ def reset_run_state() -> None:
 
 
 def _render_demographic_profile(config: dict) -> None:
-    st.subheader("APY demographic profile")
+    st.subheader("Demography currently used by the model")
     st.caption(
         "The analysis uses this resolved age and risk-factor profile when generating "
-        "the cohort, assigning LTBI risk and ranking people for targeted screening."
+        "the cohort, assigning LTBI risk and ranking people for targeted screening. "
+        "Blank optional override fields mean these source-default values remain in use."
     )
     st.dataframe(
         arrow_safe_dataframe(demographic_summary_rows(config)),
@@ -402,6 +403,7 @@ if config:
         with st.expander("Risk-factor prevalence overrides", expanded=False):
             st.caption(
                 "Blank or default risk-factor override fields mean use source defaults from default_data.csv. "
+                "Blank fields are optional overrides, not missing model inputs. "
                 "Custom values are percentages and are stored internally as fractions."
             )
             risk_prev = config.get("riskPrev") or {}
