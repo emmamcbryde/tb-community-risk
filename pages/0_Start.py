@@ -5,6 +5,11 @@ from typing import Any
 
 import streamlit as st
 
+from app.demographic_profile import (
+    age_distribution_rows,
+    demographic_summary_rows,
+    risk_factor_rows,
+)
 from app.display import arrow_safe_dataframe
 from app.parameter_workspace import (
     PARAMETER_GROUPS,
@@ -209,6 +214,30 @@ def _render_parameter_workspace() -> None:
         st.page_link("pages/2_Run_Model.py", label="Open Run Analysis")
 
 
+def _render_demographic_profile(config: dict[str, Any]) -> None:
+    st.subheader("APY demographic profile")
+    st.caption(
+        "These values are resolved through the same APY data loaders used by the analysis. "
+        "Changing demographic inputs requires rerunning epidemiology."
+    )
+    st.dataframe(
+        arrow_safe_dataframe(demographic_summary_rows(config)),
+        use_container_width=True,
+        hide_index=True,
+    )
+    with st.expander("Age distribution and risk factors", expanded=False):
+        st.dataframe(
+            arrow_safe_dataframe(age_distribution_rows(config)),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.dataframe(
+            arrow_safe_dataframe(risk_factor_rows(config)),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
 st.title("LTBI Screening Decision Tool")
 st.write(
     "Compare the direct benefits, harms, resource requirements and health-system "
@@ -256,6 +285,7 @@ if isinstance(config, dict) and isinstance(econ, dict):
         use_container_width=True,
         hide_index=True,
     )
+    _render_demographic_profile(config)
     ltbi_state = resolve_ltbi_state_assumptions(config)
     unresolved_recent_ltbi = ltbi_state.get("baselineRecentLTBIProportion") is None
     if unresolved_recent_ltbi:

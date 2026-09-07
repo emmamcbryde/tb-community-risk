@@ -143,9 +143,16 @@ def apply_parameter_workspace(
         raise ValueError("Parameter workspace contains validation errors.")
     cfg = deepcopy(config)
     econ = deepcopy(economics_config)
+    age_override_requested = any(
+        row.get("sourceObject") == "ageDistributionBand"
+        and row.get("currentValue") not in (None, "")
+        for row in rows
+    )
     for row in rows:
         value = row.get("currentValue")
         parameter_id = row.get("parameterId")
+        if row.get("sourceObject") == "ageDistributionBand" and not age_override_requested:
+            continue
         if parameter_id == "analysis.method":
             cfg["analysisMethod"] = MODEL_METHOD_CODES.get(str(value), str(value))
             cfg["analysisMethodLabel"] = MODEL_METHOD_LABELS.get(cfg["analysisMethod"], str(value))

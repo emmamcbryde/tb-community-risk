@@ -205,6 +205,16 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertIn("Run provisional working defaults", text)
         self.assertIn("0% compatibility", text)
 
+    def test_start_and_strategy_pages_show_resolved_demographic_profile(self) -> None:
+        start_text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
+        strategy_text = (ROOT / "pages" / "1_Scenario.py").read_text(encoding="utf-8")
+
+        self.assertIn("APY demographic profile", start_text)
+        self.assertIn("APY demographic profile", strategy_text)
+        self.assertIn("demographic_summary_rows", start_text)
+        self.assertIn("demographic_summary_rows", strategy_text)
+        self.assertIn("Restore APY demographic defaults", strategy_text)
+
     def test_start_page_wraps_arrow_safe_tables_in_streamlit_dataframe(self) -> None:
         text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
         tree = ast.parse(text)

@@ -5,6 +5,13 @@ from pathlib import Path
 
 import streamlit as st
 
+from app.demographic_profile import (
+    age_distribution_rows,
+    broad_age_distribution_rows,
+    demographic_summary_rows,
+    restore_apy_demographic_defaults,
+    risk_factor_rows,
+)
 from app.display import arrow_safe_dataframe, display_string
 from app.epidemiology_inputs import (
     ADVANCED_RISK_FACTORS,
@@ -118,6 +125,47 @@ def reset_run_state() -> None:
     st.session_state["dirty_config"] = False
 
 
+def _render_demographic_profile(config: dict) -> None:
+    st.subheader("APY demographic profile")
+    st.caption(
+        "The analysis uses this resolved age and risk-factor profile when generating "
+        "the cohort, assigning LTBI risk and ranking people for targeted screening."
+    )
+    st.dataframe(
+        arrow_safe_dataframe(demographic_summary_rows(config)),
+        use_container_width=True,
+        hide_index=True,
+    )
+    with st.expander("Age-group distribution and risk factors", expanded=False):
+        st.write("Broad age structure used by the model")
+        st.dataframe(
+            arrow_safe_dataframe(broad_age_distribution_rows(config)),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.write("Source age-group distribution")
+        st.dataframe(
+            arrow_safe_dataframe(age_distribution_rows(config)),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.write("Risk-factor prevalences after resolving APY defaults and user overrides")
+        st.dataframe(
+            arrow_safe_dataframe(risk_factor_rows(config)),
+            use_container_width=True,
+            hide_index=True,
+        )
+    if st.button("Restore APY demographic defaults"):
+        restored = restore_apy_demographic_defaults(config)
+        if restored != config:
+            st.session_state["config"] = restored
+            st.session_state.pop("recent_ltbi_run_route", None)
+            mark_config_changed()
+            st.success("APY demographic defaults restored. Rerun epidemiology before using previous results.")
+            st.rerun()
+        st.info("APY demographic defaults are already loaded.")
+
+
 def scenario_path(filename: str) -> Path:
     base = scenarios_dir()
     base.mkdir(parents=True, exist_ok=True)
@@ -162,6 +210,8 @@ if config:
         st.warning("Inputs have unvalidated changes.")
     if st.session_state.get("results_stale"):
         st.warning("Existing results are stale because inputs changed after the last run.")
+
+    _render_demographic_profile(config)
 
     st.subheader("Edit Strategy")
     test_options = ["IGRA", "TST"]
