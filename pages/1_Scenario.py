@@ -401,7 +401,8 @@ if config:
         risk_prev_updates: dict[str, object] = {}
         with st.expander("Risk-factor prevalence overrides", expanded=False):
             st.caption(
-                "Default behaviour uses values from default_data.csv. Custom values are percentages and are stored internally as fractions."
+                "Blank or default risk-factor override fields mean use source defaults from default_data.csv. "
+                "Custom values are percentages and are stored internally as fractions."
             )
             risk_prev = config.get("riskPrev") or {}
             mode_options = ["Use default", "Single overall", "Three age groups"]

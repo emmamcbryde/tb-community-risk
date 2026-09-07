@@ -88,7 +88,8 @@ def _render_parameter_workspace() -> None:
     st.subheader("Review or change parameters")
     st.caption(
         "These grouped inputs update the same configuration used by the analysis. "
-        "Changing a value does not change its evidence source or review status."
+        "Changing a value does not change its evidence source or review status. "
+        "Blank demographic or risk-factor override fields mean use source defaults."
     )
     st.metric("Parameters changed from working defaults", changed_parameter_count(workspace))
     top_cols = st.columns([1, 1, 3])
