@@ -322,7 +322,7 @@ def render_assumption_editor(
             display_rows = ordered_editor_rows(group_data, advanced=show_advanced_columns)
             edited = st.data_editor(
                 arrow_safe_dataframe(display_rows),
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 num_rows="fixed",
                 key=f"{editor_prefix}_{group_name}",
@@ -436,7 +436,7 @@ if (econ_config or {}).get("metadata", {}).get("presetName") == "Dale 2019 AUD w
                 {"Item": "Overall APY evidence status", "Value": "Still provisional"},
             ]
         ),
-        width="content",
+        use_container_width=True,
         hide_index=True,
     )
     st.warning(
@@ -474,7 +474,7 @@ if config:
                 },
             ]
         ),
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
     )
     with st.form("ltbi_recent_reviewed_assumption"):
@@ -630,7 +630,7 @@ readiness_flags = [
     {"Readiness item": "Full strategy library", "Complete": current_readiness["fullStrategyLibraryReady"]},
     {"Readiness item": "Overall reference evidence", "Complete": current_readiness["overallReferenceEvidenceReady"]},
 ]
-st.dataframe(arrow_safe_dataframe(readiness_flags), width="content", hide_index=True)
+st.dataframe(arrow_safe_dataframe(readiness_flags), use_container_width=True, hide_index=True)
 if st.button("Edit blocking assumptions", type="primary"):
     st.session_state["health_econ_show_blocking_editor"] = True
 
@@ -649,7 +649,7 @@ st.markdown("Price-year conversion audit")
 current_rows = [row for row in working_rows if row.get("assumptionId") in current_ids]
 audit_rows = conversion_audit_rows(current_rows)
 if audit_rows:
-    st.dataframe(arrow_safe_dataframe(audit_rows), width="stretch", hide_index=True)
+    st.dataframe(arrow_safe_dataframe(audit_rows), use_container_width=True, hide_index=True)
 else:
     st.info("No current cost rows require price-year conversion audit.")
 
@@ -675,7 +675,7 @@ if current_readiness["currentBlockers"]:
         if not group_blockers:
             continue
         with st.expander(group_name, expanded=True):
-            st.dataframe(arrow_safe_dataframe(group_blockers), width="stretch", hide_index=True)
+            st.dataframe(arrow_safe_dataframe(group_blockers), use_container_width=True, hide_index=True)
 else:
     st.success("No current-analysis assumption blockers were found.")
 
@@ -684,7 +684,7 @@ with st.expander("All assumptions and alternative strategies", expanded=False):
         st.markdown("Inputs needed for additional strategy comparisons")
         st.dataframe(
             arrow_safe_dataframe(current_readiness["alternativeStrategyBlockers"]),
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
     working_rows, workspace_state = render_assumption_editor(
@@ -718,12 +718,12 @@ if validation_report:
         st.error("Assumptions contain errors that must be corrected before applying.")
         fatal_rows = fatal_validation_rows(validation_report)
         if fatal_rows:
-            st.dataframe(arrow_safe_dataframe(fatal_rows), width="stretch", hide_index=True)
+            st.dataframe(arrow_safe_dataframe(fatal_rows), use_container_width=True, hide_index=True)
 if apply_disabled and validation_report is not None:
     fatal_rows = fatal_validation_rows(validation_report)
     if fatal_rows:
         st.caption("Application is disabled because these rows contain fatal validation errors.")
-        st.dataframe(arrow_safe_dataframe(fatal_rows), width="stretch", hide_index=True)
+        st.dataframe(arrow_safe_dataframe(fatal_rows), use_container_width=True, hide_index=True)
 if cols[1].button("Apply assumptions to current analysis", disabled=apply_disabled):
     try:
         updated_config = apply_assumptions_to_economics_config(
@@ -778,7 +778,7 @@ if not current_readiness["currentAnalysisICERReady"]:
     if current_readiness["currentBlockers"]:
         st.dataframe(
             arrow_safe_dataframe(current_readiness["currentBlockers"]),
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
 elif not current_readiness["currentAnalysisNMBReady"]:
@@ -891,7 +891,7 @@ if warnings:
     st.warning("Unresolved assumptions: " + "; ".join(warnings))
 st.dataframe(
     arrow_safe_dataframe(economics_overview_rows(econ_config)),
-    width="content",
+    use_container_width=True,
     hide_index=True,
 )
 
@@ -908,7 +908,7 @@ status_rows = [
     {"category": "threshold", "ready": readiness["thresholdReady"]},
     {"category": "overall clinician-ready", "ready": readiness["overallClinicianReady"]},
 ]
-st.dataframe(arrow_safe_dataframe(status_rows), width="content", hide_index=True)
+st.dataframe(arrow_safe_dataframe(status_rows), use_container_width=True, hide_index=True)
 unresolved_rows = [
     row
     for row in readiness["readinessRows"]
@@ -929,7 +929,7 @@ if unresolved_rows:
                 for row in unresolved_rows
             ]
         ),
-        width="content",
+        use_container_width=True,
         hide_index=True,
     )
 st.download_button(
@@ -981,7 +981,7 @@ economic_scenario_comparison = st.session_state.get("economic_scenario_compariso
 if economic_scenario_comparison:
     st.dataframe(
         arrow_safe_dataframe(economic_scenario_comparison.get("rows") or []),
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
     )
     st.caption(
@@ -1006,7 +1006,7 @@ if econ_results:
         status = econ_results.get("status", {})
         validation = econ_results.get("validation", {})
         complete = bool(status.get("isComplete"))
-        st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
+        st.dataframe(arrow_safe_dataframe(summary_rows), use_container_width=True)
         primary = [
             row for row in summary_rows
             if row.get("metric") in {"incrementalCost", "dalysAverted", "primaryICER_ratioOfMeans"}
@@ -1014,10 +1014,10 @@ if econ_results:
         ]
         if primary and complete:
             st.caption("Primary ICER uses mean paired incremental cost divided by mean paired DALYs averted; replicate ICERs are diagnostic only.")
-            st.dataframe(arrow_safe_dataframe(primary), width="stretch")
+            st.dataframe(arrow_safe_dataframe(primary), use_container_width=True)
         elif primary:
             st.markdown("Partial calculations - not a complete economic result")
-            st.dataframe(arrow_safe_dataframe(primary), width="stretch")
+            st.dataframe(arrow_safe_dataframe(primary), use_container_width=True)
         if validation:
             st.caption(
                 "Complete pairs: "

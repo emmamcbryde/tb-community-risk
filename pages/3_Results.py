@@ -49,20 +49,20 @@ with st.expander("Technical information", expanded=False):
         {"field": key, "value": value}
         for key, value in metadata.items()
     ]
-    st.dataframe(arrow_safe_dataframe(metadata_rows), width="content", hide_index=True)
+    st.dataframe(arrow_safe_dataframe(metadata_rows), use_container_width=True, hide_index=True)
 
 st.subheader("Headline")
 if headline.get("keyMetricsRows"):
     st.markdown("Key metrics")
     st.dataframe(
         arrow_safe_dataframe(headline["keyMetricsRows"]),
-        width="stretch",
+        use_container_width=True,
     )
 if headline.get("summaryRows"):
     st.markdown("Summary")
     st.dataframe(
         arrow_safe_dataframe(headline["summaryRows"]),
-        width="stretch",
+        use_container_width=True,
     )
 if not headline.get("keyMetricsRows") and not headline.get("summaryRows"):
     st.json(headline, expanded=False)
@@ -95,7 +95,7 @@ else:
     summary_rows = economics.get("summaryRows") or []
     if summary_rows:
         st.markdown("Health-economic summary")
-        st.dataframe(arrow_safe_dataframe(summary_rows), width="stretch")
+        st.dataframe(arrow_safe_dataframe(summary_rows), use_container_width=True)
     else:
         st.info("No economics summary rows were returned.")
 
@@ -124,7 +124,7 @@ else:
         {"field": "missingInputs", "value": status.get("missingInputs")},
         {"field": "notCalculated", "value": status.get("notCalculated")},
     ]
-    st.dataframe(arrow_safe_dataframe(status_rows), width="stretch", hide_index=True)
+    st.dataframe(arrow_safe_dataframe(status_rows), use_container_width=True, hide_index=True)
     st.page_link("pages/4_Economics.py", label="Open Health Economics")
 
 with st.expander("Additional technical information", expanded=False):
@@ -140,7 +140,7 @@ with st.expander("Additional technical information", expanded=False):
             for key, value in technical_summary.items()
             ]
         ),
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
     )
     st.markdown("Calibration")
@@ -156,9 +156,9 @@ with st.expander("Additional technical information", expanded=False):
             for key, value in dynamic_comparison.items()
             if key != "metricRows"
         ]
-        st.dataframe(arrow_safe_dataframe(overview), width="stretch", hide_index=True)
+        st.dataframe(arrow_safe_dataframe(overview), use_container_width=True, hide_index=True)
         if metric_rows:
-            st.dataframe(arrow_safe_dataframe(metric_rows), width="stretch", hide_index=True)
+            st.dataframe(arrow_safe_dataframe(metric_rows), use_container_width=True, hide_index=True)
     else:
         st.json(dynamic_comparison, expanded=False)
 
@@ -195,7 +195,7 @@ if downloads.get("available"):
         if key not in {"available", "payload"}
     ]
     if download_rows:
-        st.dataframe(arrow_safe_dataframe(download_rows), width="stretch", hide_index=True)
+        st.dataframe(arrow_safe_dataframe(download_rows), use_container_width=True, hide_index=True)
 
     for label, key in (("Summary CSV", "summaryCsv"), ("Key metrics CSV", "keyMetricsCsv")):
         path_value = downloads.get(key)

@@ -176,13 +176,13 @@ if not dynamic_bundle or not abm_bundle:
 
 summary = summary_rows("Dynamic model", dynamic_bundle) + summary_rows("APY ABM", abm_bundle)
 st.subheader("Latest Results")
-st.dataframe(arrow_safe_dataframe(summary), width="stretch", hide_index=True)
+st.dataframe(arrow_safe_dataframe(summary), use_container_width=True, hide_index=True)
 
 with st.expander("Dynamic bundle debug", expanded=False):
-    st.dataframe(arrow_safe_dataframe(bundle_debug_rows(dynamic_bundle)), width="stretch", hide_index=True)
+    st.dataframe(arrow_safe_dataframe(bundle_debug_rows(dynamic_bundle)), use_container_width=True, hide_index=True)
 
 with st.expander("APY bundle debug", expanded=False):
-    st.dataframe(arrow_safe_dataframe(bundle_debug_rows(abm_bundle)), width="stretch", hide_index=True)
+    st.dataframe(arrow_safe_dataframe(bundle_debug_rows(abm_bundle)), use_container_width=True, hide_index=True)
 
 comparison = compare_dynamic_abm_v9(dynamic_bundle, abm_bundle)
 rows = comparison.get("comparisonRows") or []
@@ -195,13 +195,13 @@ non_comparable_rows = [row for row in rows if not row.get("comparable")]
 st.subheader("Comparison Summary")
 st.dataframe(
     arrow_safe_dataframe(comparison_summary_rows(dynamic_bundle, abm_bundle, rows)),
-    width="content",
+    use_container_width=True,
     hide_index=True,
 )
 
 st.subheader("Comparable Metrics")
 if comparable_rows:
-    st.dataframe(arrow_safe_dataframe(comparable_rows), width="stretch", hide_index=True)
+    st.dataframe(arrow_safe_dataframe(comparable_rows), use_container_width=True, hide_index=True)
     chart_data = numeric_comparison_rows(comparable_rows)
     if not chart_data.empty:
         chart = (
@@ -215,13 +215,13 @@ if comparable_rows:
                 tooltip=["metric:N", "model:N", "value:Q"],
             )
         )
-        st.altair_chart(chart, width="stretch")
+        st.altair_chart(chart, use_container_width=True)
 else:
     st.info("No numeric aligned metrics are currently available in both bundles.")
 
 st.subheader("Warnings And Non-Comparable Metrics")
 if non_comparable_rows:
-    st.dataframe(arrow_safe_dataframe(non_comparable_rows), width="stretch", hide_index=True)
+    st.dataframe(arrow_safe_dataframe(non_comparable_rows), use_container_width=True, hide_index=True)
 if comparison.get("missing_dynamic_metrics"):
     st.warning("Missing dynamic metrics: " + ", ".join(comparison["missing_dynamic_metrics"]))
 if comparison.get("missing_abm_metrics"):

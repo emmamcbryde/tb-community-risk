@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from engine.apy.economics import sync_legacy_cost_fields_from_cost_items
+from engine.apy.data import load_parameters_from_config
 from engine.apy.working_defaults import (
     HIGHER_BURDEN_DALY_OUTCOME_PRESET,
     PRIMARY_DALY_OUTCOME_PRESET,
@@ -239,6 +240,8 @@ def _parameter_row(
         **spec,
         "currentValue": current,
         "defaultValue": default,
+        "sourceDefaultValue": _source_default_value(default_config, default_econ, spec),
+        "valueUsedByModel": _value_used_by_model(config, econ, spec, current),
         "changedFromDefault": _normalise_compare(current) != _normalise_compare(default),
     }
 
@@ -440,6 +443,29 @@ def _get_value(config: dict[str, Any], econ: dict[str, Any], spec: dict[str, Any
     return None
 
 
+def _source_default_value(config: dict[str, Any], econ: dict[str, Any], spec: dict[str, Any]) -> Any:
+    if spec["sourceObject"] == "ageDistributionBand":
+        return _resolved_age_band_value(config, spec["path"][0])
+    risk_key = _risk_parameter_key(spec)
+    if risk_key:
+        return _resolved_risk_value(config, risk_key)
+    return _get_value(config, econ, spec)
+
+
+def _value_used_by_model(
+    config: dict[str, Any],
+    econ: dict[str, Any],
+    spec: dict[str, Any],
+    current: Any,
+) -> Any:
+    if spec["sourceObject"] == "ageDistributionBand":
+        return current if current not in (None, "") else _resolved_age_band_value(config, spec["path"][0])
+    risk_key = _risk_parameter_key(spec)
+    if risk_key and current in (None, ""):
+        return _resolved_risk_value(config, risk_key)
+    return current
+
+
 def _set_value(config: dict[str, Any], econ: dict[str, Any], spec: dict[str, Any], value: Any) -> None:
     source = spec["sourceObject"]
     converted = _coerce_value(value, spec["editableType"])
@@ -549,6 +575,16 @@ def _age_band_value(config: dict[str, Any], band: str) -> Any:
     return None
 
 
+def _resolved_age_band_value(config: dict[str, Any], band: str) -> Any:
+    pars = load_parameters_from_config(config)
+    labels = ["0-4", "5-14", "15+"]
+    broad_values = pars.get("popFrac") or []
+    for label, value in zip(labels, broad_values):
+        if label == band:
+            return float(value)
+    return None
+
+
 def _set_age_band_value(config: dict[str, Any], band: str, value: Any) -> None:
     table = list(config.get("ageDistributionTable") or [])
     by_band = {
@@ -560,6 +596,32 @@ def _set_age_band_value(config: dict[str, Any], band: str, value: Any) -> None:
     ordered = ["0-4", "5-14", "15+"]
     config["ageDistributionTable"] = [by_band[item] for item in ordered if item in by_band]
     config["ageDistributionFile"] = ""
+
+
+def _risk_parameter_key(spec: dict[str, Any]) -> str | None:
+    parameter_id = str(spec.get("parameterId") or "")
+    if parameter_id.startswith("demography.risk."):
+        return parameter_id.rsplit(".", 1)[-1]
+    return None
+
+
+def _resolved_risk_value(config: dict[str, Any], risk_key: str) -> Any:
+    pars = load_parameters_from_config(config)
+    mapping = {
+        "female": "totalFemalePrev",
+        "BCG": "totalBCGPrev",
+        "contact": "totalContactPrev",
+        "smoking": "totalCurrentSmokerPrev",
+        "MJ": "totalMJPrev",
+        "renal": "totalRenalPrev",
+        "diabetes": "totalDiabetesPrev",
+        "cld": "totalCLDPrev",
+        "alcohol": "totalAlcoholPrev",
+    }
+    value_key = mapping.get(risk_key)
+    if value_key and value_key in pars:
+        return float(pars[value_key])
+    return None
 
 
 def _nested_get(root: dict[str, Any], path: list[str]) -> Any:

@@ -24,7 +24,7 @@ status_rows = [
     {"Category": "Overall clinician-ready", "Ready": readiness.get("overallClinicianReady")},
 ]
 st.subheader("Readiness")
-st.dataframe(arrow_safe_dataframe(status_rows), width="content", hide_index=True)
+st.dataframe(arrow_safe_dataframe(status_rows), use_container_width=True, hide_index=True)
 
 if not readiness.get("overallClinicianReady"):
     st.warning(
@@ -37,7 +37,7 @@ if messages:
     st.subheader("Messages")
     st.dataframe(
         arrow_safe_dataframe([{"Message": str(message)} for message in messages]),
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
     )
 
@@ -61,7 +61,7 @@ if unresolved:
                 for row in unresolved
             ]
         ),
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
     )
 
@@ -71,8 +71,8 @@ for key in ("evidenceConflicts", "bundlingConflicts"):
         conflict_rows.append({"Type": key, "Message": str(item)})
 if conflict_rows:
     st.subheader("Conflicts")
-    st.dataframe(arrow_safe_dataframe(conflict_rows), width="stretch", hide_index=True)
+    st.dataframe(arrow_safe_dataframe(conflict_rows), use_container_width=True, hide_index=True)
 
 with st.expander("Evidence registry", expanded=False):
     registry = load_apy_evidence_registry()
-    st.dataframe(arrow_safe_dataframe(registry), width="stretch", hide_index=True)
+    st.dataframe(arrow_safe_dataframe(registry), use_container_width=True, hide_index=True)

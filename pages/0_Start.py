@@ -75,7 +75,12 @@ def _set_workspace_rows(rows: list[dict[str, Any]]) -> None:
     workspace = deepcopy(st.session_state["parameter_workspace"])
     defaults = {row["parameterId"]: row.get("defaultValue") for row in workspace.get("rows") or []}
     for row in rows:
-        row["changedFromDefault"] = str(row.get("currentValue")) != str(defaults.get(row.get("parameterId")))
+        current = row.get("currentValue")
+        row["changedFromDefault"] = str(current) != str(defaults.get(row.get("parameterId")))
+        if row.get("sourceObject") in {"ageDistributionBand", "config"} and str(row.get("parameterId", "")).startswith(
+            ("demography.age.", "demography.risk.")
+        ):
+            row["valueUsedByModel"] = row.get("sourceDefaultValue") if current in (None, "") else current
     workspace["rows"] = rows
     workspace["changedCount"] = changed_parameter_count(workspace)
     st.session_state["parameter_workspace"] = workspace
@@ -116,8 +121,10 @@ def _render_parameter_workspace() -> None:
             advanced_rows = [row for row in group_rows if row.get("advanced")]
             shown_columns = [
                 "label",
+                "valueUsedByModel",
                 "currentValue",
                 "defaultValue",
+                "sourceDefaultValue",
                 "unit",
                 "source",
                 "reviewStatus",
@@ -131,6 +138,8 @@ def _render_parameter_workspace() -> None:
                 "group",
                 "label",
                 "defaultValue",
+                "sourceDefaultValue",
+                "valueUsedByModel",
                 "unit",
                 "source",
                 "reviewStatus",

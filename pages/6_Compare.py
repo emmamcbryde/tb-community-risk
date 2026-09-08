@@ -582,7 +582,7 @@ assumptions_rows = assumptions_diff_rows(
 )
 
 st.subheader("Selected assumptions diff")
-st.dataframe(arrow_safe_dataframe(assumptions_rows), width="stretch", hide_index=True)
+st.dataframe(arrow_safe_dataframe(assumptions_rows), use_container_width=True, hide_index=True)
 
 outcome_diff, outcome_warnings = compare_outcome_rows(bundle_metric_rows(baseline_bundle), bundle_metric_rows(comparator_bundle))
 
@@ -592,7 +592,7 @@ if st.session_state.get("compare_results_stale"):
 elif outcome_diff:
     for warning in outcome_warnings:
         st.warning(warning)
-    st.dataframe(arrow_safe_dataframe(outcome_diff), width="stretch", hide_index=True)
+    st.dataframe(arrow_safe_dataframe(outcome_diff), use_container_width=True, hide_index=True)
     chart_data = chart_rows(outcome_diff)
     if not chart_data.empty:
         chart = (
@@ -606,7 +606,7 @@ elif outcome_diff:
                 tooltip=["metric:N", "scenario:N", "value:Q"],
             )
         )
-        st.altair_chart(chart, width="stretch")
+        st.altair_chart(chart, use_container_width=True)
 else:
     st.info("Run comparison to show outcome differences.")
 
@@ -624,7 +624,7 @@ elif st.session_state.get("compare_economics_stale") and (base_econ or comp_econ
 elif econ_diff:
     for warning in econ_warnings:
         st.warning(warning)
-    st.dataframe(arrow_safe_dataframe(econ_diff), width="stretch", hide_index=True)
+    st.dataframe(arrow_safe_dataframe(econ_diff), use_container_width=True, hide_index=True)
 elif compare_economics_config:
     st.info("Run economics comparison to show cost differences.")
 else:

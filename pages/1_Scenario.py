@@ -346,7 +346,7 @@ if config:
         with st.expander("Advanced LTBI-state assumptions", expanded=False):
             st.dataframe(
                 arrow_safe_dataframe(ltbi_state_display_rows(config)),
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
             )
             if ltbi_state.get("warning"):
@@ -561,7 +561,7 @@ if config:
     with st.expander("Technical information", expanded=False):
         st.dataframe(
             arrow_safe_dataframe(config_overview_rows(config)),
-            width="content",
+            use_container_width=True,
             hide_index=True,
         )
         st.json(config, expanded=False)
@@ -591,7 +591,7 @@ if config:
         if rows:
             st.dataframe(
                 arrow_safe_dataframe(rows),
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
             )
         else:

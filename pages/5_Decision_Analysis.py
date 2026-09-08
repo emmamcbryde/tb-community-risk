@@ -58,7 +58,7 @@ overview_rows = [
     {"field": "event ledger valid", "value": ledger_valid},
     {"field": "economics structurally valid", "value": econ_valid},
 ]
-st.dataframe(arrow_safe_dataframe(overview_rows), width="stretch", hide_index=True)
+st.dataframe(arrow_safe_dataframe(overview_rows), use_container_width=True, hide_index=True)
 if not readiness.get("overallClinicianReady"):
     st.warning("Reference evidence remains unresolved or provisional. The page reports modelled consequences only, not recommendations.")
 
@@ -120,7 +120,7 @@ with tab_compare:
             )
     comparison = st.session_state.get("decision_scenario_comparison")
     if comparison:
-        st.dataframe(arrow_safe_dataframe(comparison["scenarioSummaries"]), width="stretch", hide_index=True)
+        st.dataframe(arrow_safe_dataframe(comparison["scenarioSummaries"]), use_container_width=True, hide_index=True)
         scenarios = comparison.get("scenarios") or []
         if scenarios:
             visual_scenarios = scenarios[:2]
@@ -136,15 +136,15 @@ with tab_compare:
                             title=str(scenario.get("label", "Selected strategy")),
                         )
         if comparison.get("pairedComparisons"):
-            st.dataframe(arrow_safe_dataframe(comparison["pairedComparisons"]), width="stretch", hide_index=True)
+            st.dataframe(arrow_safe_dataframe(comparison["pairedComparisons"]), use_container_width=True, hide_index=True)
         if comparison.get("pairedReplicateComparisons"):
             with st.expander("Paired replicate diagnostics"):
-                st.dataframe(arrow_safe_dataframe(comparison["pairedReplicateComparisons"]), width="stretch", hide_index=True)
-                st.dataframe(arrow_safe_dataframe(comparison.get("pairedDifferenceSummaries", [])), width="stretch", hide_index=True)
+                st.dataframe(arrow_safe_dataframe(comparison["pairedReplicateComparisons"]), use_container_width=True, hide_index=True)
+                st.dataframe(arrow_safe_dataframe(comparison.get("pairedDifferenceSummaries", [])), use_container_width=True, hide_index=True)
         if comparison.get("commonSeedNonpairedDiagnostics"):
             with st.expander("Common-seed non-paired diagnostics"):
                 st.caption("Baseline-generating inputs differ; these rows are not paired clinical effect intervals.")
-                st.dataframe(arrow_safe_dataframe(comparison["commonSeedNonpairedDiagnostics"]), width="stretch", hide_index=True)
+                st.dataframe(arrow_safe_dataframe(comparison["commonSeedNonpairedDiagnostics"]), use_container_width=True, hide_index=True)
         st.caption("Expected outcomes may be fractional. Simulation percentiles describe finite-population variation, not confidence intervals.")
         st.download_button(
             "Download strategy comparison CSV",
@@ -171,7 +171,7 @@ with tab_sensitivity:
                     for spec in unresolved_specs
                 ]
             ),
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
     if ready_specs and st.button("Run one-way sensitivity"):
@@ -179,7 +179,7 @@ with tab_sensitivity:
         st.session_state["decision_sensitivity"] = run_one_way_sensitivity(config, economics_config, ready_specs, outcomes)
     sensitivity = st.session_state.get("decision_sensitivity")
     if sensitivity:
-        st.dataframe(arrow_safe_dataframe(sensitivity["results"]), width="stretch", hide_index=True)
+        st.dataframe(arrow_safe_dataframe(sensitivity["results"]), use_container_width=True, hide_index=True)
         st.download_button(
             "Download sensitivity results CSV",
             data=pd.DataFrame(sensitivity["results"]).to_csv(index=False).encode("utf-8"),
@@ -206,8 +206,8 @@ with tab_sensitivity:
         if not threshold["validation"]["isValid"]:
             st.warning("; ".join(item["message"] for item in threshold["validation"].get("warnings", [])))
         st.caption(f"Monotonicity: {threshold.get('monotonicity')}")
-        st.dataframe(arrow_safe_dataframe(threshold.get("grid", [])), width="stretch", hide_index=True)
-        st.dataframe(arrow_safe_dataframe(threshold.get("crossings", [])), width="stretch", hide_index=True)
+        st.dataframe(arrow_safe_dataframe(threshold.get("grid", [])), use_container_width=True, hide_index=True)
+        st.dataframe(arrow_safe_dataframe(threshold.get("crossings", [])), use_container_width=True, hide_index=True)
 
 with tab_early:
     st.subheader("Review Early Screening Results")
@@ -248,7 +248,7 @@ with tab_early:
         if not early["validation"]["isValid"]:
             st.error(early["validation"]["errors"])
         else:
-            st.dataframe(arrow_safe_dataframe([early["prior"]["summary"], early["posterior"]["summary"]]), width="stretch", hide_index=True)
+            st.dataframe(arrow_safe_dataframe([early["prior"]["summary"], early["posterior"]["summary"]]), use_container_width=True, hide_index=True)
             with st.expander("Technical information", expanded=False):
                 st.caption(f"Calibration policy: {early.get('calibrationPolicy')}")
                 st.caption(f"Reference calibration: {early.get('referenceCalibrationHash')}")
@@ -259,7 +259,7 @@ with tab_early:
                 st.warning(early.get("timingApproximationDescription"))
             if early.get("economicTimingStatus") == "approximate_not_decision_grade":
                 st.warning("Approximate economic components - timing not fully represented. NMB and continuation conclusions are unavailable.")
-            st.dataframe(arrow_safe_dataframe(early["posteriorProjectionSummary"]), width="stretch", hide_index=True)
+            st.dataframe(arrow_safe_dataframe(early["posteriorProjectionSummary"]), use_container_width=True, hide_index=True)
             st.download_button(
                 "Download early-review posterior CSV",
                 data=pd.DataFrame(early["priorPosteriorTable"]).to_csv(index=False).encode("utf-8"),

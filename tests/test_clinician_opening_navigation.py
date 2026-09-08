@@ -168,6 +168,76 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
         self.assertIn("assess_apy_reference_readiness", text)
         self.assertIn("load_apy_evidence_registry", text)
 
+    def test_standard_pages_do_not_use_newer_streamlit_width_strings(self) -> None:
+        """Keep deployed Streamlit 1.39-compatible dataframe/chart calls."""
+        offenders: list[tuple[str, str, str]] = []
+        standard_pages = [
+            ROOT / "streamlit_app.py",
+            ROOT / "pages" / "0_Start.py",
+            ROOT / "pages" / "1_Scenario.py",
+            ROOT / "pages" / "2_Run_Model.py",
+            ROOT / "pages" / "3_Results.py",
+            ROOT / "pages" / "4_Economics.py",
+            ROOT / "pages" / "5_Decision_Analysis.py",
+            ROOT / "pages" / "6_Evidence_Assumptions.py",
+        ]
+        for path in standard_pages:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if not (
+                    isinstance(func, ast.Attribute)
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "st"
+                    and func.attr in {"dataframe", "altair_chart"}
+                ):
+                    continue
+                for keyword in node.keywords:
+                    if (
+                        keyword.arg == "width"
+                        and isinstance(keyword.value, ast.Constant)
+                        and keyword.value.value in {"stretch", "content"}
+                    ):
+                        offenders.append(
+                            (
+                                path.relative_to(ROOT).as_posix(),
+                                func.attr,
+                                str(keyword.value.value),
+                            )
+                        )
+        self.assertEqual(offenders, [])
+
+    def test_every_streamlit_form_contains_submit_button(self) -> None:
+        offenders: list[str] = []
+        for path in [*ROOT.glob("pages/**/*.py"), ROOT / "streamlit_app.py"]:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.With):
+                    continue
+                is_form = any(
+                    isinstance(item.context_expr, ast.Call)
+                    and isinstance(item.context_expr.func, ast.Attribute)
+                    and isinstance(item.context_expr.func.value, ast.Name)
+                    and item.context_expr.func.value.id == "st"
+                    and item.context_expr.func.attr == "form"
+                    for item in node.items
+                )
+                if not is_form:
+                    continue
+                has_submit = any(
+                    isinstance(child, ast.Call)
+                    and isinstance(child.func, ast.Attribute)
+                    and isinstance(child.func.value, ast.Name)
+                    and child.func.value.id == "st"
+                    and child.func.attr == "form_submit_button"
+                    for child in ast.walk(node)
+                )
+                if not has_submit:
+                    offenders.append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(offenders, [])
+
 
 if __name__ == "__main__":
     unittest.main()

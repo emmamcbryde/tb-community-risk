@@ -168,6 +168,17 @@ class APYWorkingDefaultsTests(unittest.TestCase):
             ],
         )
 
+    def test_blank_demographic_override_rows_show_resolved_values_used_by_model(self) -> None:
+        workspace = unified_default_session_state()["parameter_workspace"]
+        rows = {row["parameterId"]: row for row in workspace["rows"]}
+
+        self.assertIsNone(rows["demography.age.0_4"]["currentValue"])
+        self.assertAlmostEqual(rows["demography.age.0_4"]["sourceDefaultValue"], 0.10678642714570857)
+        self.assertAlmostEqual(rows["demography.age.0_4"]["valueUsedByModel"], 0.10678642714570857)
+        self.assertAlmostEqual(rows["demography.age.5_14"]["valueUsedByModel"], 0.21956087824351295)
+        self.assertAlmostEqual(rows["demography.age.15_plus"]["valueUsedByModel"], 0.6736526946107785)
+        self.assertAlmostEqual(rows["demography.risk.diabetes"]["valueUsedByModel"], 0.20209580838323352)
+
     def test_age_distribution_override_must_sum_to_one(self) -> None:
         workspace = unified_default_session_state()["parameter_workspace"]
         rows = [dict(row) for row in workspace["rows"]]

@@ -51,7 +51,7 @@ with st.expander("Backend diagnostics", expanded=False):
     st.dataframe(
         arrow_safe_dataframe([{"field": key, "value": value} for key, value in status.items()]),
         hide_index=True,
-        width="stretch",
+        use_container_width=True,
     )
 
 with st.expander("Technical metadata", expanded=False):
@@ -60,5 +60,5 @@ with st.expander("Technical metadata", expanded=False):
     st.dataframe(
         arrow_safe_dataframe([{"field": key, "value": value} for key, value in metadata.items()]),
         hide_index=True,
-        width="stretch",
+        use_container_width=True,
     )
