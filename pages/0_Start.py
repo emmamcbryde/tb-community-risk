@@ -6,7 +6,6 @@ from typing import Any
 import streamlit as st
 
 from app.demographic_profile import (
-    demographic_summary_rows,
     risk_factor_rows,
     start_age_distribution_rows,
 )
@@ -110,8 +109,9 @@ def _render_parameter_workspace() -> None:
         st.rerun()
 
     edited_rows: list[dict[str, Any]] = []
-    tabs = st.tabs(PARAMETER_GROUPS)
-    for tab, group in zip(tabs, PARAMETER_GROUPS):
+    visible_groups = [group for group in PARAMETER_GROUPS if group != "Demography"]
+    tabs = st.tabs(visible_groups)
+    for tab, group in zip(tabs, visible_groups):
         with tab:
             group_rows = [row for row in workspace["rows"] if row.get("group") == group]
             if st.button(f"Reset this section: {group}", key=f"reset_{group}"):
@@ -235,19 +235,12 @@ def _render_parameter_workspace() -> None:
         st.page_link("pages/2_Run_Model.py", label="Open Run Analysis")
 
 
-def _render_demographic_profile(config: dict[str, Any]) -> None:
-    st.subheader("Demography currently used by the model")
-    st.caption(
-        "These values are resolved through the same APY data loaders used by the analysis. "
-        "They are the populated source-default values, independent of the optional blank override fields below. "
-        "Changing demographic inputs requires rerunning epidemiology."
-    )
-    st.dataframe(
-        arrow_safe_dataframe(demographic_summary_rows(config)),
-        use_container_width=True,
-        hide_index=True,
-    )
+def _render_age_risk_summary(config: dict[str, Any]) -> None:
     with st.expander("Age distribution and risk factors", expanded=False):
+        st.caption(
+            "Repository APY demographic default; external provenance not independently reviewed in this workflow. "
+            "These are the resolved values currently used by the model."
+        )
         st.dataframe(
             arrow_safe_dataframe(start_age_distribution_rows(config)),
             use_container_width=True,
@@ -307,7 +300,7 @@ if isinstance(config, dict) and isinstance(econ, dict):
         use_container_width=True,
         hide_index=True,
     )
-    _render_demographic_profile(config)
+    _render_age_risk_summary(config)
     ltbi_state = resolve_ltbi_state_assumptions(config)
     unresolved_recent_ltbi = ltbi_state.get("baselineRecentLTBIProportion") is None
     if unresolved_recent_ltbi:

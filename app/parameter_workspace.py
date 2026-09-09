@@ -193,6 +193,7 @@ def reset_all_parameters(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def parameter_summary(config: dict[str, Any], economics_config: dict[str, Any]) -> list[dict[str, Any]]:
     metadata = economics_config.get("metadata") or {}
+    eligible = _eligible_population(config)
     method = MODEL_METHOD_LABELS.get(str(config.get("analysisMethod") or "expected_value"), "Expected outcomes")
     discounting = economics_config.get("discounting") or {}
     profiles = discounting.get("profiles") or {}
@@ -204,6 +205,7 @@ def parameter_summary(config: dict[str, Any], economics_config: dict[str, Any]) 
     comparison_health = comparison.get("healthRate", discounting.get("comparisonHealthRate", comparison_cost))
     return [
         {"Item": "Population", "Value": config.get("populationPresetId")},
+        {"Item": "Eligible population", "Value": f"{eligible:,} people"},
         {"Item": "Selected test", "Value": config.get("testType")},
         {"Item": "Selected regimen", "Value": config.get("regimen")},
         {"Item": "Screening coverage", "Value": config.get("screenCoverage")},
@@ -677,3 +679,13 @@ def _percent(value: Any) -> str:
         return f"{float(value) * 100:g}%"
     except (TypeError, ValueError):
         return "not set"
+
+
+def _eligible_population(config: dict[str, Any]) -> int:
+    n = int(config.get("N", 0) or 0)
+    eligible = ((config.get("scenario") or {}).get("eligible") or {})
+    if eligible.get("number") not in (None, ""):
+        return int(float(eligible["number"]))
+    if eligible.get("proportion") not in (None, ""):
+        return int(round(n * float(eligible["proportion"])))
+    return n
