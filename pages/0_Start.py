@@ -15,7 +15,9 @@ from app.parameter_workspace import (
     apply_parameter_workspace,
     build_parameter_workspace,
     changed_parameter_count,
+    merge_parameter_display_edits,
     parameter_summary,
+    parameter_display_rows,
     reset_all_parameters,
     reset_parameter_group,
     unified_default_session_state,
@@ -75,12 +77,12 @@ def _set_workspace_rows(rows: list[dict[str, Any]]) -> None:
     defaults = {row["parameterId"]: row.get("defaultValue") for row in workspace.get("rows") or []}
     for row in rows:
         current = row.get("currentValue")
-        row["changedFromDefault"] = str(current) != str(defaults.get(row.get("parameterId")))
+        row["changedFromDefault"] = bool(row.get("isUserOverride")) or str(current) != str(defaults.get(row.get("parameterId")))
         if row.get("sourceObject") in {"ageDistributionBand", "config"} and str(row.get("parameterId", "")).startswith(
             ("demography.age.", "demography.risk.")
         ):
             row["valueUsedByModel"] = row.get("sourceDefaultValue") if current in (None, "") else current
-            row["effectiveSource"] = "Repository APY default" if current in (None, "") else "User-defined"
+            row["effectiveSource"] = "User-defined" if row.get("isUserOverride") else "Repository APY default"
     workspace["rows"] = rows
     workspace["changedCount"] = changed_parameter_count(workspace)
     st.session_state["parameter_workspace"] = workspace
@@ -109,7 +111,24 @@ def _render_parameter_workspace() -> None:
         st.rerun()
 
     edited_rows: list[dict[str, Any]] = []
-    visible_groups = [group for group in PARAMETER_GROUPS if group != "Demography"]
+    override_rows = [
+        {
+            "Parameter": row.get("label"),
+            "Value used by model": row.get("valueUsedByModel"),
+            "Source": "User-defined",
+        }
+        for row in workspace.get("rows", [])
+        if row.get("isUserOverride")
+    ]
+    if override_rows:
+        st.warning("The parameters below include user-defined values.")
+        st.dataframe(
+            arrow_safe_dataframe(override_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    visible_groups = PARAMETER_GROUPS
     tabs = st.tabs(visible_groups)
     for tab, group in zip(tabs, visible_groups):
         with tab:
@@ -120,67 +139,44 @@ def _render_parameter_workspace() -> None:
                 st.rerun()
             standard_rows = [row for row in group_rows if not row.get("advanced")]
             advanced_rows = [row for row in group_rows if row.get("advanced")]
-            if group == "Demography":
-                shown_columns = [
-                    "label",
-                    "valueUsedByModel",
-                    "unit",
-                    "effectiveSource",
-                ]
-            else:
-                shown_columns = [
-                    "label",
-                    "valueUsedByModel",
-                    "currentValue",
-                    "defaultValue",
-                    "sourceDefaultValue",
-                    "unit",
-                    "source",
-                    "reviewStatus",
-                    "provisional",
-                    "changedFromDefault",
-                    "operationalStatus",
-                    "notes",
-                ]
-            disabled_columns = [
-                "parameterId",
-                "group",
-                "label",
-                "defaultValue",
-                "sourceDefaultValue",
-                "valueUsedByModel",
-                "effectiveSource",
-                "unit",
-                "source",
-                "reviewStatus",
-                "provisional",
-                "changedFromDefault",
-                "editableType",
-                "validation",
-                "notes",
-                "advanced",
-                "selectOptions",
-                "operationalStatus",
-            ]
+            st.caption("Rows where Source is User-defined contain user-entered overrides.")
+            read_only_rows = [row for row in standard_rows if row.get("editableType") == "read_only"]
+            editable_rows = [row for row in standard_rows if row.get("editableType") != "read_only"]
+            if read_only_rows:
+                st.dataframe(
+                    arrow_safe_dataframe(parameter_display_rows(read_only_rows)),
+                    use_container_width=True,
+                    hide_index=True,
+                )
             edited = st.data_editor(
-                standard_rows,
+                parameter_display_rows(editable_rows),
                 key=f"parameter_editor_{group}",
                 use_container_width=True,
                 hide_index=True,
-                column_order=shown_columns,
-                disabled=disabled_columns,
+                column_order=["Parameter", "Value used by model", "Unit", "Source"],
+                disabled=["Parameter", "Unit", "Source"],
             )
-            edited_rows.extend(_rows_from_editor(edited))
+            edited_rows.extend(merge_parameter_display_edits(editable_rows, _rows_from_editor(edited)))
+            edited_rows.extend(read_only_rows)
             with st.expander("Advanced"):
+                advanced_read_only = [row for row in advanced_rows if row.get("editableType") == "read_only"]
+                advanced_editable = [row for row in advanced_rows if row.get("editableType") != "read_only"]
+                if advanced_read_only:
+                    st.dataframe(
+                        arrow_safe_dataframe(parameter_display_rows(advanced_read_only)),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
                 advanced_edited = st.data_editor(
-                    advanced_rows,
+                    parameter_display_rows(advanced_editable),
                     key=f"parameter_advanced_editor_{group}",
                     use_container_width=True,
                     hide_index=True,
-                    column_order=shown_columns,
-                    disabled=disabled_columns,
+                    column_order=["Parameter", "Value used by model", "Unit", "Source"],
+                    disabled=["Parameter", "Unit", "Source"],
                 )
-                edited_rows.extend(_rows_from_editor(advanced_edited))
+                edited_rows.extend(merge_parameter_display_edits(advanced_editable, _rows_from_editor(advanced_edited)))
+                edited_rows.extend(advanced_read_only)
 
     if edited_rows:
         _set_workspace_rows(edited_rows)

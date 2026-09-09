@@ -13,11 +13,13 @@ from app.parameter_workspace import (
     PRIMARY_DALY_OUTCOME_PRESET,
     apply_parameter_workspace,
     build_parameter_workspace,
+    merge_parameter_display_edits,
+    parameter_display_rows,
+    parameter_summary,
     reset_all_parameters,
     reset_parameter_group,
     unified_default_session_state,
     validate_parameter_workspace,
-    parameter_summary,
 )
 from app.results_workbook import build_results_workbook
 from engine.apy.working_defaults import (
@@ -263,8 +265,6 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertIn("they are not missing model inputs", start_text)
         self.assertIn("start_age_distribution_rows", start_text)
         self.assertIn("Repository APY demographic default; external provenance not independently reviewed", start_text)
-        self.assertIn('if group != "Demography"', start_text)
-        self.assertNotIn("Reset this section: Demography", start_text)
         self.assertNotIn("arrow_safe_dataframe(age_distribution_rows(config))", start_text)
         self.assertIn("Blank or default risk-factor override fields mean use source defaults", strategy_text)
         self.assertIn("Blank optional override fields mean these source-default values remain in use", strategy_text)
@@ -286,6 +286,91 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         changed_by_item = {row["Item"]: row["Value"] for row in changed_rows}
 
         self.assertEqual(changed_by_item["Eligible population"], "1,800 people")
+
+    def test_parameter_display_rows_use_only_standard_columns(self) -> None:
+        workspace = unified_default_session_state()["parameter_workspace"]
+        for group in PARAMETER_GROUPS:
+            rows = [row for row in workspace["rows"] if row["group"] == group]
+            display = parameter_display_rows(rows)
+            self.assertTrue(display, group)
+            for row in display:
+                self.assertEqual(
+                    list(row),
+                    ["Parameter", "Value used by model", "Unit", "Source"],
+                )
+
+    def test_displayed_effective_values_are_populated_for_source_defaults(self) -> None:
+        workspace = unified_default_session_state()["parameter_workspace"]
+        display = {
+            row["Parameter"]: row
+            for row in parameter_display_rows(workspace["rows"])
+        }
+
+        self.assertEqual(display["Age distribution: 0-4 years"]["Value used by model"], 0.10678642714570857)
+        self.assertEqual(display["Age distribution: 0-4 years"]["Source"], "Repository APY default")
+        self.assertEqual(display["Diabetes"]["Value used by model"], 0.20209580838323352)
+        self.assertEqual(display["Diabetes"]["Source"], "Repository APY default")
+        self.assertEqual(display["IGRA cost"]["Source"], "Dale 2019 AUD working defaults")
+
+    def test_display_edit_marks_only_one_row_user_defined_and_applies_value(self) -> None:
+        state = unified_default_session_state()
+        rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
+        editable = [row for row in rows if row["group"] == "Costs and outcomes" and row["editableType"] != "read_only"]
+        display = parameter_display_rows(editable)
+        target_index = next(i for i, row in enumerate(display) if row["Parameter"] == "IGRA cost")
+        display[target_index]["Value used by model"] = 125.0
+
+        merged = merge_parameter_display_edits(editable, display)
+        by_label = {row["label"]: row for row in merged}
+
+        self.assertEqual(by_label["IGRA cost"]["currentValue"], 125.0)
+        self.assertEqual(by_label["IGRA cost"]["effectiveSource"], "User-defined")
+        self.assertTrue(by_label["IGRA cost"]["isUserOverride"])
+        self.assertEqual(by_label["3HP regimen cost"]["effectiveSource"], "Dale 2019 AUD working defaults")
+
+        all_rows = [
+            next((merged_row for merged_row in merged if merged_row["parameterId"] == row["parameterId"]), row)
+            for row in rows
+        ]
+        _, econ = apply_parameter_workspace(state["config"], state["economics_config"], all_rows)
+        item = next(item for item in econ["costItems"] if item["costItemId"] == "test_igra")
+        self.assertEqual(item["originalCost"], 125.0)
+
+    def test_blank_display_edit_is_invalid_and_does_not_become_zero(self) -> None:
+        workspace = unified_default_session_state()["parameter_workspace"]
+        editable = [row for row in workspace["rows"] if row["group"] == "Demography" and row["editableType"] != "read_only"]
+        display = parameter_display_rows(editable)
+        target_index = next(i for i, row in enumerate(display) if row["Parameter"] == "Diabetes")
+        display[target_index]["Value used by model"] = ""
+
+        merged = merge_parameter_display_edits(editable, display)
+        validation = validate_parameter_workspace(merged)
+        diabetes = next(row for row in merged if row["label"] == "Diabetes")
+
+        self.assertFalse(validation["isValid"])
+        self.assertEqual(diabetes["currentValue"], "")
+        self.assertNotEqual(diabetes["currentValue"], 0)
+
+    def test_reset_removes_override_source_and_restores_value(self) -> None:
+        state = unified_default_session_state()
+        rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
+        editable = [row for row in rows if row["group"] == "Costs and outcomes" and row["editableType"] != "read_only"]
+        display = parameter_display_rows(editable)
+        target_index = next(i for i, row in enumerate(display) if row["Parameter"] == "IGRA cost")
+        display[target_index]["Value used by model"] = 125.0
+        merged = merge_parameter_display_edits(editable, display)
+        all_rows = [
+            next((merged_row for merged_row in merged if merged_row["parameterId"] == row["parameterId"]), row)
+            for row in rows
+        ]
+
+        reset = reset_parameter_group(all_rows, "Costs and outcomes")
+        igra = next(row for row in reset if row["label"] == "IGRA cost")
+
+        self.assertEqual(igra["valueUsedByModel"], 113.48)
+        self.assertEqual(igra["effectiveSource"], "Dale 2019 AUD working defaults")
+        self.assertFalse(igra["isUserOverride"])
+        self.assertFalse(igra["changedFromDefault"])
 
     def test_start_page_wraps_arrow_safe_tables_in_streamlit_dataframe(self) -> None:
         text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")

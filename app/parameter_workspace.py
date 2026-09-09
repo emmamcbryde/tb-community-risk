@@ -110,6 +110,14 @@ def validate_parameter_workspace(rows: list[dict[str, Any]]) -> dict[str, Any]:
         kind = row.get("editableType")
         if parameter_id == "analysis.n_reps" and method_value in {"Expected outcomes", "expected_value"}:
             continue
+        if row.get("isUserOverride") and value in (None, ""):
+            messages.append(
+                {
+                    "parameterId": parameter_id,
+                    "message": "Value used by model cannot be blank. Restore defaults to use the source value.",
+                }
+            )
+            continue
         if kind == "select" and row.get("selectOptions") and value not in row.get("selectOptions"):
             messages.append({"parameterId": parameter_id, "message": "Select one of the listed options."})
         if kind == "probability" and value not in (None, ""):
@@ -179,6 +187,9 @@ def reset_parameter_group(rows: list[dict[str, Any]], group: str) -> list[dict[s
     for row in out:
         if row.get("group") == group:
             row["currentValue"] = row.get("defaultValue")
+            row["valueUsedByModel"] = row.get("sourceDefaultValue", row.get("defaultValue"))
+            row["effectiveSource"] = _default_source_label(row)
+            row["isUserOverride"] = False
             row["changedFromDefault"] = False
     return out
 
@@ -187,7 +198,40 @@ def reset_all_parameters(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = deepcopy(rows)
     for row in out:
         row["currentValue"] = row.get("defaultValue")
+        row["valueUsedByModel"] = row.get("sourceDefaultValue", row.get("defaultValue"))
+        row["effectiveSource"] = _default_source_label(row)
+        row["isUserOverride"] = False
         row["changedFromDefault"] = False
+    return out
+
+
+def parameter_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "Parameter": row.get("label"),
+            "Value used by model": row.get("valueUsedByModel"),
+            "Unit": row.get("unit"),
+            "Source": "User-defined" if row.get("isUserOverride") else _default_source_label(row),
+        }
+        for row in rows
+    ]
+
+
+def merge_parameter_display_edits(
+    rows: list[dict[str, Any]],
+    edited_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    out = deepcopy(rows)
+    for row, edited in zip(out, edited_rows):
+        new_value = edited.get("Value used by model")
+        old_effective = row.get("valueUsedByModel")
+        if _normalise_compare(new_value) == _normalise_compare(old_effective):
+            continue
+        row["currentValue"] = new_value
+        row["valueUsedByModel"] = new_value
+        row["effectiveSource"] = "User-defined"
+        row["isUserOverride"] = True
+        row["changedFromDefault"] = True
     return out
 
 
@@ -238,13 +282,15 @@ def _parameter_row(
 ) -> dict[str, Any]:
     current = _get_value(config, econ, spec)
     default = _get_value(default_config, default_econ, spec)
+    effective_source = _effective_source(spec, current, default)
     return {
         **spec,
         "currentValue": current,
         "defaultValue": default,
         "sourceDefaultValue": _source_default_value(default_config, default_econ, spec),
         "valueUsedByModel": _value_used_by_model(config, econ, spec, current),
-        "effectiveSource": _effective_source(spec, current, default),
+        "effectiveSource": effective_source,
+        "isUserOverride": effective_source == "User-defined",
         "changedFromDefault": _normalise_compare(current) != _normalise_compare(default),
     }
 
@@ -470,9 +516,17 @@ def _value_used_by_model(
 
 
 def _effective_source(spec: dict[str, Any], current: Any, default: Any) -> str:
+    if current not in (None, "") and _normalise_compare(current) != _normalise_compare(default):
+        return "User-defined"
     if str(spec.get("parameterId") or "").startswith("demography."):
-        return "Repository APY default" if current in (None, "") or _normalise_compare(current) == _normalise_compare(default) else "User-defined"
+        return "Repository APY default"
     return str(spec.get("source") or "")
+
+
+def _default_source_label(row: dict[str, Any]) -> str:
+    if str(row.get("parameterId") or "").startswith("demography."):
+        return "Repository APY default"
+    return str(row.get("source") or "")
 
 
 def _set_value(config: dict[str, Any], econ: dict[str, Any], spec: dict[str, Any], value: Any) -> None:
