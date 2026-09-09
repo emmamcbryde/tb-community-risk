@@ -238,6 +238,49 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
                     offenders.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(offenders, [])
 
+    def test_standard_pages_do_not_nest_streamlit_expanders(self) -> None:
+        offenders: list[str] = []
+        standard_pages = [
+            ROOT / "pages" / "0_Start.py",
+            ROOT / "pages" / "1_Scenario.py",
+            ROOT / "pages" / "2_Run_Model.py",
+            ROOT / "pages" / "3_Results.py",
+            ROOT / "pages" / "4_Economics.py",
+            ROOT / "pages" / "5_Decision_Analysis.py",
+            ROOT / "pages" / "6_Evidence_Assumptions.py",
+        ]
+        for path in standard_pages:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.With):
+                    continue
+                is_expander = any(
+                    isinstance(item.context_expr, ast.Call)
+                    and isinstance(item.context_expr.func, ast.Attribute)
+                    and isinstance(item.context_expr.func.value, ast.Name)
+                    and item.context_expr.func.value.id == "st"
+                    and item.context_expr.func.attr == "expander"
+                    for item in node.items
+                )
+                if not is_expander:
+                    continue
+                has_nested_expander = any(
+                    child is not node
+                    and isinstance(child, ast.With)
+                    and any(
+                        isinstance(item.context_expr, ast.Call)
+                        and isinstance(item.context_expr.func, ast.Attribute)
+                        and isinstance(item.context_expr.func.value, ast.Name)
+                        and item.context_expr.func.value.id == "st"
+                        and item.context_expr.func.attr == "expander"
+                        for item in child.items
+                    )
+                    for child in ast.walk(node)
+                )
+                if has_nested_expander:
+                    offenders.append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(offenders, [])
+
 
 if __name__ == "__main__":
     unittest.main()

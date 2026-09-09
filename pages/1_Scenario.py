@@ -449,7 +449,13 @@ if config:
                 else:
                     risk_prev_updates[factor] = None
 
-            with st.expander("Advanced overall prevalence overrides"):
+            show_advanced_risk = st.checkbox(
+                "Show advanced overall prevalence overrides",
+                value=False,
+                key="show_advanced_overall_prevalence_overrides",
+            )
+            if show_advanced_risk:
+                st.markdown("**Advanced overall prevalence overrides**")
                 for factor in ADVANCED_RISK_FACTORS:
                     current_value = risk_prev.get(factor)
                     use_default = st.checkbox(
