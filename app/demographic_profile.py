@@ -70,6 +70,16 @@ def broad_age_distribution_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
     return list(resolved_demographic_profile(config)["broadAgeRows"])
 
 
+def start_age_distribution_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "Age group": row["Age group"],
+            "Current proportion used by model": _format_percent(row["Proportion"]),
+        }
+        for row in broad_age_distribution_rows(config)
+    ]
+
+
 def risk_factor_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
     return list(resolved_demographic_profile(config)["riskRows"])
 
@@ -206,3 +216,10 @@ def _relative_path(value: str) -> str:
         return str(path.resolve().relative_to(root))
     except (OSError, ValueError):
         return str(value)
+
+
+def _format_percent(value: Any) -> str:
+    try:
+        return f"{float(value) * 100:.2f}%"
+    except (TypeError, ValueError):
+        return ""

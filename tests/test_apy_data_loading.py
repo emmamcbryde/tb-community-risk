@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from app.demographic_profile import demographic_profile_hash, restore_apy_demographic_defaults
+from app.demographic_profile import (
+    demographic_profile_hash,
+    restore_apy_demographic_defaults,
+    start_age_distribution_rows,
+)
 from app.parameter_workspace import apply_parameter_workspace, unified_default_session_state
 from adapters.paths import repo_root
 from adapters.python_apy_backend import PythonApyBackend
@@ -123,6 +127,42 @@ class ApyDataLoadingTests(unittest.TestCase):
         self.assertAlmostEqual(sum(pars["popFrac"]), 1.0)
         self.assertGreater(pars["totalDiabetesPrev"], 0)
         self.assertGreater(pars["totalCurrentSmokerPrev"], 0)
+
+    def test_start_age_distribution_rows_show_effective_nonzero_percentages(self) -> None:
+        config = unified_default_session_state()["config"]
+
+        rows = start_age_distribution_rows(config)
+
+        self.assertEqual(
+            rows,
+            [
+                {"Age group": "0-4 years", "Current proportion used by model": "10.68%"},
+                {"Age group": "5-14 years", "Current proportion used by model": "21.96%"},
+                {"Age group": "15+ years", "Current proportion used by model": "67.37%"},
+            ],
+        )
+        self.assertNotIn("Proportion", rows[0])
+        self.assertNotIn("Source proportion", rows[0])
+        proportions = [float(row["Current proportion used by model"].rstrip("%")) / 100 for row in rows]
+        self.assertAlmostEqual(sum(proportions), 1.0, places=3)
+
+    def test_start_age_distribution_rows_reflect_user_age_override(self) -> None:
+        state = unified_default_session_state()
+        rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
+        next(row for row in rows if row["parameterId"] == "demography.age.0_4")["currentValue"] = 0.2
+        next(row for row in rows if row["parameterId"] == "demography.age.5_14")["currentValue"] = 0.3
+        next(row for row in rows if row["parameterId"] == "demography.age.15_plus")["currentValue"] = 0.5
+
+        config, _ = apply_parameter_workspace(state["config"], state["economics_config"], rows)
+
+        self.assertEqual(
+            start_age_distribution_rows(config),
+            [
+                {"Age group": "0-4 years", "Current proportion used by model": "20.00%"},
+                {"Age group": "5-14 years", "Current proportion used by model": "30.00%"},
+                {"Age group": "15+ years", "Current proportion used by model": "50.00%"},
+            ],
+        )
 
     def test_scenario_export_reload_preserves_resolved_demographic_profile(self) -> None:
         backend = PythonApyBackend(repo_root())

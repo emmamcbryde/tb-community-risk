@@ -6,9 +6,9 @@ from typing import Any
 import streamlit as st
 
 from app.demographic_profile import (
-    age_distribution_rows,
     demographic_summary_rows,
     risk_factor_rows,
+    start_age_distribution_rows,
 )
 from app.display import arrow_safe_dataframe
 from app.parameter_workspace import (
@@ -81,6 +81,7 @@ def _set_workspace_rows(rows: list[dict[str, Any]]) -> None:
             ("demography.age.", "demography.risk.")
         ):
             row["valueUsedByModel"] = row.get("sourceDefaultValue") if current in (None, "") else current
+            row["effectiveSource"] = "Repository APY default" if current in (None, "") else "User-defined"
     workspace["rows"] = rows
     workspace["changedCount"] = changed_parameter_count(workspace)
     st.session_state["parameter_workspace"] = workspace
@@ -119,20 +120,28 @@ def _render_parameter_workspace() -> None:
                 st.rerun()
             standard_rows = [row for row in group_rows if not row.get("advanced")]
             advanced_rows = [row for row in group_rows if row.get("advanced")]
-            shown_columns = [
-                "label",
-                "valueUsedByModel",
-                "currentValue",
-                "defaultValue",
-                "sourceDefaultValue",
-                "unit",
-                "source",
-                "reviewStatus",
-                "provisional",
-                "changedFromDefault",
-                "operationalStatus",
-                "notes",
-            ]
+            if group == "Demography":
+                shown_columns = [
+                    "label",
+                    "valueUsedByModel",
+                    "unit",
+                    "effectiveSource",
+                ]
+            else:
+                shown_columns = [
+                    "label",
+                    "valueUsedByModel",
+                    "currentValue",
+                    "defaultValue",
+                    "sourceDefaultValue",
+                    "unit",
+                    "source",
+                    "reviewStatus",
+                    "provisional",
+                    "changedFromDefault",
+                    "operationalStatus",
+                    "notes",
+                ]
             disabled_columns = [
                 "parameterId",
                 "group",
@@ -140,6 +149,7 @@ def _render_parameter_workspace() -> None:
                 "defaultValue",
                 "sourceDefaultValue",
                 "valueUsedByModel",
+                "effectiveSource",
                 "unit",
                 "source",
                 "reviewStatus",
@@ -239,7 +249,7 @@ def _render_demographic_profile(config: dict[str, Any]) -> None:
     )
     with st.expander("Age distribution and risk factors", expanded=False):
         st.dataframe(
-            arrow_safe_dataframe(age_distribution_rows(config)),
+            arrow_safe_dataframe(start_age_distribution_rows(config)),
             use_container_width=True,
             hide_index=True,
         )

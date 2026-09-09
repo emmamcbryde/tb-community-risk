@@ -178,6 +178,39 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertAlmostEqual(rows["demography.age.5_14"]["valueUsedByModel"], 0.21956087824351295)
         self.assertAlmostEqual(rows["demography.age.15_plus"]["valueUsedByModel"], 0.6736526946107785)
         self.assertAlmostEqual(rows["demography.risk.diabetes"]["valueUsedByModel"], 0.20209580838323352)
+        self.assertEqual(rows["demography.age.0_4"]["effectiveSource"], "Repository APY default")
+        self.assertEqual(rows["demography.risk.diabetes"]["effectiveSource"], "Repository APY default")
+        self.assertEqual(rows["demography.population_size"]["effectiveSource"], "Repository APY default")
+
+    def test_individual_demographic_override_marks_only_that_source_user_defined(self) -> None:
+        state = unified_default_session_state()
+        rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
+        next(row for row in rows if row["parameterId"] == "demography.risk.diabetes")["currentValue"] = 0.3
+
+        config, econ = apply_parameter_workspace(state["config"], state["economics_config"], rows)
+        updated = build_parameter_workspace(config, econ)
+        by_id = {row["parameterId"]: row for row in updated["rows"]}
+
+        self.assertAlmostEqual(by_id["demography.risk.diabetes"]["valueUsedByModel"], 0.3)
+        self.assertEqual(by_id["demography.risk.diabetes"]["effectiveSource"], "User-defined")
+        self.assertEqual(by_id["demography.risk.smoking"]["effectiveSource"], "Repository APY default")
+        self.assertEqual(by_id["demography.age.0_4"]["effectiveSource"], "Repository APY default")
+
+    def test_restoring_demographic_defaults_restores_source_labels(self) -> None:
+        state = unified_default_session_state()
+        rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
+        next(row for row in rows if row["parameterId"] == "demography.age.0_4")["currentValue"] = 0.2
+        next(row for row in rows if row["parameterId"] == "demography.age.5_14")["currentValue"] = 0.3
+        next(row for row in rows if row["parameterId"] == "demography.age.15_plus")["currentValue"] = 0.5
+        config, econ = apply_parameter_workspace(state["config"], state["economics_config"], rows)
+
+        restored = build_parameter_workspace(state["config"], econ)
+        restored_rows = {row["parameterId"]: row for row in restored["rows"]}
+
+        self.assertAlmostEqual(restored_rows["demography.age.0_4"]["valueUsedByModel"], 0.10678642714570857)
+        self.assertEqual(restored_rows["demography.age.0_4"]["effectiveSource"], "Repository APY default")
+        self.assertEqual(restored_rows["demography.age.5_14"]["effectiveSource"], "Repository APY default")
+        self.assertEqual(restored_rows["demography.age.15_plus"]["effectiveSource"], "Repository APY default")
 
     def test_age_distribution_override_must_sum_to_one(self) -> None:
         workspace = unified_default_session_state()["parameter_workspace"]
@@ -227,6 +260,10 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertIn("Restore APY demographic defaults", strategy_text)
         self.assertIn("Blank demographic or risk-factor override fields mean use source defaults shown above", start_text)
         self.assertIn("they are not missing model inputs", start_text)
+        self.assertIn("start_age_distribution_rows", start_text)
+        self.assertIn("valueUsedByModel", start_text)
+        self.assertIn("effectiveSource", start_text)
+        self.assertNotIn("arrow_safe_dataframe(age_distribution_rows(config))", start_text)
         self.assertIn("Blank or default risk-factor override fields mean use source defaults", strategy_text)
         self.assertIn("Blank optional override fields mean these source-default values remain in use", strategy_text)
 

@@ -242,6 +242,7 @@ def _parameter_row(
         "defaultValue": default,
         "sourceDefaultValue": _source_default_value(default_config, default_econ, spec),
         "valueUsedByModel": _value_used_by_model(config, econ, spec, current),
+        "effectiveSource": _effective_source(spec, current, default),
         "changedFromDefault": _normalise_compare(current) != _normalise_compare(default),
     }
 
@@ -464,6 +465,12 @@ def _value_used_by_model(
     if risk_key and current in (None, ""):
         return _resolved_risk_value(config, risk_key)
     return current
+
+
+def _effective_source(spec: dict[str, Any], current: Any, default: Any) -> str:
+    if str(spec.get("parameterId") or "").startswith("demography."):
+        return "Repository APY default" if current in (None, "") or _normalise_compare(current) == _normalise_compare(default) else "User-defined"
+    return str(spec.get("source") or "")
 
 
 def _set_value(config: dict[str, Any], econ: dict[str, Any], spec: dict[str, Any], value: Any) -> None:
