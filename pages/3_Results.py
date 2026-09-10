@@ -11,6 +11,10 @@ from app.display import (
     safe_download_stem,
 )
 from app.icon_arrays import build_100_person_visual_data, render_100_person_summary
+from app.results_page_display import (
+    detailed_rows_for_display,
+    key_metric_rows_for_display,
+)
 from app.results_workbook import build_results_workbook
 from app.state import init_session_state
 from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
@@ -19,7 +23,7 @@ from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
 init_session_state()
 
 st.title("Results")
-st.caption("Review analysis outputs, assumptions, downloads and readiness warnings.")
+st.caption("Review the screening, treatment and active-TB outcomes from the latest analysis.")
 
 bundle = st.session_state.get("results_bundle")
 if not bundle:
@@ -36,6 +40,11 @@ scenario_label = metadata.get("scenarioLabel")
 
 if st.session_state.get("results_stale"):
     st.warning("These results are stale because analysis inputs changed after the last run.")
+else:
+    st.success("Results are current for the saved analysis inputs.")
+
+if scenario_label:
+    st.markdown(f"**Scenario:** {scenario_label}")
 
 scope_statement = (
     technical.get("interfaceConfig", {})
@@ -44,35 +53,64 @@ scope_statement = (
 )
 st.info(scope_statement)
 
-with st.expander("Technical information", expanded=False):
-    metadata_rows = [
-        {"field": key, "value": value}
-        for key, value in metadata.items()
-    ]
-    st.dataframe(arrow_safe_dataframe(metadata_rows), use_container_width=True, hide_index=True)
+dynamic_metric_rows = []
+dynamic_comparison = technical.get("dynamicComparison", {})
+if isinstance(dynamic_comparison, dict):
+    dynamic_metric_rows = dynamic_comparison.get("metricRows") or []
 
-st.subheader("Headline")
-if headline.get("keyMetricsRows"):
-    st.markdown("Key metrics")
+key_rows = key_metric_rows_for_display(
+    headline.get("keyMetricsRows"),
+    dynamic_metric_rows,
+)
+detail_rows = detailed_rows_for_display(
+    headline.get("summaryRows"),
+    headline.get("keyMetricsRows"),
+)
+
+st.subheader("Key metrics")
+if key_rows:
     st.dataframe(
-        arrow_safe_dataframe(headline["keyMetricsRows"]),
+        arrow_safe_dataframe(key_rows),
         use_container_width=True,
+        hide_index=True,
     )
-if headline.get("summaryRows"):
-    st.markdown("Summary")
+else:
+    st.info("Key metrics are unavailable for these results.")
+
+st.caption(
+    "Median, low 95% and high 95% summarise the distribution across repeated "
+    "simulated populations. They are not confidence intervals."
+)
+
+st.subheader("Detailed summary table")
+if detail_rows:
     st.dataframe(
-        arrow_safe_dataframe(headline["summaryRows"]),
+        arrow_safe_dataframe(detail_rows),
         use_container_width=True,
+        hide_index=True,
     )
-if not headline.get("keyMetricsRows") and not headline.get("summaryRows"):
+else:
     st.json(headline, expanded=False)
 
 visual_rows = build_100_person_visual_data(technical.get("eventLedger"))
 if visual_rows:
+    st.caption(
+        "Values may include decimals because they are averages across repeated "
+        "simulated populations. Unless otherwise stated, these values are per "
+        "100 eligible people."
+    )
     render_100_person_summary(
         visual_rows,
         title="What this means per 100 eligible people",
     )
+
+st.subheader("Plain-language interpretation")
+st.write(
+    "These outputs summarise modelled outcomes for the selected scenario. "
+    "Differences shown as separate metrics may not equal differences calculated "
+    "from separately rounded medians. Results should be interpreted with the "
+    "readiness and evidence limitations documented for the current analysis."
+)
 
 st.subheader("Health Economics")
 if not economics:
@@ -127,41 +165,6 @@ else:
     st.dataframe(arrow_safe_dataframe(status_rows), use_container_width=True, hide_index=True)
     st.page_link("pages/4_Economics.py", label="Open Health Economics")
 
-with st.expander("Additional technical information", expanded=False):
-    technical_summary = {
-        "available": technical.get("available"),
-        "source": technical.get("source"),
-        "exampleCohortMeta": technical.get("exampleCohortMeta"),
-        "rawMeta": technical.get("rawMeta"),
-    }
-    st.dataframe(
-        arrow_safe_dataframe(
-            [{"field": key, "value": value}
-            for key, value in technical_summary.items()
-            ]
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.markdown("Calibration")
-    st.json(technical.get("calibration", {}), expanded=False)
-    st.markdown("Interface config")
-    st.json(technical.get("interfaceConfig", {}), expanded=False)
-    st.markdown("Dynamic comparison")
-    dynamic_comparison = technical.get("dynamicComparison", {})
-    if isinstance(dynamic_comparison, dict):
-        metric_rows = dynamic_comparison.get("metricRows") or []
-        overview = [
-            {"field": key, "value": value}
-            for key, value in dynamic_comparison.items()
-            if key != "metricRows"
-        ]
-        st.dataframe(arrow_safe_dataframe(overview), use_container_width=True, hide_index=True)
-        if metric_rows:
-            st.dataframe(arrow_safe_dataframe(metric_rows), use_container_width=True, hide_index=True)
-    else:
-        st.json(dynamic_comparison, expanded=False)
-
 st.subheader("Downloads")
 if st.session_state.get("results_stale"):
     st.warning("Excel workbook download is disabled until the analysis is rerun with the current inputs.")
@@ -211,3 +214,8 @@ if downloads.get("available"):
             )
 else:
     st.info("No downloads are available for the current results.")
+
+st.warning(
+    "Outputs remain provisional where evidence inputs are unresolved. Review "
+    "Evidence & Assumptions before using results as final policy evidence."
+)

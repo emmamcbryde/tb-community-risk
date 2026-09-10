@@ -13,7 +13,8 @@ GRID_SIZE = 100
 GRID_COLUMNS = 10
 ROUNDING_NOTE = (
     "Icons fill the nearest whole person out of 100; text shows the expected "
-    "value to the nearest tenth per 100 eligible people."
+    "value to the nearest tenth per 100 eligible people, except very small "
+    "non-zero values may use two decimals."
 )
 
 
@@ -56,7 +57,7 @@ def icon_grid_value(value_per_100: Any) -> dict[str, Any]:
     return {
         "available": True,
         "exactPer100": clipped,
-        "displayPer100": f"{clipped:.1f} per 100",
+        "displayPer100": f"{_display_per_100(clipped)} per 100",
         "filledIcons": int(max(0, min(GRID_SIZE, floor(clipped + 0.5)))),
         "roundingRule": ROUNDING_NOTE,
     }
@@ -179,6 +180,12 @@ def _per_100(value: Any, denominator: Any) -> float | None:
     if numerator is None or denom is None or denom <= 0:
         return None
     return numerator / denom * 100.0
+
+
+def _display_per_100(value: float) -> str:
+    if 0.0 < abs(value) < 0.1:
+        return f"{value:.2f}"
+    return f"{value:.1f}"
 
 
 def _optional_float(value: Any) -> float | None:
