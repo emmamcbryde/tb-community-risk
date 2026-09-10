@@ -95,3 +95,16 @@ The generated directory contains:
 The manifest records the code commit, configuration hashes, evidence-registry
 hash, model and contract versions, unresolved inputs and interpretation
 guardrails.
+
+## Streamlit Workflow
+
+For interactive review, use the standard Streamlit workflow:
+
+```text
+Set up -> Run Analysis -> Results -> Health Economics
+```
+
+Use **Set up** to load or restore the SA Health working reference, review
+age and risk-factor defaults, edit screening and treatment parameters, validate
+the setup and save or reload configuration files. Use **Health Economics** for
+economic-only edits and recalculation from the current event ledger.

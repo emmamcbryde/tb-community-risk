@@ -259,17 +259,43 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         strategy_text = (ROOT / "pages" / "1_Scenario.py").read_text(encoding="utf-8")
 
         self.assertNotIn("Demography currently used by the model", start_text)
-        self.assertIn("Demography currently used by the model", strategy_text)
+        self.assertNotIn("Demography currently used by the model", strategy_text)
         self.assertNotIn("demographic_summary_rows", start_text)
-        self.assertIn("demographic_summary_rows", strategy_text)
-        self.assertIn("Restore APY demographic defaults", strategy_text)
+        self.assertNotIn("demographic_summary_rows", strategy_text)
+        self.assertIn("Restore APY demographic defaults", start_text)
+        self.assertIn("Open Set up", strategy_text)
         self.assertIn("Blank demographic or risk-factor override fields mean use source defaults shown above", start_text)
         self.assertIn("they are not missing model inputs", start_text)
         self.assertIn("start_age_distribution_rows", start_text)
         self.assertIn("Repository APY demographic default; external provenance not independently reviewed", start_text)
         self.assertNotIn("arrow_safe_dataframe(age_distribution_rows(config))", start_text)
-        self.assertIn("Blank or default risk-factor override fields mean use source defaults", strategy_text)
-        self.assertIn("Blank optional override fields mean these source-default values remain in use", strategy_text)
+
+    def test_set_up_page_contains_unique_workflow_controls(self) -> None:
+        text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
+
+        self.assertIn("Strategy controls", text)
+        self.assertIn("Validate setup", text)
+        self.assertIn("Proceed to Run Analysis", text)
+        self.assertIn("Save or load setup", text)
+        self.assertIn("Restore APY demographic defaults", text)
+        self.assertIn("there is no second strategy editor", text)
+
+    def test_primary_parameter_workspace_has_no_duplicate_authoritative_model_paths(self) -> None:
+        workspace = unified_default_session_state()["parameter_workspace"]
+        model_paths: dict[tuple[str, tuple[object, ...]], str] = {}
+        duplicates: list[tuple[str, str, tuple[object, ...]]] = []
+        for row in workspace["rows"]:
+            if row.get("operationalStatus") != "authoritative_model_input":
+                continue
+            if row.get("editableType") == "read_only":
+                continue
+            key = (str(row.get("sourceObject")), tuple(row.get("path") or []))
+            previous = model_paths.get(key)
+            if previous:
+                duplicates.append((previous, row["parameterId"], key[1]))
+            else:
+                model_paths[key] = row["parameterId"]
+        self.assertEqual(duplicates, [])
 
     def test_current_working_defaults_include_dynamic_eligible_population(self) -> None:
         state = unified_default_session_state()

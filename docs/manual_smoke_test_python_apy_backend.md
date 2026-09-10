@@ -1,8 +1,7 @@
-# Manual Smoke Test: Experimental Python APY Backend
+# Manual Smoke Test: APY Screening Workflow
 
-MATLAB remains the APY v9 reference backend. The Python APY backend is
-experimental. Python economics is newly ported; attributable-risk add-ons
-remain outside the Python backend.
+This smoke test checks the standard non-dynamic APY screening workflow used
+by the Streamlit application.
 
 1. Start the app:
 
@@ -10,51 +9,43 @@ remain outside the Python backend.
    streamlit run streamlit_app.py
    ```
 
-2. Open the Scenario page.
+2. Open **Set up**.
 
-3. Set `APY backend` to `Python APY v9 port (experimental)`.
+3. Click **Use default parameters**.
 
-4. Click `Load backend defaults`.
+4. Review **Current working defaults** and expand **Age distribution and risk
+   factors**.
 
-5. In `Advanced / run controls`, set a small smoke-test run:
+5. Click **Review or change parameters**.
 
-   - `N = 100` or `500`
-   - `Simulation replicates = 5` or `20`
-   - `Random seed = 1`
+6. Confirm the parameter tabs are shown with:
 
-6. Validate the scenario.
+   - `Parameter`
+   - `Value used by model`
+   - `Unit`
+   - `Source`
 
-7. Open Run Model and run the Python APY model.
+7. Optionally edit a low-risk field such as an economic unit cost, validate
+   the parameters, and apply the change. Economic-only edits should not
+   require rerunning screening outcomes.
 
-8. Open Results and confirm:
+8. If screening, treatment, demographic or epidemiological settings are
+   changed, confirm the page marks previous results as stale.
 
-   - metadata shows backend `python`;
-   - key metrics are displayed;
-   - `technical.dynamicComparison` is available from `doNothing.derived`.
+9. Open **Run Analysis** and run the APY screening model.
 
-9. Open Dynamic + ABM Compare and confirm it can read the latest APY bundle.
+10. Open **Results** and confirm headline screening and active-TB outcomes
+    render.
 
-10. Open Economics.
+11. Open **Health Economics**.
 
-11. Click `Load economics defaults` and confirm blank/optional assumptions
-    render without errors.
+12. Confirm the assumptions workspace, annual costs, cost categories and
+    summary results render without errors.
 
-12. Click `Load KWAB150 preset`.
+13. Recalculate health economics after an economic-only edit and confirm the
+    screening outcomes are unchanged.
 
-13. Confirm AUD target-currency and 2025-26 target-price-year metadata
-    populate the visible economics controls, and that KWAB150 source cost
-    years remain flagged as unresolved.
+14. Download the workbook and confirm it opens.
 
-14. Click `Run economics`.
-
-15. Confirm:
-
-    - economics summary rows render;
-    - economics status renders;
-    - economics summary CSV download appears;
-    - no MATLAB session is required for the Python backend economics run.
-
-16. Return to Scenario and switch `APY backend` back to `MATLAB v9 reference`.
-
-17. If MATLAB is available, confirm the MATLAB backend still loads defaults,
-    validates, and runs as before.
+15. Open **Evidence & Assumptions** and confirm unresolved evidence remains
+    visible.

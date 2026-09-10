@@ -43,8 +43,7 @@ init_session_state()
 navigation = st.navigation(
     {
         "LTBI Screening Tool": [
-            st.Page("pages/0_Start.py", title="Start"),
-            st.Page("pages/1_Scenario.py", title="Define Strategy"),
+            st.Page("pages/0_Start.py", title="Set up"),
             st.Page("pages/2_Run_Model.py", title="Run Analysis"),
             st.Page("pages/3_Results.py", title="Results"),
             st.Page("pages/4_Economics.py", title="Health Economics"),

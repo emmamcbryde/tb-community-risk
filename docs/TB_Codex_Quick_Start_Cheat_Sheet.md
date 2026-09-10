@@ -218,17 +218,18 @@ streamlit run streamlit_app.py --server.port 8599
 Then check in browser:
 
 ```text
-Scenario page
-Run Model page
+Set up page
+Run Analysis page
 Results page
-Dynamic + ABM Compare page
-Economics page
+Health Economics page
+Explore Decisions page
+Evidence & Assumptions page
 ```
 
 For current work, the key check is:
 
 ```text
-Python APY backend works without MATLAB.
+The APY screening workflow works without MATLAB.
 Economics/report outputs are offline and not Streamlit-dependent unless explicitly asked.
 ```
 

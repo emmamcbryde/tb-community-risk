@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
 
 from app.demographic_profile import (
+    restore_apy_demographic_defaults,
     risk_factor_rows,
     start_age_distribution_rows,
 )
@@ -25,11 +28,48 @@ from app.parameter_workspace import (
     validate_parameter_workspace,
 )
 from app.run_analysis_controls import TECHNICAL_DEMONSTRATION_ROUTE
-from app.state import get_backend, init_session_state, record_message, sync_backend_status
+from app.state import (
+    get_backend,
+    init_session_state,
+    mark_config_changed,
+    mark_economics_changed,
+    mark_validation_completed,
+    record_message,
+    sync_backend_status,
+)
+from adapters.paths import scenarios_dir
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 
 
 init_session_state()
+
+
+def scenario_path(filename: str) -> Path:
+    base = scenarios_dir()
+    base.mkdir(parents=True, exist_ok=True)
+    name = filename.strip() or "streamlit_analysis.json"
+    path = Path(name)
+    if not path.is_absolute():
+        path = base / path
+    return path
+
+
+def validation_rows(report: dict[str, Any]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for group in ("errors", "warnings", "infos"):
+        issues = report.get(group) or []
+        if isinstance(issues, dict):
+            issues = [issues]
+        for issue in issues:
+            if isinstance(issue, dict):
+                rows.append(
+                    {
+                        "Severity": str(issue.get("severity", group[:-1])),
+                        "Field": str(issue.get("fieldLabel", issue.get("field", ""))),
+                        "Message": str(issue.get("message", "")),
+                    }
+                )
+    return rows
 
 
 def _load_unified_defaults(*, show_workspace: bool) -> None:
@@ -100,6 +140,26 @@ def _rows_changed(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> 
             if str(before_row.get(key)) != str(after_row.get(key)):
                 return True
     return False
+
+
+def _workspace_change_scope(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> tuple[bool, bool]:
+    before_by_id = {row.get("parameterId"): row for row in before}
+    model_changed = False
+    economics_changed = False
+    for row in after:
+        previous = before_by_id.get(row.get("parameterId"), {})
+        changed = any(
+            str(previous.get(key)) != str(row.get(key))
+            for key in ("currentValue", "valueUsedByModel", "effectiveSource", "isUserOverride")
+        )
+        if not changed:
+            continue
+        status = row.get("operationalStatus")
+        if status == "authoritative_model_input":
+            model_changed = True
+        elif status == "authoritative_economic_input":
+            economics_changed = True
+    return model_changed, economics_changed
 
 
 def _editable_parameter_table(rows: list[dict[str, Any]], *, key: str) -> list[dict[str, Any]]:
@@ -226,6 +286,11 @@ def _render_parameter_workspace() -> None:
     can_apply = bool(validation and validation.get("isValid"))
     if col_apply.button("Apply parameters", disabled=not can_apply, use_container_width=True):
         try:
+            applied_workspace = build_parameter_workspace(
+                st.session_state["config"],
+                st.session_state["economics_config"],
+            )
+            model_changed, economics_changed = _workspace_change_scope(applied_workspace["rows"], workspace["rows"])
             cfg, econ = apply_parameter_workspace(
                 st.session_state["config"],
                 st.session_state["economics_config"],
@@ -238,9 +303,10 @@ def _render_parameter_workspace() -> None:
             st.session_state["config"] = cfg
             st.session_state["economics_config"] = econ
             st.session_state["parameter_workspace"] = build_parameter_workspace(cfg, econ)
-            st.session_state["dirty_config"] = True
-            st.session_state["dirty_economics"] = True
-            st.session_state["results_stale"] = bool(st.session_state.get("results_bundle"))
+            if model_changed:
+                mark_config_changed()
+            if economics_changed and not model_changed:
+                mark_economics_changed()
             st.success("Parameters applied to the current analysis.")
         except Exception as exc:
             record_message("error", f"Could not apply parameters: {exc}")
@@ -273,12 +339,119 @@ def _render_age_risk_summary(config: dict[str, Any]) -> None:
             use_container_width=True,
             hide_index=True,
         )
+        if st.button("Restore APY demographic defaults"):
+            restored = restore_apy_demographic_defaults(config)
+            if restored != config:
+                st.session_state["config"] = restored
+                st.session_state.pop("recent_ltbi_run_route", None)
+                st.session_state["parameter_workspace"] = build_parameter_workspace(
+                    restored,
+                    st.session_state.get("economics_config") or {},
+                )
+                mark_config_changed()
+                st.success("APY demographic defaults restored. Rerun epidemiology before using previous results.")
+                st.rerun()
+            st.info("APY demographic defaults are already loaded.")
 
 
-st.title("LTBI Screening Decision Tool")
+def _render_configuration_status() -> None:
+    st.subheader("Validation and next action")
+    if st.session_state.get("dirty_config"):
+        st.warning("Configuration changes require a new analysis run before previous results are used.")
+    elif st.session_state.get("results_bundle"):
+        st.success("Current analysis results match the saved configuration.")
+    else:
+        st.info("No analysis has been run in this session.")
+    if st.session_state.get("results_stale"):
+        st.warning("Existing results are stale because setup inputs changed after the last run.")
+    if st.session_state.get("dirty_economics") and not st.session_state.get("results_stale"):
+        st.info("Economic inputs changed. Health economics can be recalculated without rerunning screening outcomes.")
+    changed = changed_parameter_count(st.session_state.get("parameter_workspace") or {})
+    if changed:
+        st.info(f"{changed} parameters differ from the SA Health working reference.")
+    else:
+        st.success("No parameter overrides are currently applied.")
+
+    cols = st.columns(2)
+    if cols[0].button("Validate setup", use_container_width=True):
+        try:
+            report = get_backend().validate_config(st.session_state["config"])
+            st.session_state["validation_report"] = report
+            mark_validation_completed()
+            if report.get("isValid") is True:
+                st.success("Setup is valid.")
+            elif report.get("isValid") is False:
+                st.error("Setup has validation errors.")
+            else:
+                st.info("Validation completed.")
+        except Exception as exc:
+            record_message("error", f"Validation failed: {exc}")
+            st.error("Validation failed.")
+    cols[1].page_link("pages/2_Run_Model.py", label="Proceed to Run Analysis")
+
+    report = st.session_state.get("validation_report")
+    if report:
+        rows = validation_rows(report)
+        if rows:
+            st.dataframe(arrow_safe_dataframe(rows), use_container_width=True, hide_index=True)
+
+
+def _render_analysis_file_controls() -> None:
+    with st.expander("Save or load setup", expanded=False):
+        st.caption("Use these controls to save or reload the current setup and economic assumptions.")
+        file_name = st.text_input("Analysis file", value="streamlit_analysis.json")
+        cols = st.columns(2)
+        if cols[0].button("Save setup"):
+            try:
+                path = scenario_path(file_name)
+                st.session_state["save_info"] = get_backend().save_scenario(
+                    st.session_state["config"],
+                    str(path),
+                    st.session_state.get("economics_config"),
+                )
+                sync_backend_status(get_backend().status())
+                st.success(f"Saved setup to {path}")
+            except Exception as exc:
+                record_message("error", f"Save failed: {exc}")
+                st.error("Save failed.")
+
+        if cols[1].button("Load setup"):
+            try:
+                path = scenario_path(file_name)
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                loaded_config = payload.get("config")
+                if not isinstance(loaded_config, dict):
+                    raise ValueError("Analysis JSON does not contain a configuration object.")
+                loaded_econ = payload.get("economics")
+                if not isinstance(loaded_econ, dict):
+                    loaded_econ = st.session_state.get("economics_config") or {}
+                st.session_state["config"] = loaded_config
+                st.session_state["economics_config"] = loaded_econ
+                st.session_state["parameter_workspace"] = build_parameter_workspace(loaded_config, loaded_econ)
+                st.session_state["parameter_workspace_visible"] = True
+                st.session_state.pop("recent_ltbi_run_route", None)
+                st.session_state["validation_report"] = None
+                st.session_state["load_info"] = {
+                    "filename": str(path),
+                    "contractVersion": payload.get("contractVersion", ""),
+                    "scenarioLabel": payload.get("scenarioLabel", ""),
+                }
+                st.session_state["results_bundle"] = None
+                st.session_state["results_stale"] = False
+                st.session_state["dirty_config"] = True
+                sync_backend_status(get_backend().status())
+                st.success(f"Loaded setup from {path}")
+                st.rerun()
+            except Exception as exc:
+                record_message("error", f"Load failed: {exc}")
+                st.error("Load failed.")
+
+
+st.title("Set up")
 st.write(
-    "Compare the direct benefits, harms, resource requirements and health-system "
-    "consequences of targeted LTBI screening and preventive treatment."
+    "Define the population, screening strategy and model assumptions for the "
+    "LTBI Screening Decision Tool. Changes to population, testing, treatment "
+    "or targeting inputs require a new analysis run."
 )
 st.info(
     "This tool supports planning and sequencing decisions. It does not recommend "
@@ -323,6 +496,11 @@ if isinstance(config, dict) and isinstance(econ, dict):
         hide_index=True,
     )
     _render_age_risk_summary(config)
+    st.subheader("Strategy controls")
+    st.caption(
+        "Use Review or change parameters below for the single editable setup table. "
+        "The same values are used by Run Analysis; there is no second strategy editor."
+    )
     ltbi_state = resolve_ltbi_state_assumptions(config)
     unresolved_recent_ltbi = ltbi_state.get("baselineRecentLTBIProportion") is None
     if unresolved_recent_ltbi:
@@ -343,7 +521,7 @@ if isinstance(config, dict) and isinstance(econ, dict):
             st.session_state["recent_ltbi_run_route"] = TECHNICAL_DEMONSTRATION_ROUTE
             st.success("Provisional working-default route selected.")
             st.page_link("pages/2_Run_Model.py", label="Continue to Run Analysis")
-        route_cols[1].page_link("pages/4_Economics.py", label="Review this assumption")
+        route_cols[1].page_link("pages/6_Evidence_Assumptions.py", label="Review this assumption")
     action_cols = st.columns(2)
     if not unresolved_recent_ltbi or st.session_state.get("recent_ltbi_run_route") == TECHNICAL_DEMONSTRATION_ROUTE:
         st.page_link("pages/2_Run_Model.py", label="Run with these defaults")
@@ -355,6 +533,10 @@ if isinstance(config, dict) and isinstance(econ, dict):
 
 if st.session_state.get("parameter_workspace_visible"):
     _render_parameter_workspace()
+
+if isinstance(st.session_state.get("config"), dict):
+    _render_configuration_status()
+    _render_analysis_file_controls()
 
 with st.expander("Research and Development", expanded=False):
     st.write(

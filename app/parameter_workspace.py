@@ -350,7 +350,6 @@ def _parameter_specs() -> list[dict[str, Any]]:
         _spec("service.other_stop", "Health-service provision and intervention", "Other stopping", "config", ["regimenOtherStop"], "probability", "APY regimen library", "unreviewed_repository_input", True, "probability"),
         _spec("service.full_efficacy", "Health-service provision and intervention", "Full-course efficacy", "config", ["regimenEffFull"], "probability", "APY regimen library", "unreviewed_repository_input", True, "probability"),
         _spec("service.partial_efficacy", "Health-service provision and intervention", "Partial-course efficacy", "config", ["partialShortCourseMode"], "", "APY regimen library", "unreviewed_repository_input", True, "text"),
-        _spec("service.duration", "Health-service provision and intervention", "Intervention duration", "config", ["screeningWindowYears"], "years", "APY working default", "configured_reviewed", False, "years"),
         *[_cost_spec(item_id, label) for item_id, label in [
             ("test_igra", "IGRA cost"),
             ("test_tst", "TST cost"),

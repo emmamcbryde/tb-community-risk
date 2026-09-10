@@ -170,7 +170,8 @@ class PhysicianWorkflowHelperTests(unittest.TestCase):
         scenario_text = (repo_root() / "pages" / "1_Scenario.py").read_text(encoding="utf-8")
 
         self.assertGreaterEqual(start_text.count('pop("recent_ltbi_run_route", None)'), 2)
-        self.assertGreaterEqual(scenario_text.count('pop("recent_ltbi_run_route", None)'), 4)
+        self.assertNotIn('pop("recent_ltbi_run_route", None)', scenario_text)
+        self.assertIn("Open Set up", scenario_text)
 
 
 class PythonApyPrevalencePathTests(unittest.TestCase):

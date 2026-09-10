@@ -71,6 +71,7 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
         offending = _contains_implementation_term(visible_text)
         self.assertIsNone(offending, visible_text)
         self.assertIn("LTBI Screening Decision Tool", visible_text)
+        self.assertIn("Set up", visible_text)
         self.assertIn("Use default parameters", visible_text)
         self.assertIn("Review or change parameters", visible_text)
         self.assertIn("Run with these defaults", visible_text)
@@ -105,8 +106,7 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
             standard_labels,
             [
                 "LTBI Screening Tool",
-                "Start",
-                "Define Strategy",
+                "Set up",
                 "Run Analysis",
                 "Results",
                 "Health Economics",
@@ -117,11 +117,12 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
         visible_nav = "\n".join(standard_labels)
         offending = _contains_implementation_term(visible_nav)
         self.assertIsNone(offending, visible_nav)
+        self.assertNotIn("Start", standard_labels)
+        self.assertNotIn("Define Strategy", standard_labels)
 
     def test_standard_workflow_visible_text_avoids_implementation_terms(self) -> None:
         standard_pages = [
             ROOT / "pages" / "0_Start.py",
-            ROOT / "pages" / "1_Scenario.py",
             ROOT / "pages" / "2_Run_Model.py",
             ROOT / "pages" / "3_Results.py",
             ROOT / "pages" / "4_Economics.py",
@@ -174,7 +175,6 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
         standard_pages = [
             ROOT / "streamlit_app.py",
             ROOT / "pages" / "0_Start.py",
-            ROOT / "pages" / "1_Scenario.py",
             ROOT / "pages" / "2_Run_Model.py",
             ROOT / "pages" / "3_Results.py",
             ROOT / "pages" / "4_Economics.py",
@@ -242,7 +242,6 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
         offenders: list[str] = []
         standard_pages = [
             ROOT / "pages" / "0_Start.py",
-            ROOT / "pages" / "1_Scenario.py",
             ROOT / "pages" / "2_Run_Model.py",
             ROOT / "pages" / "3_Results.py",
             ROOT / "pages" / "4_Economics.py",

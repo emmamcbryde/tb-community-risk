@@ -20,10 +20,10 @@ streamlit run streamlit_app.py
 
 ## APY ABM workflow
 
-1. Open **APY v9 ABM > Scenario**.
-2. Click **Load MATLAB defaults**.
-3. Open **APY v9 ABM > Run Model**.
-4. If MATLAB is available, run the APY model.
+1. Open **LTBI Screening Tool > Set up**.
+2. Click **Use default parameters**.
+3. Open **LTBI Screening Tool > Run Analysis**.
+4. Run the APY screening analysis.
 5. Confirm `st.session_state["results_bundle"]` exists.
    - Use the **Dynamic + ABM Compare** page and open **APY bundle debug**.
    - The debug panel should show top-level APY bundle keys, headline metrics, and metadata.
@@ -42,7 +42,7 @@ Open **Integrated workflow > Dynamic + ABM Compare** and check:
    - comparable metrics where both models expose numeric aligned values;
    - warnings for missing or structurally non-comparable metrics;
    - a comparison CSV download.
-4. The page must not start MATLAB or require MATLAB unless the user returns to the APY Run Model page and runs the APY backend.
+4. The page must not start MATLAB or require MATLAB during the standard APY screening workflow.
 
 ## Expected limitation
 

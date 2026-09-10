@@ -41,7 +41,7 @@ Keep the existing MATLAB-backed adapter while the Python backend is introduced. 
 | MATLAB file | Category | Python target module | Priority | Validation target | Notes |
 |---|---|---|---|---|---|
 | `app_apply_economics_ui_state_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Existing Streamlit economics page remains source of UI behavior | App Designer state writer only. |
-| `app_apply_ui_state_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Existing Streamlit Scenario page remains source of UI behavior | App Designer component writer only. |
+| `app_apply_ui_state_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Existing Streamlit Set up page remains source of UI behavior | App Designer component writer only. |
 | `app_collect_ui_state_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Existing Streamlit state helpers cover this role | App Designer component reader only. |
 | `app_economics_input_changed_v9.m` | MATLAB App Designer/UI callback | none | do-not-port | Streamlit economics dirty/stale state | UI-state orchestration, not model runtime. |
 | `app_export_v9.m` | MATLAB App Designer/UI callback | `engine.apy.results` later, if needed | P3 | Compare output files against MATLAB exports if export parity is needed | App wrapper around export. Python downloads currently handle most Streamlit needs. |
