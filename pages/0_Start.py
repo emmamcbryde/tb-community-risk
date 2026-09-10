@@ -16,6 +16,7 @@ from app.parameter_workspace import (
     build_parameter_workspace,
     changed_parameter_count,
     merge_parameter_display_edits,
+    parameter_editor_rows,
     parameter_summary,
     parameter_display_rows,
     reset_all_parameters,
@@ -88,6 +89,38 @@ def _set_workspace_rows(rows: list[dict[str, Any]]) -> None:
     st.session_state["parameter_workspace"] = workspace
 
 
+def _rows_changed(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> bool:
+    before_by_id = {row.get("parameterId"): row for row in before}
+    after_by_id = {row.get("parameterId"): row for row in after}
+    if set(before_by_id) != set(after_by_id):
+        return True
+    for parameter_id, before_row in before_by_id.items():
+        after_row = after_by_id[parameter_id]
+        for key in ("currentValue", "valueUsedByModel", "effectiveSource", "isUserOverride"):
+            if str(before_row.get(key)) != str(after_row.get(key)):
+                return True
+    return False
+
+
+def _editable_parameter_table(rows: list[dict[str, Any]], *, key: str) -> list[dict[str, Any]]:
+    return _rows_from_editor(
+        st.data_editor(
+            parameter_editor_rows(rows),
+            key=key,
+            use_container_width=True,
+            hide_index=True,
+            column_order=["Parameter", "Value used by model", "Unit", "Source"],
+            disabled=["Parameter", "Unit", "Source"],
+            column_config={
+                "Value used by model": st.column_config.TextColumn(
+                    "Value used by model",
+                    help="Edit this cell to create a user-defined override. Use Restore defaults to return to the source value.",
+                )
+            },
+        )
+    )
+
+
 def _render_parameter_workspace() -> None:
     workspace = _current_workspace()
     if not workspace:
@@ -148,15 +181,8 @@ def _render_parameter_workspace() -> None:
                     use_container_width=True,
                     hide_index=True,
                 )
-            edited = st.data_editor(
-                parameter_display_rows(editable_rows),
-                key=f"parameter_editor_{group}",
-                use_container_width=True,
-                hide_index=True,
-                column_order=["Parameter", "Value used by model", "Unit", "Source"],
-                disabled=["Parameter", "Unit", "Source"],
-            )
-            edited_rows.extend(merge_parameter_display_edits(editable_rows, _rows_from_editor(edited)))
+            edited = _editable_parameter_table(editable_rows, key=f"parameter_editor_{group}")
+            edited_rows.extend(merge_parameter_display_edits(editable_rows, edited))
             edited_rows.extend(read_only_rows)
             with st.expander("Advanced"):
                 advanced_read_only = [row for row in advanced_rows if row.get("editableType") == "read_only"]
@@ -167,20 +193,20 @@ def _render_parameter_workspace() -> None:
                         use_container_width=True,
                         hide_index=True,
                     )
-                advanced_edited = st.data_editor(
-                    parameter_display_rows(advanced_editable),
+                advanced_edited = _editable_parameter_table(
+                    advanced_editable,
                     key=f"parameter_advanced_editor_{group}",
-                    use_container_width=True,
-                    hide_index=True,
-                    column_order=["Parameter", "Value used by model", "Unit", "Source"],
-                    disabled=["Parameter", "Unit", "Source"],
                 )
-                edited_rows.extend(merge_parameter_display_edits(advanced_editable, _rows_from_editor(advanced_edited)))
+                edited_rows.extend(merge_parameter_display_edits(advanced_editable, advanced_edited))
                 edited_rows.extend(advanced_read_only)
 
     if edited_rows:
+        previous_rows = deepcopy(workspace["rows"])
         _set_workspace_rows(edited_rows)
         workspace = st.session_state["parameter_workspace"]
+        if _rows_changed(previous_rows, workspace["rows"]):
+            st.session_state["parameter_workspace_validation"] = None
+            st.rerun()
 
     validation = st.session_state.get("parameter_workspace_validation")
     col_validate, col_apply, col_run = st.columns(3)

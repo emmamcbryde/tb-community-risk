@@ -217,6 +217,16 @@ def parameter_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def parameter_editor_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            **row,
+            "Value used by model": "" if row.get("Value used by model") is None else str(row.get("Value used by model")),
+        }
+        for row in parameter_display_rows(rows)
+    ]
+
+
 def merge_parameter_display_edits(
     rows: list[dict[str, Any]],
     edited_rows: list[dict[str, Any]],
@@ -225,7 +235,7 @@ def merge_parameter_display_edits(
     for row, edited in zip(out, edited_rows):
         new_value = edited.get("Value used by model")
         old_effective = row.get("valueUsedByModel")
-        if _normalise_compare(new_value) == _normalise_compare(old_effective):
+        if _semantically_same_display_value(new_value, old_effective, row.get("editableType")):
             continue
         row["currentValue"] = new_value
         row["valueUsedByModel"] = new_value
@@ -726,6 +736,18 @@ def _number_or_none(value: Any) -> float | None:
 
 def _normalise_compare(value: Any) -> str:
     return json.dumps(value, sort_keys=True, default=str)
+
+
+def _semantically_same_display_value(value: Any, current: Any, editable_type: str | None) -> bool:
+    if value in (None, "") and current in (None, ""):
+        return True
+    if editable_type in {"positive_integer", "probability", "nonnegative_number", "years", "money"}:
+        new_number = _number_or_none(value)
+        current_number = _number_or_none(current)
+        if new_number is None or current_number is None:
+            return False
+        return abs(new_number - current_number) <= 1e-12
+    return str(value) == str(current)
 
 
 def _percent(value: Any) -> str:

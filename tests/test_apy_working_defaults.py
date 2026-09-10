@@ -6,6 +6,7 @@ from pathlib import Path
 import unittest
 
 from openpyxl import load_workbook
+from streamlit.testing.v1 import AppTest
 
 from app.parameter_workspace import (
     HIGHER_BURDEN_DALY_OUTCOME_PRESET,
@@ -14,6 +15,7 @@ from app.parameter_workspace import (
     apply_parameter_workspace,
     build_parameter_workspace,
     merge_parameter_display_edits,
+    parameter_editor_rows,
     parameter_display_rows,
     parameter_summary,
     reset_all_parameters,
@@ -312,6 +314,19 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertEqual(display["Diabetes"]["Source"], "Repository APY default")
         self.assertEqual(display["IGRA cost"]["Source"], "Dale 2019 AUD working defaults")
 
+    def test_parameter_editor_rows_render_value_column_as_editable_text(self) -> None:
+        workspace = unified_default_session_state()["parameter_workspace"]
+        rows = [
+            row
+            for row in workspace["rows"]
+            if row["group"] == "Costs and outcomes" and row["editableType"] != "read_only"
+        ]
+        editor_rows = parameter_editor_rows(rows)
+        igra = next(row for row in editor_rows if row["Parameter"] == "IGRA cost")
+
+        self.assertIsInstance(igra["Value used by model"], str)
+        self.assertEqual(igra["Value used by model"], "113.48")
+
     def test_display_edit_marks_only_one_row_user_defined_and_applies_value(self) -> None:
         state = unified_default_session_state()
         rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
@@ -371,6 +386,36 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertEqual(igra["effectiveSource"], "Dale 2019 AUD working defaults")
         self.assertFalse(igra["isUserOverride"])
         self.assertFalse(igra["changedFromDefault"])
+
+    def test_rendered_start_page_editor_accepts_value_override(self) -> None:
+        app = AppTest.from_file(str(ROOT / "streamlit_app.py"))
+        app.run(timeout=30)
+        app.button[1].click().run(timeout=30)
+
+        self.assertFalse(app.exception)
+        self.assertIn("parameter_editor_Costs and outcomes", app.session_state.filtered_state)
+        app.session_state["parameter_editor_Costs and outcomes"] = {
+            "edited_rows": {0: {"Value used by model": "125.0"}},
+            "added_rows": [],
+            "deleted_rows": [],
+        }
+        app.run(timeout=30)
+
+        rows = app.session_state["parameter_workspace"]["rows"]
+        igra = next(row for row in rows if row["label"] == "IGRA cost")
+        self.assertEqual(igra["currentValue"], "125.0")
+        self.assertEqual(igra["effectiveSource"], "User-defined")
+        self.assertTrue(igra["isUserOverride"])
+        self.assertIn("The parameters below include user-defined values.", [warning.value for warning in app.warning])
+
+        reset_buttons = [button for button in app.button if button.label == "Reset this section: Costs and outcomes"]
+        self.assertTrue(reset_buttons)
+        reset_buttons[0].click().run(timeout=30)
+        reset_rows = app.session_state["parameter_workspace"]["rows"]
+        reset_igra = next(row for row in reset_rows if row["label"] == "IGRA cost")
+        self.assertEqual(reset_igra["valueUsedByModel"], 113.48)
+        self.assertEqual(reset_igra["effectiveSource"], "Dale 2019 AUD working defaults")
+        self.assertFalse(reset_igra["isUserOverride"])
 
     def test_start_page_wraps_arrow_safe_tables_in_streamlit_dataframe(self) -> None:
         text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
