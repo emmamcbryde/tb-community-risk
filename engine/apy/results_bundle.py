@@ -30,12 +30,19 @@ def build_results_bundle(
     key_metrics = summary[summary["Metric"].isin(KEY_METRICS)].copy()
     dynamic_comparison = _build_dynamic_comparison(results, do_nothing=do_nothing)
     event_ledger = results.get("eventLedger") or {}
+    ledger_metadata = event_ledger.get("metadata") if isinstance(event_ledger, dict) else {}
+    interface_config = results.get("interfaceConfig", {})
+    model_type = (ledger_metadata or {}).get("modelType")
     return {
         "metadata": {
             "available": True,
             "modelVersion": results.get("modelVersion", "python_apy_v9_port"),
             "backend": results.get("backend", "python"),
-            "scenarioLabel": results.get("interfaceConfig", {}).get("scenarioLabel"),
+            "scenarioLabel": interface_config.get("scenarioLabel"),
+            "modelType": model_type,
+            "analysisMethod": interface_config.get("analysisMethod"),
+            "nReps": interface_config.get("nReps") if model_type == "agent_based" else None,
+            "seed": interface_config.get("seed") if model_type == "agent_based" else None,
             "contractVersion": "apy_results_bundle_v9_python_port",
         },
         "headline": {

@@ -30,10 +30,12 @@ def build_unified_working_default_preset() -> dict[str, Any]:
     config.update(
         {
             "scenarioLabel": "APY / SA Health working-default analysis",
-            "analysisMethod": "expected_value",
-            "analysisMethodLabel": "Expected outcomes",
+            "analysisMethod": "agent_based",
+            "analysisMethodLabel": "Simulated community variation",
             "simulationMode": "standard",
-            "simulationModeLabel": "Standard analysis: use the current validated repository standard",
+            "simulationModeLabel": "SA Health reference: 2,000 repetitions",
+            "screeningWindowYears": 2,
+            "screenWindow": 2,
             "workingDefaultPresetId": UNIFIED_WORKING_DEFAULT_PRESET_ID,
             "workingDefaultPresetVersion": UNIFIED_WORKING_DEFAULT_PRESET_VERSION,
             "workingDefaultPresetLabel": UNIFIED_WORKING_DEFAULT_LABEL,

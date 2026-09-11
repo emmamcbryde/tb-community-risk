@@ -48,6 +48,54 @@ class PythonApyBackendTests(unittest.TestCase):
             bundle["technical"]["dynamicComparison"]["source"],
             "doNothing.derived",
         )
+        self.assertEqual(bundle["metadata"]["modelType"], "agent_based")
+        self.assertEqual(bundle["metadata"]["nReps"], 5)
+        self.assertEqual(bundle["metadata"]["seed"], 1)
+        self.assertEqual(bundle["technical"]["tableMetadata"]["rawRows"], 5)
+
+    def test_expected_value_bundle_uses_deterministic_runner_not_replicates(self) -> None:
+        config = self.backend.default_config()
+        config.update(
+            {
+                "N": 60,
+                "analysisMethod": "expected_value",
+                "analysisMethodLabel": "Expected outcomes",
+                "nReps": 5000,
+                "seed": 999,
+            }
+        )
+        config = enable_development_compatibility_mode(config)
+
+        bundle = self.backend.run_scenario_bundle(config)
+
+        self.assertEqual(bundle["metadata"]["modelType"], "expected_value")
+        self.assertIsNone(bundle["metadata"]["nReps"])
+        self.assertIsNone(bundle["metadata"]["seed"])
+        self.assertEqual(bundle["technical"]["tableMetadata"]["rawRows"], 1)
+        self.assertEqual(
+            bundle["technical"]["eventLedger"]["metadata"]["modelType"],
+            "expected_value",
+        )
+
+    def test_stochastic_bundle_executes_selected_repetition_count(self) -> None:
+        config = self.backend.default_config()
+        config.update(
+            {
+                "N": 60,
+                "analysisMethod": "agent_based",
+                "analysisMethodLabel": "Simulated community variation",
+                "nReps": 3,
+                "seed": 44,
+            }
+        )
+        config = enable_development_compatibility_mode(config)
+
+        bundle = self.backend.run_scenario_bundle(config)
+
+        self.assertEqual(bundle["metadata"]["modelType"], "agent_based")
+        self.assertEqual(bundle["metadata"]["nReps"], 3)
+        self.assertEqual(bundle["metadata"]["seed"], 44)
+        self.assertEqual(bundle["technical"]["tableMetadata"]["rawRows"], 3)
 
     def test_default_economics_config_returns_dict(self) -> None:
         config = self.backend.default_economics_config()

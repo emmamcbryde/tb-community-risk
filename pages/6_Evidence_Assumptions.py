@@ -80,6 +80,8 @@ with st.expander("Caveats & technical information", expanded=False):
     st.markdown(
         """
         - The primary SA Health working reference uses the frozen software-compatible stochastic anchor; it excludes dynamic transmission effects.
+        - Deterministic expected-value runs do not use repetitions or random seeds; stochastic runs use the selected repetition count and seed.
+        - The provisional working route uses a compatibility placeholder for unresolved recent-versus-remote LTBI assumptions; this does not promote evidence readiness.
         - The inherited `10/770` active-TB calibration quantity remains unresolved and must not be interpreted as validated future progression from LTBI.
         - The implicit early/late progression structure is retained for compatibility with earlier APY analysis, not as measured recent-LTBI composition.
         - Disease-risk odds ratios are applied as multiplicative hazard multipliers for compatibility; this remains scientifically provisional.

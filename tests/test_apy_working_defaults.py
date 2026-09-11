@@ -46,9 +46,11 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertEqual(config["populationPresetId"], "apy_demonstration")
         self.assertEqual(config["testType"], "IGRA")
         self.assertEqual(config["regimen"], "3HP")
-        self.assertEqual(config["screeningWindowYears"], 3)
+        self.assertEqual(config["screeningWindowYears"], 2)
         self.assertEqual(config["followUpHorizonYears"], 20)
-        self.assertEqual(config["analysisMethod"], "expected_value")
+        self.assertEqual(config["analysisMethod"], "agent_based")
+        self.assertEqual(config["nReps"], 2000)
+        self.assertEqual(config["seed"], 1)
         self.assertEqual(econ["metadata"]["presetName"], "Dale 2019 AUD working defaults")
         self.assertEqual(econ["metadata"]["targetCurrency"], "AUD")
         self.assertEqual(econ["metadata"]["targetPriceYear"], "2019")
@@ -449,6 +451,21 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertEqual(reset_igra["valueUsedByModel"], 113.48)
         self.assertEqual(reset_igra["effectiveSource"], "Dale 2019 AUD working defaults")
         self.assertFalse(reset_igra["isUserOverride"])
+
+    def test_rendered_analysis_mode_controls_match_selected_mode(self) -> None:
+        app = AppTest.from_file(str(ROOT / "pages" / "0_Start.py"))
+        app.run(timeout=30)
+        next(button for button in app.button if button.label == "Use default parameters").click().run(timeout=30)
+
+        analysis_type = next(radio for radio in app.radio if radio.label == "Analysis type")
+        self.assertEqual(analysis_type.value, "Simulated community variation")
+        self.assertIn("Repetitions", [selectbox.label for selectbox in app.selectbox])
+        self.assertIn("Random seed", [number_input.label for number_input in app.number_input])
+
+        analysis_type.set_value("Expected outcomes").run(timeout=30)
+        self.assertEqual(app.session_state["config"]["analysisMethod"], "expected_value")
+        self.assertNotIn("Repetitions", [selectbox.label for selectbox in app.selectbox])
+        self.assertNotIn("Random seed", [number_input.label for number_input in app.number_input])
 
     def test_start_page_wraps_arrow_safe_tables_in_streamlit_dataframe(self) -> None:
         text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")

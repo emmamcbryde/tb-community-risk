@@ -278,7 +278,7 @@ def parameter_summary(config: dict[str, Any], economics_config: dict[str, Any]) 
         },
         {"Item": "Health outcome", "Value": "DALYs"},
         {"Item": "Analysis method", "Value": method},
-        {"Item": "Number of simulations", "Value": "Not applicable" if method == "Expected outcomes" else config.get("nReps")},
+        {"Item": "Repetitions", "Value": "Not applicable" if method == "Expected outcomes" else config.get("nReps")},
     ]
 
 
@@ -383,7 +383,7 @@ def _parameter_specs() -> list[dict[str, Any]]:
         _spec("analysis.comparison_discount", "Analysis settings", "Comparison discount rate", "econ", ["discounting", "comparisonRate"], "annual rate", "APY working default", "configured_reviewed", False, "probability"),
         _spec("analysis.method", "Analysis settings", "Analysis method", "config", ["analysisMethod"], "", "Workflow setting", "configured_reviewed", False, "select"),
         _spec("analysis.simulation_mode", "Analysis settings", "Simulation count option", "config", ["simulationMode"], "", "Workflow setting", "configured_reviewed", False, "select"),
-        _spec("analysis.n_reps", "Analysis settings", "Number of simulations", "config", ["nReps"], "simulations", "Repository standard; five simulations is preview only", "configured_reviewed", False, "positive_integer"),
+        _spec("analysis.n_reps", "Analysis settings", "Repetitions", "config", ["nReps"], "repetitions", "SA Health reference uses 2,000 repetitions; smaller runs are exploratory previews.", "configured_reviewed", False, "positive_integer"),
         _spec("analysis.seed", "Analysis settings", "Random seed", "config", ["seed"], "", "Workflow setting", "configured_reviewed", False, "positive_integer"),
     ]
 

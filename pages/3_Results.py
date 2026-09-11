@@ -33,6 +33,7 @@ technical = bundle.get("technical", {})
 downloads = bundle.get("downloads", {})
 economics_config = st.session_state.get("economics_config")
 scenario_label = metadata.get("scenarioLabel")
+model_type = metadata.get("modelType") or ((technical.get("eventLedger") or {}).get("metadata") or {}).get("modelType")
 
 if st.session_state.get("results_stale"):
     st.warning("These results are stale because analysis inputs changed after the last run.")
@@ -41,6 +42,13 @@ else:
 
 if scenario_label:
     st.markdown(f"**Scenario:** {scenario_label}")
+if model_type == "agent_based":
+    st.caption(
+        f"Stochastic individual-based analysis; repetitions: {metadata.get('nReps')}; "
+        f"seed: {metadata.get('seed')}."
+    )
+else:
+    st.caption("Deterministic expected-value analysis; stochastic repetitions and seed were not used.")
 
 scope_statement = (
     technical.get("interfaceConfig", {})
@@ -73,10 +81,13 @@ if key_rows:
 else:
     st.info("Key metrics are unavailable for these results.")
 
-st.caption(
-    "Median, low 95% and high 95% summarise the distribution across repeated "
-    "simulated populations. They are not confidence intervals."
-)
+if model_type == "agent_based":
+    st.caption(
+        "Median, low 95% and high 95% summarise the distribution across repeated "
+        "simulated populations. They are not confidence intervals."
+    )
+else:
+    st.caption("Median, low 95% and high 95% are identical for deterministic expected-value results.")
 
 st.subheader("Detailed summary table")
 if detail_rows:
@@ -90,11 +101,14 @@ else:
 
 visual_rows = build_100_person_visual_data(technical.get("eventLedger"))
 if visual_rows:
-    st.caption(
-        "Values may include decimals because they are averages across repeated "
-        "simulated populations. Unless otherwise stated, these values are per "
-        "100 eligible people."
-    )
+    if model_type == "agent_based":
+        st.caption(
+            "Values may include decimals because they are averages across repeated "
+            "simulated populations. Unless otherwise stated, these values are per "
+            "100 eligible people."
+        )
+    else:
+        st.caption("Values may include decimals because they are expected values per 100 eligible people.")
     render_100_person_summary(
         visual_rows,
         title="What this means per 100 eligible people",
