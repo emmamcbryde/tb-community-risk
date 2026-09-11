@@ -366,21 +366,48 @@ class HealthEconomicsInputsWorkspaceTests(unittest.TestCase):
         self.assertEqual(by_id["program_setup"]["originalCost"], 0.0)
         self.assertEqual(by_id["program_running"]["originalCost"], 0.0)
 
-    def test_legacy_controls_cannot_override_applied_workspace_assumptions(self) -> None:
+    def test_standard_page_keeps_legacy_controls_out_of_main_workflow(self) -> None:
         page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
 
-        self.assertIn('st.expander("Legacy/developer economic controls"', page)
         self.assertNotIn('st.subheader("Edit Economics Inputs")', page)
-        self.assertIn('disabled=workspace_applied', page)
-        self.assertIn("Workspace assumptions have been applied. Legacy controls are disabled", page)
+        self.assertNotIn("Legacy/developer economic controls", page)
+        self.assertIn('st.expander("View or change economic assumptions"', page)
 
     def test_standard_page_has_one_authoritative_editing_route(self) -> None:
         page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
 
-        self.assertIn('st.subheader("Inputs required for this analysis")', page)
-        self.assertEqual(page.count("Validate assumptions"), 1)
-        self.assertEqual(page.count("Apply assumptions to current analysis"), 1)
-        self.assertIn("Legacy/developer economic controls", page)
+        self.assertLess(
+            page.index('st.subheader("Headline economic results")'),
+            page.index('st.expander("View or change economic assumptions"'),
+        )
+        self.assertIn("Recalculate economics using current screening outcomes", page)
+        self.assertNotIn("Validate assumptions", page)
+        self.assertNotIn("Apply assumptions to current analysis", page)
+        self.assertIn("standard_assumption_rows", page)
+
+    def test_standard_economic_assumption_table_uses_four_user_columns(self) -> None:
+        page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
+
+        for column in ["Parameter", "Value used by model", "Unit", "Source"]:
+            self.assertIn(f'"{column}"', page)
+        for removed in [
+            '"Default value"',
+            '"Override value"',
+            '"Review status"',
+            '"Internal parameter key"',
+            '"Registry identifier"',
+        ]:
+            self.assertNotIn(removed, page)
+        self.assertIn('column_config={"assumptionId": None}', page)
+        self.assertIn('disabled=["Parameter", "Unit", "Source"]', page)
+
+    def test_standard_economic_override_source_is_user_defined(self) -> None:
+        page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
+
+        self.assertIn('row["sourceCitation"] = "User-defined"', page)
+        self.assertIn("overridden_rows", page)
+        self.assertIn("Restore SA Health economic defaults", page)
+        self.assertIn("build_unified_working_default_preset", page)
 
     def test_validate_rerun_retains_validation_when_rows_unchanged(self) -> None:
         econ_config = _synthetic_econ()
@@ -596,9 +623,9 @@ class HealthEconomicsInputsWorkspaceTests(unittest.TestCase):
     def test_converted_costs_are_read_only_and_derived_in_page(self) -> None:
         page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
 
-        self.assertIn("*DERIVED_CONVERSION_COLUMNS", page)
-        self.assertIn('"convertedTargetYearCost"', page)
         self.assertIn("Price-year conversion audit", page)
+        self.assertIn("conversion_audit_rows", page)
+        self.assertNotIn('"convertedTargetYearCost"', page.split("def standard_assumption_rows", 1)[1].split("def _assumption_section", 1)[0])
 
 
 if __name__ == "__main__":

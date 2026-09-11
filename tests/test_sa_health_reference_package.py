@@ -200,11 +200,16 @@ class SAHealthReferencePackageTests(unittest.TestCase):
     def test_health_economics_page_uses_workspace_and_same_ledger_scenarios(self) -> None:
         page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
 
-        self.assertIn("Inputs required for this analysis", page)
-        self.assertIn("Compare economic scenarios using current results", page)
+        self.assertIn("Headline economic results", page)
+        self.assertIn("View or change economic assumptions", page)
+        self.assertLess(
+            page.index('st.subheader("Headline economic results")'),
+            page.index('st.expander("View or change economic assumptions"'),
+        )
+        self.assertIn("Compare economic scenarios using current screening outcomes", page)
         self.assertIn("Changing only economic assumptions does not rerun the epidemiological analysis", page)
-        self.assertIn("frozen APY stochastic compatibility reference", page)
-        self.assertIn("Gross delivery expenditure ratios are before active-TB care offsets", page)
+        self.assertIn("same screening outcomes", page)
+        self.assertIn("Gross delivery expenditure", page)
         self.assertIn("build_same_ledger_economic_scenario_comparison", page)
 
     def test_economic_changes_do_not_alter_event_counts(self) -> None:
