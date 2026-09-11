@@ -10,7 +10,6 @@ from engine.apy.evidence import assess_apy_reference_readiness, load_apy_evidenc
 init_session_state()
 
 st.title("Evidence & Assumptions")
-st.caption("Review readiness, provenance, conflicts and unresolved evidence for the APY demonstration.")
 
 config = st.session_state.get("config") or {}
 economics_config = st.session_state.get("economics_config") or {}
@@ -76,3 +75,18 @@ if conflict_rows:
 with st.expander("Evidence registry", expanded=False):
     registry = load_apy_evidence_registry()
     st.dataframe(arrow_safe_dataframe(registry), use_container_width=True, hide_index=True)
+
+with st.expander("Caveats & technical information", expanded=False):
+    st.markdown(
+        """
+        - The primary SA Health working reference uses the frozen software-compatible stochastic anchor; it excludes dynamic transmission effects.
+        - The inherited `10/770` active-TB calibration quantity remains unresolved and must not be interpreted as validated future progression from LTBI.
+        - The implicit early/late progression structure is retained for compatibility with earlier APY analysis, not as measured recent-LTBI composition.
+        - Disease-risk odds ratios are applied as multiplicative hazard multipliers for compatibility; this remains scientifically provisional.
+        - Active or near-baseline TB is not fully separated from future incident, preventable TB in the compatibility anchor.
+        - Simulation intervals describe finite-population stochastic variation, not full parameter uncertainty.
+        - Programme setup, running, travel, outreach and staff-support costs remain not locally costed unless a user supplies local values.
+        - DALY and ICER outputs are provisional; no willingness-to-pay threshold has been supplied, so NMB and probability cost-effective remain unavailable.
+        - Contract versions, package hashes and release commits are retained in exported manifests and workbooks.
+        """
+    )

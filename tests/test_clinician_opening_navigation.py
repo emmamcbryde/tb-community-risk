@@ -74,8 +74,9 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
         self.assertIn("Set up", visible_text)
         self.assertIn("Use default parameters", visible_text)
         self.assertIn("Review or change parameters", visible_text)
-        self.assertIn("Run with these defaults", visible_text)
         self.assertIn("Continue to current results", visible_text)
+        self.assertIn("Repetitions", visible_text)
+        self.assertIn("Random seed", visible_text)
 
     def test_standard_navigation_labels_avoid_implementation_terms(self) -> None:
         text = (ROOT / "streamlit_app.py").read_text(encoding="utf-8")
@@ -151,8 +152,24 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
     def test_results_links_to_health_economics(self) -> None:
         text = (ROOT / "pages" / "3_Results.py").read_text(encoding="utf-8")
 
-        self.assertIn("Open Health Economics", text)
+        self.assertIn("Continue to Health Economics", text)
+        self.assertNotIn('st.subheader("Health Economics")', text)
         self.assertNotIn("Open Evidence & Assumptions", text)
+
+    def test_run_page_omits_standard_technical_sections(self) -> None:
+        text = (ROOT / "pages" / "2_Run_Model.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("Latest Analysis", text)
+        self.assertNotIn("Technical information", text)
+        self.assertIn("Current run", text)
+        self.assertIn("Repetitions", text)
+
+    def test_caveats_have_single_standard_home(self) -> None:
+        evidence = (ROOT / "pages" / "6_Evidence_Assumptions.py").read_text(encoding="utf-8")
+        self.assertIn("Caveats & technical information", evidence)
+        for page in ["0_Start.py", "2_Run_Model.py", "3_Results.py", "4_Economics.py", "5_Decision_Analysis.py"]:
+            text = (ROOT / "pages" / page).read_text(encoding="utf-8")
+            self.assertNotIn("10/770", text)
 
     def test_health_economics_page_uses_event_ledger_and_runs_existing_engine(self) -> None:
         text = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")

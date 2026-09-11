@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app.display import arrow_safe_dataframe
+from app.parameter_workspace import MODEL_METHOD_LABELS
 from app.run_analysis_controls import (
     TECHNICAL_DEMONSTRATION_ROUTE,
     prepare_run_config_for_recent_ltbi_route,
@@ -23,11 +25,10 @@ st.session_state["apy_backend_name"] = "python_apy"
 backend = get_backend()
 
 st.title("Run Analysis")
-st.caption("Validate inputs and run the LTBI screening analysis.")
 
 config = st.session_state.get("config")
 if not config:
-    st.info("Define a strategy first.")
+    st.info("Set up the analysis before running it.")
     st.stop()
 
 status = backend.status()
@@ -35,12 +36,32 @@ sync_backend_status(status)
 if status.get("error"):
     st.error(status["error"])
 
-if st.session_state.get("dirty_config"):
-    st.warning("Current inputs have changed since the last validation or run.")
-if st.session_state.get("results_stale"):
-    st.warning("Stored results are stale because inputs changed after the last run.")
+method_label = MODEL_METHOD_LABELS.get(str(config.get("analysisMethod") or "expected_value"), "Expected outcomes")
+is_stochastic = str(config.get("analysisMethod")) == "agent_based"
+reps = int(float(config.get("nReps") or 0))
+seed = int(float(config.get("seed") or 1))
+run_type = "SA Health reference" if is_stochastic and reps == 2000 and seed == 1 else ("Exploratory preview" if is_stochastic and reps < 2000 else method_label)
+
+st.subheader("Current run")
+summary_rows = [
+    {"Setting": "Analysis type", "Value": method_label},
+    {"Setting": "Repetitions", "Value": f"{reps:,}" if is_stochastic else "Not used"},
+    {"Setting": "Random seed", "Value": seed if is_stochastic else "Not used"},
+    {"Setting": "Run type", "Value": run_type},
+    {"Setting": "Screening test", "Value": config.get("testType")},
+    {"Setting": "Preventive treatment", "Value": config.get("regimen")},
+    {"Setting": "Coverage", "Value": config.get("screenCoverage")},
+]
+st.dataframe(arrow_safe_dataframe(summary_rows), use_container_width=True, hide_index=True)
+if is_stochastic and reps < 2000:
+    st.warning("Preview analyses are useful for checking setup but do not reproduce the SA Health reference.")
+
+if st.session_state.get("results_stale") or st.session_state.get("dirty_config"):
+    st.warning("Inputs have changed. Run the analysis again before interpreting results.")
 elif st.session_state.get("results_bundle"):
-    st.success("Stored results match the current inputs.")
+    st.success("Current results correspond to this configuration.")
+else:
+    st.info("No results have been generated for this setup.")
 
 ltbi_dev_compatibility_requested = False
 ltbi_state = resolve_ltbi_state_assumptions(config)
@@ -55,22 +76,22 @@ if unresolved_ltbi_state:
         "This affects the estimated risk of progression to active TB."
     )
     decision_cols = st.columns(2)
-    if decision_cols[0].button("Run a technical demonstration"):
+    if decision_cols[0].button("Run provisional working analysis"):
         st.session_state["recent_ltbi_run_route"] = TECHNICAL_DEMONSTRATION_ROUTE
         st.info(
-            "Technical demonstration selected. The analysis will use the existing "
+            "Provisional route selected. The analysis will use the existing "
             "0% compatibility placeholder, temporarily representing all baseline "
             "infection as remote. Outputs will be provisional and not reference, "
             "reviewed or clinician-ready results."
         )
     decision_cols[1].page_link(
-        "pages/4_Economics.py",
+        "pages/6_Evidence_Assumptions.py",
         label="Review or enter the assumption",
     )
     if st.session_state.get("recent_ltbi_run_route") == TECHNICAL_DEMONSTRATION_ROUTE:
         ltbi_dev_compatibility_requested = True
         st.warning(
-            "Technical demonstration mode is selected. Every output from this run "
+            "Provisional working-analysis route is selected. Every output from this run "
             "will remain provisional, and evidence-review status will not be promoted."
         )
 
@@ -88,12 +109,23 @@ if st.button("Validate inputs"):
 
 report = st.session_state.get("validation_report")
 if report:
-    st.subheader("Input Checks")
     if report.get("isValid") is True:
         st.success("Inputs are valid.")
     elif report.get("isValid") is False:
         st.error("Inputs have validation errors.")
-    st.json(report, expanded=False)
+    issue_rows = []
+    for group in ("errors", "warnings"):
+        for issue in report.get(group) or []:
+            if isinstance(issue, dict):
+                issue_rows.append(
+                    {
+                        "Severity": group[:-1],
+                        "Field": issue.get("fieldLabel") or issue.get("field") or "",
+                        "Message": issue.get("message") or "",
+                    }
+                )
+    if issue_rows:
+        st.dataframe(arrow_safe_dataframe(issue_rows), use_container_width=True, hide_index=True)
 
 run_label = "Run analysis"
 if st.session_state.get("dirty_config"):
@@ -107,7 +139,7 @@ if st.button(run_label, type="primary"):
         if ltbi_state.get("baselineRecentLTBIProportion") is None:
             if not ltbi_dev_compatibility_requested:
                 st.info(
-                    "Choose Run a technical demonstration, or review and enter the "
+                    "Choose Run provisional working analysis, or review and enter the "
                     "recent-versus-remote LTBI assumption, before running the analysis."
                 )
                 st.stop()
@@ -133,6 +165,7 @@ if st.button(run_label, type="primary"):
         sync_backend_status(backend.status())
         mark_run_completed()
         st.success("Analysis completed.")
+        st.page_link("pages/3_Results.py", label="Open Results")
     except Exception as exc:
         message = f"Analysis failed: {exc}"
         sync_backend_status(backend.status())
@@ -140,21 +173,4 @@ if st.button(run_label, type="primary"):
         st.error(message)
 
 if st.session_state.get("results_bundle"):
-    metadata = st.session_state["results_bundle"].get("metadata", {})
-    st.subheader("Latest Analysis")
-    st.json(
-        {
-            "last_run_at": st.session_state.get("last_run_at"),
-            "results_stale": st.session_state.get("results_stale"),
-            "analysisLabel": metadata.get("scenarioLabel"),
-        },
-        expanded=False,
-    )
-    with st.expander("Technical information", expanded=False):
-        st.json(
-            {
-                "modelVersion": metadata.get("modelVersion"),
-                "contractVersion": metadata.get("contractVersion"),
-            },
-            expanded=False,
-        )
+    st.page_link("pages/3_Results.py", label="Open Results")

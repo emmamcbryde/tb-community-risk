@@ -10,7 +10,6 @@ from app.state import init_session_state
 from engine.apy.decision_analysis import run_scenario_comparison
 from engine.apy.early_review import run_early_screening_review
 from engine.apy.evidence import assess_apy_reference_readiness
-from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
 from engine.apy.sensitivity import (
     load_sensitivity_specs,
     run_one_way_sensitivity,
@@ -21,7 +20,7 @@ from engine.apy.sensitivity import (
 init_session_state()
 
 st.title("Explore Decisions")
-st.caption("Compare strategies, explore supplied sensitivity ranges and review early screening results.")
+st.caption("Compare strategies, sensitivity ranges and early screening results.")
 
 MODEL_TYPE_LABELS = {
     "expected_value": "Expected outcomes",
@@ -50,17 +49,15 @@ econ_results = st.session_state.get("economics_results")
 econ_valid = bool(econ_results and econ_results.get("validation", {}).get("structurallyValid"))
 
 overview_rows = [
-    {"field": "population", "value": config.get("populationPresetId")},
-    {"field": "comparator", "value": "current practice / no additional systematic LTBI screening"},
-    {"field": "intervention", "value": "targeted LTBI screening and preventive treatment"},
-    {"field": "direct-effects scope", "value": DIRECT_EFFECTS_SCOPE_STATEMENT},
-    {"field": "overall clinician-ready", "value": readiness.get("overallClinicianReady")},
-    {"field": "event ledger valid", "value": ledger_valid},
-    {"field": "economics structurally valid", "value": econ_valid},
+    {"Item": "Population", "Value": config.get("populationPresetId")},
+    {"Item": "Comparator", "Value": "Current practice / no additional systematic LTBI screening"},
+    {"Item": "Intervention", "Value": "Targeted LTBI screening and preventive treatment"},
+    {"Item": "Screening outcomes available", "Value": ledger_valid},
+    {"Item": "Health economics available", "Value": econ_valid},
 ]
 st.dataframe(arrow_safe_dataframe(overview_rows), use_container_width=True, hide_index=True)
 if not readiness.get("overallClinicianReady"):
-    st.warning("Reference evidence remains unresolved or provisional. The page reports modelled consequences only, not recommendations.")
+    st.warning("Some evidence inputs remain provisional. This page reports modelled consequences, not recommendations.")
 
 tab_compare, tab_sensitivity, tab_early = st.tabs(
     ["Compare strategies", "Explore sensitivity", "Review early screening results"]
@@ -249,10 +246,7 @@ with tab_early:
             st.error(early["validation"]["errors"])
         else:
             st.dataframe(arrow_safe_dataframe([early["prior"]["summary"], early["posterior"]["summary"]]), use_container_width=True, hide_index=True)
-            with st.expander("Technical information", expanded=False):
-                st.caption(f"Calibration policy: {early.get('calibrationPolicy')}")
-                st.caption(f"Reference calibration: {early.get('referenceCalibrationHash')}")
-                st.caption(f"Prior discretisation: {(early.get('prior') or {}).get('discretisationMethod')}")
+            st.caption("Likelihood uses the aggregate-binomial approximation; detailed calibration metadata is retained in exports.")
             st.caption(early.get("likelihoodNotes", ""))
             st.info(early.get("activeTBSurveillanceJointUpdateNotes", ""))
             if early.get("timingApproximation"):

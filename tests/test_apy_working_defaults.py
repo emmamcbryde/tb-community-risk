@@ -272,13 +272,16 @@ class APYWorkingDefaultsTests(unittest.TestCase):
 
     def test_set_up_page_contains_unique_workflow_controls(self) -> None:
         text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
+        workspace_text = (ROOT / "app" / "parameter_workspace.py").read_text(encoding="utf-8")
 
-        self.assertIn("Strategy controls", text)
+        self.assertIn("Analysis settings", text)
+        self.assertIn("Quick preview: 100 repetitions", workspace_text)
+        self.assertIn("SA Health reference: 2,000 repetitions", workspace_text)
+        self.assertIn("Random seed", text)
         self.assertIn("Validate setup", text)
         self.assertIn("Proceed to Run Analysis", text)
         self.assertIn("Save or load setup", text)
         self.assertIn("Restore APY demographic defaults", text)
-        self.assertIn("there is no second strategy editor", text)
 
     def test_primary_parameter_workspace_has_no_duplicate_authoritative_model_paths(self) -> None:
         workspace = unified_default_session_state()["parameter_workspace"]
@@ -414,13 +417,17 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertFalse(igra["changedFromDefault"])
 
     def test_rendered_start_page_editor_accepts_value_override(self) -> None:
-        app = AppTest.from_file(str(ROOT / "streamlit_app.py"))
+        app = AppTest.from_file(str(ROOT / "pages" / "0_Start.py"))
         app.run(timeout=30)
-        app.button[1].click().run(timeout=30)
+        next(button for button in app.button if button.label == "Review or change parameters").click().run(timeout=30)
 
         self.assertFalse(app.exception)
-        self.assertIn("parameter_editor_Costs and outcomes", app.session_state.filtered_state)
-        app.session_state["parameter_editor_Costs and outcomes"] = {
+        editor_key = next(
+            key
+            for key in app.session_state.filtered_state
+            if str(key).startswith("parameter_editor_Costs and outcomes")
+        )
+        app.session_state[editor_key] = {
             "edited_rows": {0: {"Value used by model": "125.0"}},
             "added_rows": [],
             "deleted_rows": [],
@@ -436,7 +443,7 @@ class APYWorkingDefaultsTests(unittest.TestCase):
 
         reset_buttons = [button for button in app.button if button.label == "Reset this section: Costs and outcomes"]
         self.assertTrue(reset_buttons)
-        reset_buttons[0].click().run(timeout=30)
+        reset_buttons[0].click().run(timeout=90)
         reset_rows = app.session_state["parameter_workspace"]["rows"]
         reset_igra = next(row for row in reset_rows if row["label"] == "IGRA cost")
         self.assertEqual(reset_igra["valueUsedByModel"], 113.48)
@@ -543,18 +550,35 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         validation = validate_parameter_workspace(workspace["rows"])
         self.assertTrue(validation["isValid"])
 
-    def test_quick_simulation_is_labelled_preview_and_sets_five_replicates(self) -> None:
+    def test_quick_simulation_is_labelled_preview_and_sets_one_hundred_repetitions(self) -> None:
         state = unified_default_session_state()
         rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
         next(row for row in rows if row["parameterId"] == "analysis.method")["currentValue"] = "Simulated community variation"
-        next(row for row in rows if row["parameterId"] == "analysis.simulation_mode")["currentValue"] = "Quick preview: 5 simulations"
+        next(row for row in rows if row["parameterId"] == "analysis.simulation_mode")["currentValue"] = "Quick preview: 100 repetitions"
 
         config, _ = apply_parameter_workspace(state["config"], state["economics_config"], rows)
 
         self.assertEqual(config["analysisMethod"], "agent_based")
         self.assertEqual(config["simulationMode"], "quick_preview")
-        self.assertEqual(config["nReps"], 5)
+        self.assertEqual(config["nReps"], 100)
         self.assertIn("preview", config["simulationModeLabel"].lower())
+
+    def test_repetitions_validation_rejects_invalid_interactive_values(self) -> None:
+        workspace = unified_default_session_state()["parameter_workspace"]
+        rows = [dict(row) for row in workspace["rows"]]
+        next(row for row in rows if row["parameterId"] == "analysis.method")["currentValue"] = "Simulated community variation"
+        reps = next(row for row in rows if row["parameterId"] == "analysis.n_reps")
+
+        reps["currentValue"] = 0
+        self.assertFalse(validate_parameter_workspace(rows)["isValid"])
+
+        reps["currentValue"] = 5001
+        validation = validate_parameter_workspace(rows)
+        self.assertFalse(validation["isValid"])
+        self.assertIn("analysis.n_reps", {row["parameterId"] for row in validation["messages"]})
+
+        reps["currentValue"] = 2000
+        self.assertTrue(validate_parameter_workspace(rows)["isValid"])
 
     def test_workbook_exports_defaults_and_overrides(self) -> None:
         state = unified_default_session_state()

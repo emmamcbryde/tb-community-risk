@@ -6,8 +6,6 @@ import streamlit as st
 
 from app.display import (
     arrow_safe_dataframe,
-    economics_assumptions_json,
-    economics_summary_csv,
     safe_download_stem,
 )
 from app.icon_arrays import build_100_person_visual_data, render_100_person_summary
@@ -23,7 +21,6 @@ from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
 init_session_state()
 
 st.title("Results")
-st.caption("Review the screening, treatment and active-TB outcomes from the latest analysis.")
 
 bundle = st.session_state.get("results_bundle")
 if not bundle:
@@ -34,7 +31,6 @@ metadata = bundle.get("metadata", {})
 headline = bundle.get("headline", {})
 technical = bundle.get("technical", {})
 downloads = bundle.get("downloads", {})
-economics = st.session_state.get("economics_results")
 economics_config = st.session_state.get("economics_config")
 scenario_label = metadata.get("scenarioLabel")
 
@@ -51,7 +47,7 @@ scope_statement = (
     .get("scenario", {})
     .get("scopeStatement", DIRECT_EFFECTS_SCOPE_STATEMENT)
 )
-st.info(scope_statement)
+st.caption(scope_statement)
 
 dynamic_metric_rows = []
 dynamic_comparison = technical.get("dynamicComparison", {})
@@ -104,118 +100,48 @@ if visual_rows:
         title="What this means per 100 eligible people",
     )
 
-st.subheader("Plain-language interpretation")
-st.write(
-    "These outputs summarise modelled outcomes for the selected scenario. "
-    "Differences shown as separate metrics may not equal differences calculated "
-    "from separately rounded medians. Results should be interpreted with the "
-    "readiness and evidence limitations documented for the current analysis."
-)
-
-st.subheader("Health Economics")
-if not economics:
-    st.info("Health-economic analysis has not been run for these results yet.")
-    if economics_config:
-        st.markdown("Downloads")
-        st.download_button(
-            "Download economics assumptions JSON",
-            data=economics_assumptions_json(economics_config),
-            file_name=f"{safe_download_stem(scenario_label, 'economics_assumptions')}.json",
-            mime="application/json",
-        )
-    st.page_link("pages/4_Economics.py", label="Open Health Economics")
-else:
-    if st.session_state.get("dirty_economics") or st.session_state.get("results_stale"):
-        st.warning("Economic results are stale. Open Health Economics and rerun the analysis.")
+with st.expander("Export results", expanded=False):
+    if st.session_state.get("results_stale"):
+        st.warning("Workbook download is disabled until the analysis is rerun with the current inputs.")
     else:
-        st.success("Economics results are available.")
-
-    summary_rows = economics.get("summaryRows") or []
-    if summary_rows:
-        st.markdown("Health-economic summary")
-        st.dataframe(arrow_safe_dataframe(summary_rows), use_container_width=True)
-    else:
-        st.info("No economics summary rows were returned.")
-
-    st.markdown("Downloads")
-    if summary_rows:
+        workbook_bytes = build_results_workbook(
+            config=technical.get("interfaceConfig", {}),
+            bundle=bundle,
+            backend_status=st.session_state.get("backend_status"),
+            economics_results=st.session_state.get("economics_results"),
+            economics_config=economics_config,
+            results_stale=False,
+            dirty_economics=bool(st.session_state.get("dirty_economics")),
+            decision_analysis_results={
+                "scenarioComparison": st.session_state.get("decision_scenario_comparison"),
+                "sensitivity": st.session_state.get("decision_sensitivity"),
+                "threshold": st.session_state.get("decision_threshold"),
+                "earlyReview": st.session_state.get("decision_early_review"),
+            },
+        )
         st.download_button(
-            "Download economics summary CSV",
-            data=economics_summary_csv(economics),
-            file_name=f"{safe_download_stem(scenario_label, 'economics_summary')}.csv",
-            mime="text/csv",
+            "Download consolidated results workbook",
+            data=workbook_bytes,
+            file_name=f"{safe_download_stem(scenario_label, 'APY_results')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-    if economics_config:
-        st.download_button(
-            "Download economics assumptions JSON",
-            data=economics_assumptions_json(economics_config),
-            file_name=f"{safe_download_stem(scenario_label, 'economics_assumptions')}.json",
-            mime="application/json",
-        )
-
-    st.markdown("Status")
-    status = economics.get("status", {})
-    status_rows = [
-        {"field": "last_economics_run_at", "value": st.session_state.get("last_economics_run_at")},
-        {"field": "isComplete", "value": status.get("isComplete")},
-        {"field": "missingInputs", "value": status.get("missingInputs")},
-        {"field": "notCalculated", "value": status.get("notCalculated")},
-    ]
-    st.dataframe(arrow_safe_dataframe(status_rows), use_container_width=True, hide_index=True)
-    st.page_link("pages/4_Economics.py", label="Open Health Economics")
-
-st.subheader("Downloads")
-if st.session_state.get("results_stale"):
-    st.warning("Excel workbook download is disabled until the analysis is rerun with the current inputs.")
-else:
-    workbook_bytes = build_results_workbook(
-        config=technical.get("interfaceConfig", {}),
-        bundle=bundle,
-        backend_status=st.session_state.get("backend_status"),
-        economics_results=economics,
-        economics_config=economics_config,
-        results_stale=False,
-        dirty_economics=bool(st.session_state.get("dirty_economics")),
-        decision_analysis_results={
-            "scenarioComparison": st.session_state.get("decision_scenario_comparison"),
-            "sensitivity": st.session_state.get("decision_sensitivity"),
-            "threshold": st.session_state.get("decision_threshold"),
-            "earlyReview": st.session_state.get("decision_early_review"),
-        },
-    )
-    st.download_button(
-        "Download consolidated results workbook",
-        data=workbook_bytes,
-        file_name=f"{safe_download_stem(scenario_label, 'APY_results')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-if downloads.get("available"):
-    download_rows = [
-        {"field": key, "value": value}
-        for key, value in downloads.items()
-        if key not in {"available", "payload"}
-    ]
-    if download_rows:
-        st.dataframe(arrow_safe_dataframe(download_rows), use_container_width=True, hide_index=True)
-
-    for label, key in (("Summary CSV", "summaryCsv"), ("Key metrics CSV", "keyMetricsCsv")):
-        path_value = downloads.get(key)
-        if not path_value:
-            continue
-        path = Path(str(path_value))
-        if path.is_file():
-            st.download_button(
-                label,
-                data=path.read_bytes(),
-                file_name=path.name,
-                mime="text/csv",
-            )
-else:
-    st.info("No downloads are available for the current results.")
+    if downloads.get("available"):
+        for label, key in (("Summary CSV", "summaryCsv"), ("Key metrics CSV", "keyMetricsCsv")):
+            path_value = downloads.get(key)
+            if not path_value:
+                continue
+            path = Path(str(path_value))
+            if path.is_file():
+                st.download_button(
+                    label,
+                    data=path.read_bytes(),
+                    file_name=path.name,
+                    mime="text/csv",
+                )
 
 st.warning(
     "Outputs remain provisional where evidence inputs are unresolved. Review "
     "Evidence & Assumptions before using results as final policy evidence."
 )
+st.page_link("pages/4_Economics.py", label="Continue to Health Economics")

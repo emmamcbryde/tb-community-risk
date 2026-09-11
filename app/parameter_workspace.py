@@ -29,8 +29,9 @@ MODEL_METHOD_LABELS = {
 }
 MODEL_METHOD_CODES = {value: key for key, value in MODEL_METHOD_LABELS.items()}
 SIMULATION_MODE_LABELS = {
-    "quick_preview": "Quick preview: 5 simulations",
-    "standard": "Standard analysis: use the current validated repository standard",
+    "quick_preview": "Quick preview: 100 repetitions",
+    "intermediate": "Intermediate exploration: 500 repetitions",
+    "standard": "SA Health reference: 2,000 repetitions",
     "custom": "Custom",
 }
 PROGRAMME_SETUP_PRESET_LABELS = {
@@ -130,6 +131,8 @@ def validate_parameter_workspace(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 messages.append({"parameterId": parameter_id, "message": "Value must be numeric."})
             elif kind == "positive_integer" and int(number) <= 0:
                 messages.append({"parameterId": parameter_id, "message": "Value must be positive."})
+            elif kind == "positive_integer" and parameter_id == "analysis.n_reps" and int(number) > 5000:
+                messages.append({"parameterId": parameter_id, "message": "Repetitions must be 5,000 or fewer for interactive use."})
             elif kind in {"nonnegative_number", "years", "money"} and number < 0:
                 messages.append({"parameterId": parameter_id, "message": "Value must be non-negative."})
     age_rows = [row for row in rows if str(row.get("parameterId", "")).startswith("demography.age.")]
@@ -574,7 +577,11 @@ def _apply_simulation_mode(config: dict[str, Any], value: str) -> None:
     config["simulationMode"] = code
     config["simulationModeLabel"] = SIMULATION_MODE_LABELS.get(code, value)
     if code == "quick_preview":
-        config["nReps"] = 5
+        config["nReps"] = 100
+    elif code == "intermediate":
+        config["nReps"] = 500
+    elif code == "standard":
+        config["nReps"] = 2000
 
 
 def _programme_setup_code(label_or_code: str) -> str:

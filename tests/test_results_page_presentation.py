@@ -28,7 +28,16 @@ class ResultsPagePresentationTests(unittest.TestCase):
 
         self.assertLess(text.index('st.subheader("Key metrics")'), text.index('st.subheader("Detailed summary table")'))
         self.assertLess(text.index('st.subheader("Detailed summary table")'), text.index("What this means per 100 eligible people"))
-        self.assertLess(text.index("What this means per 100 eligible people"), text.index('st.subheader("Plain-language interpretation")'))
+        self.assertLess(text.index("What this means per 100 eligible people"), text.index('st.expander("Export results"'))
+
+    def test_results_page_removes_redundant_sections(self) -> None:
+        text = (ROOT / "pages" / "3_Results.py").read_text(encoding="utf-8")
+
+        self.assertNotIn('st.subheader("Plain-language interpretation")', text)
+        self.assertNotIn('st.subheader("Health Economics")', text)
+        self.assertNotIn('st.subheader("Downloads")', text)
+        self.assertIn('st.expander("Export results"', text)
+        self.assertIn("Continue to Health Economics", text)
 
     def test_display_rows_use_friendly_interval_column_names(self) -> None:
         rows = results_rows_for_display(

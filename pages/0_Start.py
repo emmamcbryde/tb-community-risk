@@ -14,7 +14,9 @@ from app.demographic_profile import (
 )
 from app.display import arrow_safe_dataframe
 from app.parameter_workspace import (
+    MODEL_METHOD_LABELS,
     PARAMETER_GROUPS,
+    SIMULATION_MODE_LABELS,
     apply_parameter_workspace,
     build_parameter_workspace,
     changed_parameter_count,
@@ -70,6 +72,13 @@ def validation_rows(report: dict[str, Any]) -> list[dict[str, object]]:
                     }
                 )
     return rows
+
+
+def _page_link(path: str, *, label: str) -> None:
+    try:
+        st.page_link(path, label=label)
+    except Exception:
+        st.button(label, disabled=True)
 
 
 def _load_unified_defaults(*, show_workspace: bool) -> None:
@@ -129,6 +138,14 @@ def _set_workspace_rows(rows: list[dict[str, Any]]) -> None:
     st.session_state["parameter_workspace"] = workspace
 
 
+def _bump_parameter_editor_version(group: str | None = None) -> None:
+    st.session_state["parameter_editor_version"] = int(st.session_state.get("parameter_editor_version", 0)) + 1
+    if group:
+        st.session_state[f"parameter_editor_version_{group}"] = int(
+            st.session_state.get(f"parameter_editor_version_{group}", 0)
+        ) + 1
+
+
 def _rows_changed(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> bool:
     before_by_id = {row.get("parameterId"): row for row in before}
     after_by_id = {row.get("parameterId"): row for row in after}
@@ -140,6 +157,99 @@ def _rows_changed(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> 
             if str(before_row.get(key)) != str(after_row.get(key)):
                 return True
     return False
+
+
+def _sync_workspace_after_direct_config_change() -> None:
+    st.session_state["parameter_workspace"] = build_parameter_workspace(
+        st.session_state["config"],
+        st.session_state.get("economics_config") or {},
+    )
+    st.session_state["parameter_workspace_validation"] = None
+    mark_config_changed()
+
+
+def _analysis_mode_label(config: dict[str, Any]) -> str:
+    return MODEL_METHOD_LABELS.get(str(config.get("analysisMethod") or "expected_value"), "Expected outcomes")
+
+
+def _simulation_mode_label(config: dict[str, Any]) -> str:
+    return SIMULATION_MODE_LABELS.get(str(config.get("simulationMode") or "standard"), "SA Health reference: 2,000 repetitions")
+
+
+def _apply_simulation_mode(config: dict[str, Any], mode_label: str) -> None:
+    code = next((key for key, label in SIMULATION_MODE_LABELS.items() if label == mode_label), "custom")
+    config["simulationMode"] = code
+    config["simulationModeLabel"] = mode_label
+    if code == "quick_preview":
+        config["nReps"] = 100
+    elif code == "intermediate":
+        config["nReps"] = 500
+    elif code == "standard":
+        config["nReps"] = 2000
+
+
+def _run_classification(config: dict[str, Any]) -> str:
+    if str(config.get("analysisMethod")) == "expected_value":
+        return "Expected-outcomes run"
+    reps = int(float(config.get("nReps") or 0))
+    seed = int(float(config.get("seed") or 0))
+    if reps == 2000 and seed == 1:
+        return "SA Health reference run"
+    if reps < 2000:
+        return "Exploratory preview run"
+    return "Custom stochastic run"
+
+
+def _render_analysis_settings_controls(config: dict[str, Any]) -> None:
+    st.subheader("Analysis settings")
+    st.caption("Choose faster preview runs for exploration. The SA Health reference uses 2,000 repetitions and seed 1.")
+    before = deepcopy(config)
+    method_options = list(MODEL_METHOD_LABELS.values())
+    method_label = st.radio(
+        "Analysis type",
+        method_options,
+        index=method_options.index(_analysis_mode_label(config)) if _analysis_mode_label(config) in method_options else 0,
+        horizontal=True,
+    )
+    config["analysisMethod"] = next(
+        (code for code, label in MODEL_METHOD_LABELS.items() if label == method_label),
+        "expected_value",
+    )
+    config["analysisMethodLabel"] = method_label
+    if config["analysisMethod"] == "agent_based":
+        mode_options = list(SIMULATION_MODE_LABELS.values())
+        mode_label = st.selectbox(
+            "Repetitions",
+            mode_options,
+            index=mode_options.index(_simulation_mode_label(config)) if _simulation_mode_label(config) in mode_options else mode_options.index("Custom"),
+        )
+        _apply_simulation_mode(config, mode_label)
+        if config.get("simulationMode") == "custom":
+            config["nReps"] = st.number_input(
+                "Custom repetitions",
+                min_value=1,
+                max_value=5000,
+                value=int(float(config.get("nReps") or 2000)),
+                step=1,
+                help="Use a positive whole number. Very large runs are not suitable for interactive review.",
+            )
+        seed_value = st.number_input(
+            "Random seed",
+            min_value=0,
+            max_value=2_147_483_647,
+            value=int(float(config.get("seed") or 1)),
+            step=1,
+        )
+        config["seed"] = int(seed_value)
+        if int(config.get("nReps") or 0) < 2000:
+            st.warning("Preview analyses run faster but do not reproduce the SA Health reference.")
+        st.info(f"{_run_classification(config)}: {int(config.get('nReps')):,} repetitions, seed {int(config.get('seed'))}.")
+    else:
+        st.info("Expected outcomes run: no stochastic repetitions are used.")
+    if config != before:
+        st.session_state["config"] = config
+        _sync_workspace_after_direct_config_change()
+        st.rerun()
 
 
 def _workspace_change_scope(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> tuple[bool, bool]:
@@ -163,10 +273,12 @@ def _workspace_change_scope(before: list[dict[str, Any]], after: list[dict[str, 
 
 
 def _editable_parameter_table(rows: list[dict[str, Any]], *, key: str) -> list[dict[str, Any]]:
+    version = int(st.session_state.get("parameter_editor_version", 0))
+    group_version = int(st.session_state.get(f"parameter_editor_version_{key.rsplit('_', 1)[-1]}", 0))
     return _rows_from_editor(
         st.data_editor(
             parameter_editor_rows(rows),
-            key=key,
+            key=f"{key}_{version}_{group_version}",
             use_container_width=True,
             hide_index=True,
             column_order=["Parameter", "Value used by model", "Unit", "Source"],
@@ -196,12 +308,16 @@ def _render_parameter_workspace() -> None:
     top_cols = st.columns([1, 1, 3])
     if top_cols[0].button("Use all defaults", use_container_width=True):
         _set_workspace_rows(reset_all_parameters(workspace["rows"]))
+        _bump_parameter_editor_version()
         st.session_state["parameter_workspace_validation"] = None
-        st.rerun()
+        st.success("Defaults restored.")
+        st.stop()
     if top_cols[1].button("Reset all changes", use_container_width=True):
         _set_workspace_rows(reset_all_parameters(workspace["rows"]))
+        _bump_parameter_editor_version()
         st.session_state["parameter_workspace_validation"] = None
-        st.rerun()
+        st.success("Defaults restored.")
+        st.stop()
 
     edited_rows: list[dict[str, Any]] = []
     override_rows = [
@@ -228,8 +344,10 @@ def _render_parameter_workspace() -> None:
             group_rows = [row for row in workspace["rows"] if row.get("group") == group]
             if st.button(f"Reset this section: {group}", key=f"reset_{group}"):
                 _set_workspace_rows(reset_parameter_group(workspace["rows"], group))
+                _bump_parameter_editor_version(group)
                 st.session_state["parameter_workspace_validation"] = None
-                st.rerun()
+                st.success(f"{group} defaults restored.")
+                st.stop()
             standard_rows = [row for row in group_rows if not row.get("advanced")]
             advanced_rows = [row for row in group_rows if row.get("advanced")]
             st.caption("Rows where Source is User-defined contain user-entered overrides.")
@@ -320,7 +438,7 @@ def _render_parameter_workspace() -> None:
         )
 
     if col_run.button("Run analysis", disabled=not isinstance(st.session_state.get("config"), dict), use_container_width=True):
-        st.page_link("pages/2_Run_Model.py", label="Open Run Analysis")
+        _page_link("pages/2_Run_Model.py", label="Open Run Analysis")
 
 
 def _render_age_risk_summary(config: dict[str, Any]) -> None:
@@ -387,7 +505,8 @@ def _render_configuration_status() -> None:
         except Exception as exc:
             record_message("error", f"Validation failed: {exc}")
             st.error("Validation failed.")
-    cols[1].page_link("pages/2_Run_Model.py", label="Proceed to Run Analysis")
+    with cols[1]:
+        _page_link("pages/2_Run_Model.py", label="Proceed to Run Analysis")
 
     report = st.session_state.get("validation_report")
     if report:
@@ -481,7 +600,7 @@ with col_review:
             st.error("Could not open the parameter workspace.")
 with col_results:
     if st.session_state.get("results_bundle"):
-        st.page_link("pages/3_Results.py", label="Continue to current results")
+        _page_link("pages/3_Results.py", label="Continue to current results")
     else:
         st.button("Continue to current results", disabled=True, use_container_width=True)
 
@@ -496,11 +615,7 @@ if isinstance(config, dict) and isinstance(econ, dict):
         hide_index=True,
     )
     _render_age_risk_summary(config)
-    st.subheader("Strategy controls")
-    st.caption(
-        "Use Review or change parameters below for the single editable setup table. "
-        "The same values are used by Run Analysis; there is no second strategy editor."
-    )
+    _render_analysis_settings_controls(config)
     ltbi_state = resolve_ltbi_state_assumptions(config)
     unresolved_recent_ltbi = ltbi_state.get("baselineRecentLTBIProportion") is None
     if unresolved_recent_ltbi:
@@ -520,11 +635,13 @@ if isinstance(config, dict) and isinstance(econ, dict):
         if route_cols[0].button("Run provisional working defaults", use_container_width=True):
             st.session_state["recent_ltbi_run_route"] = TECHNICAL_DEMONSTRATION_ROUTE
             st.success("Provisional working-default route selected.")
-            st.page_link("pages/2_Run_Model.py", label="Continue to Run Analysis")
-        route_cols[1].page_link("pages/6_Evidence_Assumptions.py", label="Review this assumption")
+            with route_cols[0]:
+                _page_link("pages/2_Run_Model.py", label="Continue to Run Analysis")
+        with route_cols[1]:
+            _page_link("pages/6_Evidence_Assumptions.py", label="Review this assumption")
     action_cols = st.columns(2)
     if not unresolved_recent_ltbi or st.session_state.get("recent_ltbi_run_route") == TECHNICAL_DEMONSTRATION_ROUTE:
-        st.page_link("pages/2_Run_Model.py", label="Run with these defaults")
+        _page_link("pages/2_Run_Model.py", label="Run with these defaults")
     else:
         st.info("Choose Run provisional working defaults or review this assumption before running.")
     if action_cols[1].button("Review or change parameters", key="show_workspace_secondary", use_container_width=True):
@@ -543,4 +660,4 @@ with st.expander("Research and Development", expanded=False):
         "Technical implementation details, model version identifiers and diagnostics "
         "are available in the Research and Development section."
     )
-    st.page_link("pages/8_Technical_Settings.py", label="Open Technical settings")
+    _page_link("pages/8_Technical_Settings.py", label="Open Technical settings")

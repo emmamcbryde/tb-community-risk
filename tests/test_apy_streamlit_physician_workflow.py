@@ -160,7 +160,7 @@ class PhysicianWorkflowHelperTests(unittest.TestCase):
         page_text = (repo_root() / "pages" / "2_Run_Model.py").read_text(encoding="utf-8")
 
         self.assertIn("Recent versus remote LTBI assumption", page_text)
-        self.assertIn("Run a technical demonstration", page_text)
+        self.assertIn("Run provisional working analysis", page_text)
         self.assertIn("Review or enter the assumption", page_text)
         self.assertNotIn("Model run failed", page_text)
         self.assertNotIn("Run provisional development analysis using the 0% compatibility placeholder", page_text)
