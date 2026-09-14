@@ -13,6 +13,8 @@ REVIEWED_ASSUMPTION_ROUTE = "reviewed_assumption"
 
 def recent_ltbi_decision_required(config: dict[str, Any]) -> bool:
     state = resolve_ltbi_state_assumptions(config)
+    if state.get("baselineRecentLTBIDerivationMethod") == "infection_history_trajectory":
+        return False
     return state.get("baselineRecentLTBIProportion") is None
 
 

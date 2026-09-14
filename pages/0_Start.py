@@ -36,6 +36,15 @@ from app.state import (
     record_message,
     sync_backend_status,
 )
+from engine.apy.config import normalise_config
+from engine.apy.data import load_parameters_from_config
+from engine.apy.infection_history import (
+    TRAJECTORY_PRESETS,
+    calibrate_infection_history,
+    configure_compatibility_reference_assumptions,
+    configure_infection_history_assumptions,
+    has_explicit_infection_history,
+)
 
 
 init_session_state()
@@ -176,6 +185,117 @@ def _format_percent(value: Any) -> str:
         return f"{float(value) * 100:.2f}%"
     except (TypeError, ValueError):
         return ""
+
+
+def _target_ltbi_prevalence(config: dict[str, Any]) -> float:
+    value = config.get("ltbiPrevalence")
+    return 47 / 624 if value in (None, "", []) else float(value)
+
+
+def _render_infection_history_controls(config: dict[str, Any]) -> None:
+    st.subheader("Historical TB infection pressure")
+    basis_options = [
+        "SA Health compatibility reference",
+        "Explicit recent/remote scientific scenario",
+    ]
+    current_explicit = has_explicit_infection_history(config)
+    basis = st.radio(
+        "Epidemiological basis",
+        basis_options,
+        index=1 if current_explicit else 0,
+        horizontal=False,
+        help=(
+            "The SA Health reference preserves the validated MATLAB-v9-compatible "
+            "anchor. The explicit scenario derives recent versus remote LTBI from "
+            "a calibrated infection-history assumption."
+        ),
+    )
+    if basis == "SA Health compatibility reference":
+        st.caption(
+            "Uses the validated software-compatible epidemiological anchor. "
+            "Its implicit early phase is not a measured recent-infection fraction."
+        )
+        if current_explicit:
+            st.session_state["config"] = configure_compatibility_reference_assumptions(config)
+            st.session_state.pop("recent_ltbi_run_route", None)
+            _sync_workspace_after_direct_config_change()
+            st.rerun()
+        return
+
+    labels = [preset["label"] for preset in TRAJECTORY_PRESETS.values()]
+    label_to_key = {preset["label"]: key for key, preset in TRAJECTORY_PRESETS.items()}
+    nested = config.get("ltbiStateAssumptions") or {}
+    current_key = str(nested.get("infectionPressureTrajectory") or "steady").lower()
+    current_label = TRAJECTORY_PRESETS.get(current_key, TRAJECTORY_PRESETS["steady"])["label"]
+    trajectory_label = st.selectbox(
+        "Historical TB infection pressure",
+        labels,
+        index=labels.index(current_label) if current_label in labels else labels.index("Steady"),
+        help=(
+            "Rising means infection pressure has increased toward the present; "
+            "falling means it has declined toward the present."
+        ),
+    )
+    trajectory = label_to_key[trajectory_label]
+    configured = configure_infection_history_assumptions(config, trajectory)
+    if configured != config:
+        st.session_state["config"] = configured
+        st.session_state.pop("recent_ltbi_run_route", None)
+        _sync_workspace_after_direct_config_change()
+        st.rerun()
+
+    try:
+        cfg = normalise_config(configured)
+        pars = load_parameters_from_config(cfg)
+        nested = cfg.get("ltbiStateAssumptions") or {}
+        derived = calibrate_infection_history(
+            pars,
+            target_prevalence=_target_ltbi_prevalence(cfg),
+            target_age_or=float(cfg.get("targetAgeOR") or 7.54),
+            trajectory=trajectory,
+            trend_rate_per_year=nested.get("infectionPressureTrendRatePerYear"),
+            recent_window_years=nested.get("recentDefinitionYears") or 2.0,
+        )
+        st.dataframe(
+            arrow_safe_dataframe(
+                [
+                    {"Quantity": "Baseline LTBI prevalence", "Value": _format_percent(derived["expectedPrevalence"])},
+                    {
+                        "Quantity": "Prevalent LTBI recently acquired",
+                        "Value": _format_percent(derived["recentFraction"]),
+                    },
+                    {
+                        "Quantity": "Prevalent LTBI remotely acquired",
+                        "Value": _format_percent(derived["remoteFraction"]),
+                    },
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        with st.expander("Recent fraction by age group", expanded=False):
+            st.dataframe(
+                arrow_safe_dataframe(
+                    [
+                        {
+                            "Age group": row["ageGroup"],
+                            "LTBI prevalence": _format_percent(row["ltbiPrevalence"]),
+                            "Recently acquired among prevalent LTBI": _format_percent(
+                                row["recentFractionAmongPrevalent"]
+                            ),
+                        }
+                        for row in derived["ageRows"]
+                    ]
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+        st.warning(
+            "The recent-infection proportion is model-derived from the selected "
+            "transmission-history assumption; it is not directly observed."
+        )
+    except Exception as exc:
+        st.error(f"Could not derive recent-versus-remote LTBI from this setup: {exc}")
 
 
 def _render_analysis_settings_controls(config: dict[str, Any]) -> None:
@@ -522,6 +642,7 @@ if isinstance(config, dict) and isinstance(econ, dict):
         hide_index=True,
     )
     _render_age_risk_summary(config)
+    _render_infection_history_controls(config)
     _render_analysis_settings_controls(config)
 
 if st.session_state.get("parameter_workspace_visible"):

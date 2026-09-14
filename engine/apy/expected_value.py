@@ -15,6 +15,10 @@ from engine.apy.cohort import (
     get_test_performance,
     infection_probability,
 )
+from engine.apy.infection_history import (
+    conditional_recent_probability,
+    prevalent_infection_probabilities,
+)
 from engine.apy.config import normalise_config
 from engine.apy.eligibility import resolve_eligibility, screening_coverage_of_population
 from engine.apy.event_ledger import (
@@ -187,6 +191,28 @@ def _build_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict[
             )
             if calibration.get("zeroInfectionPrevalence"):
                 p_inf = 0.0
+                p_recent = 0.0
+            elif calibration.get("infectionHistory"):
+                p_inf = float(
+                    prevalent_infection_probabilities(
+                        [age],
+                        pars,
+                        calibration["infectionHistory"],
+                        [flag["MJ"]],
+                        [flag["contact"]],
+                        [flag["renal"]],
+                    )[0]
+                )
+                p_recent = float(
+                    conditional_recent_probability(
+                        [age],
+                        pars,
+                        calibration["infectionHistory"],
+                        [flag["MJ"]],
+                        [flag["contact"]],
+                        [flag["renal"]],
+                    )[0]
+                )
             else:
                 p_inf = float(
                     infection_probability(
@@ -199,7 +225,7 @@ def _build_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict[
                         [flag["renal"]],
                     )[0]
                 )
-            p_recent = float(opts["baselineRecentLTBIProportion"])
+                p_recent = float(opts["baselineRecentLTBIProportion"])
             sens, spec = get_test_performance([bool(flag["BCG"])], opts)
             no_bcg_spec = get_counterfactual_no_bcg_specificity([bool(flag["BCG"])], opts)
             rows.append(
@@ -253,6 +279,7 @@ def _cached_strata(pars: dict[str, Any], calibration: dict[str, Any], opts: dict
         {
             "ageInfLogLambda": calibration["ageInfLogLambda"],
             "ageInfGamma": calibration["ageInfGamma"],
+            "infectionHistory": calibration.get("infectionHistory"),
             "lambdaEarly": calibration["lambdaEarly"],
             "lambdaLate": calibration["lambdaLate"],
             "screenWindow": opts["screenWindow"],

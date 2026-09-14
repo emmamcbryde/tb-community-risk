@@ -175,6 +175,11 @@ def _notify_progress(
 
 def build_strategy_metadata(config: dict[str, Any], reg: dict[str, Any]) -> dict[str, Any]:
     ltbi_state = resolve_ltbi_state_assumptions(config)
+    infection_history = (
+        config.get("ltbiStateAssumptions", {}).get("infectionPressureTrajectory")
+        if isinstance(config.get("ltbiStateAssumptions"), dict)
+        else None
+    )
     return {
         "testType": str(config["testType"]).upper(),
         "screeningStrategy": str(config["screeningStrategy"]).lower(),
@@ -215,6 +220,10 @@ def build_strategy_metadata(config: dict[str, Any], reg: dict[str, Any]) -> dict
         ],
         "ltbiStateAssumptionStatus": ltbi_state["status"],
         "ltbiStateProvisional": ltbi_state["provisional"],
+        "infectionPressureTrajectory": infection_history,
+        "baselineRecentLTBIDerivationMethod": ltbi_state.get(
+            "baselineRecentLTBIDerivationMethod"
+        ),
     }
 
 
@@ -353,5 +362,6 @@ def _calibration_key_payload(config: dict[str, Any]) -> dict[str, Any]:
         "calibrationPolicy",
         "referenceCalibrationArtifact",
         "naturalHistorySemantics",
+        "analysisBasis",
     ]
     return {field: config.get(field) for field in fields}

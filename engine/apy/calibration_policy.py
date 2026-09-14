@@ -57,6 +57,7 @@ def build_reference_calibration_artifact(config: dict[str, Any]) -> dict[str, An
         "targetAgeOR": calibration["targetAgeOR"],
         "readinessStatus": ltbi_state.get("status"),
         "provisional": bool(ltbi_state.get("provisional")),
+        "infectionHistory": calibration.get("infectionHistory"),
     }
     artifact["artifactHash"] = calibration_artifact_hash(artifact)
     _REFERENCE_ARTIFACT_CACHE[key] = deepcopy(artifact)
@@ -180,6 +181,7 @@ def _calibration_from_artifact(artifact: dict[str, Any], pars: dict[str, Any]) -
         "baselineRecentLTBIProportion": artifact.get("recentLTBIProportion"),
         "recentToRemoteTransitionRatePerYear": artifact.get("recentToRemoteTransitionRatePerYear"),
         "ltbiStateAssumptionStatus": artifact.get("recentLTBIProportionStatus"),
+        "infectionHistory": artifact.get("infectionHistory"),
         "zeroInfectionPrevalence": False,
     }
 

@@ -84,6 +84,8 @@ with st.expander("Caveats & technical information", expanded=False):
         - The provisional working route uses a compatibility placeholder for unresolved recent-versus-remote LTBI assumptions; this does not promote evidence readiness.
         - The inherited `10/770` active-TB calibration quantity remains unresolved and must not be interpreted as validated future progression from LTBI.
         - The implicit early/late progression structure is retained for compatibility with earlier APY analysis, not as measured recent-LTBI composition.
+        - The explicit recent/remote scientific scenario derives recent infection from a calibrated rising, steady or falling historical infection-pressure assumption. That derived recent fraction is not directly observed.
+        - The rising, steady and falling trajectory slopes are scenario assumptions; LTBI prevalence plus an age odds ratio cannot identify calendar-time infection trends.
         - Disease-risk odds ratios are applied as multiplicative hazard multipliers for compatibility; this remains scientifically provisional.
         - Active or near-baseline TB is not fully separated from future incident, preventable TB in the compatibility anchor.
         - Simulation intervals describe finite-population stochastic variation, not full parameter uncertainty.
@@ -92,3 +94,4 @@ with st.expander("Caveats & technical information", expanded=False):
         - Contract versions, package hashes and release commits are retained in exported manifests and workbooks.
         """
     )
+    st.markdown("Methods note: `docs/recent_remote_infection_history.md`")

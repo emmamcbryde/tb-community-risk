@@ -21,6 +21,11 @@ from engine.apy.cohort import (
 from engine.apy.config import normalise_config
 from engine.apy.eligibility import resolve_eligibility, screening_coverage_of_population
 from engine.apy.ltbi_state import require_numeric_ltbi_state_assumptions
+from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
+from engine.apy.infection_history import (
+    conditional_recent_probability,
+    prevalent_infection_probabilities,
+)
 from engine.apy.regimen import (
     apply_regimen_overrides,
     default_regimen_library,
@@ -202,6 +207,24 @@ def simulate_one_cohort(
         calibration["ageInfGamma"],
         rng,
     )
+    if calibration.get("infectionHistory"):
+        population["pInfection"] = prevalent_infection_probabilities(
+            population["ageYears"],
+            pars,
+            calibration["infectionHistory"],
+            population["MJ"],
+            population["contact"],
+            population["renal"],
+        )
+        population["infected"] = rng.random(n) < population["pInfection"]
+        population["pRecentGivenInfected"] = conditional_recent_probability(
+            population["ageYears"],
+            pars,
+            calibration["infectionHistory"],
+            population["MJ"],
+            population["contact"],
+            population["renal"],
+        )
     if calibration.get("zeroInfectionPrevalence"):
         population["pInfection"] = np.zeros(n, dtype=float)
         population["infected"] = np.zeros(n, dtype=bool)
@@ -212,7 +235,7 @@ def simulate_one_cohort(
         opts["screenWindow"],
         opts["followHorizon"],
         opts["earlyProgressionPeriodYears"],
-        opts["baselineRecentLTBIProportion"],
+        population.get("pRecentGivenInfected", opts["baselineRecentLTBIProportion"]),
         opts["recentToRemoteTransitionRatePerYear"],
     )
     recent_at_baseline, remote_at_baseline, t_recent_to_remote, t_active = (
@@ -221,7 +244,7 @@ def simulate_one_cohort(
             population["diseaseMultiplier"],
             calibration["lambdaEarly"],
             calibration["lambdaLate"],
-            opts["baselineRecentLTBIProportion"],
+            population.get("pRecentGivenInfected", opts["baselineRecentLTBIProportion"]),
             opts["recentToRemoteTransitionRatePerYear"],
             opts["screenWindow"],
             opts.get("naturalHistorySemantics"),
@@ -591,7 +614,7 @@ def _draw_ltbi_state_history(
     mult_disease,
     lambda_early: float,
     lambda_late: float,
-    baseline_recent_proportion: float,
+    baseline_recent_proportion,
     recent_to_remote_rate: float,
     screen_window: float,
     natural_history_semantics: str | None,
@@ -622,7 +645,11 @@ def _draw_ltbi_state_history(
             active_time[late_idx] = float(screen_window) + rng.exponential(scale=1.0 / late_rate)
         return recent, remote, transition_time, active_time
 
-    recent_draw = rng.random(len(idx_inf)) < float(baseline_recent_proportion)
+    if np.ndim(baseline_recent_proportion) == 0:
+        recent_probability = np.full(len(idx_inf), float(baseline_recent_proportion))
+    else:
+        recent_probability = np.asarray(baseline_recent_proportion, dtype=float)[idx_inf]
+    recent_draw = rng.random(len(idx_inf)) < np.clip(recent_probability, 0.0, 1.0)
     recent_idx = idx_inf[recent_draw]
     remote_idx = idx_inf[~recent_draw]
     recent[recent_idx] = True
@@ -657,7 +684,16 @@ def _simulation_options(config: dict[str, Any]) -> dict[str, Any]:
     cfg = normalise_config(config)
     timing = resolve_time_settings(cfg)
     eligibility = resolve_eligibility(cfg)
-    ltbi_state = require_numeric_ltbi_state_assumptions(cfg)
+    ltbi_state = resolve_ltbi_state_assumptions(cfg)
+    baseline_recent = ltbi_state["baselineRecentLTBIProportion"]
+    if baseline_recent is None:
+        if (
+            (cfg.get("ltbiStateAssumptions") or {}).get("baselineRecentLTBIDerivationMethod")
+            == "infection_history_trajectory"
+        ):
+            baseline_recent = 0.0
+        else:
+            require_numeric_ltbi_state_assumptions(cfg)
     screen_coverage_of_population = screening_coverage_of_population(
         cfg, eligibility["number"]
     )
@@ -691,7 +727,7 @@ def _simulation_options(config: dict[str, Any]) -> dict[str, Any]:
         "tstSpecificityBCG": coerce_probability(cfg.get("tstSpecificityBCG"), 0.55),
         "tstSpecificityNoBCG": coerce_probability(tst_no_bcg, 0.97),
         "baselineRecentLTBIProportion": float(
-            ltbi_state["baselineRecentLTBIProportion"]
+            baseline_recent
         ),
         "recentToRemoteTransitionRatePerYear": float(
             ltbi_state["recentToRemoteTransitionRatePerYear"]

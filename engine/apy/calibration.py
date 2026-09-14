@@ -12,7 +12,11 @@ from engine.apy.data import load_parameters_from_config
 from engine.apy.ltbi_state import (
     RECENT_TO_REMOTE_RATE_PER_YEAR,
     mixed_baseline_event_between,
-    require_numeric_ltbi_state_assumptions,
+    resolve_ltbi_state_assumptions,
+)
+from engine.apy.infection_history import (
+    DERIVATION_METHOD as INFECTION_HISTORY_DERIVATION_METHOD,
+    calibrate_infection_history,
 )
 from engine.apy.timing import resolve_time_settings
 
@@ -348,11 +352,31 @@ def calibrate_from_config(config: dict[str, Any]) -> dict[str, Any]:
     )
     early_late_ratio = _default_if_empty(cfg["earlyLateRatio"], 5)
     timing = resolve_time_settings(cfg)
-    ltbi_state = require_numeric_ltbi_state_assumptions(cfg)
+    ltbi_state = resolve_ltbi_state_assumptions(cfg)
 
     age_calibration = calibrate_age_infection_model(
         pars, target_inf_prev, cfg["targetAgeOR"]
     )
+    infection_history = None
+    if (
+        cfg.get("ltbiStateAssumptions", {}).get("baselineRecentLTBIDerivationMethod")
+        == INFECTION_HISTORY_DERIVATION_METHOD
+    ):
+        nested = cfg.get("ltbiStateAssumptions") or {}
+        infection_history = calibrate_infection_history(
+            pars,
+            target_prevalence=target_inf_prev,
+            target_age_or=cfg["targetAgeOR"],
+            trajectory=nested.get("infectionPressureTrajectory", "steady"),
+            trend_rate_per_year=nested.get("infectionPressureTrendRatePerYear"),
+            recent_window_years=nested.get("recentDefinitionYears") or 2.0,
+        )
+        ltbi_state["baselineRecentLTBIProportion"] = infection_history["recentFraction"]
+    elif ltbi_state["baselineRecentLTBIProportion"] is None:
+        raise ValueError(
+            "APY run requires ltbiStateAssumptions.baselineRecentLTBIProportion "
+            "or explicit ltbiStateAssumptions.developmentCompatibilityMode=true."
+        )
     hazard = calibrate_early_hazard(
         pars,
         age_calibration["logLambda"],
@@ -390,6 +414,7 @@ def calibrate_from_config(config: dict[str, Any]) -> dict[str, Any]:
             "recentToRemoteTransitionRatePerYear"
         ],
         "ltbiStateAssumptionStatus": ltbi_state["status"],
+        "infectionHistory": infection_history,
     }
 
 

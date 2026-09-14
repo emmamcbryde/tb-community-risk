@@ -78,7 +78,10 @@ else:
 
 ltbi_dev_compatibility_requested = False
 ltbi_state = resolve_ltbi_state_assumptions(config)
-unresolved_ltbi_state = ltbi_state.get("baselineRecentLTBIProportion") is None
+unresolved_ltbi_state = (
+    ltbi_state.get("baselineRecentLTBIProportion") is None
+    and ltbi_state.get("baselineRecentLTBIDerivationMethod") != "infection_history_trajectory"
+)
 if unresolved_ltbi_state:
     st.subheader("Recent versus remote LTBI assumption")
     st.warning("Choose the provisional working route on Set up, or review this assumption, before running.")
@@ -101,7 +104,10 @@ if st.button(run_label, type="primary"):
         progress = StreamlitProgressDisplay()
         progress.update(initialising_status())
         ltbi_state = resolve_ltbi_state_assumptions(config)
-        if ltbi_state.get("baselineRecentLTBIProportion") is None:
+        if (
+            ltbi_state.get("baselineRecentLTBIProportion") is None
+            and ltbi_state.get("baselineRecentLTBIDerivationMethod") != "infection_history_trajectory"
+        ):
             if not ltbi_dev_compatibility_requested:
                 st.info(
                     "Choose the provisional working route, or review and enter the "

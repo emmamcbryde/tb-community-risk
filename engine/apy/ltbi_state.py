@@ -39,10 +39,22 @@ NON_READY_LTBI_STATUSES = {
 def resolve_ltbi_state_assumptions(config: dict[str, Any]) -> dict[str, Any]:
     assumptions = canonicalise_ltbi_state_assumptions(config)["ltbiStateAssumptions"]
     value = assumptions.get(BASELINE_RECENT_KEY)
+    derivation = assumptions.get("baselineRecentLTBIDerivationMethod")
     compatibility_mode = bool(assumptions.get("developmentCompatibilityMode"))
     warnings = list(assumptions.get("warnings") or [])
     provisional = bool(assumptions.get("provisional") or compatibility_mode)
     if value is None or value == []:
+        if derivation == "infection_history_trajectory":
+            return _resolved(
+                baseline_recent=None,
+                transition_rate=assumptions.get(TRANSITION_RATE_KEY),
+                assumptions=assumptions,
+                warning=(
+                    "Recent infection is model-derived from the selected "
+                    "historical infection-pressure trajectory; it is not directly observed."
+                ),
+                provisional=True,
+            )
         if not compatibility_mode:
             return _resolved(
                 baseline_recent=None,
@@ -232,6 +244,12 @@ def enable_development_compatibility_mode(config: dict[str, Any]) -> dict[str, A
 
 def is_clinician_ready_ltbi_state(config: dict[str, Any]) -> bool:
     state = resolve_ltbi_state_assumptions(config)
+    if state["baselineRecentLTBIDerivationMethod"] == "infection_history_trajectory":
+        return (
+            state["status"] in CLINICIAN_READY_LTBI_STATUSES
+            and state["baselineRecentLTBIProportionStatus"] in CLINICIAN_READY_LTBI_STATUSES
+            and bool(str(state.get("baselineRecentLTBIProportionSource") or "").strip())
+        )
     return (
         state["baselineRecentLTBIProportion"] is not None
         and not state["provisional"]
@@ -389,7 +407,7 @@ def mixed_baseline_survival(
     transition_rate: float,
     baseline_recent_proportion: float,
 ):
-    p_recent = float(baseline_recent_proportion)
+    p_recent = np.asarray(baseline_recent_proportion, dtype=float)
     return (
         p_recent
         * recent_no_active_survival(
