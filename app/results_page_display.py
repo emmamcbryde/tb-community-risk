@@ -52,17 +52,23 @@ FRIENDLY_METRIC_LABELS = {
 }
 
 
-def results_rows_for_display(rows: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+def results_rows_for_display(
+    rows: list[dict[str, Any]] | None,
+    *,
+    model_type: str | None = "agent_based",
+) -> list[dict[str, Any]]:
     display_rows: list[dict[str, Any]] = []
+    deterministic = model_type == "expected_value"
+    central_column = "Expected value" if deterministic else "Median"
     for row in rows or []:
         metric = str(row.get("Metric", row.get("metric", "")))
         label = FRIENDLY_METRIC_LABELS.get(metric, metric)
         display_rows.append(
             {
                 "Outcome": label,
-                "Median": row.get("Median"),
-                "Low 95%": row.get("Low95", row.get("Low 95%")),
-                "High 95%": row.get("High95", row.get("High 95%")),
+                central_column: row.get("Median"),
+                "Low 95%": None if deterministic else row.get("Low95", row.get("Low 95%")),
+                "High 95%": None if deterministic else row.get("High95", row.get("High 95%")),
             }
         )
     return display_rows
@@ -71,6 +77,8 @@ def results_rows_for_display(rows: list[dict[str, Any]] | None) -> list[dict[str
 def key_metric_rows_for_display(
     key_rows: list[dict[str, Any]] | None,
     dynamic_rows: list[dict[str, Any]] | None,
+    *,
+    model_type: str | None = "agent_based",
 ) -> list[dict[str, Any]]:
     candidates = list(key_rows or []) + list(dynamic_rows or [])
     rows_by_metric = {
@@ -89,12 +97,14 @@ def key_metric_rows_for_display(
             continue
         selected.append(row)
         labels_seen.add(label)
-    return results_rows_for_display(selected)
+    return results_rows_for_display(selected, model_type=model_type)
 
 
 def detailed_rows_for_display(
     summary_rows: list[dict[str, Any]] | None,
     key_rows: list[dict[str, Any]] | None,
+    *,
+    model_type: str | None = "agent_based",
 ) -> list[dict[str, Any]]:
     key_metrics = {
         str(row.get("Metric", row.get("metric", "")))
@@ -106,4 +116,16 @@ def detailed_rows_for_display(
     ]
     if not details:
         details = list(summary_rows or [])
-    return results_rows_for_display(details)
+    return results_rows_for_display(details, model_type=model_type)
+
+
+def format_interval_cells_for_display(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    formatted = []
+    for row in rows:
+        out = dict(row)
+        if out.get("Low 95%") is None:
+            out["Low 95%"] = "N/A"
+        if out.get("High 95%") is None:
+            out["High 95%"] = "N/A"
+        formatted.append(out)
+    return formatted

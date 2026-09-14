@@ -56,12 +56,18 @@ def build_results_workbook(
     _write_rows_sheet(
         wb,
         "Headline_results",
-        _humanise_metric_rows(bundle.get("headline", {}).get("keyMetricsRows") or []),
+        _humanise_metric_rows(
+            bundle.get("headline", {}).get("keyMetricsRows") or [],
+            model_type=(bundle.get("metadata") or {}).get("modelType"),
+        ),
     )
     _write_rows_sheet(
         wb,
         "Summary_results",
-        _humanise_metric_rows(bundle.get("headline", {}).get("summaryRows") or []),
+        _humanise_metric_rows(
+            bundle.get("headline", {}).get("summaryRows") or [],
+            model_type=(bundle.get("metadata") or {}).get("modelType"),
+        ),
     )
     _write_natural_history(wb, bundle)
     _write_event_ledger(wb, bundle)
@@ -620,7 +626,8 @@ def _write_decision_analysis(
         _write_rows_sheet(wb, "Early_review_summary", early.get("posteriorProjectionSummary") or [])
 
 
-def _humanise_metric_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _humanise_metric_rows(rows: list[dict[str, Any]], *, model_type: str | None = "agent_based") -> list[dict[str, Any]]:
+    deterministic = model_type == "expected_value"
     out = []
     for row in rows:
         metric = row.get("Metric", row.get("metric", ""))
@@ -628,9 +635,9 @@ def _humanise_metric_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             {
                 "Metric": metric,
                 "Label": _metric_label(str(metric)),
-                "Median": row.get("Median"),
-                "Low95": row.get("Low95"),
-                "High95": row.get("High95"),
+                "ExpectedValue" if deterministic else "Median": row.get("Median"),
+                "Low95": None if deterministic else row.get("Low95"),
+                "High95": None if deterministic else row.get("High95"),
                 "Units": _metric_units(str(metric)),
             }
         )

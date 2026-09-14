@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import importlib
+import sys
 import unittest
 from pathlib import Path
+
+import streamlit as st
+from streamlit.testing.v1 import AppTest
 
 from app.icon_arrays import build_100_person_visual_data, icon_grid_value
 from app.results_page_display import (
     detailed_rows_for_display,
+    format_interval_cells_for_display,
     key_metric_rows_for_display,
     results_rows_for_display,
 )
@@ -58,6 +64,62 @@ class ResultsPagePresentationTests(unittest.TestCase):
         self.assertEqual(rows[0]["Outcome"], "People screened")
         self.assertEqual(rows[0]["Median"], 450.0)
 
+    def test_deterministic_rows_use_expected_value_and_na_intervals(self) -> None:
+        rows = results_rows_for_display(
+            [
+                {
+                    "Metric": "nScreened",
+                    "Median": 450.0,
+                    "Low95": 450.0,
+                    "High95": 450.0,
+                }
+            ],
+            model_type="expected_value",
+        )
+
+        self.assertEqual(
+            list(rows[0].keys()),
+            ["Outcome", "Expected value", "Low 95%", "High 95%"],
+        )
+        self.assertEqual(rows[0]["Expected value"], 450.0)
+        self.assertIsNone(rows[0]["Low 95%"])
+        self.assertIsNone(rows[0]["High 95%"])
+        formatted = format_interval_cells_for_display(rows)
+        self.assertEqual(formatted[0]["Low 95%"], "N/A")
+        self.assertEqual(formatted[0]["High 95%"], "N/A")
+
+    def test_rendered_deterministic_results_page_shows_na_intervals(self) -> None:
+        if not hasattr(st, "secrets"):
+            importlib.reload(st)
+        sys.modules["streamlit"] = st
+        app = AppTest.from_file(str(ROOT / "pages" / "3_Results.py"))
+        app.session_state["results_bundle"] = {
+            "metadata": {"modelType": "expected_value", "scenarioLabel": "Deterministic check"},
+            "headline": {
+                "keyMetricsRows": [
+                    {"Metric": "nScreened", "Median": 450.0, "Low95": 450.0, "High95": 450.0}
+                ],
+                "summaryRows": [
+                    {"Metric": "nScreened", "Median": 450.0, "Low95": 450.0, "High95": 450.0}
+                ],
+            },
+            "technical": {"eventLedger": {}, "interfaceConfig": {}},
+            "downloads": {},
+        }
+        app.session_state["economics_config"] = {}
+
+        app.run(timeout=30)
+
+        self.assertFalse(app.exception)
+        self.assertIn(
+            "Simulation intervals are not applicable to a single deterministic run.",
+            [caption.value for caption in app.caption],
+        )
+        rendered = app.dataframe[0].value
+        self.assertEqual(list(rendered.columns), ["Outcome", "Expected value", "Low 95%", "High 95%"])
+        self.assertEqual(rendered.loc[0, "Low 95%"], "N/A")
+        self.assertEqual(rendered.loc[0, "High 95%"], "N/A")
+
     def test_key_metrics_include_active_tb_comparator_intervention_and_reduction(self) -> None:
         key_rows = [{"Metric": "nScreened", "Median": 450, "Low95": 450, "High95": 450}]
         dynamic_rows = [
@@ -69,7 +131,7 @@ class ResultsPagePresentationTests(unittest.TestCase):
 
         labels = {
             row["Outcome"]
-            for row in key_metric_rows_for_display(key_rows, dynamic_rows)
+            for row in key_metric_rows_for_display(key_rows, dynamic_rows, model_type="agent_based")
         }
 
         self.assertIn("People screened", labels)
@@ -85,6 +147,7 @@ class ResultsPagePresentationTests(unittest.TestCase):
                 {"Metric": "nPreventedActiveTB", "Median": 12, "Low95": 4, "High95": 22},
             ],
             [],
+            model_type="agent_based",
         )
 
         labels = [row["Outcome"] for row in rows]
@@ -98,7 +161,7 @@ class ResultsPagePresentationTests(unittest.TestCase):
             {"Metric": "nADRstop", "Median": 3.0, "Low95": 0.0, "High95": 7.0},
         ]
 
-        details = detailed_rows_for_display(summary_rows, key_rows)
+        details = detailed_rows_for_display(summary_rows, key_rows, model_type="agent_based")
 
         self.assertEqual(len(details), 1)
         self.assertEqual(details[0]["Outcome"], "ADR-related stops")

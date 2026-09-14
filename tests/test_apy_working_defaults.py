@@ -14,6 +14,8 @@ from app.parameter_workspace import (
     PRIMARY_DALY_OUTCOME_PRESET,
     apply_parameter_workspace,
     build_parameter_workspace,
+    changed_analysis_settings_count,
+    changed_parameter_count,
     merge_parameter_display_edits,
     parameter_editor_rows,
     parameter_display_rows,
@@ -250,11 +252,13 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertNotIn("st.dataframe(advanced_rows", text)
 
     def test_start_page_exposes_provisional_default_run_acknowledgement(self) -> None:
-        text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
+        start_text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
+        run_text = (ROOT / "pages" / "2_Run_Model.py").read_text(encoding="utf-8")
 
-        self.assertIn("Recent versus remote LTBI assumption remains provisional", text)
-        self.assertIn("Run provisional working defaults", text)
-        self.assertIn("0% compatibility", text)
+        self.assertNotIn("Recent versus remote LTBI assumption remains provisional", start_text)
+        self.assertNotIn("Run provisional working defaults", start_text)
+        self.assertIn("Use provisional working route", run_text)
+        self.assertIn("Detailed caveats are in Evidence & Assumptions", run_text)
 
     def test_start_and_strategy_pages_show_resolved_demographic_profile(self) -> None:
         start_text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
@@ -280,10 +284,21 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertIn("Quick preview: 100 repetitions", workspace_text)
         self.assertIn("SA Health reference: 2,000 repetitions", workspace_text)
         self.assertIn("Random seed", text)
-        self.assertIn("Validate setup", text)
-        self.assertIn("Proceed to Run Analysis", text)
-        self.assertIn("Save or load setup", text)
+        self.assertNotIn("Validation and next action", text)
+        self.assertNotIn("Validate setup", text)
+        self.assertNotIn("Proceed to Run Analysis", text)
         self.assertIn("Restore APY demographic defaults", text)
+        self.assertEqual(text.count('label="Open Run Analysis"'), 1)
+
+    def test_set_up_page_uses_separate_collapsed_age_and_risk_tables(self) -> None:
+        text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("Age distribution and risk factors", text)
+        self.assertIn('st.expander("View age distribution", expanded=False)', text)
+        self.assertIn('st.expander("View risk factors", expanded=False)', text)
+        self.assertIn('"Age group"', text)
+        self.assertIn('"Risk factor"', text)
+        self.assertIn('"Proportion used by model"', text)
 
     def test_primary_parameter_workspace_has_no_duplicate_authoritative_model_paths(self) -> None:
         workspace = unified_default_session_state()["parameter_workspace"]
@@ -458,14 +473,16 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         next(button for button in app.button if button.label == "Use default parameters").click().run(timeout=30)
 
         analysis_type = next(radio for radio in app.radio if radio.label == "Analysis type")
-        self.assertEqual(analysis_type.value, "Simulated community variation")
+        self.assertEqual(analysis_type.value, "Simulated community variation — multiple stochastic runs")
         self.assertIn("Repetitions", [selectbox.label for selectbox in app.selectbox])
         self.assertIn("Random seed", [number_input.label for number_input in app.number_input])
 
-        analysis_type.set_value("Expected outcomes").run(timeout=30)
+        analysis_type.set_value("Expected outcomes — single deterministic run").run(timeout=30)
         self.assertEqual(app.session_state["config"]["analysisMethod"], "expected_value")
         self.assertNotIn("Repetitions", [selectbox.label for selectbox in app.selectbox])
         self.assertNotIn("Random seed", [number_input.label for number_input in app.number_input])
+        self.assertEqual(changed_parameter_count(app.session_state["parameter_workspace"]), 0)
+        self.assertGreater(changed_analysis_settings_count(app.session_state["parameter_workspace"]), 0)
 
     def test_start_page_wraps_arrow_safe_tables_in_streamlit_dataframe(self) -> None:
         text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
@@ -570,7 +587,7 @@ class APYWorkingDefaultsTests(unittest.TestCase):
     def test_quick_simulation_is_labelled_preview_and_sets_one_hundred_repetitions(self) -> None:
         state = unified_default_session_state()
         rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
-        next(row for row in rows if row["parameterId"] == "analysis.method")["currentValue"] = "Simulated community variation"
+        next(row for row in rows if row["parameterId"] == "analysis.method")["currentValue"] = "Simulated community variation — multiple stochastic runs"
         next(row for row in rows if row["parameterId"] == "analysis.simulation_mode")["currentValue"] = "Quick preview: 100 repetitions"
 
         config, _ = apply_parameter_workspace(state["config"], state["economics_config"], rows)
@@ -583,7 +600,7 @@ class APYWorkingDefaultsTests(unittest.TestCase):
     def test_repetitions_validation_rejects_invalid_interactive_values(self) -> None:
         workspace = unified_default_session_state()["parameter_workspace"]
         rows = [dict(row) for row in workspace["rows"]]
-        next(row for row in rows if row["parameterId"] == "analysis.method")["currentValue"] = "Simulated community variation"
+        next(row for row in rows if row["parameterId"] == "analysis.method")["currentValue"] = "Simulated community variation — multiple stochastic runs"
         reps = next(row for row in rows if row["parameterId"] == "analysis.n_reps")
 
         reps["currentValue"] = 0
@@ -618,6 +635,36 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         coverage = next(row for row in data if row["parameterId"] == "service.coverage")
         self.assertEqual(coverage["currentValue"], 0.4)
         self.assertTrue(coverage["changedFromDefault"])
+        wb.close()
+
+    def test_workbook_deterministic_summary_blanks_simulation_intervals(self) -> None:
+        state = unified_default_session_state()
+        config = dict(state["config"])
+        config["analysisMethod"] = "expected_value"
+        payload = build_results_workbook(
+            config=config,
+            economics_config=state["economics_config"],
+            bundle={
+                "metadata": {"modelType": "expected_value"},
+                "headline": {
+                    "keyMetricsRows": [
+                        {"Metric": "nScreened", "Median": 450.0, "Low95": 450.0, "High95": 450.0}
+                    ],
+                    "summaryRows": [],
+                },
+                "technical": {},
+            },
+        )
+        wb = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+        rows = list(wb["Headline_results"].iter_rows(values_only=True))
+        headers = list(rows[0])
+        data = dict(zip(headers, rows[1]))
+
+        self.assertIn("ExpectedValue", headers)
+        self.assertNotIn("Median", headers)
+        self.assertEqual(data["ExpectedValue"], 450.0)
+        self.assertIsNone(data["Low95"])
+        self.assertIsNone(data["High95"])
         wb.close()
 
 

@@ -24,10 +24,16 @@ PARAMETER_GROUPS = [
     "Analysis settings",
 ]
 MODEL_METHOD_LABELS = {
-    "expected_value": "Expected outcomes",
-    "agent_based": "Simulated community variation",
+    "expected_value": "Expected outcomes — single deterministic run",
+    "agent_based": "Simulated community variation — multiple stochastic runs",
 }
 MODEL_METHOD_CODES = {value: key for key, value in MODEL_METHOD_LABELS.items()}
+MODEL_METHOD_CODES.update(
+    {
+        "Expected outcomes": "expected_value",
+        "Simulated community variation": "agent_based",
+    }
+)
 SIMULATION_MODE_LABELS = {
     "quick_preview": "Quick preview: 100 repetitions",
     "intermediate": "Intermediate exploration: 500 repetitions",
@@ -90,7 +96,8 @@ def build_parameter_workspace(
         "configurationHash": preset["configurationHash"],
         "groups": PARAMETER_GROUPS,
         "rows": rows,
-        "changedCount": sum(1 for row in rows if row["changedFromDefault"]),
+        "changedCount": changed_parameter_count({"rows": rows}),
+        "analysisSettingsChangedCount": changed_analysis_settings_count({"rows": rows}),
         "validation": validate_parameter_workspace(rows),
     }
 
@@ -109,7 +116,8 @@ def validate_parameter_workspace(rows: list[dict[str, Any]]) -> dict[str, Any]:
         value = row.get("currentValue")
         parameter_id = row.get("parameterId")
         kind = row.get("editableType")
-        if parameter_id == "analysis.n_reps" and method_value in {"Expected outcomes", "expected_value"}:
+        method_code = MODEL_METHOD_CODES.get(str(method_value), str(method_value))
+        if parameter_id == "analysis.n_reps" and method_code == "expected_value":
             continue
         if row.get("isUserOverride") and value in (None, ""):
             messages.append(
@@ -119,7 +127,12 @@ def validate_parameter_workspace(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 }
             )
             continue
-        if kind == "select" and row.get("selectOptions") and value not in row.get("selectOptions"):
+        if (
+            kind == "select"
+            and row.get("selectOptions")
+            and value not in row.get("selectOptions")
+            and not (parameter_id == "analysis.method" and str(value) in MODEL_METHOD_CODES)
+        ):
             messages.append({"parameterId": parameter_id, "message": "Select one of the listed options."})
         if kind == "probability" and value not in (None, ""):
             number = _number_or_none(value)
@@ -242,8 +255,12 @@ def merge_parameter_display_edits(
             continue
         row["currentValue"] = new_value
         row["valueUsedByModel"] = new_value
-        row["effectiveSource"] = "User-defined"
-        row["isUserOverride"] = True
+        if _is_analysis_setting(row):
+            row["effectiveSource"] = _default_source_label(row)
+            row["isUserOverride"] = False
+        else:
+            row["effectiveSource"] = "User-defined"
+            row["isUserOverride"] = True
         row["changedFromDefault"] = True
     return out
 
@@ -251,7 +268,8 @@ def merge_parameter_display_edits(
 def parameter_summary(config: dict[str, Any], economics_config: dict[str, Any]) -> list[dict[str, Any]]:
     metadata = economics_config.get("metadata") or {}
     eligible = _eligible_population(config)
-    method = MODEL_METHOD_LABELS.get(str(config.get("analysisMethod") or "expected_value"), "Expected outcomes")
+    method_code = str(config.get("analysisMethod") or "expected_value")
+    method = MODEL_METHOD_LABELS.get(method_code, "Expected outcomes — single deterministic run")
     discounting = economics_config.get("discounting") or {}
     profiles = discounting.get("profiles") or {}
     primary = profiles.get("primary") or {}
@@ -278,12 +296,24 @@ def parameter_summary(config: dict[str, Any], economics_config: dict[str, Any]) 
         },
         {"Item": "Health outcome", "Value": "DALYs"},
         {"Item": "Analysis method", "Value": method},
-        {"Item": "Repetitions", "Value": "Not applicable" if method == "Expected outcomes" else config.get("nReps")},
+        {"Item": "Repetitions", "Value": "Not applicable" if method_code == "expected_value" else config.get("nReps")},
     ]
 
 
 def changed_parameter_count(workspace: dict[str, Any] | None) -> int:
-    return sum(1 for row in (workspace or {}).get("rows") or [] if row.get("changedFromDefault"))
+    return sum(
+        1
+        for row in (workspace or {}).get("rows") or []
+        if row.get("changedFromDefault") and not _is_analysis_setting(row)
+    )
+
+
+def changed_analysis_settings_count(workspace: dict[str, Any] | None) -> int:
+    return sum(
+        1
+        for row in (workspace or {}).get("rows") or []
+        if row.get("changedFromDefault") and _is_analysis_setting(row)
+    )
 
 
 def _parameter_row(
@@ -303,7 +333,7 @@ def _parameter_row(
         "sourceDefaultValue": _source_default_value(default_config, default_econ, spec),
         "valueUsedByModel": _value_used_by_model(config, econ, spec, current),
         "effectiveSource": effective_source,
-        "isUserOverride": effective_source == "User-defined",
+        "isUserOverride": effective_source == "User-defined" and not _is_analysis_setting(spec),
         "changedFromDefault": _normalise_compare(current) != _normalise_compare(default),
     }
 
@@ -528,6 +558,8 @@ def _value_used_by_model(
 
 
 def _effective_source(spec: dict[str, Any], current: Any, default: Any) -> str:
+    if _is_analysis_setting(spec):
+        return str(spec.get("source") or "")
     if current not in (None, "") and _normalise_compare(current) != _normalise_compare(default):
         return "User-defined"
     if str(spec.get("parameterId") or "").startswith("demography."):
@@ -539,6 +571,10 @@ def _default_source_label(row: dict[str, Any]) -> str:
     if str(row.get("parameterId") or "").startswith("demography."):
         return "Repository APY default"
     return str(row.get("source") or "")
+
+
+def _is_analysis_setting(row: dict[str, Any]) -> bool:
+    return str(row.get("parameterId") or "").startswith("analysis.")
 
 
 def _set_value(config: dict[str, Any], econ: dict[str, Any], spec: dict[str, Any], value: Any) -> None:

@@ -13,15 +13,15 @@ by the Streamlit application.
 
 3. Click **Use default parameters**.
 
-4. Review **Current working defaults** and expand **Age distribution and risk
-   factors**.
+4. Review **Current working defaults**. Expand **View age distribution** and
+   **View risk factors** if you need to check the resolved APY profile.
 
 5. In **Analysis settings**, choose the analysis mode:
 
-   - `Deterministic expected-value analysis` for a rapid exploratory
+   - `Expected outcomes — single deterministic run` for a rapid exploratory
      calculation with no repetitions or random seed; or
-   - `Stochastic individual-based analysis` for repeated simulated
-     populations.
+   - `Simulated community variation — multiple stochastic runs` for repeated
+     simulated populations.
 
 6. For stochastic analysis, choose either:
 

@@ -23,8 +23,8 @@ st.title("Explore Decisions")
 st.caption("Compare strategies, sensitivity ranges and early screening results.")
 
 MODEL_TYPE_LABELS = {
-    "expected_value": "Expected outcomes",
-    "agent_based": "Simulated community variation",
+    "expected_value": "Expected outcomes — single deterministic run",
+    "agent_based": "Simulated community variation — multiple stochastic runs",
 }
 STRATEGY_LABELS = {
     "prevent": "Prioritise people most likely to avoid active TB",

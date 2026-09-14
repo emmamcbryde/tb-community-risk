@@ -31,7 +31,7 @@ def build_unified_working_default_preset() -> dict[str, Any]:
         {
             "scenarioLabel": "APY / SA Health working-default analysis",
             "analysisMethod": "agent_based",
-            "analysisMethodLabel": "Simulated community variation",
+            "analysisMethodLabel": "Simulated community variation — multiple stochastic runs",
             "simulationMode": "standard",
             "simulationModeLabel": "SA Health reference: 2,000 repetitions",
             "screeningWindowYears": 2,

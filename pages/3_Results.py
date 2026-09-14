@@ -11,6 +11,7 @@ from app.display import (
 from app.icon_arrays import build_100_person_visual_data, render_100_person_summary
 from app.results_page_display import (
     detailed_rows_for_display,
+    format_interval_cells_for_display,
     key_metric_rows_for_display,
 )
 from app.results_workbook import build_results_workbook
@@ -19,6 +20,14 @@ from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
 
 
 init_session_state()
+
+
+def _page_link(path: str, *, label: str) -> None:
+    try:
+        st.page_link(path, label=label)
+    except Exception:
+        st.button(label, disabled=True)
+
 
 st.title("Results")
 
@@ -65,16 +74,18 @@ if isinstance(dynamic_comparison, dict):
 key_rows = key_metric_rows_for_display(
     headline.get("keyMetricsRows"),
     dynamic_metric_rows,
+    model_type=model_type,
 )
 detail_rows = detailed_rows_for_display(
     headline.get("summaryRows"),
     headline.get("keyMetricsRows"),
+    model_type=model_type,
 )
 
 st.subheader("Key metrics")
 if key_rows:
     st.dataframe(
-        arrow_safe_dataframe(key_rows),
+        arrow_safe_dataframe(format_interval_cells_for_display(key_rows)),
         use_container_width=True,
         hide_index=True,
     )
@@ -87,12 +98,12 @@ if model_type == "agent_based":
         "simulated populations. They are not confidence intervals."
     )
 else:
-    st.caption("Median, low 95% and high 95% are identical for deterministic expected-value results.")
+    st.caption("Simulation intervals are not applicable to a single deterministic run.")
 
 st.subheader("Detailed summary table")
 if detail_rows:
     st.dataframe(
-        arrow_safe_dataframe(detail_rows),
+        arrow_safe_dataframe(format_interval_cells_for_display(detail_rows)),
         use_container_width=True,
         hide_index=True,
     )
@@ -158,4 +169,4 @@ st.warning(
     "Outputs remain provisional where evidence inputs are unresolved. Review "
     "Evidence & Assumptions before using results as final policy evidence."
 )
-st.page_link("pages/4_Economics.py", label="Continue to Health Economics")
+_page_link("pages/4_Economics.py", label="Continue to Health Economics")

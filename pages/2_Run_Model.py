@@ -35,7 +35,10 @@ sync_backend_status(status)
 if status.get("error"):
     st.error(status["error"])
 
-method_label = MODEL_METHOD_LABELS.get(str(config.get("analysisMethod") or "expected_value"), "Expected outcomes")
+method_label = MODEL_METHOD_LABELS.get(
+    str(config.get("analysisMethod") or "expected_value"),
+    "Expected outcomes — single deterministic run",
+)
 is_stochastic = str(config.get("analysisMethod")) == "agent_based"
 reps = int(float(config.get("nReps") or 0))
 seed = int(float(config.get("seed") or 1))
