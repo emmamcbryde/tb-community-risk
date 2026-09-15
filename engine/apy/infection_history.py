@@ -18,8 +18,53 @@ _CALIBRATION_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
 
 TRAJECTORY_MODEL = "calibrated_historical_infection_pressure"
 DERIVATION_METHOD = "infection_history_trajectory"
+COMPATIBILITY_REFERENCE_BASIS = "sa_health_matlab_v9_compatibility_reference"
+EXPLICIT_EXPERIMENTAL_BASIS = "explicit_recent_remote_scientific_scenario"
 DEFAULT_RECENT_WINDOW_YEARS = 2.0
 DEFAULT_TREND_ABS_PER_YEAR = 0.01
+EXPERIMENTAL_STATUS_LABEL = "Experimental - not the report reference"
+EXPERIMENTAL_ECONOMICS_GUARD_MESSAGE = (
+    "Health-economic conclusions are not available for this experimental "
+    "infection-history scenario because future TB progression calibration is not "
+    "yet validated. Restore the SA Health reference to reproduce the report analysis."
+)
+EXPERIMENTAL_READINESS_ITEMS = [
+    {
+        "item": "Provenance and interpretation of 10/770",
+        "status": "unresolved",
+        "reason": "The inherited target is not yet established as future incident progression from LTBI.",
+    },
+    {
+        "item": "Baseline active TB separated from future incident progression",
+        "status": "unresolved",
+        "reason": "Prevalent or near-baseline TB is not represented as a distinct compartment.",
+    },
+    {
+        "item": "Recent and remote progression hazards",
+        "status": "unresolved",
+        "reason": "Hazards are software-calibrated scenario values, not reviewed natural-history estimates.",
+    },
+    {
+        "item": "Two-year infection timing versus early higher-risk state duration",
+        "status": "unresolved",
+        "reason": "Infection acquired within two years and a five-year mean early-risk state are related but not equivalent definitions.",
+    },
+    {
+        "item": "Age odds-ratio interpretation",
+        "status": "unresolved",
+        "reason": "The implemented age association is an odds ratio for LTBI prevalence in >=25 versus <25 years.",
+    },
+    {
+        "item": "Joint risk-factor multiplier handling",
+        "status": "unresolved",
+        "reason": "Disease-risk odds ratios are multiplied as hazard multipliers and can produce extreme joint risks.",
+    },
+    {
+        "item": "Deterministic-stochastic reconciliation",
+        "status": "unresolved",
+        "reason": "Deterministic compatibility expected values do not reproduce the stochastic reference mean.",
+    },
+]
 TRAJECTORY_PRESETS = {
     "rising": {
         "label": "Rising",
@@ -100,6 +145,12 @@ def configure_infection_history_assumptions(config: dict[str, Any], trajectory: 
             "infectionPressureTrajectoryLabel": preset["label"],
             "infectionPressureTrendRatePerYear": preset["trendRatePerYear"],
             "recentDefinitionYears": DEFAULT_RECENT_WINDOW_YEARS,
+            "stateDefinition": (
+                "Infection acquired within the preceding two years is derived "
+                "from the historical infection-pressure model. The early "
+                "higher-progression-risk state is separate and currently uses a "
+                "five-year mean residence time before lower-risk progression."
+            ),
             "baselineRecentLTBIProportionSource": (
                 "Model-derived from calibrated historical infection-pressure "
                 f"trajectory ({preset['label'].lower()} scenario)."
@@ -114,13 +165,14 @@ def configure_infection_history_assumptions(config: dict[str, Any], trajectory: 
             "provisional": True,
             "developmentCompatibilityMode": False,
             "warnings": [
-                "Recent infection is model-derived from the selected transmission-history assumption; it is not directly observed."
+                "Infection acquired within the preceding two years is model-derived from the selected transmission-history assumption; it is not directly observed.",
+                "The two-year infection-timing definition is not equivalent to the early higher-progression-risk state duration.",
             ],
         }
     )
     out["ltbiStateAssumptions"] = nested
-    out["analysisBasis"] = "explicit_recent_remote_scientific_scenario"
-    out["naturalHistorySemantics"] = "explicit_recent_remote_scientific_scenario"
+    out["analysisBasis"] = EXPLICIT_EXPERIMENTAL_BASIS
+    out["naturalHistorySemantics"] = EXPLICIT_EXPERIMENTAL_BASIS
     return out
 
 
@@ -148,7 +200,7 @@ def configure_compatibility_reference_assumptions(config: dict[str, Any]) -> dic
         }
     )
     out["ltbiStateAssumptions"] = nested
-    out["analysisBasis"] = "sa_health_matlab_v9_compatibility_reference"
+    out["analysisBasis"] = COMPATIBILITY_REFERENCE_BASIS
     out.pop("naturalHistorySemantics", None)
     return out
 
@@ -159,6 +211,45 @@ def has_explicit_infection_history(config: dict[str, Any]) -> bool:
         isinstance(nested, dict)
         and nested.get("baselineRecentLTBIDerivationMethod") == DERIVATION_METHOD
     )
+
+
+def is_experimental_infection_history_config(config: dict[str, Any] | None) -> bool:
+    if not isinstance(config, dict):
+        return False
+    return (
+        config.get("analysisBasis") == EXPLICIT_EXPERIMENTAL_BASIS
+        or config.get("naturalHistorySemantics") == EXPLICIT_EXPERIMENTAL_BASIS
+        or has_explicit_infection_history(config)
+    )
+
+
+def infection_history_readiness_status() -> dict[str, Any]:
+    return {
+        "status": "not_validated_for_decision_use",
+        "label": EXPERIMENTAL_STATUS_LABEL,
+        "items": [dict(item) for item in EXPERIMENTAL_READINESS_ITEMS],
+    }
+
+
+def infection_history_basis_from_results(results_bundle: dict[str, Any] | None) -> str:
+    if not isinstance(results_bundle, dict):
+        return ""
+    metadata = results_bundle.get("metadata") if isinstance(results_bundle.get("metadata"), dict) else {}
+    if metadata.get("analysisBasis"):
+        return str(metadata.get("analysisBasis"))
+    technical = results_bundle.get("technical") if isinstance(results_bundle.get("technical"), dict) else {}
+    config = technical.get("interfaceConfig") if isinstance(technical.get("interfaceConfig"), dict) else {}
+    return str(config.get("analysisBasis") or "")
+
+
+def is_experimental_infection_history_results(results_bundle: dict[str, Any] | None) -> bool:
+    if not isinstance(results_bundle, dict):
+        return False
+    if infection_history_basis_from_results(results_bundle) == EXPLICIT_EXPERIMENTAL_BASIS:
+        return True
+    technical = results_bundle.get("technical") if isinstance(results_bundle.get("technical"), dict) else {}
+    config = technical.get("interfaceConfig") if isinstance(technical.get("interfaceConfig"), dict) else {}
+    return is_experimental_infection_history_config(config)
 
 
 def calibrate_infection_history(

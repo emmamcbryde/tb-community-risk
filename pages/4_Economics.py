@@ -37,6 +37,11 @@ from app.state import (
     sync_backend_status,
 )
 from engine.apy.evidence import assess_apy_reference_readiness, load_apy_evidence_registry
+from engine.apy.infection_history import (
+    EXPERIMENTAL_ECONOMICS_GUARD_MESSAGE,
+    EXPERIMENTAL_STATUS_LABEL,
+    is_experimental_infection_history_results,
+)
 from engine.apy.sa_health_reference_package import build_same_ledger_economic_scenario_comparison
 from engine.apy.working_defaults import build_unified_working_default_preset
 
@@ -510,6 +515,7 @@ if not econ_config:
     st.session_state["economics_config"] = econ_config
 
 ledger = (results_bundle or {}).get("technical", {}).get("eventLedger", {}) if isinstance(results_bundle, dict) else {}
+experimental_ledger = is_experimental_infection_history_results(results_bundle)
 workspace_state = reconcile_workspace_state(
     st.session_state.get("health_econ_workspace"),
     econ_config,
@@ -529,6 +535,10 @@ status_rows = [
         "Item": "Economic assumptions",
         "Status": "SA Health working defaults" if override_count == 0 else f"{override_count} user-defined override(s)",
     },
+    {
+        "Item": "Epidemiological basis",
+        "Status": EXPERIMENTAL_STATUS_LABEL if experimental_ledger else "SA Health report reference",
+    },
     {"Item": "Perspective", "Status": (econ_config.get("metadata") or {}).get("perspective", "")},
     {
         "Item": "Currency and price year",
@@ -540,6 +550,19 @@ status_rows = [
     },
 ]
 st.dataframe(arrow_safe_dataframe(status_rows), use_container_width=True, hide_index=True)
+if experimental_ledger:
+    st.warning(EXPERIMENTAL_ECONOMICS_GUARD_MESSAGE)
+    st.info(
+        "You can still download the current economic-assumption configuration, "
+        "but report-facing health-economic results and scenario comparisons are disabled for this ledger."
+    )
+    st.download_button(
+        "Download economics assumptions JSON",
+        data=economics_assumptions_json(econ_config),
+        file_name=f"{safe_download_stem(scenario_label, 'experimental_economics_assumptions')}.json",
+        mime="application/json",
+    )
+    st.stop()
 st.info(
     "Economic changes recalculate costs and DALYs from the current screening outcomes. "
     "Change population, testing, treatment or targeting on Set up, then run the analysis again."

@@ -127,6 +127,8 @@ def metadata_from_config(
         "populationPresetId": config.get("populationPresetId"),
         "modelType": model_type,
         "backend": backend,
+        "analysisBasis": config.get("analysisBasis"),
+        "naturalHistorySemantics": config.get("naturalHistorySemantics"),
         "screeningWindow": config.get("screenWindow"),
         "screeningWindowYears": config.get("screeningWindowYears", config.get("screenWindow")),
         "earlyProgressionPeriodYears": config.get("earlyProgressionPeriodYears"),
@@ -143,6 +145,7 @@ def metadata_from_config(
         "ltbiStateAssumptionNotes": ltbi_state.get("notes"),
         "ltbiStateWarning": ltbi_state.get("warning"),
         "ltbiStateProvisional": ltbi_state.get("provisional"),
+        "baselineRecentLTBIDerivationMethod": ltbi_state.get("baselineRecentLTBIDerivationMethod"),
         "modelVersion": model_version,
         "calibrationPolicy": config.get("calibrationPolicy"),
         "referenceCalibrationHash": (

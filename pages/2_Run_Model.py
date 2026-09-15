@@ -17,6 +17,7 @@ from app.state import (
     sync_backend_status,
 )
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
+from engine.apy.infection_history import EXPERIMENTAL_STATUS_LABEL, is_experimental_infection_history_config
 
 
 init_session_state()
@@ -40,6 +41,7 @@ method_label = MODEL_METHOD_LABELS.get(
     "Expected outcomes — single deterministic run",
 )
 is_stochastic = str(config.get("analysisMethod")) == "agent_based"
+is_experimental = is_experimental_infection_history_config(config)
 reps = int(float(config.get("nReps") or 0))
 seed = int(float(config.get("seed") or 1))
 if is_stochastic and reps == 2000 and seed == 1:
@@ -58,6 +60,10 @@ summary_rows = [
         "Value": "Stochastic individual-based analysis" if is_stochastic else "Deterministic expected-value analysis",
     },
     {"Setting": "Run type", "Value": run_type},
+    {
+        "Setting": "Epidemiological basis",
+        "Value": EXPERIMENTAL_STATUS_LABEL if is_experimental else "SA Health report reference",
+    },
     {"Setting": "Screening test", "Value": config.get("testType")},
     {"Setting": "Preventive treatment", "Value": config.get("regimen")},
     {"Setting": "Coverage", "Value": config.get("screenCoverage")},
@@ -68,6 +74,11 @@ if is_stochastic:
 st.dataframe(arrow_safe_dataframe(summary_rows), use_container_width=True, hide_index=True)
 if is_stochastic and reps < 2000:
     st.warning("Preview analyses are useful for checking setup but do not reproduce the SA Health reference.")
+if is_experimental:
+    st.warning(
+        "Experimental infection-history analysis is not the SA Health report reference "
+        "and is not validated for health-economic reporting."
+    )
 
 if st.session_state.get("results_stale") or st.session_state.get("dirty_config"):
     st.warning("Inputs have changed. Run the analysis again before interpreting results.")

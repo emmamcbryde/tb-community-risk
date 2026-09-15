@@ -41,6 +41,9 @@ def build_results_bundle(
             "scenarioLabel": interface_config.get("scenarioLabel"),
             "modelType": model_type,
             "analysisMethod": interface_config.get("analysisMethod"),
+            "analysisBasis": interface_config.get("analysisBasis") or (ledger_metadata or {}).get("analysisBasis"),
+            "naturalHistorySemantics": interface_config.get("naturalHistorySemantics")
+            or (ledger_metadata or {}).get("naturalHistorySemantics"),
             "nReps": interface_config.get("nReps") if model_type == "agent_based" else None,
             "seed": interface_config.get("seed") if model_type == "agent_based" else None,
             "contractVersion": "apy_results_bundle_v9_python_port",
