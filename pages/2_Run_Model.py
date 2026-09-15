@@ -42,6 +42,7 @@ method_label = MODEL_METHOD_LABELS.get(
 )
 is_stochastic = str(config.get("analysisMethod")) == "agent_based"
 is_experimental = is_experimental_infection_history_config(config)
+trajectory_label = ((config.get("ltbiStateAssumptions") or {}).get("infectionPressureTrajectoryLabel"))
 reps = int(float(config.get("nReps") or 0))
 seed = int(float(config.get("seed") or 1))
 if is_stochastic and reps == 2000 and seed == 1:
@@ -62,7 +63,11 @@ summary_rows = [
     {"Setting": "Run type", "Value": run_type},
     {
         "Setting": "Epidemiological basis",
-        "Value": EXPERIMENTAL_STATUS_LABEL if is_experimental else "SA Health report reference",
+        "Value": (
+            f"Experimental infection-history scenario — {trajectory_label or 'selected trajectory'}"
+            if is_experimental
+            else "SA Health report reference"
+        ),
     },
     {"Setting": "Screening test", "Value": config.get("testType")},
     {"Setting": "Preventive treatment", "Value": config.get("regimen")},

@@ -84,6 +84,16 @@ def risk_factor_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
     return list(resolved_demographic_profile(config)["riskRows"])
 
 
+def start_risk_factor_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "Risk factor": row["Risk factor"],
+            "Proportion used by model": _format_integer_percent(row.get("Prevalence")),
+        }
+        for row in risk_factor_rows(config)
+    ]
+
+
 def demographic_profile_hash(config: dict[str, Any]) -> tuple[Any, ...]:
     profile = resolved_demographic_profile(config)
     age = tuple((row["Age group"], round(float(row["Proportion"]), 12)) for row in profile["ageRows"])
@@ -221,5 +231,12 @@ def _relative_path(value: str) -> str:
 def _format_percent(value: Any) -> str:
     try:
         return f"{float(value) * 100:.2f}%"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _format_integer_percent(value: Any) -> str:
+    try:
+        return f"{float(value) * 100:.0f}%"
     except (TypeError, ValueError):
         return ""

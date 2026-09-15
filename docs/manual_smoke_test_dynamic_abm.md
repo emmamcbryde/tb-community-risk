@@ -21,7 +21,7 @@ streamlit run streamlit_app.py
 ## APY ABM workflow
 
 1. Open **LTBI Screening Tool > Set up**.
-2. Click **Use default parameters**.
+2. Confirm the APY / SA Health defaults are already loaded.
 3. Open **LTBI Screening Tool > Run Analysis**.
 4. Run the APY screening analysis.
 5. Confirm `st.session_state["results_bundle"]` exists.

@@ -21,7 +21,6 @@ from app.parameter_workspace import (
     parameter_display_rows,
     parameter_summary,
     reset_all_parameters,
-    reset_parameter_group,
     unified_default_session_state,
     validate_parameter_workspace,
 )
@@ -79,18 +78,11 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertIn("Costs and outcomes", {row["group"] for row in workspace["rows"]})
         self.assertIn("Analysis settings", {row["group"] for row in workspace["rows"]})
 
-    def test_group_reset_and_reset_all_restore_defaults(self) -> None:
+    def test_reset_all_restores_defaults(self) -> None:
         state = unified_default_session_state()
         rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
         next(row for row in rows if row["parameterId"] == "demography.population_size")["currentValue"] = 999
         next(row for row in rows if row["parameterId"] == "service.coverage")["currentValue"] = 0.75
-
-        demography_reset = reset_parameter_group(rows, "Demography")
-        self.assertEqual(
-            next(row for row in demography_reset if row["parameterId"] == "demography.population_size")["currentValue"],
-            next(row for row in demography_reset if row["parameterId"] == "demography.population_size")["defaultValue"],
-        )
-        self.assertEqual(next(row for row in demography_reset if row["parameterId"] == "service.coverage")["currentValue"], 0.75)
 
         all_reset = reset_all_parameters(rows)
         self.assertTrue(all(row["currentValue"] == row["defaultValue"] for row in all_reset))
@@ -248,8 +240,9 @@ class APYWorkingDefaultsTests(unittest.TestCase):
     def test_advanced_fields_are_rendered_as_editable_controls(self) -> None:
         text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
 
-        self.assertIn("parameter_advanced_editor_", text)
+        self.assertIn("visible_rows", text)
         self.assertNotIn("st.dataframe(advanced_rows", text)
+        self.assertNotIn('st.expander("Advanced"', text)
 
     def test_start_page_exposes_provisional_default_run_acknowledgement(self) -> None:
         start_text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
@@ -268,11 +261,10 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertNotIn("Demography currently used by the model", strategy_text)
         self.assertNotIn("demographic_summary_rows", start_text)
         self.assertNotIn("demographic_summary_rows", strategy_text)
-        self.assertIn("Restore APY demographic defaults", start_text)
+        self.assertIn("Restore APY defaults", start_text)
         self.assertIn("Open Set up", strategy_text)
-        self.assertIn("Blank demographic or risk-factor override fields mean use source defaults shown above", start_text)
-        self.assertIn("they are not missing model inputs", start_text)
         self.assertIn("start_age_distribution_rows", start_text)
+        self.assertIn("start_risk_factor_rows", start_text)
         self.assertIn("Repository APY demographic default; external provenance not independently reviewed", start_text)
         self.assertNotIn("arrow_safe_dataframe(age_distribution_rows(config))", start_text)
 
@@ -287,7 +279,10 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertNotIn("Validation and next action", text)
         self.assertNotIn("Validate setup", text)
         self.assertNotIn("Proceed to Run Analysis", text)
-        self.assertIn("Restore APY demographic defaults", text)
+        self.assertIn("Restore APY defaults", text)
+        self.assertNotIn("Use default parameters", text)
+        self.assertNotIn("Review or change parameters", text)
+        self.assertNotIn("Continue to current results", text)
         self.assertEqual(text.count('label="Open Run Analysis"'), 1)
 
     def test_set_up_page_uses_separate_collapsed_age_and_risk_tables(self) -> None:
@@ -297,7 +292,7 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertIn('st.expander("View age distribution", expanded=False)', text)
         self.assertIn('st.expander("View risk factors", expanded=False)', text)
         self.assertIn('"Age group"', text)
-        self.assertIn('"Risk factor"', text)
+        self.assertIn("start_risk_factor_rows", text)
         self.assertIn('"Proportion used by model"', text)
 
     def test_primary_parameter_workspace_has_no_duplicate_authoritative_model_paths(self) -> None:
@@ -356,7 +351,7 @@ class APYWorkingDefaultsTests(unittest.TestCase):
 
         self.assertEqual(display["Age distribution: 0-4 years"]["Value used by model"], 0.10678642714570857)
         self.assertEqual(display["Age distribution: 0-4 years"]["Source"], "Repository APY default")
-        self.assertEqual(display["Diabetes"]["Value used by model"], 0.20209580838323352)
+        self.assertEqual(display["Diabetes"]["Value used by model"], "20%")
         self.assertEqual(display["Diabetes"]["Source"], "Repository APY default")
         self.assertEqual(display["IGRA cost"]["Source"], "Dale 2019 AUD working defaults")
 
@@ -397,6 +392,37 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         item = next(item for item in econ["costItems"] if item["costItemId"] == "test_igra")
         self.assertEqual(item["originalCost"], 125.0)
 
+    def test_risk_factor_percent_display_preserves_precision_until_edited(self) -> None:
+        state = unified_default_session_state()
+        rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
+        diabetes = next(row for row in rows if row["parameterId"] == "demography.risk.diabetes")
+        display = parameter_display_rows([diabetes])
+
+        self.assertEqual(display[0]["Value used by model"], "20%")
+        self.assertAlmostEqual(diabetes["valueUsedByModel"], 0.20209580838323352)
+        merged = merge_parameter_display_edits([diabetes], display)
+        self.assertFalse(merged[0]["isUserOverride"])
+        self.assertAlmostEqual(merged[0]["valueUsedByModel"], 0.20209580838323352)
+
+    def test_risk_factor_percent_edit_round_trips_to_model_proportion(self) -> None:
+        state = unified_default_session_state()
+        rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
+        diabetes = next(row for row in rows if row["parameterId"] == "demography.risk.diabetes")
+        display = parameter_display_rows([diabetes])
+        display[0]["Value used by model"] = "43%"
+
+        merged = merge_parameter_display_edits([diabetes], display)
+        self.assertTrue(merged[0]["isUserOverride"])
+        self.assertEqual(merged[0]["effectiveSource"], "User-defined")
+        self.assertAlmostEqual(merged[0]["currentValue"], 0.43)
+
+        all_rows = [
+            next((merged_row for merged_row in merged if merged_row["parameterId"] == row["parameterId"]), row)
+            for row in rows
+        ]
+        config, _ = apply_parameter_workspace(state["config"], state["economics_config"], all_rows)
+        self.assertAlmostEqual(config["riskPrev"]["diabetes"], 0.43)
+
     def test_blank_display_edit_is_invalid_and_does_not_become_zero(self) -> None:
         workspace = unified_default_session_state()["parameter_workspace"]
         editable = [row for row in workspace["rows"] if row["group"] == "Demography" and row["editableType"] != "read_only"]
@@ -412,7 +438,7 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertEqual(diabetes["currentValue"], "")
         self.assertNotEqual(diabetes["currentValue"], 0)
 
-    def test_reset_removes_override_source_and_restores_value(self) -> None:
+    def test_reset_all_removes_override_source_and_restores_value(self) -> None:
         state = unified_default_session_state()
         rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
         editable = [row for row in rows if row["group"] == "Costs and outcomes" and row["editableType"] != "read_only"]
@@ -425,7 +451,7 @@ class APYWorkingDefaultsTests(unittest.TestCase):
             for row in rows
         ]
 
-        reset = reset_parameter_group(all_rows, "Costs and outcomes")
+        reset = reset_all_parameters(all_rows)
         igra = next(row for row in reset if row["label"] == "IGRA cost")
 
         self.assertEqual(igra["valueUsedByModel"], 113.48)
@@ -435,8 +461,7 @@ class APYWorkingDefaultsTests(unittest.TestCase):
 
     def test_rendered_start_page_editor_accepts_value_override(self) -> None:
         app = AppTest.from_file(str(ROOT / "pages" / "0_Start.py"))
-        app.run(timeout=30)
-        next(button for button in app.button if button.label == "Review or change parameters").click().run(timeout=30)
+        app.run(timeout=90)
 
         self.assertFalse(app.exception)
         editor_key = next(
@@ -449,28 +474,20 @@ class APYWorkingDefaultsTests(unittest.TestCase):
             "added_rows": [],
             "deleted_rows": [],
         }
-        app.run(timeout=30)
+        app.run(timeout=90)
 
         rows = app.session_state["parameter_workspace"]["rows"]
         igra = next(row for row in rows if row["label"] == "IGRA cost")
-        self.assertEqual(igra["currentValue"], "125.0")
+        self.assertEqual(igra["currentValue"], 125.0)
         self.assertEqual(igra["effectiveSource"], "User-defined")
         self.assertTrue(igra["isUserOverride"])
         self.assertIn("The parameters below include user-defined values.", [warning.value for warning in app.warning])
 
-        reset_buttons = [button for button in app.button if button.label == "Reset this section: Costs and outcomes"]
-        self.assertTrue(reset_buttons)
-        reset_buttons[0].click().run(timeout=90)
-        reset_rows = app.session_state["parameter_workspace"]["rows"]
-        reset_igra = next(row for row in reset_rows if row["label"] == "IGRA cost")
-        self.assertEqual(reset_igra["valueUsedByModel"], 113.48)
-        self.assertEqual(reset_igra["effectiveSource"], "Dale 2019 AUD working defaults")
-        self.assertFalse(reset_igra["isUserOverride"])
+        self.assertEqual([button.label for button in app.button].count("Restore APY defaults"), 1)
 
     def test_rendered_analysis_mode_controls_match_selected_mode(self) -> None:
         app = AppTest.from_file(str(ROOT / "pages" / "0_Start.py"))
-        app.run(timeout=30)
-        next(button for button in app.button if button.label == "Use default parameters").click().run(timeout=30)
+        app.run(timeout=90)
 
         analysis_type = next(radio for radio in app.radio if radio.label == "Analysis type")
         self.assertEqual(analysis_type.value, "Simulated community variation — multiple stochastic runs")

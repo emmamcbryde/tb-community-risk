@@ -80,6 +80,7 @@ with st.expander("Evidence registry", expanded=False):
 with st.expander("Caveats & technical information", expanded=False):
     st.markdown(
         """
+        - This tool supports planning and sequencing decisions. It does not recommend denying care to any person or group.
         - The primary SA Health working reference uses the frozen software-compatible stochastic anchor; it excludes dynamic transmission effects.
         - Deterministic expected-value runs do not use repetitions or random seeds; stochastic runs use the selected repetition count and seed.
         - The provisional working route uses a compatibility placeholder for unresolved recent-versus-remote LTBI assumptions; this does not promote evidence readiness.

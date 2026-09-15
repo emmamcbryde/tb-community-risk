@@ -225,7 +225,7 @@ def parameter_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "Parameter": row.get("label"),
-            "Value used by model": row.get("valueUsedByModel"),
+            "Value used by model": _display_value_for_row(row),
             "Unit": row.get("unit"),
             "Source": "User-defined" if row.get("isUserOverride") else _default_source_label(row),
         }
@@ -250,11 +250,14 @@ def merge_parameter_display_edits(
     out = deepcopy(rows)
     for row, edited in zip(out, edited_rows):
         new_value = edited.get("Value used by model")
-        old_effective = row.get("valueUsedByModel")
-        if _semantically_same_display_value(new_value, old_effective, row.get("editableType")):
+        old_display = _display_value_for_row(row)
+        if str(new_value) == str(old_display):
             continue
-        row["currentValue"] = new_value
-        row["valueUsedByModel"] = new_value
+        model_value = _model_value_from_display(row, new_value)
+        if _semantically_same_display_value(model_value, row.get("valueUsedByModel"), row.get("editableType")):
+            continue
+        row["currentValue"] = model_value
+        row["valueUsedByModel"] = model_value
         if _is_analysis_setting(row):
             row["effectiveSource"] = _default_source_label(row)
             row["isUserOverride"] = False
@@ -761,15 +764,58 @@ def _coerce_value(value: Any, editable_type: str) -> Any:
     if editable_type in {"probability", "nonnegative_number", "years", "money"}:
         if value in (None, ""):
             return None
-        return float(value)
+        number = _number_or_none(value)
+        if number is None:
+            raise ValueError(f"Value must be numeric: {value}")
+        return float(number)
     if editable_type == "select" and value in MODEL_METHOD_CODES:
         return MODEL_METHOD_CODES[value]
     return value
 
 
+def _display_value_for_row(row: dict[str, Any]) -> Any:
+    if _risk_parameter_key(row):
+        value = row.get("valueUsedByModel")
+        if value in (None, ""):
+            return ""
+        try:
+            return f"{float(value) * 100:.0f}%"
+        except (TypeError, ValueError):
+            return str(value)
+    return row.get("valueUsedByModel")
+
+
+def _model_value_from_display(row: dict[str, Any], value: Any) -> Any:
+    if _risk_parameter_key(row):
+        return _percent_text_to_proportion(value)
+    return value
+
+
+def _percent_text_to_proportion(value: Any) -> Any:
+    if value in (None, ""):
+        return value
+    text = str(value).strip()
+    try:
+        if text.endswith("%"):
+            return float(text[:-1].strip()) / 100.0
+        number = float(text)
+    except (TypeError, ValueError):
+        return value
+    if number > 1:
+        return number / 100.0
+    return number
+
+
 def _number_or_none(value: Any) -> float | None:
     if value in (None, ""):
         return None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.endswith("%"):
+            try:
+                return float(text[:-1].strip()) / 100.0
+            except (TypeError, ValueError):
+                return None
     try:
         return float(value)
     except (TypeError, ValueError):

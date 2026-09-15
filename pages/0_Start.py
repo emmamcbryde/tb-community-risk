@@ -6,9 +6,8 @@ from typing import Any
 import streamlit as st
 
 from app.demographic_profile import (
-    restore_apy_demographic_defaults,
-    risk_factor_rows,
     start_age_distribution_rows,
+    start_risk_factor_rows,
 )
 from app.display import arrow_safe_dataframe
 from app.parameter_workspace import (
@@ -21,10 +20,7 @@ from app.parameter_workspace import (
     changed_parameter_count,
     merge_parameter_display_edits,
     parameter_editor_rows,
-    parameter_summary,
     parameter_display_rows,
-    reset_all_parameters,
-    reset_parameter_group,
     unified_default_session_state,
     validate_parameter_workspace,
 )
@@ -48,10 +44,6 @@ from engine.apy.infection_history import (
     infection_history_readiness_status,
     is_experimental_infection_history_results,
 )
-
-
-init_session_state()
-
 
 def _page_link(path: str, *, label: str) -> None:
     try:
@@ -79,7 +71,30 @@ def _load_unified_defaults(*, show_workspace: bool) -> None:
     st.session_state["last_economics_run_at"] = ""
     st.session_state["last_run_at"] = ""
     st.session_state.pop("recent_ltbi_run_route", None)
+    st.session_state.pop("infection_history_trajectory_label", None)
     st.session_state.pop("health_econ_workspace", None)
+    sync_backend_status(get_backend().status())
+
+
+def _restore_unified_defaults() -> None:
+    previous_config = deepcopy(st.session_state.get("config"))
+    previous_econ = deepcopy(st.session_state.get("economics_config"))
+    state = unified_default_session_state()
+    st.session_state["apy_backend_name"] = "python_apy"
+    st.session_state["config"] = state["config"]
+    st.session_state["economics_config"] = state["economics_config"]
+    st.session_state["parameter_workspace"] = state["parameter_workspace"]
+    st.session_state["working_default_preset"] = state["working_default_preset"]
+    st.session_state["parameter_workspace_visible"] = True
+    st.session_state["parameter_workspace_validation"] = None
+    st.session_state.pop("recent_ltbi_run_route", None)
+    st.session_state.pop("infection_history_trajectory_label", None)
+    st.session_state.pop("health_econ_workspace", None)
+    _bump_parameter_editor_version()
+    if previous_config != state["config"]:
+        mark_config_changed()
+    if previous_econ != state["economics_config"] and previous_config == state["config"]:
+        mark_economics_changed()
     sync_backend_status(get_backend().status())
 
 
@@ -228,13 +243,15 @@ def _render_infection_history_controls(config: dict[str, Any]) -> None:
             if st.button("Enable experimental infection-history analysis"):
                 st.session_state["config"] = configure_infection_history_assumptions(config, "steady")
                 st.session_state.pop("recent_ltbi_run_route", None)
+                st.session_state["infection_history_trajectory_label"] = "Steady"
                 _sync_workspace_after_direct_config_change()
                 st.rerun()
             return
 
-        if st.button("Restore SA Health report reference"):
+        if st.button("Return to SA Health report reference"):
             st.session_state["config"] = configure_compatibility_reference_assumptions(config)
             st.session_state.pop("recent_ltbi_run_route", None)
+            st.session_state.pop("infection_history_trajectory_label", None)
             _sync_workspace_after_direct_config_change()
             st.rerun()
 
@@ -247,6 +264,7 @@ def _render_infection_history_controls(config: dict[str, Any]) -> None:
             "Historical TB infection pressure",
             labels,
             index=labels.index(current_label) if current_label in labels else labels.index("Steady"),
+            key="infection_history_trajectory_label",
             help=(
                 "Rising means infection pressure has increased toward the present; "
                 "falling means it has declined toward the present."
@@ -463,31 +481,16 @@ def _render_parameter_workspace() -> None:
     workspace = _current_workspace()
     if not workspace:
         return
-    st.subheader("Review or change parameters")
+    st.subheader("Parameters")
     st.caption(
-        "These grouped inputs update the same configuration used by the analysis. "
-        "Changing a value does not change its evidence source or review status. "
-        "Blank demographic or risk-factor override fields mean use source defaults shown above; "
-        "they are not missing model inputs."
+        "Edit the Value used by model column to create a user-defined override. "
+        "Risk-factor prevalence values are shown as percentages; entering 43% is applied as 0.43."
     )
     scientific_changes = changed_parameter_count(workspace)
     analysis_changes = changed_analysis_settings_count(workspace)
     st.metric("Scientific parameter overrides", scientific_changes)
     if analysis_changes:
         st.info("Analysis settings changed. Rerun analysis before interpreting previous results.")
-    top_cols = st.columns([1, 1, 3])
-    if top_cols[0].button("Use all defaults", use_container_width=True):
-        _set_workspace_rows(reset_all_parameters(workspace["rows"]))
-        _bump_parameter_editor_version()
-        st.session_state["parameter_workspace_validation"] = None
-        st.success("Defaults restored.")
-        st.stop()
-    if top_cols[1].button("Reset all changes", use_container_width=True):
-        _set_workspace_rows(reset_all_parameters(workspace["rows"]))
-        _bump_parameter_editor_version()
-        st.session_state["parameter_workspace_validation"] = None
-        st.success("Defaults restored.")
-        st.stop()
 
     edited_rows: list[dict[str, Any]] = []
     override_rows = [
@@ -512,105 +515,59 @@ def _render_parameter_workspace() -> None:
     for tab, group in zip(tabs, visible_groups):
         with tab:
             group_rows = [row for row in workspace["rows"] if row.get("group") == group]
-            if st.button(f"Reset this section: {group}", key=f"reset_{group}"):
-                _set_workspace_rows(reset_parameter_group(workspace["rows"], group))
-                _bump_parameter_editor_version(group)
-                st.session_state["parameter_workspace_validation"] = None
-                st.success(f"{group} defaults restored.")
-                st.stop()
-            standard_rows = [row for row in group_rows if not row.get("advanced")]
-            advanced_rows = [
+            visible_rows = [
                 row
                 for row in group_rows
-                if row.get("advanced")
-                and not str(row.get("parameterId") or "").startswith("demography.age.")
+                if not str(row.get("parameterId") or "").startswith("demography.age.")
+                and row.get("operationalStatus") != "descriptive_metadata"
             ]
             st.caption("Rows where Source is User-defined contain user-entered overrides.")
-            read_only_rows = [row for row in standard_rows if row.get("editableType") == "read_only"]
-            editable_rows = [row for row in standard_rows if row.get("editableType") != "read_only"]
-            if read_only_rows:
-                st.dataframe(
-                    arrow_safe_dataframe(parameter_display_rows(read_only_rows)),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-            edited = _editable_parameter_table(editable_rows, key=f"parameter_editor_{group}")
-            edited_rows.extend(merge_parameter_display_edits(editable_rows, edited))
-            edited_rows.extend(read_only_rows)
-            with st.expander("Advanced"):
-                advanced_read_only = [row for row in advanced_rows if row.get("editableType") == "read_only"]
-                advanced_editable = [row for row in advanced_rows if row.get("editableType") != "read_only"]
-                if advanced_read_only:
-                    st.dataframe(
-                        arrow_safe_dataframe(parameter_display_rows(advanced_read_only)),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-                advanced_edited = _editable_parameter_table(
-                    advanced_editable,
-                    key=f"parameter_advanced_editor_{group}",
-                )
-                edited_rows.extend(merge_parameter_display_edits(advanced_editable, advanced_edited))
-                edited_rows.extend(advanced_read_only)
+            edited = _editable_parameter_table(visible_rows, key=f"parameter_editor_{group}")
+            edited_rows.extend(merge_parameter_display_edits(visible_rows, edited))
 
     if edited_rows:
+        edited_by_id = {row.get("parameterId"): row for row in edited_rows}
+        complete_rows = [edited_by_id.get(row.get("parameterId"), row) for row in workspace["rows"]]
         previous_rows = deepcopy(workspace["rows"])
-        _set_workspace_rows(edited_rows)
+        _set_workspace_rows(complete_rows)
         workspace = st.session_state["parameter_workspace"]
         if _rows_changed(previous_rows, workspace["rows"]):
-            st.session_state["parameter_workspace_validation"] = None
-            st.rerun()
+            validation = validate_parameter_workspace(workspace["rows"])
+            st.session_state["parameter_workspace_validation"] = validation
+            if validation["isValid"]:
+                try:
+                    applied_workspace = build_parameter_workspace(
+                        st.session_state["config"],
+                        st.session_state["economics_config"],
+                    )
+                    model_changed, economics_changed = _workspace_change_scope(applied_workspace["rows"], workspace["rows"])
+                    cfg, econ = apply_parameter_workspace(
+                        st.session_state["config"],
+                        st.session_state["economics_config"],
+                        workspace["rows"],
+                    )
+                    cfg["workingDefaultPresetId"] = workspace.get("presetId")
+                    cfg["workingDefaultPresetVersion"] = workspace.get("presetVersion")
+                    econ.setdefault("metadata", {})["workingDefaultPresetId"] = workspace.get("presetId")
+                    econ["metadata"]["workingDefaultPresetVersion"] = workspace.get("presetVersion")
+                    st.session_state["config"] = cfg
+                    st.session_state["economics_config"] = econ
+                    st.session_state["parameter_workspace"] = build_parameter_workspace(cfg, econ)
+                    if model_changed:
+                        mark_config_changed()
+                    if economics_changed and not model_changed:
+                        mark_economics_changed()
+                    st.rerun()
+                except Exception as exc:
+                    record_message("error", f"Could not apply parameters: {exc}")
+                    st.error("Could not apply the selected parameters.")
+            else:
+                st.rerun()
 
     validation = st.session_state.get("parameter_workspace_validation")
-    col_validate, col_apply = st.columns(2)
-    if col_validate.button("Validate parameters", type="primary", use_container_width=True):
-        validation = validate_parameter_workspace(workspace["rows"])
-        st.session_state["parameter_workspace_validation"] = validation
-        if validation["isValid"]:
-            st.success("Parameters are structurally safe to apply.")
-        else:
-            st.error("Some parameters need correction before they can be applied.")
-    elif validation:
-        if validation.get("isValid"):
-            st.success("Parameters are structurally safe to apply.")
-        else:
-            st.error("Some parameters need correction before they can be applied.")
-
-    can_apply = bool(validation and validation.get("isValid"))
-    if col_apply.button("Apply parameters", disabled=not can_apply, use_container_width=True):
-        try:
-            applied_workspace = build_parameter_workspace(
-                st.session_state["config"],
-                st.session_state["economics_config"],
-            )
-            model_changed, economics_changed = _workspace_change_scope(applied_workspace["rows"], workspace["rows"])
-            cfg, econ = apply_parameter_workspace(
-                st.session_state["config"],
-                st.session_state["economics_config"],
-                workspace["rows"],
-            )
-            cfg["workingDefaultPresetId"] = workspace.get("presetId")
-            cfg["workingDefaultPresetVersion"] = workspace.get("presetVersion")
-            econ.setdefault("metadata", {})["workingDefaultPresetId"] = workspace.get("presetId")
-            econ["metadata"]["workingDefaultPresetVersion"] = workspace.get("presetVersion")
-            st.session_state["config"] = cfg
-            st.session_state["economics_config"] = econ
-            st.session_state["parameter_workspace"] = build_parameter_workspace(cfg, econ)
-            if model_changed:
-                mark_config_changed()
-            if economics_changed and not model_changed:
-                mark_economics_changed()
-            st.success("Parameters applied to the current analysis.")
-        except Exception as exc:
-            record_message("error", f"Could not apply parameters: {exc}")
-            st.error("Could not apply the selected parameters.")
-    if not can_apply and validation and validation.get("messages"):
-        st.warning("Apply is disabled until the listed parameter errors are fixed.")
-        st.dataframe(
-            arrow_safe_dataframe(validation["messages"]),
-            use_container_width=True,
-            hide_index=True,
-        )
+    if validation and not validation.get("isValid"):
+        st.error("Some parameters need correction before they can be used.")
+        st.dataframe(arrow_safe_dataframe(validation["messages"]), use_container_width=True, hide_index=True)
 
 
 def _render_age_risk_summary(config: dict[str, Any]) -> None:
@@ -625,13 +582,7 @@ def _render_age_risk_summary(config: dict[str, Any]) -> None:
         }
         for row in start_age_distribution_rows(config)
     ]
-    risk_rows = [
-        {
-            "Risk factor": row["Risk factor"],
-            "Proportion used by model": _format_percent(row.get("Prevalence")),
-        }
-        for row in risk_factor_rows(config)
-    ]
+    risk_rows = start_risk_factor_rows(config)
     with st.expander("View age distribution", expanded=False):
         st.dataframe(
             arrow_safe_dataframe(age_rows),
@@ -644,20 +595,11 @@ def _render_age_risk_summary(config: dict[str, Any]) -> None:
             use_container_width=True,
             hide_index=True,
         )
-    if st.button("Restore APY demographic defaults"):
-        restored = restore_apy_demographic_defaults(config)
-        if restored != config:
-            st.session_state["config"] = restored
-            st.session_state.pop("recent_ltbi_run_route", None)
-            st.session_state["parameter_workspace"] = build_parameter_workspace(
-                restored,
-                st.session_state.get("economics_config") or {},
-            )
-            mark_config_changed()
-            st.success("APY demographic defaults restored. Rerun epidemiology before using previous results.")
-            st.rerun()
-        st.info("APY demographic defaults are already loaded.")
 
+
+init_session_state()
+if not isinstance(st.session_state.get("config"), dict) or not isinstance(st.session_state.get("economics_config"), dict):
+    _load_unified_defaults(show_workspace=True)
 
 st.title("Set up")
 st.write(
@@ -665,54 +607,25 @@ st.write(
     "LTBI Screening Decision Tool. Changes to population, testing, treatment "
     "or targeting inputs require a new analysis run."
 )
-st.info(
-    "This tool supports planning and sequencing decisions. It does not recommend "
-    "denying care to any person or group."
-)
-
-col_default, col_review, col_results = st.columns(3)
-with col_default:
-    if st.button("Use default parameters", type="primary", use_container_width=True):
-        try:
-            _load_unified_defaults(show_workspace=False)
-            st.success("APY / SA Health working defaults loaded.")
-        except Exception as exc:
-            record_message("error", f"Could not load working defaults: {exc}")
-            st.error("Could not load the working defaults.")
-with col_review:
-    if st.button("Review or change parameters", use_container_width=True):
-        try:
-            if not isinstance(st.session_state.get("config"), dict):
-                _load_unified_defaults(show_workspace=True)
-            else:
-                st.session_state.pop("recent_ltbi_run_route", None)
-                st.session_state["parameter_workspace_visible"] = True
-            st.success("Parameter workspace is ready.")
-        except Exception as exc:
-            record_message("error", f"Could not open parameter workspace: {exc}")
-            st.error("Could not open the parameter workspace.")
-with col_results:
-    if st.session_state.get("results_bundle"):
-        _page_link("pages/3_Results.py", label="Continue to current results")
-    else:
-        st.button("Continue to current results", disabled=True, use_container_width=True)
 
 config = st.session_state.get("config")
 econ = st.session_state.get("economics_config")
 if isinstance(config, dict) and isinstance(econ, dict):
-    st.subheader("Current working defaults")
-    st.caption("These are editable working defaults. Some APY-specific evidence inputs remain provisional.")
-    st.dataframe(
-        arrow_safe_dataframe(parameter_summary(config, econ)),
-        use_container_width=True,
-        hide_index=True,
-    )
-    _render_age_risk_summary(config)
+    if has_explicit_infection_history(config):
+        nested = config.get("ltbiStateAssumptions") or {}
+        trajectory = str(nested.get("infectionPressureTrajectoryLabel") or nested.get("infectionPressureTrajectory") or "Steady")
+        st.warning(f"Analysis basis: Experimental infection-history scenario — {trajectory}")
+    else:
+        st.success("Analysis basis: SA Health report reference")
     _render_infection_history_controls(config)
     _render_analysis_settings_controls(config)
-
-if st.session_state.get("parameter_workspace_visible"):
     _render_parameter_workspace()
+    _render_age_risk_summary(st.session_state["config"])
+
+if st.button("Restore APY defaults", use_container_width=True):
+    _restore_unified_defaults()
+    st.success("APY / SA Health defaults restored.")
+    st.rerun()
 
 if isinstance(st.session_state.get("config"), dict):
     _page_link("pages/2_Run_Model.py", label="Open Run Analysis")
