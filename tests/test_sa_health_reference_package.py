@@ -214,7 +214,7 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         self.assertIn("delivery_scenario_comparison_rows", page)
 
     def test_rendered_health_economics_page_leads_with_decision_result(self) -> None:
-        app = AppTest.from_file(str(ROOT / "pages" / "4_Economics.py"), default_timeout=30)
+        app = AppTest.from_file(str(ROOT / "pages" / "4_Economics.py"), default_timeout=60)
         app.session_state["config"] = self.package["config"]
         app.session_state["results_bundle"] = {
             "metadata": {"scenarioLabel": "test_reference"},
@@ -246,14 +246,38 @@ class SAHealthReferencePackageTests(unittest.TestCase):
             ["Existing resources", "Standalone programme", "Shared with other programmes"],
         )
         self.assertEqual(len(set(scenarios["Active TB averted"])), 1)
+        self.assertIn("Quadrant", scenarios.columns)
+        self.assertIn("Classification", scenarios.columns)
+        self.assertIn("Arithmetic ICER", scenarios.columns)
+        self.assertEqual(
+            str(scenarios.loc[scenarios["Scenario"] == "Existing resources", "Quadrant"].iloc[0]),
+            "Lower right",
+        )
         self.assertIn(
             "Dominant",
-            str(scenarios.loc[scenarios["Scenario"] == "Existing resources", "ICER/classification"].iloc[0]),
+            str(scenarios.loc[scenarios["Scenario"] == "Existing resources", "Classification"].iloc[0]),
         )
         self.assertIn(
-            "per DALY averted",
-            str(scenarios.loc[scenarios["Scenario"] == "Standalone programme", "ICER/classification"].iloc[0]),
+            "-AUD",
+            str(scenarios.loc[scenarios["Scenario"] == "Existing resources", "Arithmetic ICER"].iloc[0]),
         )
+        self.assertEqual(
+            str(scenarios.loc[scenarios["Scenario"] == "Standalone programme", "Quadrant"].iloc[0]),
+            "Upper right",
+        )
+        self.assertIn(
+            "Higher cost with health gain",
+            str(scenarios.loc[scenarios["Scenario"] == "Standalone programme", "Classification"].iloc[0]),
+        )
+        self.assertIn(
+            "AUD",
+            str(scenarios.loc[scenarios["Scenario"] == "Standalone programme", "Arithmetic ICER"].iloc[0]),
+        )
+        source = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
+        self.assertIn("DALYs averted compared with business as usual", source)
+        self.assertIn("Incremental cost compared with business as usual (AUD)", source)
+        self.assertIn("Business as usual", source)
+        self.assertIn("st.altair_chart(_cost_effectiveness_plane_chart", source)
 
     def test_economic_changes_do_not_alter_event_counts(self) -> None:
         ledger = self.package["epidemiology"]

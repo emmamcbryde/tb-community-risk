@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -164,8 +165,8 @@ def icer_classification(incremental_cost: Any, dalys_averted: Any) -> dict[str, 
     label = result["classification"]
     if label == "Dominant":
         display = "Dominant - better health and lower cost"
-    elif label == "Increased cost with health gain":
-        display = f"{_money(result['icer'])} per DALY averted"
+    elif label == "Higher cost with health gain":
+        display = "Higher cost with health gain"
     elif label == "Dominated":
         display = "Dominated - higher cost without health gain"
     elif label == "Trade-off":
@@ -173,6 +174,14 @@ def icer_classification(incremental_cost: Any, dalys_averted: Any) -> dict[str, 
     else:
         display = "ICER not calculable"
     return {**result, "display": display}
+
+
+def _signed_icer(value: Any) -> str:
+    number = _number(value)
+    if number is None:
+        return "Not calculable"
+    sign = "-" if number < 0 else ""
+    return f"{sign}AUD {abs(number):,.0f} per DALY averted"
 
 
 def _classification(econ_results: dict[str, Any] | None) -> str:
@@ -493,11 +502,14 @@ def delivery_scenario_comparison_rows(
 def _delivery_scenario_row(label: str, econ_results: dict[str, Any]) -> dict[str, Any]:
     values = primary_economic_values(econ_results)
     classification = values["classification"]
+    arithmetic_icer = _divide(values["incrementalCost"], values["dalysAverted"])
     return {
         "Scenario": label,
         "Incremental cost": _signed_money(values["incrementalCost"]),
         "DALYs averted": _decimal(values["dalysAverted"], 1),
-        "ICER/classification": "Dominant" if classification["classification"] == "Dominant" else classification["display"],
+        "Quadrant": _quadrant(values["dalysAverted"], values["incrementalCost"]),
+        "Classification": "Dominant" if classification["classification"] == "Dominant" else classification["display"],
+        "Arithmetic ICER": _signed_icer(arithmetic_icer),
         "Active TB averted": _decimal(values["activeTBAverted"], 1),
         "_incrementalCostRaw": values["incrementalCost"],
         "_dalysAvertedRaw": values["dalysAverted"],
@@ -516,6 +528,126 @@ def break_even_rows(econ_results: dict[str, Any] | None) -> list[dict[str, str]]
             "Interpretation": "Discounted cost that could be added before the intervention ceases to be cost-saving under these assumptions.",
         }
     ]
+
+
+def cost_effectiveness_plane_rows(
+    *,
+    results_bundle: dict[str, Any] | None,
+    economics_config: dict[str, Any],
+    current_economics: dict[str, Any] | None,
+    controls: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not isinstance(results_bundle, dict):
+        return []
+    reference_econ = run_event_ledger_health_economics(
+        _clone_bundle_with_running_duration(results_bundle, int(DELIVERY_SCENARIO_DEFAULTS["standaloneRunningYears"])),
+        build_unified_working_default_preset()["economicsConfig"],
+    )
+    running_years = int(float(controls.get("standaloneRunningYears") or 0))
+    standalone_config = _delivery_scenario_config(
+        economics_config,
+        setup_cost=float(controls.get("standaloneSetupCost") or 0.0),
+        annual_running_cost=float(controls.get("standaloneAnnualRunningCost") or 0.0),
+        running_years=running_years,
+        travel_outreach_cost=float(controls.get("standaloneTravelOutreachCost") or 0.0),
+        staff_support_cost=float(controls.get("standaloneStaffSupportCost") or 0.0),
+        attribution_share=1.0,
+        scenario_name="Standalone programme",
+    )
+    standalone_econ = _run_delivery_scenario(results_bundle, standalone_config, running_years=running_years)
+    rows = [_plane_origin_row()]
+    rows.append(_plane_row("SA Health reference", reference_econ))
+    if current_economics:
+        rows.append(_plane_row("Current assumptions", current_economics))
+    rows.append(_plane_row("Standalone programme", standalone_econ))
+    return rows
+
+
+def _plane_origin_row() -> dict[str, Any]:
+    return {
+        "Scenario": "Business as usual",
+        "DALYs averted compared with business as usual": 0.0,
+        "Incremental cost compared with business as usual (AUD)": 0.0,
+        "Quadrant": "Origin",
+        "Classification": "Business as usual",
+        "Arithmetic ICER": "Not applicable",
+    }
+
+
+def _plane_row(label: str, econ_results: dict[str, Any]) -> dict[str, Any]:
+    values = primary_economic_values(econ_results)
+    inc = values["incrementalCost"]
+    dalys = values["dalysAverted"]
+    classification = values["classification"]
+    return {
+        "Scenario": label,
+        "DALYs averted compared with business as usual": dalys,
+        "Incremental cost compared with business as usual (AUD)": inc,
+        "Quadrant": _quadrant(dalys, inc),
+        "Classification": "Dominant" if classification["classification"] == "Dominant" else classification["display"],
+        "Arithmetic ICER": _signed_icer(_divide(inc, dalys)),
+    }
+
+
+def _quadrant(dalys_averted: Any, incremental_cost: Any) -> str:
+    x = _number(dalys_averted)
+    y = _number(incremental_cost)
+    if x is None or y is None:
+        return "Unavailable"
+    if abs(x) < 1e-12 and abs(y) < 1e-12:
+        return "Origin"
+    if x > 0 and y < 0:
+        return "Lower right"
+    if x > 0 and y > 0:
+        return "Upper right"
+    if x < 0 and y > 0:
+        return "Upper left"
+    if x < 0 and y < 0:
+        return "Lower left"
+    return "On axis"
+
+
+def _divide(a: Any, b: Any) -> float | None:
+    a_num = _number(a)
+    b_num = _number(b)
+    if a_num is None or b_num is None or abs(b_num) < 1e-12:
+        return None
+    return a_num / b_num
+
+
+def _cost_effectiveness_plane_chart(rows: list[dict[str, Any]]) -> alt.Chart:
+    frame = pd.DataFrame(rows)
+    x_col = "DALYs averted compared with business as usual"
+    y_col = "Incremental cost compared with business as usual (AUD)"
+    points = (
+        alt.Chart(frame)
+        .mark_point(filled=True, size=120)
+        .encode(
+            x=alt.X(f"{x_col}:Q", title=x_col),
+            y=alt.Y(f"{y_col}:Q", title=y_col),
+            color=alt.Color("Scenario:N", legend=alt.Legend(title="Scenario")),
+            tooltip=[
+                alt.Tooltip("Scenario:N"),
+                alt.Tooltip(f"{x_col}:Q", format=".2f"),
+                alt.Tooltip(f"{y_col}:Q", format=",.0f"),
+                alt.Tooltip("Quadrant:N"),
+                alt.Tooltip("Classification:N"),
+                alt.Tooltip("Arithmetic ICER:N"),
+            ],
+        )
+    )
+    labels = (
+        alt.Chart(frame)
+        .mark_text(align="left", dx=8, dy=-6, fontSize=12)
+        .encode(
+            x=f"{x_col}:Q",
+            y=f"{y_col}:Q",
+            text="Scenario:N",
+        )
+    )
+    horizontal = alt.Chart(pd.DataFrame({y_col: [0]})).mark_rule(color="#6b7280").encode(y=f"{y_col}:Q")
+    vertical = alt.Chart(pd.DataFrame({x_col: [0]})).mark_rule(color="#6b7280").encode(x=f"{x_col}:Q")
+    return (horizontal + vertical + points + labels).properties(height=360)
 
 
 def headline_rows(
@@ -862,6 +994,17 @@ try:
         arrow_safe_dataframe([{key: value for key, value in row.items() if not key.startswith("_")} for row in scenario_rows]),
         use_container_width=True,
         hide_index=True,
+    )
+    plane_rows = cost_effectiveness_plane_rows(
+        results_bundle=results_bundle,
+        economics_config=econ_config,
+        current_economics=econ_results,
+        controls=controls,
+    )
+    st.altair_chart(_cost_effectiveness_plane_chart(plane_rows), use_container_width=True)
+    st.caption(
+        "Cost-only changes move points vertically on this plane: added programme costs move upward, "
+        "greater savings move downward, and DALYs averted remain fixed."
     )
 except Exception as exc:
     st.error(f"Economic scenario comparison failed: {exc}")

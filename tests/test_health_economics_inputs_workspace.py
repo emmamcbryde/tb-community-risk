@@ -57,7 +57,7 @@ class HealthEconomicsInputsWorkspaceTests(unittest.TestCase):
     def test_icer_classification_rules_cover_edge_cases(self) -> None:
         self.assertEqual(classify_icer_result(-100, 2)["classification"], "Dominant")
         positive = classify_icer_result(1000, 2)
-        self.assertEqual(positive["classification"], "Increased cost with health gain")
+        self.assertEqual(positive["classification"], "Higher cost with health gain")
         self.assertEqual(positive["icer"], 500)
         self.assertEqual(classify_icer_result(1000, 0)["classification"], "ICER not calculable")
         self.assertEqual(classify_icer_result(1000, -1)["classification"], "Dominated")

@@ -12,7 +12,7 @@ def classify_icer_result(incremental_cost: Any, dalys_averted: Any) -> dict[str,
     if inc < 0 and dalys > 0:
         return {"classification": "Dominant", "icer": None}
     if inc > 0 and dalys > 0:
-        return {"classification": "Increased cost with health gain", "icer": inc / dalys}
+        return {"classification": "Higher cost with health gain", "icer": inc / dalys}
     if inc > 0 and dalys <= 0:
         return {"classification": "Dominated", "icer": None}
     if inc < 0 and dalys < 0:
