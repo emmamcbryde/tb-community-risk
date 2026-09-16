@@ -995,6 +995,7 @@ try:
         use_container_width=True,
         hide_index=True,
     )
+    st.markdown("Incremental cost-effectiveness plane")
     plane_rows = cost_effectiveness_plane_rows(
         results_bundle=results_bundle,
         economics_config=econ_config,

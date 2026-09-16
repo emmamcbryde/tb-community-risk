@@ -237,6 +237,11 @@ class SAHealthReferencePackageTests(unittest.TestCase):
             [item.label for item in app.button],
             ["Recalculate economics", "Restore SA Health economic defaults"],
         )
+        self.assertIn(
+            "Incremental cost-effectiveness plane",
+            [item.value for item in app.markdown],
+        )
+        self.assertGreaterEqual(sum(1 for item in app if getattr(item, "type", None) == "arrow_vega_lite_chart"), 1)
         headline = app.dataframe[0].value
         self.assertIn("Dominant", str(headline.loc[headline["Result"] == "Economic result", "Value"].iloc[0]))
         self.assertIn("DALYs averted", set(headline["Result"]))

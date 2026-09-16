@@ -8,8 +8,16 @@ from unittest.mock import patch
 
 import pandas as pd
 from openpyxl import load_workbook
+from streamlit.testing.v1 import AppTest
 
+from app.decision_comparison_presentation import (
+    common_comparator_status,
+    comparison_plane_rows,
+    comparison_table_rows,
+)
 from app.results_workbook import build_results_workbook
+from engine.apy.config import build_default_config
+from engine.apy.economics import build_default_economics_config
 from adapters.serialization import to_json_like
 from engine.apy.decision_analysis import (
     DECISION_ANALYSIS_CONTRACT_VERSION,
@@ -674,6 +682,174 @@ class ApyDecisionAnalysisEarlyReviewTests(unittest.TestCase):
 class ApyDecisionAnalysisPageSmokeTests(unittest.TestCase):
     def test_decision_analysis_page_compiles(self) -> None:
         py_compile.compile("pages/5_Decision_Analysis.py", doraise=True)
+
+    def test_common_comparator_rows_have_one_origin_and_user_labels(self) -> None:
+        comparison = {
+            "scenarios": [
+                {
+                    "scenarioId": "a",
+                    "label": "IGRA + 3HP, 30% coverage",
+                    "changedFields": {"test": "IGRA"},
+                    "metrics": {
+                        "incrementalCost": -100.0,
+                        "dalysAverted": 2.0,
+                        "comparator_active_tb": 10.0,
+                        "comparatorCost": 1000.0,
+                        "comparatorDALYs": 20.0,
+                    },
+                },
+                {
+                    "scenarioId": "b",
+                    "label": "TST + 3HP, 30% coverage",
+                    "changedFields": {"test": "TST"},
+                    "metrics": {
+                        "incrementalCost": 50.0,
+                        "dalysAverted": 1.5,
+                        "comparator_active_tb": 10.0,
+                        "comparatorCost": 1000.0,
+                        "comparatorDALYs": 20.0,
+                    },
+                },
+            ],
+            "pairedComparisons": [],
+        }
+
+        self.assertTrue(common_comparator_status(comparison)["valid"])
+        plane_rows = comparison_plane_rows(comparison)
+        self.assertEqual(
+            sum(
+                1
+                for row in plane_rows
+                if row["DALYs averted compared with business as usual"] == 0
+                and row["Incremental cost compared with business as usual (AUD)"] == 0
+            ),
+            1,
+        )
+        self.assertEqual(plane_rows[0]["Strategy"], "Business as usual")
+        self.assertEqual(plane_rows[1]["Quadrant"], "Lower right")
+        self.assertEqual(plane_rows[2]["Quadrant"], "Upper right")
+        table_rows = comparison_table_rows(comparison)
+        self.assertEqual(table_rows[0]["Classification"], "Comparator")
+        self.assertEqual(table_rows[1]["Arithmetic ICER"], "-AUD 50 per DALY averted")
+        self.assertNotIn("scenarioId", table_rows[1])
+
+    def test_common_comparator_blocks_natural_history_changes(self) -> None:
+        comparison = {
+            "scenarios": [
+                {
+                    "scenarioId": "a",
+                    "label": "Reference",
+                    "changedFields": {"test": "IGRA"},
+                    "metrics": {"comparator_active_tb": 10.0},
+                },
+                {
+                    "scenarioId": "b",
+                    "label": "Changed prevalence",
+                    "changedFields": {"ltbiPrevalence": 0.2},
+                    "metrics": {"comparator_active_tb": 12.0},
+                },
+            ],
+            "pairedComparisons": [],
+        }
+
+        status = common_comparator_status(comparison)
+        self.assertFalse(status["valid"])
+        self.assertIn("same underlying population and natural-history", status["message"])
+
+    def test_cost_only_change_moves_y_not_x(self) -> None:
+        before = {
+            "scenarios": [
+                {
+                    "scenarioId": "a",
+                    "label": "IGRA + 3HP, 30% coverage",
+                    "changedFields": {"test": "IGRA"},
+                    "metrics": {
+                        "incrementalCost": -100.0,
+                        "dalysAverted": 2.0,
+                        "comparator_active_tb": 10.0,
+                    },
+                }
+            ],
+            "pairedComparisons": [],
+        }
+        after = {
+            "scenarios": [
+                {
+                    "scenarioId": "a",
+                    "label": "IGRA + 3HP, 30% coverage",
+                    "changedFields": {"test": "IGRA", "economics": {"program_setup": 200}},
+                    "metrics": {
+                        "incrementalCost": 100.0,
+                        "dalysAverted": 2.0,
+                        "comparator_active_tb": 10.0,
+                    },
+                }
+            ],
+            "pairedComparisons": [],
+        }
+
+        before_row = comparison_plane_rows(before)[1]
+        after_row = comparison_plane_rows(after)[1]
+        self.assertEqual(
+            before_row["DALYs averted compared with business as usual"],
+            after_row["DALYs averted compared with business as usual"],
+        )
+        self.assertNotEqual(
+            before_row["Incremental cost compared with business as usual (AUD)"],
+            after_row["Incremental cost compared with business as usual (AUD)"],
+        )
+
+    def test_rendered_decision_page_shows_user_comparison_not_metadata_table(self) -> None:
+        comparison = {
+            "scenarios": [
+                {
+                    "scenarioId": "a",
+                    "label": "IGRA + 3HP, 30% coverage",
+                    "changedFields": {"test": "IGRA"},
+                    "metrics": {
+                        "incrementalCost": -100.0,
+                        "dalysAverted": 2.0,
+                        "comparator_active_tb": 10.0,
+                        "comparatorCost": 1000.0,
+                        "comparatorDALYs": 20.0,
+                    },
+                    "eventLedger": {},
+                },
+                {
+                    "scenarioId": "b",
+                    "label": "TST + 3HP, 30% coverage",
+                    "changedFields": {"test": "TST"},
+                    "metrics": {
+                        "incrementalCost": 50.0,
+                        "dalysAverted": 1.5,
+                        "comparator_active_tb": 10.0,
+                        "comparatorCost": 1000.0,
+                        "comparatorDALYs": 20.0,
+                    },
+                    "eventLedger": {},
+                },
+            ],
+            "scenarioSummaries": [{"scenarioId": "a", "configurationHash": "abc"}],
+            "pairedComparisons": [],
+        }
+        app = AppTest.from_file("pages/5_Decision_Analysis.py", default_timeout=30)
+        app.session_state["config"] = build_default_config()
+        app.session_state["economics_config"] = build_default_economics_config()
+        app.session_state["decision_scenario_comparison"] = comparison
+
+        app.run()
+
+        self.assertFalse(app.exception)
+        first = app.dataframe[0].value
+        self.assertEqual(
+            list(first.columns),
+            ["Strategy", "Incremental cost", "DALYs averted", "Arithmetic ICER", "Classification"],
+        )
+        self.assertEqual(list(first["Strategy"]), ["Business as usual", "IGRA + 3HP, 30% coverage", "TST + 3HP, 30% coverage"])
+        self.assertNotIn("scenarioId", first.columns)
+        self.assertNotIn("configurationHash", first.columns)
+        self.assertEqual(sum(1 for item in app if getattr(item, "type", None) == "arrow_vega_lite_chart"), 1)
+        self.assertIn("Technical reproducibility information", [item.label for item in app.expander])
 
 
 class ApyDecisionAnalysisWorkbookTests(unittest.TestCase):
