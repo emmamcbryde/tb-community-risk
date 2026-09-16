@@ -185,8 +185,9 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
 
         self.assertIn('st.title("Health Economics")', text)
         self.assertIn("eventLedger", text)
-        self.assertIn("backend.run_economics(results_bundle, econ_config)", text)
-        self.assertIn("Run the screening analysis before recalculating health economics", text)
+        self.assertIn("backend.run_economics(", text)
+        self.assertIn("_clone_bundle_with_running_duration", text)
+        self.assertIn("Run the screening analysis first", text)
 
     def test_evidence_assumptions_page_is_readiness_focused(self) -> None:
         text = (ROOT / "pages" / "6_Evidence_Assumptions.py").read_text(encoding="utf-8")

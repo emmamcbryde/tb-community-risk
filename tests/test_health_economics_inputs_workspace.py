@@ -28,6 +28,7 @@ from app.health_economics_inputs import (
     validate_editable_assumptions,
     workspace_source_hash,
 )
+from app.health_economics_presentation import classify_icer_result
 from app.results_workbook import build_results_workbook
 from engine.apy.config import build_default_config
 from engine.apy.economics import build_default_economics_config, build_economics_preset_dale2019_aud
@@ -53,6 +54,15 @@ def _complete_daly_units(rows: list[dict]) -> list[dict]:
 
 
 class HealthEconomicsInputsWorkspaceTests(unittest.TestCase):
+    def test_icer_classification_rules_cover_edge_cases(self) -> None:
+        self.assertEqual(classify_icer_result(-100, 2)["classification"], "Dominant")
+        positive = classify_icer_result(1000, 2)
+        self.assertEqual(positive["classification"], "Increased cost with health gain")
+        self.assertEqual(positive["icer"], 500)
+        self.assertEqual(classify_icer_result(1000, 0)["classification"], "ICER not calculable")
+        self.assertEqual(classify_icer_result(1000, -1)["classification"], "Dominated")
+        self.assertEqual(classify_icer_result(-1000, -1)["classification"], "Trade-off")
+
     def test_registry_rows_load_into_editable_assumptions_table(self) -> None:
         rows = editable_assumption_rows(economics_config=build_default_economics_config())
         ids = {row["assumptionId"] for row in rows}

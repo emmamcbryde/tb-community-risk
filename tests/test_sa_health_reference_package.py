@@ -16,6 +16,7 @@ from engine.apy.sa_health_reference_package import (
     write_sa_health_reference_package,
     _replicate_row,
 )
+from streamlit.testing.v1 import AppTest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -200,17 +201,59 @@ class SAHealthReferencePackageTests(unittest.TestCase):
     def test_health_economics_page_uses_workspace_and_same_ledger_scenarios(self) -> None:
         page = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
 
-        self.assertIn("Headline economic results", page)
-        self.assertIn("View or change economic assumptions", page)
+        self.assertIn("Economic result", page)
+        self.assertIn("Change cost assumptions", page)
         self.assertLess(
-            page.index('st.subheader("Headline economic results")'),
-            page.index('st.expander("View or change economic assumptions"'),
+            page.index('st.subheader("Economic result")'),
+            page.index('st.expander("Change cost assumptions"'),
         )
-        self.assertIn("Compare economic scenarios using current screening outcomes", page)
-        self.assertIn("Changing only economic assumptions does not rerun the epidemiological analysis", page)
-        self.assertIn("same screening outcomes", page)
+        self.assertIn("Recalculate economics", page)
+        self.assertIn("Economic changes reuse the current screening outcomes", page)
+        self.assertIn("All scenarios reuse the same screening outcomes", page)
         self.assertIn("Gross delivery expenditure", page)
-        self.assertIn("build_same_ledger_economic_scenario_comparison", page)
+        self.assertIn("delivery_scenario_comparison_rows", page)
+
+    def test_rendered_health_economics_page_leads_with_decision_result(self) -> None:
+        app = AppTest.from_file(str(ROOT / "pages" / "4_Economics.py"), default_timeout=30)
+        app.session_state["config"] = self.package["config"]
+        app.session_state["results_bundle"] = {
+            "metadata": {"scenarioLabel": "test_reference"},
+            "technical": {"eventLedger": self.package["eventLedger"]},
+        }
+        app.session_state["economics_config"] = self.package["economicsConfig"]
+        app.session_state["economics_results"] = self.package["economics"]
+        app.session_state["results_stale"] = False
+
+        app.run()
+
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            [item.value for item in app.subheader[:3]],
+            ["Economic result", "Programme-delivery scenarios", "Cost breakdown and budget impact"],
+        )
+        self.assertIn("Change cost assumptions", [item.label for item in app.expander])
+        self.assertIn("Limitations and methods", [item.label for item in app.expander])
+        self.assertEqual(
+            [item.label for item in app.button],
+            ["Recalculate economics", "Restore SA Health economic defaults"],
+        )
+        headline = app.dataframe[0].value
+        self.assertIn("Dominant", str(headline.loc[headline["Result"] == "Economic result", "Value"].iloc[0]))
+        self.assertIn("DALYs averted", set(headline["Result"]))
+        scenarios = app.dataframe[1].value
+        self.assertEqual(
+            list(scenarios["Scenario"]),
+            ["Existing resources", "Standalone programme", "Shared with other programmes"],
+        )
+        self.assertEqual(len(set(scenarios["Active TB averted"])), 1)
+        self.assertIn(
+            "Dominant",
+            str(scenarios.loc[scenarios["Scenario"] == "Existing resources", "ICER/classification"].iloc[0]),
+        )
+        self.assertIn(
+            "per DALY averted",
+            str(scenarios.loc[scenarios["Scenario"] == "Standalone programme", "ICER/classification"].iloc[0]),
+        )
 
     def test_economic_changes_do_not_alter_event_counts(self) -> None:
         ledger = self.package["epidemiology"]

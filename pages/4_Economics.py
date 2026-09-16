@@ -28,6 +28,7 @@ from app.health_economics_inputs import (
     update_workspace_rows,
     validate_editable_assumptions,
 )
+from app.health_economics_presentation import classify_icer_result
 from app.state import (
     get_backend,
     init_session_state,
@@ -42,7 +43,7 @@ from engine.apy.infection_history import (
     EXPERIMENTAL_STATUS_LABEL,
     is_experimental_infection_history_results,
 )
-from engine.apy.sa_health_reference_package import build_same_ledger_economic_scenario_comparison
+from engine.apy.event_ledger_economics import run_event_ledger_health_economics
 from engine.apy.working_defaults import build_unified_working_default_preset
 
 
@@ -64,6 +65,15 @@ PROGRAMME_UNCOSTED_IDS = {
     "cost.program_setup",
     "cost.program_running",
     "cost.travel_outreach_staff_support",
+}
+
+DELIVERY_SCENARIO_DEFAULTS = {
+    "standaloneSetupCost": 500000.0,
+    "standaloneAnnualRunningCost": 0.0,
+    "standaloneRunningYears": 2,
+    "standaloneTravelOutreachCost": 0.0,
+    "standaloneStaffSupportCost": 0.0,
+    "sharedAttributionShare": 0.50,
 }
 
 COST_COMPONENTS = [
@@ -101,6 +111,14 @@ def _money(value: Any, *, saving: bool = False) -> str:
     if number < 0:
         return f"AUD {abs(number):,.0f} saving"
     return f"AUD {number:,.0f}"
+
+
+def _signed_money(value: Any) -> str:
+    number = _number(value)
+    if number is None:
+        return "Unavailable"
+    sign = "-" if number < 0 else ""
+    return f"{sign}AUD {abs(number):,.0f}"
 
 
 def _decimal(value: Any, digits: int = 1) -> str:
@@ -141,6 +159,22 @@ def _summary_mean(econ_results: dict[str, Any] | None, metric: str, profile: str
     return None if row is None else _number(row.get("mean"))
 
 
+def icer_classification(incremental_cost: Any, dalys_averted: Any) -> dict[str, Any]:
+    result = classify_icer_result(incremental_cost, dalys_averted)
+    label = result["classification"]
+    if label == "Dominant":
+        display = "Dominant - better health and lower cost"
+    elif label == "Increased cost with health gain":
+        display = f"{_money(result['icer'])} per DALY averted"
+    elif label == "Dominated":
+        display = "Dominated - higher cost without health gain"
+    elif label == "Trade-off":
+        display = "Trade-off - lower cost with lower health gain"
+    else:
+        display = "ICER not calculable"
+    return {**result, "display": display}
+
+
 def _classification(econ_results: dict[str, Any] | None) -> str:
     row = _summary_row(econ_results, "primaryICER_ratioOfMeans")
     label = str((row or {}).get("classification") or "").strip()
@@ -150,6 +184,54 @@ def _classification(econ_results: dict[str, Any] | None) -> str:
             "provisional because local programme costs remain unresolved."
         )
     return label or "Unavailable"
+
+
+def primary_economic_values(
+    econ_results: dict[str, Any] | None,
+    results_bundle: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    cost_rows = cost_category_rows(econ_results)
+    incremental = _summary_mean(econ_results, "incrementalCost")
+    dalys = _summary_mean(econ_results, "dalysAverted")
+    active_tb_prevented = _summary_mean(econ_results, "activeTBCasesPrevented")
+    gross = _gross_delivery(cost_rows)
+    active_offset = next(
+        (abs(row["Incremental cost"]) for row in cost_rows if row["Category"] == "Active-TB care"),
+        None,
+    )
+    return {
+        "incrementalCost": incremental,
+        "dalysAverted": dalys,
+        "activeTBAverted": active_tb_prevented,
+        "grossDeliveryExpenditure": gross,
+        "activeTBCareOffset": active_offset,
+        "peopleScreened": _screened(results_bundle),
+        "classification": icer_classification(incremental, dalys),
+    }
+
+
+def headline_panel_rows(
+    *,
+    econ_results: dict[str, Any] | None,
+    results_bundle: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    values = primary_economic_values(econ_results, results_bundle)
+    classification = values["classification"]
+    if classification["classification"] == "Dominant":
+        main = (
+            f"Dominant - saves approximately {_money(values['incrementalCost'], saving=True).replace(' saving', '')} "
+            f"and averts approximately {_decimal(values['dalysAverted'], 1)} DALYs"
+        )
+    else:
+        main = classification["display"]
+    return [
+        {"Result": "Economic result", "Value": main},
+        {"Result": "Incremental health-system cost", "Value": _signed_money(values["incrementalCost"])},
+        {"Result": "DALYs averted", "Value": _decimal(values["dalysAverted"], 1)},
+        {"Result": "Active TB cases averted", "Value": _decimal(values["activeTBAverted"], 1)},
+        {"Result": "ICER / classification", "Value": classification["display"]},
+        {"Result": "NMB and probability cost-effective", "Value": "Unavailable until a reviewed willingness-to-pay threshold is supplied"},
+    ]
 
 
 def _annual_primary(econ_results: dict[str, Any] | None) -> pd.DataFrame:
@@ -246,6 +328,194 @@ def _gross_delivery(cost_rows: list[dict[str, Any]]) -> float | None:
         for row in cost_rows
         if row["Category"] != "Active-TB care"
     )
+
+
+def _ensure_delivery_scenario_controls() -> dict[str, Any]:
+    controls = st.session_state.get("health_econ_delivery_scenarios")
+    if not isinstance(controls, dict):
+        controls = dict(DELIVERY_SCENARIO_DEFAULTS)
+        st.session_state["health_econ_delivery_scenarios"] = controls
+    for key, value in DELIVERY_SCENARIO_DEFAULTS.items():
+        controls.setdefault(key, value)
+    return controls
+
+
+def _clone_bundle_with_running_duration(results_bundle: dict[str, Any] | None, years: int | None) -> dict[str, Any] | None:
+    if not isinstance(results_bundle, dict) or years is None:
+        return results_bundle
+    out = deepcopy(results_bundle)
+    ledger = ((out.setdefault("technical", {})).setdefault("eventLedger", {}))
+    metadata = ledger.setdefault("metadata", {})
+    metadata["screeningWindowYears"] = int(years)
+    metadata["screeningWindow"] = int(years)
+    return out
+
+
+def _set_cost_item(
+    economics_config: dict[str, Any],
+    item_id: str,
+    value: float,
+    *,
+    cost_basis: str | None = None,
+    source: str,
+    notes: str,
+) -> None:
+    for item in economics_config.get("costItems") or []:
+        if item.get("costItemId") != item_id:
+            continue
+        item["originalCost"] = float(value)
+        item["originalCurrency"] = "AUD"
+        item["originalPriceYear"] = "2019"
+        item["targetCurrency"] = "AUD"
+        item["targetPriceYear"] = "2019"
+        item["sourceCitation"] = source
+        item["notes"] = notes
+        if cost_basis:
+            item.setdefault("resourceUse", {})["costBasis"] = cost_basis
+        break
+    for row in economics_config.get("assumptionEvidenceRegistry") or []:
+        if row.get("assumptionId") != f"cost.{item_id}":
+            continue
+        row["currentValue"] = float(value)
+        row["originalCurrency"] = "AUD"
+        row["originalPriceYear"] = "2019"
+        row["targetCurrency"] = "AUD"
+        row["targetPriceYear"] = "2019"
+        row["sourceCitation"] = source
+        row["reviewStatus"] = "unreviewed_repository_input"
+        row["reviewStatusLabel"] = "Unreviewed repository input"
+        row["provisional"] = True
+        row["inclusionStatus"] = "included"
+        row["inclusionStatusLabel"] = "Included"
+        row["notes"] = notes
+        row["unresolvedReason"] = ""
+        if cost_basis:
+            row["costBasis"] = cost_basis
+        break
+
+
+def _delivery_scenario_config(
+    base_econ: dict[str, Any],
+    *,
+    setup_cost: float,
+    annual_running_cost: float,
+    running_years: int,
+    travel_outreach_cost: float,
+    staff_support_cost: float,
+    attribution_share: float = 1.0,
+    scenario_name: str,
+) -> dict[str, Any]:
+    econ = deepcopy(base_econ)
+    share = max(0.0, min(float(attribution_share), 1.0))
+    source = f"User-defined {scenario_name} scenario assumption"
+    _set_cost_item(
+        econ,
+        "program_setup",
+        float(setup_cost) * share,
+        cost_basis="total_once_at_program_start",
+        source=source,
+        notes="One-off programme setup or bulk implementation cost assigned to LTBI screening for this scenario.",
+    )
+    _set_cost_item(
+        econ,
+        "program_running",
+        float(annual_running_cost) * share,
+        cost_basis="annual_during_screening_window",
+        source=source,
+        notes=f"Annual programme running cost applied for {int(running_years)} year(s) in this scenario.",
+    )
+    _set_cost_item(
+        econ,
+        "travel_outreach_staff_support",
+        (float(travel_outreach_cost) + float(staff_support_cost)) * share,
+        cost_basis="per_person_screened",
+        source=source,
+        notes=(
+            "Per-person-screened travel/outreach and additional staff/support cost. "
+            "This does not bundle or exclude clinical pathway costs."
+        ),
+    )
+    econ.setdefault("metadata", {})["economicScenarioName"] = scenario_name
+    econ["metadata"]["programRunningDurationYears"] = int(running_years)
+    econ["metadata"]["sharedProgrammeAttributionShare"] = share
+    return econ
+
+
+def _run_delivery_scenario(
+    results_bundle: dict[str, Any],
+    economics_config: dict[str, Any],
+    *,
+    running_years: int,
+) -> dict[str, Any]:
+    bundle = _clone_bundle_with_running_duration(results_bundle, running_years)
+    return run_event_ledger_health_economics(bundle, economics_config)
+
+
+def delivery_scenario_comparison_rows(
+    *,
+    results_bundle: dict[str, Any] | None,
+    economics_config: dict[str, Any],
+    controls: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not isinstance(results_bundle, dict):
+        return []
+    running_years = int(float(controls.get("standaloneRunningYears") or 0))
+    existing = _run_delivery_scenario(results_bundle, economics_config, running_years=running_years)
+    standalone_config = _delivery_scenario_config(
+        economics_config,
+        setup_cost=float(controls.get("standaloneSetupCost") or 0.0),
+        annual_running_cost=float(controls.get("standaloneAnnualRunningCost") or 0.0),
+        running_years=running_years,
+        travel_outreach_cost=float(controls.get("standaloneTravelOutreachCost") or 0.0),
+        staff_support_cost=float(controls.get("standaloneStaffSupportCost") or 0.0),
+        attribution_share=1.0,
+        scenario_name="Standalone programme",
+    )
+    standalone = _run_delivery_scenario(results_bundle, standalone_config, running_years=running_years)
+    shared_config = _delivery_scenario_config(
+        economics_config,
+        setup_cost=float(controls.get("standaloneSetupCost") or 0.0),
+        annual_running_cost=float(controls.get("standaloneAnnualRunningCost") or 0.0),
+        running_years=running_years,
+        travel_outreach_cost=float(controls.get("standaloneTravelOutreachCost") or 0.0),
+        staff_support_cost=float(controls.get("standaloneStaffSupportCost") or 0.0),
+        attribution_share=float(controls.get("sharedAttributionShare") or 0.0),
+        scenario_name="Shared with other programmes",
+    )
+    shared = _run_delivery_scenario(results_bundle, shared_config, running_years=running_years)
+    return [
+        _delivery_scenario_row("Existing resources", existing),
+        _delivery_scenario_row("Standalone programme", standalone),
+        _delivery_scenario_row("Shared with other programmes", shared),
+    ]
+
+
+def _delivery_scenario_row(label: str, econ_results: dict[str, Any]) -> dict[str, Any]:
+    values = primary_economic_values(econ_results)
+    classification = values["classification"]
+    return {
+        "Scenario": label,
+        "Incremental cost": _signed_money(values["incrementalCost"]),
+        "DALYs averted": _decimal(values["dalysAverted"], 1),
+        "ICER/classification": "Dominant" if classification["classification"] == "Dominant" else classification["display"],
+        "Active TB averted": _decimal(values["activeTBAverted"], 1),
+        "_incrementalCostRaw": values["incrementalCost"],
+        "_dalysAvertedRaw": values["dalysAverted"],
+    }
+
+
+def break_even_rows(econ_results: dict[str, Any] | None) -> list[dict[str, str]]:
+    values = primary_economic_values(econ_results)
+    inc = _number(values["incrementalCost"])
+    if inc is None or inc >= 0:
+        return []
+    return [
+        {
+            "Planning measure": "Additional programme cost before net saving is exhausted",
+            "Value": _money(abs(inc)),
+            "Interpretation": "Discounted cost that could be added before the intervention ceases to be cost-saving under these assumptions.",
+        }
+    ]
 
 
 def headline_rows(
@@ -445,7 +715,12 @@ def load_economics_config(new_config: dict[str, Any], *, mark_workspace_unsaved:
 
 def run_authoritative_health_economics(results_bundle: dict, econ_config: dict) -> None:
     try:
-        econ = backend.run_economics(results_bundle, econ_config)
+        controls = _ensure_delivery_scenario_controls()
+        running_years = int(float(controls.get("standaloneRunningYears") or 0))
+        econ = backend.run_economics(
+            _clone_bundle_with_running_duration(results_bundle, running_years),
+            econ_config,
+        )
         st.session_state["economics_results"] = econ
         mark_economics_completed()
         sync_backend_status(backend.status())
@@ -492,10 +767,7 @@ def apply_and_recalculate(
     mark_economics_changed()
     if results_bundle and not st.session_state.get("results_stale"):
         run_authoritative_health_economics(results_bundle, updated_config)
-        st.success(
-            f"Economic results recalculated with {len(overridden_rows(applied_state['rows']))} user-defined override(s). "
-            "Screening outcomes were not rerun."
-        )
+        st.success("Economic results recalculated from the current screening outcomes. Epidemiological results were not rerun.")
     else:
         st.warning("Run the screening analysis before recalculating health economics.")
 
@@ -524,6 +796,328 @@ workspace_state = reconcile_workspace_state(
 st.session_state["health_econ_workspace"] = workspace_state
 working_rows = workspace_state["rows"]
 override_count = len(overridden_rows(working_rows))
+controls = _ensure_delivery_scenario_controls()
+
+if experimental_ledger:
+    st.warning(EXPERIMENTAL_ECONOMICS_GUARD_MESSAGE)
+    st.info(
+        "You can still download the current economic-assumption configuration, "
+        "but report-facing health-economic results and scenario comparisons are disabled for this ledger."
+    )
+    st.download_button(
+        "Download economics assumptions JSON",
+        data=economics_assumptions_json(econ_config),
+        file_name=f"{safe_download_stem(scenario_label, 'experimental_economics_assumptions')}.json",
+        mime="application/json",
+    )
+    st.stop()
+
+if not can_run:
+    st.info("Run the screening analysis first; then return here to calculate health-economic results.")
+    st.stop()
+
+if econ_results is None:
+    run_authoritative_health_economics(results_bundle, econ_config)
+    econ_results = st.session_state.get("economics_results")
+
+metadata = econ_config.get("metadata") or {}
+currency = metadata.get("targetCurrency") or metadata.get("currencyCode") or "AUD"
+price_year = metadata.get("targetPriceYear") or metadata.get("priceYear") or "2019"
+discounting = econ_config.get("discounting") or {}
+primary_rate = (
+    discounting.get("primaryDisplayedRate")
+    or discounting.get("selectedAnnualRate")
+    or ((discounting.get("profiles") or {}).get("primary") or {}).get("costRate")
+    or 0.03
+)
+assumption_status = "SA Health working defaults" if override_count == 0 else f"{override_count} user-defined override(s)"
+st.caption(
+    f"Analysis basis: SA Health report reference | Perspective: {metadata.get('perspective', 'Australian health-care system')} | "
+    f"{currency} {price_year} | Primary discount rate: {float(primary_rate) * 100:.1f}% | Economic assumptions: {assumption_status}"
+)
+if any(row.get("assumptionId") in PROGRAMME_UNCOSTED_IDS and row.get("currentValue") in (0, 0.0, "0", "0.0") for row in working_rows):
+    st.warning("Programme setup, running, travel, outreach and staff-support costs have not yet been locally costed.")
+
+st.subheader("Economic result")
+if econ_results:
+    st.dataframe(
+        arrow_safe_dataframe(headline_panel_rows(econ_results=econ_results, results_bundle=results_bundle)),
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.caption("DALY-based results are provisional pending evidence review.")
+
+st.subheader("Programme-delivery scenarios")
+st.caption(
+    "All scenarios reuse the same screening outcomes. Existing resources means no additional programme overhead has been entered; "
+    "it does not mean implementation is costless."
+)
+try:
+    scenario_rows = delivery_scenario_comparison_rows(
+        results_bundle=results_bundle,
+        economics_config=econ_config,
+        controls=controls,
+    )
+    st.dataframe(
+        arrow_safe_dataframe([{key: value for key, value in row.items() if not key.startswith("_")} for row in scenario_rows]),
+        use_container_width=True,
+        hide_index=True,
+    )
+except Exception as exc:
+    st.error(f"Economic scenario comparison failed: {exc}")
+
+st.subheader("Cost breakdown and budget impact")
+if econ_results:
+    cost_rows = cost_category_rows(econ_results)
+    values = primary_economic_values(econ_results, results_bundle)
+    st.dataframe(
+        arrow_safe_dataframe(
+            [
+                {"Measure": "Gross intervention delivery cost", "Value": _money(values["grossDeliveryExpenditure"])},
+                {"Measure": "Active-TB care cost offset", "Value": _money(values["activeTBCareOffset"], saving=True)},
+                {"Measure": "Net incremental health-system cost", "Value": _signed_money(values["incrementalCost"])},
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+    if cost_rows:
+        st.dataframe(arrow_safe_dataframe(cost_rows), use_container_width=True, hide_index=True)
+    budget_rows = budget_impact_rows(econ_results)
+    if budget_rows:
+        st.line_chart(
+            pd.DataFrame(budget_rows).set_index("Year")[
+                ["Intervention delivery expenditure", "Comparator active-TB care", "Intervention active-TB care"]
+            ],
+            use_container_width=True,
+        )
+        st.dataframe(arrow_safe_dataframe(budget_rows), use_container_width=True, hide_index=True)
+    be_rows = break_even_rows(econ_results)
+    if be_rows:
+        st.dataframe(arrow_safe_dataframe(be_rows), use_container_width=True, hide_index=True)
+    st.caption(
+        "Programme and pathway expenditure is concentrated early; active-TB care offsets occur over follow-up. "
+        "The break-even amount is a planning measure, not a willingness-to-pay threshold."
+    )
+
+with st.expander("Change cost assumptions", expanded=False):
+    st.caption(
+        "Economic changes reuse the current screening outcomes; epidemiology is not rerun. Blank entries are not converted to zero."
+    )
+    st.info(
+        "Cost states: numerical costs are included directly; bundled/absorbed means the activity occurs but is not costed separately; "
+        "reviewed exclusion means outside the selected perspective; not locally costed means evidence is still needed; compatibility zero is a placeholder."
+    )
+    st.markdown("Programme-delivery scenario inputs")
+    scenario_cols = st.columns(3)
+    controls["standaloneSetupCost"] = scenario_cols[0].number_input(
+        "One-off setup/bulk implementation cost",
+        min_value=0.0,
+        value=float(controls.get("standaloneSetupCost") or 0.0),
+        step=50000.0,
+        format="%.0f",
+        help="AUD 2019 total one-off cost for the standalone-programme scenario.",
+    )
+    controls["standaloneAnnualRunningCost"] = scenario_cols[1].number_input(
+        "Annual programme running cost",
+        min_value=0.0,
+        value=float(controls.get("standaloneAnnualRunningCost") or 0.0),
+        step=10000.0,
+        format="%.0f",
+        help="AUD 2019 annual overhead applied for the selected number of years.",
+    )
+    controls["standaloneRunningYears"] = int(
+        scenario_cols[2].number_input(
+            "Years annual running costs apply",
+            min_value=0,
+            max_value=20,
+            value=int(float(controls.get("standaloneRunningYears") or 0)),
+            step=1,
+        )
+    )
+    scenario_cols = st.columns(3)
+    controls["standaloneTravelOutreachCost"] = scenario_cols[0].number_input(
+        "Travel/outreach cost per person screened",
+        min_value=0.0,
+        value=float(controls.get("standaloneTravelOutreachCost") or 0.0),
+        step=10.0,
+        format="%.0f",
+        help="AUD 2019 per person screened.",
+    )
+    controls["standaloneStaffSupportCost"] = scenario_cols[1].number_input(
+        "Additional staff/support cost per person screened",
+        min_value=0.0,
+        value=float(controls.get("standaloneStaffSupportCost") or 0.0),
+        step=10.0,
+        format="%.0f",
+        help="AUD 2019 per person screened.",
+    )
+    controls["sharedAttributionShare"] = scenario_cols[2].number_input(
+        "Share of common programme costs attributed to LTBI screening",
+        min_value=0.0,
+        max_value=1.0,
+        value=float(controls.get("sharedAttributionShare") or 0.0),
+        step=0.05,
+        format="%.2f",
+        help="Scenario assumption only; no reviewed attribution percentage has been supplied.",
+    )
+    st.caption(
+        "Shared programme attribution changes programme overhead only. It does not bundle clinical pathway visits into test or treatment prices."
+    )
+    st.session_state["health_econ_delivery_scenarios"] = controls
+
+    if workspace_state.get("presetConflict"):
+        st.warning("The economics configuration changed while the workspace has unsaved edits.")
+        conflict_cols = st.columns(3)
+        conflict_cols[0].download_button(
+            "Download edits before replacing",
+            data=assumptions_csv(workspace_state.get("rows") or []),
+            file_name=f"{safe_download_stem(scenario_label, 'unsaved_assumption_edits')}.csv",
+            mime="text/csv",
+        )
+        if conflict_cols[1].button("Keep current working edits"):
+            st.session_state["health_econ_workspace"] = reconcile_workspace_state(workspace_state, econ_config, action="keep")
+            st.rerun()
+        if conflict_cols[2].button("Discard and reload from current configuration"):
+            st.session_state["health_econ_workspace"] = reconcile_workspace_state(workspace_state, econ_config, action="discard")
+            st.rerun()
+
+    overrides = overridden_rows(working_rows)
+    if overrides:
+        st.markdown("User-defined overrides")
+        st.dataframe(arrow_safe_dataframe(overrides), use_container_width=True, hide_index=True)
+    else:
+        st.caption("No user-defined economic overrides are active.")
+
+    working_rows, workspace_state = render_standard_assumption_editor(
+        rows=working_rows,
+        working_rows=working_rows,
+        editor_prefix="health_econ_standard_assumption_editor",
+    )
+    st.session_state["health_econ_workspace"] = workspace_state
+
+    active_validation = workspace_state.get("validation") or validate_editable_assumptions(
+        working_rows,
+        econ_config,
+        config=config or {},
+    )
+    if not active_validation.get("isValidForApplication"):
+        st.error("Some economic assumptions must be corrected before recalculation.")
+        fatal_rows = fatal_validation_rows(active_validation)
+        if fatal_rows:
+            st.dataframe(arrow_safe_dataframe(fatal_rows), use_container_width=True, hide_index=True)
+
+    uploaded_assumptions = st.file_uploader(
+        "Upload edited assumptions CSV",
+        type=["csv"],
+        help="Uploaded assumptions are loaded into the working copy and must be recalculated before results update.",
+    )
+    if uploaded_assumptions is not None and st.button("Load uploaded assumptions"):
+        try:
+            st.session_state["health_econ_workspace"] = update_workspace_rows(
+                workspace_state,
+                parse_assumptions_csv(uploaded_assumptions.getvalue()),
+            )
+            st.success("Uploaded assumptions loaded into the working copy.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Could not load assumptions CSV: {exc}")
+
+    if st.checkbox("Show evidence and technical details", value=False):
+        current_readiness = assess_current_analysis_economic_readiness(config or {}, econ_config, ledger, working_rows)
+        st.dataframe(
+            arrow_safe_dataframe(
+                [
+                    {"Readiness item": "Current cost inputs", "Complete": current_readiness["currentAnalysisCostReady"]},
+                    {"Readiness item": "Current DALY inputs", "Complete": current_readiness["currentAnalysisDALYReady"]},
+                    {"Readiness item": "Current ICER", "Complete": current_readiness["currentAnalysisICERReady"]},
+                    {"Readiness item": "Current NMB", "Complete": current_readiness["currentAnalysisNMBReady"]},
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        audit_rows = conversion_audit_rows(working_rows)
+        if audit_rows:
+            st.markdown("Price-year conversion audit")
+            st.dataframe(arrow_safe_dataframe(audit_rows), use_container_width=True, hide_index=True)
+        st.markdown("Cost-state audit")
+        st.dataframe(arrow_safe_dataframe(cost_state_rows(working_rows)), use_container_width=True, hide_index=True)
+        readiness = assess_apy_reference_readiness(
+            config or {},
+            econ_config,
+            econ_config.get("assumptionEvidenceRegistry") or load_apy_evidence_registry(),
+        )
+        unresolved_rows = [row for row in readiness["readinessRows"] if not row.get("ready")][:12]
+        if unresolved_rows:
+            st.markdown("Readiness details")
+            st.dataframe(arrow_safe_dataframe(unresolved_rows), use_container_width=True, hide_index=True)
+
+    download_cols = st.columns(2)
+    download_cols[0].download_button(
+        "Download edited assumptions CSV",
+        data=assumptions_csv(working_rows),
+        file_name=f"{safe_download_stem(scenario_label, 'edited_assumptions')}.csv",
+        mime="text/csv",
+    )
+    download_cols[1].download_button(
+        "Download edited assumptions workbook",
+        data=assumptions_workbook(working_rows, active_validation),
+        file_name=f"{safe_download_stem(scenario_label, 'edited_assumptions')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+action_cols = st.columns(2)
+if action_cols[0].button("Recalculate economics", type="primary", use_container_width=True):
+    apply_and_recalculate(
+        working_rows=working_rows,
+        workspace_state=workspace_state,
+        econ_config=econ_config,
+        config=config or {},
+        results_bundle=results_bundle,
+    )
+if action_cols[1].button("Restore SA Health economic defaults", use_container_width=True):
+    load_economics_config(build_unified_working_default_preset()["economicsConfig"])
+    st.session_state["health_econ_delivery_scenarios"] = dict(DELIVERY_SCENARIO_DEFAULTS)
+    if results_bundle and not st.session_state.get("results_stale"):
+        run_authoritative_health_economics(results_bundle, st.session_state["economics_config"])
+    st.rerun()
+
+download_cols = st.columns(2)
+download_cols[0].download_button(
+    "Download economics assumptions JSON",
+    data=economics_assumptions_json(econ_config),
+    file_name=f"{safe_download_stem(scenario_label, 'economics_assumptions')}.json",
+    mime="application/json",
+)
+if econ_results:
+    download_cols[1].download_button(
+        "Download economics summary CSV",
+        data=economics_summary_csv(econ_results),
+        file_name=f"{safe_download_stem(scenario_label, 'economics_summary')}.csv",
+        mime="text/csv",
+    )
+else:
+    download_cols[1].button("Download economics summary CSV", disabled=True)
+
+if st.session_state.get("dirty_economics") and econ_results:
+    st.warning("Economic results are stale because economics inputs changed after the last recalculation.")
+if econ_results and (econ_results.get("metadata") or {}).get("isProvisional"):
+    st.warning("Economic outputs are provisional and should not be interpreted as clinician-ready cost-effectiveness conclusions.")
+if econ_results and econ_results.get("warnings"):
+    st.warning("; ".join(str(item) for item in econ_results.get("warnings") or []))
+
+with st.expander("Limitations and methods", expanded=False):
+    st.markdown(
+        """
+        - Health-economic calculations use the completed event ledger from the current screening analysis; cost edits do not rerun epidemiology.
+        - DALY-based results are provisional pending evidence review.
+        - Programme setup, running, travel, outreach and staff-support costs require SA Health local costing.
+        - Net monetary benefit and probability cost-effective remain unavailable unless a reviewed willingness-to-pay threshold is supplied.
+        - Scenario comparisons vary economic assumptions only and should not be interpreted as evidence that missing local costs are truly zero.
+        """
+    )
+st.stop()
 
 st.subheader("Analysis status")
 status_rows = [
