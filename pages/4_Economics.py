@@ -36,6 +36,7 @@ from app.state import (
     get_backend,
     has_retired_infection_history_results,
     init_session_state,
+    is_supported_sa_health_analysis_basis,
     mark_economics_changed,
     mark_economics_completed,
     record_message,
@@ -730,7 +731,7 @@ def cost_effectiveness_plane_rows(
         annual_cost=current_annual,
         attribution_share=current_share,
         represents_frozen_reference=False,
-    ) if current_economics else None
+    ) if current_economics and is_supported_sa_health_analysis_basis(results_bundle) else None
     if reference and current and _points_overlap(reference, current):
         collapsed = dict(current)
         collapsed["Scenario"] = "Current assumptions - same as SA Health report reference"
@@ -1339,10 +1340,14 @@ override_count = len(overridden_rows(working_rows))
 controls = _ensure_delivery_scenario_controls()
 
 if retired_ledger:
+    st.session_state["results_bundle"] = None
+    st.session_state["economics_results"] = None
+    st.session_state["economic_scenario_comparison"] = None
+    st.session_state["decision_scenario_comparison"] = None
     st.warning("Previous results used an analysis pathway that is not available in this SA Health version. Please run the analysis again.")
     st.stop()
 
-if not can_run:
+if not can_run or not is_supported_sa_health_analysis_basis(results_bundle):
     notice = st.session_state.pop("reference_only_migration_notice", "")
     if notice:
         st.warning(notice)
@@ -1408,27 +1413,6 @@ try:
         controls=controls,
     )
     st.altair_chart(_cost_effectiveness_plane_chart(plane_rows), use_container_width=True)
-    st.dataframe(
-        arrow_safe_dataframe(
-            [
-                {
-                    "Scenario": row.get("Scenario"),
-                    "DALYs averted": _decimal(row.get("DALYs averted compared with business as usual"), 4),
-                    "Incremental cost": _signed_money(row.get("Incremental cost compared with business as usual (AUD)")),
-                    "Event ledger": row.get("Event ledger", ""),
-                    "Analysis basis": row.get("Analysis basis", ""),
-                    "Additional setup cost": row.get("Additional setup cost", ""),
-                    "Annual programme cost": row.get("Annual programme cost", ""),
-                    "Attributed share": row.get("Attributed share", ""),
-                    "Point note": row.get("Point note", ""),
-                }
-                for row in plane_rows
-                if row.get("Scenario") != "Business as usual"
-            ]
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
     st.caption(
         "Cost-only changes move points vertically on this plane: added programme costs move upward, "
         "greater savings move downward, and DALYs averted remain fixed."

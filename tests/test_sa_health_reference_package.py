@@ -272,18 +272,15 @@ class SAHealthReferencePackageTests(unittest.TestCase):
             "-AUD",
             str(scenarios.loc[scenarios["Scenario"] == "No additional programme overhead entered", "Arithmetic ICER"].iloc[0]),
         )
-        point_audit = app.dataframe[2].value
-        self.assertIn("SA Health report reference", set(point_audit["Scenario"]))
-        reference = point_audit[point_audit["Scenario"] == "SA Health report reference"].iloc[0]
-        self.assertEqual(reference["DALYs averted"], "16.1738")
-        self.assertEqual(reference["Incremental cost"], "-AUD 92,370")
-        self.assertIn("Frozen stochastic compatibility reference package", reference["Event ledger"])
-        self.assertIn("Current assumptions", set(point_audit["Scenario"]))
+        for dataframe in app.dataframe:
+            columns = set(getattr(dataframe.value, "columns", []))
+            self.assertFalse({"Event ledger", "Analysis basis"}.issubset(columns))
         source = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
         self.assertIn("DALYs averted compared with business as usual", source)
         self.assertIn("Incremental cost compared with business as usual (AUD)", source)
         self.assertIn("Business as usual", source)
         self.assertIn("st.altair_chart(_cost_effectiveness_plane_chart", source)
+        self.assertNotIn('"Event ledger": row.get("Event ledger"', source)
 
     def test_health_economics_programme_cost_controls_are_explicit(self) -> None:
         app = AppTest.from_file(str(ROOT / "pages" / "4_Economics.py"), default_timeout=60)

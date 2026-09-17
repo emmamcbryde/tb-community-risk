@@ -16,6 +16,9 @@ from engine.apy.infection_history import (
     is_experimental_infection_history_results,
 )
 
+SUPPORTED_SA_HEALTH_ANALYSIS_BASIS = "sa_health_matlab_v9_compatibility_reference"
+SUPPORTED_SA_HEALTH_NATURAL_HISTORY_SEMANTICS = "matlab_v9_implicit_early_late"
+
 
 REFERENCE_ONLY_STALE_RESULTS_MESSAGE = (
     "Previous results used an analysis pathway that is not available in this "
@@ -137,22 +140,15 @@ def sanitize_reference_only_state() -> bool:
         except Exception:
             st.session_state["parameter_workspace"] = None
 
-    if is_experimental_infection_history_results(st.session_state.get("results_bundle")):
-        st.session_state["results_bundle"] = None
-        st.session_state["economics_results"] = None
-        st.session_state["validation_report"] = None
-        st.session_state["dirty_economics"] = False
-        st.session_state["results_stale"] = False
-        st.session_state["economic_scenario_comparison"] = None
-        st.session_state["decision_scenario_comparison"] = None
-        st.session_state["reference_only_migration_notice"] = REFERENCE_ONLY_STALE_RESULTS_MESSAGE
+    if has_unsupported_sa_health_results(st.session_state.get("results_bundle")):
+        _clear_active_completed_analysis()
         changed = True
 
     for bundle_key, econ_key in (
         ("compare_baseline_bundle", "compare_baseline_economics_results"),
         ("compare_comparator_bundle", "compare_comparator_economics_results"),
     ):
-        if is_experimental_infection_history_results(st.session_state.get(bundle_key)):
+        if has_unsupported_sa_health_results(st.session_state.get(bundle_key)):
             st.session_state[bundle_key] = None
             st.session_state[econ_key] = None
             st.session_state["compare_results_stale"] = False
@@ -163,9 +159,84 @@ def sanitize_reference_only_state() -> bool:
     return changed
 
 
+def _clear_active_completed_analysis() -> None:
+    for key in (
+        "results_bundle",
+        "economics_results",
+        "validation_report",
+        "economic_scenario_comparison",
+        "decision_scenario_comparison",
+        "decision_sensitivity",
+        "decision_threshold",
+        "decision_early_review",
+    ):
+        st.session_state[key] = None
+    st.session_state["dirty_economics"] = False
+    st.session_state["results_stale"] = False
+    st.session_state["last_economics_run_at"] = ""
+    st.session_state["last_run_at"] = ""
+    st.session_state["reference_only_migration_notice"] = REFERENCE_ONLY_STALE_RESULTS_MESSAGE
+
+
+def _result_metadata_sources(results_bundle: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(results_bundle, dict):
+        return []
+    sources: list[dict[str, Any]] = []
+    metadata = results_bundle.get("metadata")
+    if isinstance(metadata, dict):
+        sources.append(metadata)
+    technical = results_bundle.get("technical") if isinstance(results_bundle.get("technical"), dict) else {}
+    interface_config = technical.get("interfaceConfig") if isinstance(technical.get("interfaceConfig"), dict) else {}
+    if interface_config:
+        sources.append(interface_config)
+    event_ledger = technical.get("eventLedger") if isinstance(technical.get("eventLedger"), dict) else {}
+    ledger_metadata = event_ledger.get("metadata") if isinstance(event_ledger.get("metadata"), dict) else {}
+    if ledger_metadata:
+        sources.append(ledger_metadata)
+    return sources
+
+
+def _first_nonempty_metadata_value(sources: list[dict[str, Any]], key: str) -> Any:
+    for source in sources:
+        value = source.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def is_supported_sa_health_analysis_basis(results_bundle: dict[str, Any] | None) -> bool:
+    """Return True only for completed results with supported SA Health semantics.
+
+    Accepted natural-history/calibration identifiers for this release are:
+    - naturalHistorySemantics: matlab_v9_implicit_early_late
+    - analysisBasis: sa_health_matlab_v9_compatibility_reference, when recorded
+
+    Missing, unknown or legacy recent/remote natural-history provenance is rejected
+    rather than reinterpreted.
+    """
+    if not isinstance(results_bundle, dict):
+        return False
+    if is_experimental_infection_history_results(results_bundle):
+        return False
+    sources = _result_metadata_sources(results_bundle)
+    if not sources:
+        return False
+    analysis_basis = _first_nonempty_metadata_value(sources, "analysisBasis")
+    natural_history = _first_nonempty_metadata_value(sources, "naturalHistorySemantics")
+    if natural_history != SUPPORTED_SA_HEALTH_NATURAL_HISTORY_SEMANTICS:
+        return False
+    return analysis_basis in (None, SUPPORTED_SA_HEALTH_ANALYSIS_BASIS)
+
+
+def has_unsupported_sa_health_results(results_bundle: dict[str, Any] | None) -> bool:
+    """Return True for completed result bundles not supported in the SA Health workflow."""
+    return isinstance(results_bundle, dict) and not is_supported_sa_health_analysis_basis(results_bundle)
+
+
 def has_retired_infection_history_results(results_bundle: dict[str, Any] | None) -> bool:
-    """Return True for result bundles from the withdrawn infection-history pathway."""
-    return is_experimental_infection_history_results(results_bundle)
+    """Return True for result bundles unavailable in the reference-only workflow."""
+    return has_unsupported_sa_health_results(results_bundle)
+
 
 
 def get_backend_name() -> str:

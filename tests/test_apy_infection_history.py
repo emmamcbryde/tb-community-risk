@@ -3,8 +3,10 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+import pandas as pd
 from streamlit.testing.v1 import AppTest
 
+from app.state import is_supported_sa_health_analysis_basis
 from engine.apy.config import build_default_config, normalise_config
 from engine.apy.data import load_parameters_from_config
 from engine.apy.expected_value import run_expected_value
@@ -204,6 +206,123 @@ class ApyInfectionHistoryTests(unittest.TestCase):
         self.assertFalse(econ_app.exception)
         self.assertIsNone(econ_app.session_state["results_bundle"])
         self.assertTrue(any("not available in this SA Health version" in item.value for item in econ_app.warning))
+
+    def test_recent_remote_expected_value_ledger_is_rejected_by_positive_whitelist(self) -> None:
+        bundle = {
+            "metadata": {
+                "scenarioLabel": "screenshot_recent_remote_fixture",
+                "modelType": "expected_value",
+                "analysisMethod": "expected_value",
+                "naturalHistorySemantics": "continuous_markov_recent_remote",
+                "analysisBasis": "",
+            },
+            "technical": {
+                "interfaceConfig": {
+                    "analysisMethod": "expected_value",
+                    "naturalHistorySemantics": "continuous_markov_recent_remote",
+                    "analysisBasis": "",
+                },
+                "eventLedger": {
+                    "metadata": {
+                        "modelType": "expected_value",
+                        "naturalHistorySemantics": "continuous_markov_recent_remote",
+                        "ltbiStateModel": "continuous_markov_recent_remote",
+                        "analysisBasis": "",
+                    },
+                    "replicateTotals": pd.DataFrame(
+                        [
+                            {
+                                "modelType": "expected_value",
+                                "replicateId": 0,
+                                "pairedReplicateId": 0,
+                                "arm": "intervention",
+                                "eventName": "active_tb_cases_prevented",
+                                "value": 25.4,
+                            }
+                        ]
+                    ),
+                    "annualEvents": pd.DataFrame(),
+                    "definitions": pd.DataFrame(),
+                },
+            },
+        }
+        economics = {
+            "summaryRows": [
+                {"metric": "incrementalCost", "discountProfile": "primary", "mean": -304182.0},
+                {"metric": "dalysAverted", "discountProfile": "primary", "mean": 34.4955},
+                {"metric": "activeTBCasesPrevented", "discountProfile": "primary", "mean": 25.4},
+            ]
+        }
+
+        self.assertFalse(is_supported_sa_health_analysis_basis(bundle))
+
+        app = AppTest.from_file(str(Path("pages/4_Economics.py")))
+        app.session_state["config"] = self.config
+        app.session_state["economics_config"] = self.economics_config
+        app.session_state["results_bundle"] = bundle
+        app.session_state["economics_results"] = economics
+        app.session_state["results_stale"] = False
+        app.session_state["economic_scenario_comparison"] = [{"Scenario": "Current assumptions"}]
+        app.session_state["decision_scenario_comparison"] = [{"Scenario": "Current assumptions"}]
+
+        app.run(timeout=90)
+
+        self.assertFalse(app.exception)
+        self.assertIsNone(app.session_state["results_bundle"])
+        self.assertIsNone(app.session_state["economics_results"])
+        self.assertIsNone(app.session_state["economic_scenario_comparison"])
+        self.assertIsNone(app.session_state["decision_scenario_comparison"])
+        self.assertTrue(any("not available in this SA Health version" in item.value for item in app.warning))
+        rendered = "\n".join(
+            str(getattr(item, "value", ""))
+            for collection in [app.markdown, app.caption, app.warning, app.info]
+            for item in collection
+        )
+        self.assertNotIn("34.4955", rendered)
+        self.assertNotIn("25.4", rendered)
+        self.assertNotIn("-304182", rendered)
+        self.assertNotIn("Current assumptions", rendered)
+
+        decision_app = AppTest.from_file(str(Path("pages/5_Decision_Analysis.py")))
+        decision_app.session_state["config"] = self.config
+        decision_app.session_state["economics_config"] = self.economics_config
+        decision_app.session_state["results_bundle"] = bundle
+        decision_app.session_state["economics_results"] = economics
+        decision_app.session_state["results_stale"] = False
+        decision_app.session_state["decision_scenario_comparison"] = [{"Strategy": "Current assumptions"}]
+        decision_app.run(timeout=90)
+
+        self.assertFalse(decision_app.exception)
+        self.assertIsNone(decision_app.session_state["results_bundle"])
+        self.assertIsNone(decision_app.session_state["economics_results"])
+        self.assertIsNone(decision_app.session_state["decision_scenario_comparison"])
+
+    def test_supported_deterministic_and_stochastic_compatibility_metadata_are_permitted(self) -> None:
+        def bundle(model_type: str) -> dict[str, object]:
+            return {
+                "metadata": {
+                    "modelType": model_type,
+                    "analysisBasis": "sa_health_matlab_v9_compatibility_reference",
+                    "naturalHistorySemantics": "matlab_v9_implicit_early_late",
+                },
+                "technical": {
+                    "interfaceConfig": {
+                        "analysisBasis": "sa_health_matlab_v9_compatibility_reference",
+                        "naturalHistorySemantics": "matlab_v9_implicit_early_late",
+                    },
+                    "eventLedger": {
+                        "metadata": {
+                            "modelType": model_type,
+                            "analysisBasis": "sa_health_matlab_v9_compatibility_reference",
+                            "naturalHistorySemantics": "matlab_v9_implicit_early_late",
+                        }
+                    },
+                },
+            }
+
+        self.assertTrue(is_supported_sa_health_analysis_basis(bundle("expected_value")))
+        self.assertTrue(is_supported_sa_health_analysis_basis(bundle("agent_based")))
+        self.assertFalse(is_supported_sa_health_analysis_basis({"metadata": {"modelType": "expected_value"}}))
 
     def test_stochastic_runner_records_selected_explicit_infection_history(self) -> None:
         config = configure_infection_history_assumptions(self.config, "falling")
