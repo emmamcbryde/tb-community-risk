@@ -9,7 +9,6 @@ from engine.apy.config import build_default_config, normalise_config
 from engine.apy.data import load_parameters_from_config
 from engine.apy.expected_value import run_expected_value
 from engine.apy.infection_history import (
-    EXPERIMENTAL_ECONOMICS_GUARD_MESSAGE,
     EXPERIMENTAL_READINESS_ITEMS,
     EXPLICIT_EXPERIMENTAL_BASIS,
     TRAJECTORY_PRESETS,
@@ -119,50 +118,38 @@ class ApyInfectionHistoryTests(unittest.TestCase):
         unresolved = {item["status"] for item in readiness["items"]}
         self.assertEqual(unresolved, {"unresolved"})
 
-    def test_standard_pages_guard_experimental_economics_and_activation(self) -> None:
+    def test_standard_pages_do_not_expose_retired_infection_history_pathway(self) -> None:
         start_page = Path("pages/0_Start.py").read_text(encoding="utf-8")
-        economics_page = Path("pages/4_Economics.py").read_text(encoding="utf-8")
+        economics_source = Path("pages/4_Economics.py").read_text(encoding="utf-8")
+        economics_page = economics_source.split("st.stop()", 1)[0]
         results_page = Path("pages/3_Results.py").read_text(encoding="utf-8")
-        self.assertIn("Experimental infection-history analysis", start_page)
-        self.assertIn("Enable experimental infection-history analysis", start_page)
-        self.assertIn("Return to SA Health report reference", start_page)
-        self.assertNotIn("Epidemiological basis\",\\n        basis_options", start_page)
-        self.assertIn("is_experimental_infection_history_results", economics_page)
-        self.assertIn("st.stop()", economics_page)
-        self.assertIn("is_experimental_infection_history_results", results_page)
-        self.assertIn("EXPERIMENTAL_ECONOMICS_GUARD_MESSAGE", economics_page)
-        self.assertTrue(EXPERIMENTAL_ECONOMICS_GUARD_MESSAGE.startswith("Health-economic conclusions"))
+        decision_page = Path("pages/5_Decision_Analysis.py").read_text(encoding="utf-8")
+        evidence_page = Path("pages/6_Evidence_Assumptions.py").read_text(encoding="utf-8")
+        combined = "\n".join([start_page, results_page, decision_page, evidence_page])
+        for forbidden in [
+            "Enable experimental infection-history analysis",
+            "Historical TB infection pressure",
+            "Rising",
+            "Steady",
+            "Falling",
+            "recent fraction",
+        ]:
+            self.assertNotIn(forbidden, combined)
+        self.assertNotIn("EXPERIMENTAL_ECONOMICS_GUARD_MESSAGE", economics_page)
+        self.assertIn("sanitize_reference_only_state", start_page)
+        self.assertIn("sanitize_reference_only_state", results_page)
+        self.assertIn("sanitize_reference_only_state", economics_page)
 
-    def test_rendered_experimental_trajectory_selector_persists_all_values(self) -> None:
+    def test_rendered_reference_only_setup_has_no_trajectory_controls(self) -> None:
         app = AppTest.from_file(str(Path("pages/0_Start.py")))
         app.run(timeout=90)
 
         self.assertFalse(app.exception)
         self.assertNotIn("Historical TB infection pressure", [item.label for item in app.selectbox])
-        next(button for button in app.button if button.label == "Enable experimental infection-history analysis").click().run(timeout=90)
-
-        selector = next(item for item in app.selectbox if item.label == "Historical TB infection pressure")
-        self.assertEqual(selector.options, ["Rising", "Steady", "Falling"])
-        self.assertEqual(selector.value, "Steady")
-        self.assertEqual(
-            (app.session_state["config"].get("ltbiStateAssumptions") or {}).get("infectionPressureTrajectory"),
-            "steady",
-        )
-        for label, code in [("Rising", "rising"), ("Steady", "steady"), ("Falling", "falling")]:
-            next(item for item in app.selectbox if item.label == "Historical TB infection pressure").set_value(label).run(timeout=90)
-            self.assertEqual(
-                (app.session_state["config"].get("ltbiStateAssumptions") or {}).get("infectionPressureTrajectory"),
-                code,
-            )
-            app.run(timeout=90)
-            self.assertEqual(
-                next(item for item in app.selectbox if item.label == "Historical TB infection pressure").value,
-                label,
-            )
-
+        self.assertNotIn("Enable experimental infection-history analysis", [item.label for item in app.button])
         self.assertEqual([button.label for button in app.button].count("Restore APY defaults"), 1)
 
-    def test_rendered_stale_trajectory_does_not_activate_experimental_mode(self) -> None:
+    def test_rendered_stale_trajectory_config_is_rejected_and_defaults_restored(self) -> None:
         stale_config = configure_infection_history_assumptions(self.config, "falling")
         app = AppTest.from_file(str(Path("pages/0_Start.py")))
         app.session_state["config"] = stale_config
@@ -174,12 +161,49 @@ class ApyInfectionHistoryTests(unittest.TestCase):
 
         self.assertFalse(app.exception)
         self.assertFalse(has_explicit_infection_history(app.session_state["config"]))
-        self.assertFalse(app.session_state["experimental_infection_history_enabled"])
+        self.assertNotIn("experimental_infection_history_enabled", app.session_state)
         self.assertNotIn("Historical TB infection pressure", [item.label for item in app.selectbox])
         self.assertIn(
             "Analysis basis: SA Health report reference",
             [item.value for item in app.success],
         )
+        self.assertTrue(
+            any("APY defaults have been restored" in item.value for item in app.warning)
+        )
+
+    def test_rendered_stale_experimental_results_are_invalidated(self) -> None:
+        config = configure_infection_history_assumptions(self.config, "steady")
+        config["analysisMethod"] = "expected_value"
+        config["N"] = 20
+        result = run_expected_value(config)
+        bundle = build_results_bundle(
+            {
+                **result,
+                "raw": __import__("pandas").DataFrame([{"nScreened": 0}]),
+                "summary": __import__("pandas").DataFrame(
+                    [{"Metric": "nScreened", "Median": 0, "Low95": 0, "High95": 0}]
+                ),
+            }
+        )
+        self.assertTrue(is_experimental_infection_history_results(bundle))
+
+        results_app = AppTest.from_file(str(Path("pages/3_Results.py")))
+        results_app.session_state["config"] = self.config
+        results_app.session_state["economics_config"] = self.economics_config
+        results_app.session_state["results_bundle"] = bundle
+        results_app.run(timeout=90)
+        self.assertFalse(results_app.exception)
+        self.assertIsNone(results_app.session_state["results_bundle"])
+        self.assertTrue(any("not available in this SA Health version" in item.value for item in results_app.warning))
+
+        econ_app = AppTest.from_file(str(Path("pages/4_Economics.py")))
+        econ_app.session_state["config"] = self.config
+        econ_app.session_state["economics_config"] = self.economics_config
+        econ_app.session_state["results_bundle"] = bundle
+        econ_app.run(timeout=90)
+        self.assertFalse(econ_app.exception)
+        self.assertIsNone(econ_app.session_state["results_bundle"])
+        self.assertTrue(any("not available in this SA Health version" in item.value for item in econ_app.warning))
 
     def test_stochastic_runner_records_selected_explicit_infection_history(self) -> None:
         config = configure_infection_history_assumptions(self.config, "falling")

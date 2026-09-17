@@ -10,6 +10,17 @@ import streamlit as st
 from adapters.matlab_backend import MatlabBackend
 from adapters.paths import repo_root
 from adapters.python_apy_backend import PythonApyBackend
+from engine.apy.infection_history import (
+    configure_compatibility_reference_assumptions,
+    is_experimental_infection_history_config,
+    is_experimental_infection_history_results,
+)
+
+
+REFERENCE_ONLY_STALE_RESULTS_MESSAGE = (
+    "Previous results used an analysis pathway that is not available in this "
+    "SA Health version. Please run the analysis again."
+)
 
 
 def init_session_state() -> None:
@@ -35,7 +46,6 @@ def init_session_state() -> None:
         "dirty_config": False,
         "dirty_economics": False,
         "results_stale": False,
-        "experimental_infection_history_enabled": False,
         "last_economics_run_at": "",
         "last_run_at": "",
         "last_validated_at": "",
@@ -67,6 +77,95 @@ def init_session_state() -> None:
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
+
+
+def sanitize_reference_only_state() -> bool:
+    """Remove retired infection-history state from the standard SA Health workflow.
+
+    The research implementation remains importable for tests and development, but the
+    Streamlit SA Health workflow must only run the MATLAB-v9-compatible natural history.
+    Returns True when active state was changed.
+    """
+    changed = False
+
+    for key in (
+        "experimental_infection_history_enabled",
+        "infection_history_trajectory_label",
+        "infection_history_calibration",
+        "infection_history_diagnostics",
+    ):
+        if key in st.session_state:
+            st.session_state.pop(key, None)
+            changed = True
+
+    config = st.session_state.get("config")
+    if is_experimental_infection_history_config(config):
+        try:
+            from engine.apy.working_defaults import build_unified_working_default_preset
+
+            preset = build_unified_working_default_preset()
+            st.session_state["config"] = configure_compatibility_reference_assumptions(preset["config"])
+            st.session_state["economics_config"] = preset["economicsConfig"]
+            st.session_state["working_default_preset"] = {
+                key: preset[key]
+                for key in [
+                    "contractVersion",
+                    "presetId",
+                    "presetVersion",
+                    "label",
+                    "sourceComponentPresets",
+                    "workingDefault",
+                    "referenceStatus",
+                    "configurationHash",
+                    "provisionalAssumptions",
+                    "unresolvedAssumptions",
+                ]
+            }
+        except Exception:
+            st.session_state["config"] = configure_compatibility_reference_assumptions(config)
+        st.session_state["reference_only_migration_notice"] = (
+            "A configuration requested an analysis basis that is not available in this "
+            "SA Health version. APY defaults have been restored."
+        )
+        changed = True
+        try:
+            from app.parameter_workspace import build_parameter_workspace
+
+            econ = st.session_state.get("economics_config") or {}
+            st.session_state["parameter_workspace"] = build_parameter_workspace(st.session_state["config"], econ)
+            st.session_state["parameter_workspace_validation"] = None
+        except Exception:
+            st.session_state["parameter_workspace"] = None
+
+    if is_experimental_infection_history_results(st.session_state.get("results_bundle")):
+        st.session_state["results_bundle"] = None
+        st.session_state["economics_results"] = None
+        st.session_state["validation_report"] = None
+        st.session_state["dirty_economics"] = False
+        st.session_state["results_stale"] = False
+        st.session_state["economic_scenario_comparison"] = None
+        st.session_state["decision_scenario_comparison"] = None
+        st.session_state["reference_only_migration_notice"] = REFERENCE_ONLY_STALE_RESULTS_MESSAGE
+        changed = True
+
+    for bundle_key, econ_key in (
+        ("compare_baseline_bundle", "compare_baseline_economics_results"),
+        ("compare_comparator_bundle", "compare_comparator_economics_results"),
+    ):
+        if is_experimental_infection_history_results(st.session_state.get(bundle_key)):
+            st.session_state[bundle_key] = None
+            st.session_state[econ_key] = None
+            st.session_state["compare_results_stale"] = False
+            st.session_state["compare_economics_stale"] = False
+            st.session_state["reference_only_migration_notice"] = REFERENCE_ONLY_STALE_RESULTS_MESSAGE
+            changed = True
+
+    return changed
+
+
+def has_retired_infection_history_results(results_bundle: dict[str, Any] | None) -> bool:
+    """Return True for result bundles from the withdrawn infection-history pathway."""
+    return is_experimental_infection_history_results(results_bundle)
 
 
 def get_backend_name() -> str:

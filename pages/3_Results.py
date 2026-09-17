@@ -15,16 +15,12 @@ from app.results_page_display import (
     key_metric_rows_for_display,
 )
 from app.results_workbook import build_results_workbook
-from app.state import init_session_state
-from engine.apy.infection_history import (
-    EXPERIMENTAL_ECONOMICS_GUARD_MESSAGE,
-    EXPERIMENTAL_STATUS_LABEL,
-    is_experimental_infection_history_results,
-)
+from app.state import init_session_state, sanitize_reference_only_state
 from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
 
 
 init_session_state()
+sanitize_reference_only_state()
 
 
 def _page_link(path: str, *, label: str) -> None:
@@ -38,7 +34,11 @@ st.title("Results")
 
 bundle = st.session_state.get("results_bundle")
 if not bundle:
+    notice = st.session_state.pop("reference_only_migration_notice", "")
+    if notice:
+        st.warning(notice)
     st.info("Run the analysis to create results.")
+    _page_link("pages/2_Run_Model.py", label="Open Run Analysis")
     st.stop()
 
 metadata = bundle.get("metadata", {})
@@ -48,7 +48,6 @@ downloads = bundle.get("downloads", {})
 economics_config = st.session_state.get("economics_config")
 scenario_label = metadata.get("scenarioLabel")
 model_type = metadata.get("modelType") or ((technical.get("eventLedger") or {}).get("metadata") or {}).get("modelType")
-experimental_results = is_experimental_infection_history_results(bundle)
 
 if st.session_state.get("results_stale"):
     st.warning("These results are stale because analysis inputs changed after the last run.")
@@ -57,11 +56,6 @@ else:
 
 if scenario_label:
     st.markdown(f"**Scenario:** {scenario_label}")
-if experimental_results:
-    st.warning(
-        f"{EXPERIMENTAL_STATUS_LABEL}. These results use an exploratory infection-history "
-        "pathway and must not be interpreted as the SA Health report reference."
-    )
 if model_type == "agent_based":
     st.caption(
         f"Stochastic individual-based analysis; repetitions: {metadata.get('nReps')}; "
@@ -180,7 +174,4 @@ st.warning(
     "Outputs remain provisional where evidence inputs are unresolved. Review "
     "Evidence & Assumptions before using results as final policy evidence."
 )
-if experimental_results:
-    st.info(EXPERIMENTAL_ECONOMICS_GUARD_MESSAGE)
-else:
-    _page_link("pages/4_Economics.py", label="Continue to Health Economics")
+_page_link("pages/4_Economics.py", label="Continue to Health Economics")

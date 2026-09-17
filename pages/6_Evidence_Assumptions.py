@@ -5,7 +5,6 @@ import streamlit as st
 from app.display import arrow_safe_dataframe
 from app.state import init_session_state
 from engine.apy.evidence import assess_apy_reference_readiness, load_apy_evidence_registry
-from engine.apy.infection_history import infection_history_readiness_status
 
 
 init_session_state()
@@ -86,10 +85,7 @@ with st.expander("Caveats & technical information", expanded=False):
         - The provisional working route uses a compatibility placeholder for unresolved recent-versus-remote LTBI assumptions; this does not promote evidence readiness.
         - The inherited `10/770` active-TB calibration quantity remains unresolved and must not be interpreted as validated future progression from LTBI.
         - The implicit early/late progression structure is retained for compatibility with earlier APY analysis, not as measured recent-LTBI composition.
-        - The explicit infection-history analysis is experimental, not the SA Health report reference, and is not validated for health-economic reporting.
-        - It derives infection acquired within the preceding two years from a calibrated rising, steady or falling historical infection-pressure assumption. That derived fraction is not directly observed.
-        - Infection acquired within two years is not equivalent to the early higher-progression-risk state, which currently has a five-year mean residence time before transition to later lower-risk progression.
-        - The rising, steady and falling trajectory slopes are scenario assumptions; LTBI prevalence plus an age odds ratio cannot identify calendar-time infection trends.
+        - Historical infection-pressure trajectory scenarios have been withdrawn from this SA Health Streamlit release pending scientific redevelopment.
         - Disease-risk odds ratios are applied as multiplicative hazard multipliers for compatibility; this remains scientifically provisional.
         - Active or near-baseline TB is not fully separated from future incident, preventable TB in the compatibility anchor.
         - Simulation intervals describe finite-population stochastic variation, not full parameter uncertainty.
@@ -98,7 +94,3 @@ with st.expander("Caveats & technical information", expanded=False):
         - Contract versions, package hashes and release commits are retained in exported manifests and workbooks.
         """
     )
-    readiness = infection_history_readiness_status()
-    st.markdown("Experimental infection-history readiness")
-    st.dataframe(arrow_safe_dataframe(readiness["items"]), use_container_width=True, hide_index=True)
-    st.markdown("Methods note: `docs/recent_remote_infection_history.md`")

@@ -14,18 +14,15 @@ from app.state import (
     init_session_state,
     mark_run_completed,
     record_message,
+    sanitize_reference_only_state,
     sync_backend_status,
 )
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
-from engine.apy.infection_history import (
-    EXPERIMENTAL_STATUS_LABEL,
-    configure_compatibility_reference_assumptions,
-    is_experimental_infection_history_config,
-)
 
 
 init_session_state()
 st.session_state["apy_backend_name"] = "python_apy"
+sanitize_reference_only_state()
 backend = get_backend()
 
 st.title("Run Analysis")
@@ -34,10 +31,9 @@ config = st.session_state.get("config")
 if not config:
     st.info("Set up the analysis before running it.")
     st.stop()
-if is_experimental_infection_history_config(config) and not st.session_state.get("experimental_infection_history_enabled"):
-    config = configure_compatibility_reference_assumptions(config)
-    st.session_state["config"] = config
-    st.session_state.pop("infection_history_trajectory_label", None)
+notice = st.session_state.pop("reference_only_migration_notice", "")
+if notice:
+    st.warning(notice)
 
 status = backend.status()
 sync_backend_status(status)
@@ -49,8 +45,6 @@ method_label = MODEL_METHOD_LABELS.get(
     "Expected outcomes — single deterministic run",
 )
 is_stochastic = str(config.get("analysisMethod")) == "agent_based"
-is_experimental = bool(st.session_state.get("experimental_infection_history_enabled")) and is_experimental_infection_history_config(config)
-trajectory_label = ((config.get("ltbiStateAssumptions") or {}).get("infectionPressureTrajectoryLabel"))
 reps = int(float(config.get("nReps") or 0))
 seed = int(float(config.get("seed") or 1))
 if is_stochastic and reps == 2000 and seed == 1:
@@ -71,11 +65,7 @@ summary_rows = [
     {"Setting": "Run type", "Value": run_type},
     {
         "Setting": "Epidemiological basis",
-        "Value": (
-            f"Experimental infection-history scenario — {trajectory_label or 'selected trajectory'}"
-            if is_experimental
-            else "SA Health report reference"
-        ),
+        "Value": "SA Health report reference",
     },
     {"Setting": "Screening test", "Value": config.get("testType")},
     {"Setting": "Preventive treatment", "Value": config.get("regimen")},
@@ -87,11 +77,6 @@ if is_stochastic:
 st.dataframe(arrow_safe_dataframe(summary_rows), use_container_width=True, hide_index=True)
 if is_stochastic and reps < 2000:
     st.warning("Preview analyses are useful for checking setup but do not reproduce the SA Health reference.")
-if is_experimental:
-    st.warning(
-        "Experimental infection-history analysis is not the SA Health report reference "
-        "and is not validated for health-economic reporting."
-    )
 
 if st.session_state.get("results_stale") or st.session_state.get("dirty_config"):
     st.warning("Inputs have changed. Run the analysis again before interpreting results.")

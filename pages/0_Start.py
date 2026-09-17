@@ -30,19 +30,8 @@ from app.state import (
     mark_config_changed,
     mark_economics_changed,
     record_message,
+    sanitize_reference_only_state,
     sync_backend_status,
-)
-from engine.apy.config import normalise_config
-from engine.apy.data import load_parameters_from_config
-from engine.apy.infection_history import (
-    EXPERIMENTAL_STATUS_LABEL,
-    TRAJECTORY_PRESETS,
-    calibrate_infection_history,
-    configure_compatibility_reference_assumptions,
-    configure_infection_history_assumptions,
-    has_explicit_infection_history,
-    infection_history_readiness_status,
-    is_experimental_infection_history_results,
 )
 
 def _page_link(path: str, *, label: str) -> None:
@@ -68,12 +57,9 @@ def _load_unified_defaults(*, show_workspace: bool) -> None:
     st.session_state["dirty_config"] = False
     st.session_state["dirty_economics"] = False
     st.session_state["results_stale"] = False
-    st.session_state["experimental_infection_history_enabled"] = False
     st.session_state["last_economics_run_at"] = ""
     st.session_state["last_run_at"] = ""
     st.session_state.pop("recent_ltbi_run_route", None)
-    st.session_state.pop("infection_history_trajectory_label", None)
-    st.session_state["experimental_infection_history_enabled"] = False
     st.session_state.pop("health_econ_workspace", None)
     sync_backend_status(get_backend().status())
 
@@ -90,8 +76,6 @@ def _restore_unified_defaults() -> None:
     st.session_state["parameter_workspace_visible"] = True
     st.session_state["parameter_workspace_validation"] = None
     st.session_state.pop("recent_ltbi_run_route", None)
-    st.session_state.pop("infection_history_trajectory_label", None)
-    st.session_state["experimental_infection_history_enabled"] = False
     st.session_state.pop("health_econ_workspace", None)
     _bump_parameter_editor_version()
     if previous_config != state["config"]:
@@ -201,208 +185,14 @@ def _run_classification(config: dict[str, Any]) -> str:
     return "Custom stochastic run"
 
 
-def _format_percent(value: Any) -> str:
-    try:
-        return f"{float(value) * 100:.2f}%"
-    except (TypeError, ValueError):
-        return ""
-
-
-def _decimal(value: Any, digits: int = 2) -> str:
-    try:
-        return f"{float(value):,.{digits}f}"
-    except (TypeError, ValueError):
-        return "Unavailable"
-
-
-def _target_ltbi_prevalence(config: dict[str, Any]) -> float:
-    value = config.get("ltbiPrevalence")
-    return 47 / 624 if value in (None, "", []) else float(value)
-
-
-def _experimental_infection_history_enabled() -> bool:
-    return bool(st.session_state.get("experimental_infection_history_enabled"))
-
-
-def _ensure_inactive_experimental_config_is_reference() -> None:
-    config = st.session_state.get("config")
-    if not isinstance(config, dict):
-        return
-    if _experimental_infection_history_enabled():
-        return
-    if not has_explicit_infection_history(config):
-        st.session_state.pop("infection_history_trajectory_label", None)
-        return
-    st.session_state["config"] = configure_compatibility_reference_assumptions(config)
-    st.session_state.pop("infection_history_trajectory_label", None)
-    _sync_workspace_after_direct_config_change()
-
-
-def _render_infection_history_controls(config: dict[str, Any]) -> None:
-    current_explicit = _experimental_infection_history_enabled() and has_explicit_infection_history(config)
+def _render_epidemiological_basis() -> None:
     st.subheader("Epidemiological basis")
-    if current_explicit:
-        st.warning(
-            f"{EXPERIMENTAL_STATUS_LABEL}. Restore the SA Health report reference "
-            "before reproducing report-facing epidemiology or economics."
-        )
-    else:
-        st.success("SA Health report reference: validated software-compatible stochastic anchor.")
-        st.caption(
-            "The reference preserves the validated software-compatible epidemiological "
-            "anchor. Its implicit early phase is not a measured recent-infection fraction."
-        )
-
-    with st.expander("Experimental infection-history analysis", expanded=current_explicit):
-        st.warning(
-            "This exploratory analysis reconstructs the timing of past infection from "
-            "prevalence, age pattern and an assumed historical trajectory. It is not "
-            "the SA Health report reference. Its current TB progression calibration is "
-            "not validated for decision-making or health-economic reporting."
-        )
-        if not current_explicit:
-            if st.button("Enable experimental infection-history analysis"):
-                st.session_state["experimental_infection_history_enabled"] = True
-                st.session_state["config"] = configure_infection_history_assumptions(config, "steady")
-                st.session_state.pop("recent_ltbi_run_route", None)
-                st.session_state["infection_history_trajectory_label"] = "Steady"
-                _sync_workspace_after_direct_config_change()
-                st.rerun()
-            return
-
-        if st.button("Return to SA Health report reference"):
-            st.session_state["experimental_infection_history_enabled"] = False
-            st.session_state["config"] = configure_compatibility_reference_assumptions(config)
-            st.session_state.pop("recent_ltbi_run_route", None)
-            st.session_state.pop("infection_history_trajectory_label", None)
-            _sync_workspace_after_direct_config_change()
-            st.rerun()
-
-        labels = [preset["label"] for preset in TRAJECTORY_PRESETS.values()]
-        label_to_key = {preset["label"]: key for key, preset in TRAJECTORY_PRESETS.items()}
-        nested = config.get("ltbiStateAssumptions") or {}
-        current_key = str(nested.get("infectionPressureTrajectory") or "steady").lower()
-        current_label = TRAJECTORY_PRESETS.get(current_key, TRAJECTORY_PRESETS["steady"])["label"]
-        trajectory_label = st.selectbox(
-            "Historical TB infection pressure",
-            labels,
-            index=labels.index(current_label) if current_label in labels else labels.index("Steady"),
-            key="infection_history_trajectory_label",
-            help=(
-                "Rising means infection pressure has increased toward the present; "
-                "falling means it has declined toward the present."
-            ),
-        )
-        trajectory = label_to_key[trajectory_label]
-        configured = configure_infection_history_assumptions(config, trajectory)
-        if configured != config:
-            st.session_state["config"] = configured
-            st.session_state.pop("recent_ltbi_run_route", None)
-            _sync_workspace_after_direct_config_change()
-            st.rerun()
-
-        try:
-            cfg = normalise_config(configured)
-            pars = load_parameters_from_config(cfg)
-            nested = cfg.get("ltbiStateAssumptions") or {}
-            derived = calibrate_infection_history(
-                pars,
-                target_prevalence=_target_ltbi_prevalence(cfg),
-                target_age_or=float(cfg.get("targetAgeOR") or 7.54),
-                trajectory=trajectory,
-                trend_rate_per_year=nested.get("infectionPressureTrendRatePerYear"),
-                recent_window_years=nested.get("recentDefinitionYears") or 2.0,
-            )
-            diagnostic_rows = [
-                {"Quantity": "Status", "Value": EXPERIMENTAL_STATUS_LABEL},
-                {"Quantity": "Assumed trajectory", "Value": TRAJECTORY_PRESETS[trajectory]["label"]},
-                {"Quantity": "Baseline LTBI prevalence", "Value": _format_percent(derived["expectedPrevalence"])},
-                {
-                    "Quantity": "Infection acquired within preceding two years",
-                    "Value": _format_percent(derived["recentFraction"]),
-                },
-                {
-                    "Quantity": "Infection acquired earlier than two years",
-                    "Value": _format_percent(derived["remoteFraction"]),
-                },
-            ]
-            results_bundle = st.session_state.get("results_bundle")
-            if is_experimental_infection_history_results(results_bundle):
-                totals = (((results_bundle or {}).get("technical") or {}).get("eventLedger") or {}).get("replicateTotals")
-                try:
-                    import pandas as pd
-
-                    frame = totals if isinstance(totals, pd.DataFrame) else pd.DataFrame(totals or [])
-                    comparator = _event_value(frame, "comparator", "active_tb_cases")
-                    averted = _event_value(frame, "intervention", "active_tb_cases_prevented")
-                    diagnostic_rows.extend(
-                        [
-                            {"Quantity": "Comparator active TB in current run", "Value": _decimal(comparator, 2)},
-                            {"Quantity": "Active TB averted in current run", "Value": _decimal(averted, 2)},
-                            {
-                                "Quantity": "Difference from SA Health reference comparator",
-                                "Value": _decimal(None if comparator is None else comparator - 37.305, 2),
-                            },
-                            {
-                                "Quantity": "Difference from SA Health reference averted",
-                                "Value": _decimal(None if averted is None else averted - 11.9665, 2),
-                            },
-                        ]
-                    )
-                except Exception:
-                    pass
-            else:
-                diagnostic_rows.extend(
-                    [
-                        {"Quantity": "Comparator active TB in current run", "Value": "Run analysis to calculate"},
-                        {"Quantity": "Active TB averted in current run", "Value": "Run analysis to calculate"},
-                    ]
-                )
-            st.dataframe(
-                arrow_safe_dataframe(diagnostic_rows),
-                use_container_width=True,
-                hide_index=True,
-            )
-            st.markdown("Recent fraction by age group")
-            st.dataframe(
-                arrow_safe_dataframe(
-                    [
-                        {
-                            "Age group": row["ageGroup"],
-                            "LTBI prevalence": _format_percent(row["ltbiPrevalence"]),
-                            "Infection acquired within preceding two years": _format_percent(
-                                row["recentFractionAmongPrevalent"]
-                            ),
-                        }
-                        for row in derived["ageRows"]
-                    ]
-                ),
-                use_container_width=True,
-                hide_index=True,
-            )
-            st.caption(
-                "The two-year infection-timing fraction is model-derived from the selected "
-                "transmission-history assumption. It is not directly observed and is not "
-                "equivalent to the early higher-progression-risk state, which currently has "
-                "a five-year mean residence time."
-            )
-            readiness = infection_history_readiness_status()
-            st.markdown("Experimental readiness guard")
-            st.dataframe(arrow_safe_dataframe(readiness["items"]), use_container_width=True, hide_index=True)
-        except Exception as exc:
-            st.error(f"Could not derive recent-versus-remote LTBI from this setup: {exc}")
-
-
-def _event_value(frame, arm: str, event: str) -> float | None:
-    if frame is None or getattr(frame, "empty", True):
-        return None
-    subset = frame[
-        frame["arm"].astype(str).eq(arm)
-        & frame["eventName"].astype(str).eq(event)
-    ]
-    if subset.empty:
-        return None
-    return float(subset["value"].astype(float).mean())
+    st.success("Analysis basis: SA Health report reference")
+    st.caption(
+        "This SA Health version uses only the report-reference APY natural-history "
+        "basis. Historical infection-pressure scenarios have been withdrawn from the "
+        "standard workflow pending scientific redevelopment."
+    )
 
 
 def _render_analysis_settings_controls(config: dict[str, Any]) -> None:
@@ -623,7 +413,7 @@ def _render_age_risk_summary(config: dict[str, Any]) -> None:
 init_session_state()
 if not isinstance(st.session_state.get("config"), dict) or not isinstance(st.session_state.get("economics_config"), dict):
     _load_unified_defaults(show_workspace=True)
-_ensure_inactive_experimental_config_is_reference()
+sanitize_reference_only_state()
 
 st.title("Set up")
 st.write(
@@ -635,13 +425,10 @@ st.write(
 config = st.session_state.get("config")
 econ = st.session_state.get("economics_config")
 if isinstance(config, dict) and isinstance(econ, dict):
-    if _experimental_infection_history_enabled() and has_explicit_infection_history(config):
-        nested = config.get("ltbiStateAssumptions") or {}
-        trajectory = str(nested.get("infectionPressureTrajectoryLabel") or nested.get("infectionPressureTrajectory") or "Steady")
-        st.warning(f"Analysis basis: Experimental infection-history scenario — {trajectory}")
-    else:
-        st.success("Analysis basis: SA Health report reference")
-    _render_infection_history_controls(config)
+    notice = st.session_state.pop("reference_only_migration_notice", "")
+    if notice:
+        st.warning(notice)
+    _render_epidemiological_basis()
     _render_analysis_settings_controls(config)
     _render_parameter_workspace()
     _render_age_risk_summary(st.session_state["config"])

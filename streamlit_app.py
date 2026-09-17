@@ -22,7 +22,7 @@ if str(REPO_ROOT) not in sys.path:
 # ---------------------------------------------------------------------
 # App imports
 # ---------------------------------------------------------------------
-from app.state import init_session_state
+from app.state import init_session_state, sanitize_reference_only_state
 
 # ---------------------------------------------------------------------
 # Page config (must come before any UI)
@@ -36,6 +36,7 @@ st.set_page_config(
 # Initialize session state
 # ---------------------------------------------------------------------
 init_session_state()
+sanitize_reference_only_state()
 
 # ---------------------------------------------------------------------
 # Navigation structure
