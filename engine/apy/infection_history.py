@@ -19,6 +19,7 @@ _CALIBRATION_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
 TRAJECTORY_MODEL = "calibrated_historical_infection_pressure"
 DERIVATION_METHOD = "infection_history_trajectory"
 COMPATIBILITY_REFERENCE_BASIS = "sa_health_matlab_v9_compatibility_reference"
+MATLAB_V9_COMPATIBILITY_SEMANTICS = "matlab_v9_implicit_early_late"
 EXPLICIT_EXPERIMENTAL_BASIS = "explicit_recent_remote_scientific_scenario"
 DEFAULT_RECENT_WINDOW_YEARS = 2.0
 DEFAULT_TREND_ABS_PER_YEAR = 0.01
@@ -201,7 +202,7 @@ def configure_compatibility_reference_assumptions(config: dict[str, Any]) -> dic
     )
     out["ltbiStateAssumptions"] = nested
     out["analysisBasis"] = COMPATIBILITY_REFERENCE_BASIS
-    out.pop("naturalHistorySemantics", None)
+    out["naturalHistorySemantics"] = MATLAB_V9_COMPATIBILITY_SEMANTICS
     return out
 
 

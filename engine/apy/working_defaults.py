@@ -8,6 +8,7 @@ from typing import Any
 from engine.apy.config import build_default_config
 from engine.apy.costing import build_cost_item
 from engine.apy.economics import build_economics_preset_dale2019_aud
+from engine.apy.infection_history import configure_compatibility_reference_assumptions
 from engine.apy.scenario import (
     DEFAULT_POPULATION_PRESET_ID,
     build_scenario_contract,
@@ -41,6 +42,7 @@ def build_unified_working_default_preset() -> dict[str, Any]:
             "workingDefaultPresetLabel": UNIFIED_WORKING_DEFAULT_LABEL,
         }
     )
+    config = configure_compatibility_reference_assumptions(config)
     economics_config = build_economics_preset_dale2019_aud(config.get("regimen", "3HP"))
     _add_sa_health_pathway_assumptions(economics_config)
     economics_config.setdefault("discounting", {}).setdefault(

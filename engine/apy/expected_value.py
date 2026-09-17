@@ -1011,6 +1011,8 @@ def _ledger_base(config: dict[str, Any]) -> dict[str, Any]:
         "populationPresetId": config.get("populationPresetId"),
         "modelType": "expected_value",
         "backend": BACKEND,
+        "analysisBasis": config.get("analysisBasis"),
+        "naturalHistorySemantics": config.get("naturalHistorySemantics"),
         "modelVersion": EXPECTED_VALUE_MODEL_VERSION,
         "arm": "",
         "comparator": DEFAULT_COMPARATOR,
@@ -1025,6 +1027,8 @@ def _ledger_base(config: dict[str, Any]) -> dict[str, Any]:
         "activeTBCalibrationHorizonYears": float(config["activeTBCalibrationHorizonYears"]),
         "followUpHorizon": float(config["followUpHorizonYears"]),
         "followUpHorizonYears": float(config["followUpHorizonYears"]),
+        "calibrationPolicy": config.get("calibrationPolicy"),
+        "referenceCalibrationHash": config.get("referenceCalibrationHash"),
     }
 
 

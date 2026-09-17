@@ -7,6 +7,7 @@ import pandas as pd
 from streamlit.testing.v1 import AppTest
 
 from app.state import is_supported_sa_health_analysis_basis
+from app.run_analysis_controls import TECHNICAL_DEMONSTRATION_ROUTE
 from engine.apy.config import build_default_config, normalise_config
 from engine.apy.data import load_parameters_from_config
 from engine.apy.expected_value import run_expected_value
@@ -323,6 +324,87 @@ class ApyInfectionHistoryTests(unittest.TestCase):
         self.assertTrue(is_supported_sa_health_analysis_basis(bundle("expected_value")))
         self.assertTrue(is_supported_sa_health_analysis_basis(bundle("agent_based")))
         self.assertFalse(is_supported_sa_health_analysis_basis({"metadata": {"modelType": "expected_value"}}))
+
+    def test_supported_deterministic_run_survives_results_and_economics_navigation(self) -> None:
+        config = build_unified_working_default_preset()["config"]
+        config["analysisMethod"] = "expected_value"
+        config["N"] = 50
+
+        run_app = AppTest.from_file(str(Path("pages/2_Run_Model.py")), default_timeout=90)
+        run_app.session_state["config"] = config
+        run_app.session_state["economics_config"] = self.economics_config
+        run_app.session_state["recent_ltbi_run_route"] = TECHNICAL_DEMONSTRATION_ROUTE
+        run_app.run(timeout=90)
+        next(item for item in run_app.button if item.label == "Run analysis").click().run(timeout=90)
+
+        self.assertFalse(run_app.exception)
+        bundle = run_app.session_state["results_bundle"]
+        self.assertTrue(is_supported_sa_health_analysis_basis(bundle))
+        self.assertFalse(run_app.session_state["results_stale"])
+        self.assertEqual(bundle["metadata"]["modelType"], "expected_value")
+        self.assertEqual(bundle["metadata"]["naturalHistorySemantics"], "matlab_v9_implicit_early_late")
+        self.assertEqual(
+            bundle["technical"]["eventLedger"]["metadata"]["naturalHistorySemantics"],
+            "matlab_v9_implicit_early_late",
+        )
+
+        results_app = AppTest.from_file(str(Path("pages/3_Results.py")), default_timeout=90)
+        results_app.session_state["config"] = run_app.session_state["config"]
+        results_app.session_state["economics_config"] = self.economics_config
+        results_app.session_state["results_bundle"] = bundle
+        results_app.session_state["results_stale"] = False
+        results_app.run(timeout=90)
+        self.assertFalse(results_app.exception)
+        self.assertIsNotNone(results_app.session_state["results_bundle"])
+        self.assertFalse(any("not available in this SA Health version" in item.value for item in results_app.warning))
+
+        econ_app = AppTest.from_file(str(Path("pages/4_Economics.py")), default_timeout=90)
+        econ_app.session_state["config"] = run_app.session_state["config"]
+        econ_app.session_state["economics_config"] = self.economics_config
+        econ_app.session_state["results_bundle"] = bundle
+        econ_app.session_state["results_stale"] = False
+        econ_app.run(timeout=90)
+        self.assertFalse(econ_app.exception)
+        self.assertIsNotNone(econ_app.session_state["results_bundle"])
+        self.assertFalse(any("not available in this SA Health version" in item.value for item in econ_app.warning))
+
+    def test_supported_small_stochastic_run_survives_results_and_economics_navigation(self) -> None:
+        config = build_unified_working_default_preset()["config"]
+        config.update({"analysisMethod": "agent_based", "N": 50, "nReps": 2, "seed": 1})
+
+        run_app = AppTest.from_file(str(Path("pages/2_Run_Model.py")), default_timeout=90)
+        run_app.session_state["config"] = config
+        run_app.session_state["economics_config"] = self.economics_config
+        run_app.session_state["recent_ltbi_run_route"] = TECHNICAL_DEMONSTRATION_ROUTE
+        run_app.run(timeout=90)
+        next(item for item in run_app.button if item.label == "Run analysis").click().run(timeout=90)
+
+        self.assertFalse(run_app.exception)
+        bundle = run_app.session_state["results_bundle"]
+        self.assertTrue(is_supported_sa_health_analysis_basis(bundle))
+        self.assertFalse(run_app.session_state["results_stale"])
+        self.assertEqual(bundle["metadata"]["modelType"], "agent_based")
+        self.assertEqual(bundle["metadata"]["nReps"], 2)
+        self.assertEqual(bundle["metadata"]["seed"], 1)
+        self.assertEqual(bundle["metadata"]["naturalHistorySemantics"], "matlab_v9_implicit_early_late")
+
+        results_app = AppTest.from_file(str(Path("pages/3_Results.py")), default_timeout=90)
+        results_app.session_state["config"] = run_app.session_state["config"]
+        results_app.session_state["economics_config"] = self.economics_config
+        results_app.session_state["results_bundle"] = bundle
+        results_app.session_state["results_stale"] = False
+        results_app.run(timeout=90)
+        self.assertFalse(results_app.exception)
+        self.assertIsNotNone(results_app.session_state["results_bundle"])
+
+        econ_app = AppTest.from_file(str(Path("pages/4_Economics.py")), default_timeout=90)
+        econ_app.session_state["config"] = run_app.session_state["config"]
+        econ_app.session_state["economics_config"] = self.economics_config
+        econ_app.session_state["results_bundle"] = bundle
+        econ_app.session_state["results_stale"] = False
+        econ_app.run(timeout=90)
+        self.assertFalse(econ_app.exception)
+        self.assertIsNotNone(econ_app.session_state["results_bundle"])
 
     def test_stochastic_runner_records_selected_explicit_infection_history(self) -> None:
         config = configure_infection_history_assumptions(self.config, "falling")

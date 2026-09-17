@@ -12,12 +12,21 @@ from app.run_progress import StreamlitProgressDisplay, finalising_status, initia
 from app.state import (
     get_backend,
     init_session_state,
+    is_supported_sa_health_analysis_basis,
     mark_run_completed,
     record_message,
     sanitize_reference_only_state,
     sync_backend_status,
 )
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
+
+
+def _page_link(path: str, *, label: str) -> None:
+    try:
+        st.page_link(path, label=label)
+    except Exception:
+        key = "nav_fallback_" + "".join(ch if ch.isalnum() else "_" for ch in f"{path}_{label}")
+        st.button(label, disabled=True, key=key)
 
 
 init_session_state()
@@ -98,10 +107,11 @@ if unresolved_ltbi_state:
     if decision_cols[0].button("Use provisional working route"):
         st.session_state["recent_ltbi_run_route"] = TECHNICAL_DEMONSTRATION_ROUTE
         st.rerun()
-    decision_cols[1].page_link(
-        "pages/6_Evidence_Assumptions.py",
-        label="Review or enter the assumption",
-    )
+    with decision_cols[1]:
+        _page_link(
+            "pages/6_Evidence_Assumptions.py",
+            label="Review or enter the assumption",
+        )
     if st.session_state.get("recent_ltbi_run_route") == TECHNICAL_DEMONSTRATION_ROUTE:
         ltbi_dev_compatibility_requested = True
         st.caption("Provisional route selected. Detailed caveats are in Evidence & Assumptions.")
@@ -141,13 +151,33 @@ if st.button(run_label, type="primary"):
             st.error("This setup is not valid. Return to Set up before running.")
             if blocking:
                 st.write(blocking[0])
-            st.page_link("pages/0_Start.py", label="Return to Set up")
+            _page_link("pages/0_Start.py", label="Return to Set up")
             st.stop()
         bundle = backend.run_scenario_bundle(
             run_config,
             validation_report=validation_report,
             progress_callback=progress.callback,
         )
+        if not is_supported_sa_health_analysis_basis(bundle):
+            bundle_metadata = bundle.get("metadata", {}) if isinstance(bundle, dict) else {}
+            ledger_metadata = (
+                (((bundle or {}).get("technical") or {}).get("eventLedger") or {}).get("metadata") or {}
+                if isinstance(bundle, dict)
+                else {}
+            )
+            st.error(
+                "Analysis completed, but the result metadata did not satisfy the SA Health "
+                "compatibility provenance contract. Results were not activated."
+            )
+            st.write(
+                {
+                    "bundleAnalysisBasis": bundle_metadata.get("analysisBasis"),
+                    "bundleNaturalHistorySemantics": bundle_metadata.get("naturalHistorySemantics"),
+                    "ledgerAnalysisBasis": ledger_metadata.get("analysisBasis"),
+                    "ledgerNaturalHistorySemantics": ledger_metadata.get("naturalHistorySemantics"),
+                }
+            )
+            st.stop()
         progress.update(finalising_status())
         st.session_state["results_bundle"] = bundle
         st.session_state["validation_report"] = validation_report
@@ -157,7 +187,6 @@ if st.button(run_label, type="primary"):
         sync_backend_status(backend.status())
         mark_run_completed()
         st.success("Analysis completed.")
-        st.page_link("pages/3_Results.py", label="Open Results")
     except Exception as exc:
         message = f"Analysis failed: {exc}"
         sync_backend_status(backend.status())
@@ -165,4 +194,4 @@ if st.button(run_label, type="primary"):
         st.error(message)
 
 if st.session_state.get("results_bundle"):
-    st.page_link("pages/3_Results.py", label="Open Results")
+    _page_link("pages/3_Results.py", label="Open Results")
