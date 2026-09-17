@@ -1,0 +1,15 @@
+{
+  "source": "Frozen SA Health MATLAB-v9-compatible working-reference package",
+  "sourcePath": "outputs/sa_health_reference/sa_health_apy_matlab_v9_compatible_working_reference_igra_3hp_prevent_30pct/economic_summary.csv",
+  "packageId": "sa_health_apy_matlab_v9_compatible_working_reference_igra_3hp_prevent_30pct",
+  "modelType": "agent_based",
+  "nReps": 2000,
+  "seed": 1,
+  "discountProfile": "primary",
+  "discountRate": 0.03,
+  "incrementalCost": -92369.62956743596,
+  "dalysAverted": 16.173794759754998,
+  "activeTBCasesPrevented": 11.9665,
+  "generatedByCommit": "12f697aa7caccad9a9290a7c7eef2dad54257e46",
+  "notes": "Immutable display snapshot copied from the frozen reference package summary. This point is independent of the current Streamlit event ledger."
+}

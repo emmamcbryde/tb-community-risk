@@ -248,41 +248,113 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         scenarios = app.dataframe[1].value
         self.assertEqual(
             list(scenarios["Scenario"]),
-            ["Existing resources", "Standalone programme", "Shared with other programmes"],
+            ["No additional programme overhead entered"],
         )
         self.assertEqual(len(set(scenarios["Active TB averted"])), 1)
         self.assertIn("Quadrant", scenarios.columns)
         self.assertIn("Classification", scenarios.columns)
         self.assertIn("Arithmetic ICER", scenarios.columns)
+        self.assertIn("Additional setup cost", scenarios.columns)
+        self.assertIn("Programme-cost assumption", scenarios.columns)
         self.assertEqual(
-            str(scenarios.loc[scenarios["Scenario"] == "Existing resources", "Quadrant"].iloc[0]),
+            str(scenarios.loc[scenarios["Scenario"] == "No additional programme overhead entered", "Additional setup cost"].iloc[0]),
+            "AUD 0",
+        )
+        self.assertEqual(
+            str(scenarios.loc[scenarios["Scenario"] == "No additional programme overhead entered", "Quadrant"].iloc[0]),
             "Lower right",
         )
         self.assertIn(
             "Dominant",
-            str(scenarios.loc[scenarios["Scenario"] == "Existing resources", "Classification"].iloc[0]),
+            str(scenarios.loc[scenarios["Scenario"] == "No additional programme overhead entered", "Classification"].iloc[0]),
         )
         self.assertIn(
             "-AUD",
-            str(scenarios.loc[scenarios["Scenario"] == "Existing resources", "Arithmetic ICER"].iloc[0]),
+            str(scenarios.loc[scenarios["Scenario"] == "No additional programme overhead entered", "Arithmetic ICER"].iloc[0]),
         )
-        self.assertEqual(
-            str(scenarios.loc[scenarios["Scenario"] == "Standalone programme", "Quadrant"].iloc[0]),
-            "Upper right",
-        )
-        self.assertIn(
-            "Higher cost with health gain",
-            str(scenarios.loc[scenarios["Scenario"] == "Standalone programme", "Classification"].iloc[0]),
-        )
-        self.assertIn(
-            "AUD",
-            str(scenarios.loc[scenarios["Scenario"] == "Standalone programme", "Arithmetic ICER"].iloc[0]),
-        )
+        point_audit = app.dataframe[2].value
+        self.assertIn("SA Health report reference", set(point_audit["Scenario"]))
+        reference = point_audit[point_audit["Scenario"] == "SA Health report reference"].iloc[0]
+        self.assertEqual(reference["DALYs averted"], "16.1738")
+        self.assertEqual(reference["Incremental cost"], "-AUD 92,370")
+        self.assertIn("Frozen stochastic compatibility reference package", reference["Event ledger"])
+        self.assertIn("Current assumptions", set(point_audit["Scenario"]))
         source = (ROOT / "pages" / "4_Economics.py").read_text(encoding="utf-8")
         self.assertIn("DALYs averted compared with business as usual", source)
         self.assertIn("Incremental cost compared with business as usual (AUD)", source)
         self.assertIn("Business as usual", source)
         self.assertIn("st.altair_chart(_cost_effectiveness_plane_chart", source)
+
+    def test_health_economics_programme_cost_controls_are_explicit(self) -> None:
+        app = AppTest.from_file(str(ROOT / "pages" / "4_Economics.py"), default_timeout=60)
+        app.session_state["config"] = self.package["config"]
+        app.session_state["results_bundle"] = {
+            "metadata": {"scenarioLabel": "test_reference"},
+            "technical": {"eventLedger": self.package["eventLedger"]},
+        }
+        app.session_state["economics_config"] = self.package["economicsConfig"]
+        app.session_state["economics_results"] = self.package["economics"]
+        app.session_state["results_stale"] = False
+        app.session_state["health_econ_delivery_scenarios"] = {
+            "includeAdditionalProgramCosts": True,
+            "standaloneSetupCost": 500000.0,
+            "illustrativeSetupCost": 500000.0,
+            "standaloneAnnualRunningCost": 0.0,
+            "standaloneRunningYears": 2,
+            "annualCostFirstYear": 0,
+            "standaloneTravelOutreachCost": 0.0,
+            "standaloneStaffSupportCost": 0.0,
+            "sharedAttributionShare": 0.50,
+        }
+
+        app.run()
+
+        self.assertFalse(app.exception)
+        scenarios = app.dataframe[1].value
+        self.assertEqual(
+            list(scenarios["Scenario"]),
+            [
+                "No additional programme overhead entered",
+                "Standalone programme - user-defined additional costs",
+                "Shared delivery - user-defined attributable share",
+            ],
+        )
+        base = scenarios.iloc[0]
+        standalone = scenarios.iloc[1]
+        shared = scenarios.iloc[2]
+        self.assertEqual(standalone["Additional setup cost"], "AUD 500,000")
+        self.assertEqual(standalone["Attributed share"], "100%")
+        self.assertEqual(shared["Additional setup cost"], "AUD 250,000")
+        self.assertEqual(shared["Attributed share"], "50%")
+        self.assertIn("Common setup AUD 500,000", shared["Programme-cost assumption"])
+        self.assertEqual(base["DALYs averted"], standalone["DALYs averted"])
+        self.assertEqual(base["DALYs averted"], shared["DALYs averted"])
+        self.assertAlmostEqual(
+            self._money_display_to_float(standalone["Incremental cost"])
+            - self._money_display_to_float(base["Incremental cost"]),
+            500000.0,
+            delta=2.0,
+        )
+        self.assertAlmostEqual(
+            self._money_display_to_float(shared["Incremental cost"])
+            - self._money_display_to_float(base["Incremental cost"]),
+            250000.0,
+            delta=2.0,
+        )
+        self.assertTrue(
+            any(
+                "AUD 500,000 is available as an illustrative user-changeable scenario assumption" in item.value
+                for item in app.caption
+            )
+        )
+
+    @staticmethod
+    def _money_display_to_float(value: object) -> float:
+        text = str(value).replace("-AUD", "-").replace("AUD", "").replace(",", "").strip()
+        text = text.replace("- ", "-")
+        if text.endswith("saving"):
+            text = text.removesuffix("saving").strip()
+        return float(text)
 
     def test_economic_changes_do_not_alter_event_counts(self) -> None:
         ledger = self.package["epidemiology"]

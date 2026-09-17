@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
+from pathlib import Path
 from typing import Any
 
 import altair as alt
@@ -69,13 +71,24 @@ PROGRAMME_UNCOSTED_IDS = {
 }
 
 DELIVERY_SCENARIO_DEFAULTS = {
-    "standaloneSetupCost": 500000.0,
+    "includeAdditionalProgramCosts": False,
+    "standaloneSetupCost": 0.0,
+    "illustrativeSetupCost": 500000.0,
     "standaloneAnnualRunningCost": 0.0,
     "standaloneRunningYears": 2,
+    "annualCostFirstYear": 0,
     "standaloneTravelOutreachCost": 0.0,
     "standaloneStaffSupportCost": 0.0,
-    "sharedAttributionShare": 0.50,
+    "sharedAttributionShare": 0.0,
 }
+
+POINT_COLLAPSE_TOLERANCE = {"cost": 0.01, "dalys": 1e-6}
+REFERENCE_ECONOMICS_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "app"
+    / "reference_data"
+    / "sa_health_report_reference_economics.json"
+)
 
 COST_COMPONENTS = [
     ("screeningTestCost", "Screening test"),
@@ -136,6 +149,12 @@ def _number(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _selected_regimen(config: dict[str, Any] | None) -> str:
@@ -349,6 +368,30 @@ def _ensure_delivery_scenario_controls() -> dict[str, Any]:
     return controls
 
 
+def _additional_programme_costs_enabled(controls: dict[str, Any]) -> bool:
+    return _bool(controls.get("includeAdditionalProgramCosts"))
+
+
+def _programme_control_values(controls: dict[str, Any]) -> dict[str, float]:
+    return {
+        "setup_cost": float(controls.get("standaloneSetupCost") or 0.0),
+        "annual_running_cost": float(controls.get("standaloneAnnualRunningCost") or 0.0),
+        "running_years": float(controls.get("standaloneRunningYears") or 0.0),
+        "travel_outreach_cost": float(controls.get("standaloneTravelOutreachCost") or 0.0),
+        "staff_support_cost": float(controls.get("standaloneStaffSupportCost") or 0.0),
+        "attribution_share": max(0.0, min(float(controls.get("sharedAttributionShare") or 0.0), 1.0)),
+    }
+
+
+def _raw_programme_cost_total(values: dict[str, float]) -> float:
+    return (
+        values["setup_cost"]
+        + values["annual_running_cost"] * values["running_years"]
+        + values["travel_outreach_cost"]
+        + values["staff_support_cost"]
+    )
+
+
 def _clone_bundle_with_running_duration(results_bundle: dict[str, Any] | None, years: int | None) -> dict[str, Any] | None:
     if not isinstance(results_bundle, dict) or years is None:
         return results_bundle
@@ -460,6 +503,27 @@ def _run_delivery_scenario(
     return run_event_ledger_health_economics(bundle, economics_config)
 
 
+def _effective_config_for_programme_controls(
+    economics_config: dict[str, Any],
+    controls: dict[str, Any],
+) -> dict[str, Any]:
+    if not _additional_programme_costs_enabled(controls):
+        return economics_config
+    values = _programme_control_values(controls)
+    if _raw_programme_cost_total(values) <= 0:
+        return economics_config
+    return _delivery_scenario_config(
+        economics_config,
+        setup_cost=values["setup_cost"],
+        annual_running_cost=values["annual_running_cost"],
+        running_years=int(values["running_years"]),
+        travel_outreach_cost=values["travel_outreach_cost"],
+        staff_support_cost=values["staff_support_cost"],
+        attribution_share=1.0,
+        scenario_name="Current assumptions with user-defined additional programme costs",
+    )
+
+
 def delivery_scenario_comparison_rows(
     *,
     results_bundle: dict[str, Any] | None,
@@ -468,51 +532,110 @@ def delivery_scenario_comparison_rows(
 ) -> list[dict[str, Any]]:
     if not isinstance(results_bundle, dict):
         return []
-    running_years = int(float(controls.get("standaloneRunningYears") or 0))
+    values = _programme_control_values(controls)
+    running_years = int(values["running_years"])
     existing = _run_delivery_scenario(results_bundle, economics_config, running_years=running_years)
-    standalone_config = _delivery_scenario_config(
-        economics_config,
-        setup_cost=float(controls.get("standaloneSetupCost") or 0.0),
-        annual_running_cost=float(controls.get("standaloneAnnualRunningCost") or 0.0),
-        running_years=running_years,
-        travel_outreach_cost=float(controls.get("standaloneTravelOutreachCost") or 0.0),
-        staff_support_cost=float(controls.get("standaloneStaffSupportCost") or 0.0),
-        attribution_share=1.0,
-        scenario_name="Standalone programme",
-    )
-    standalone = _run_delivery_scenario(results_bundle, standalone_config, running_years=running_years)
-    shared_config = _delivery_scenario_config(
-        economics_config,
-        setup_cost=float(controls.get("standaloneSetupCost") or 0.0),
-        annual_running_cost=float(controls.get("standaloneAnnualRunningCost") or 0.0),
-        running_years=running_years,
-        travel_outreach_cost=float(controls.get("standaloneTravelOutreachCost") or 0.0),
-        staff_support_cost=float(controls.get("standaloneStaffSupportCost") or 0.0),
-        attribution_share=float(controls.get("sharedAttributionShare") or 0.0),
-        scenario_name="Shared with other programmes",
-    )
-    shared = _run_delivery_scenario(results_bundle, shared_config, running_years=running_years)
-    return [
-        _delivery_scenario_row("Existing resources", existing),
-        _delivery_scenario_row("Standalone programme", standalone),
-        _delivery_scenario_row("Shared with other programmes", shared),
+    rows = [
+        _delivery_scenario_row(
+            "No additional programme overhead entered",
+            existing,
+            setup_cost=0.0,
+            annual_running_cost=0.0,
+            running_years=running_years,
+            attribution_share=0.0,
+            attributed_setup_cost=0.0,
+            attributed_total_note="No additional programme overhead entered",
+            point_role="current",
+        )
     ]
+    if _additional_programme_costs_enabled(controls) and _raw_programme_cost_total(values) > 0:
+        standalone_config = _delivery_scenario_config(
+            economics_config,
+            setup_cost=values["setup_cost"],
+            annual_running_cost=values["annual_running_cost"],
+            running_years=running_years,
+            travel_outreach_cost=values["travel_outreach_cost"],
+            staff_support_cost=values["staff_support_cost"],
+            attribution_share=1.0,
+            scenario_name="Standalone programme - user-defined additional costs",
+        )
+        standalone = _run_delivery_scenario(results_bundle, standalone_config, running_years=running_years)
+        rows.append(
+            _delivery_scenario_row(
+                "Standalone programme - user-defined additional costs",
+                standalone,
+                setup_cost=values["setup_cost"],
+                annual_running_cost=values["annual_running_cost"],
+                running_years=running_years,
+                attribution_share=1.0,
+                attributed_setup_cost=values["setup_cost"],
+                attributed_total_note=f"Total additional setup assigned to LTBI screening: {_money(values['setup_cost'])}",
+                point_role="scenario",
+            )
+        )
+        if values["attribution_share"] > 0:
+            shared_config = _delivery_scenario_config(
+                economics_config,
+                setup_cost=values["setup_cost"],
+                annual_running_cost=values["annual_running_cost"],
+                running_years=running_years,
+                travel_outreach_cost=values["travel_outreach_cost"],
+                staff_support_cost=values["staff_support_cost"],
+                attribution_share=values["attribution_share"],
+                scenario_name="Shared delivery - user-defined attributable share",
+            )
+            shared = _run_delivery_scenario(results_bundle, shared_config, running_years=running_years)
+            rows.append(
+                _delivery_scenario_row(
+                    "Shared delivery - user-defined attributable share",
+                    shared,
+                    setup_cost=values["setup_cost"],
+                    annual_running_cost=values["annual_running_cost"],
+                    running_years=running_years,
+                    attribution_share=values["attribution_share"],
+                    attributed_setup_cost=values["setup_cost"] * values["attribution_share"],
+                    attributed_total_note=(
+                        f"Common setup {_money(values['setup_cost'])}; "
+                        f"attributed share {values['attribution_share'] * 100:.0f}%; "
+                        f"LTBI setup {_money(values['setup_cost'] * values['attribution_share'])}"
+                    ),
+                    point_role="scenario",
+                )
+            )
+    return rows
 
 
-def _delivery_scenario_row(label: str, econ_results: dict[str, Any]) -> dict[str, Any]:
+def _delivery_scenario_row(
+    label: str,
+    econ_results: dict[str, Any],
+    *,
+    setup_cost: float,
+    annual_running_cost: float,
+    running_years: int,
+    attribution_share: float,
+    attributed_setup_cost: float,
+    attributed_total_note: str,
+    point_role: str,
+) -> dict[str, Any]:
     values = primary_economic_values(econ_results)
     classification = values["classification"]
     arithmetic_icer = _divide(values["incrementalCost"], values["dalysAverted"])
     return {
         "Scenario": label,
+        "Additional setup cost": _money(attributed_setup_cost),
+        "Annual programme cost": f"{_money(annual_running_cost * attribution_share)} for {int(running_years)} year(s)",
+        "Attributed share": f"{attribution_share * 100:.0f}%",
         "Incremental cost": _signed_money(values["incrementalCost"]),
         "DALYs averted": _decimal(values["dalysAverted"], 1),
         "Quadrant": _quadrant(values["dalysAverted"], values["incrementalCost"]),
         "Classification": "Dominant" if classification["classification"] == "Dominant" else classification["display"],
         "Arithmetic ICER": _signed_icer(arithmetic_icer),
         "Active TB averted": _decimal(values["activeTBAverted"], 1),
+        "Programme-cost assumption": attributed_total_note,
         "_incrementalCostRaw": values["incrementalCost"],
         "_dalysAvertedRaw": values["dalysAverted"],
+        "_activeTBAvertedRaw": values["activeTBAverted"],
+        "_pointRole": point_role,
     }
 
 
@@ -537,30 +660,63 @@ def cost_effectiveness_plane_rows(
     current_economics: dict[str, Any] | None,
     controls: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    if not isinstance(results_bundle, dict):
-        return []
-    reference_econ = run_event_ledger_health_economics(
-        _clone_bundle_with_running_duration(results_bundle, int(DELIVERY_SCENARIO_DEFAULTS["standaloneRunningYears"])),
-        build_unified_working_default_preset()["economicsConfig"],
-    )
-    running_years = int(float(controls.get("standaloneRunningYears") or 0))
-    standalone_config = _delivery_scenario_config(
-        economics_config,
-        setup_cost=float(controls.get("standaloneSetupCost") or 0.0),
-        annual_running_cost=float(controls.get("standaloneAnnualRunningCost") or 0.0),
-        running_years=running_years,
-        travel_outreach_cost=float(controls.get("standaloneTravelOutreachCost") or 0.0),
-        staff_support_cost=float(controls.get("standaloneStaffSupportCost") or 0.0),
-        attribution_share=1.0,
-        scenario_name="Standalone programme",
-    )
-    standalone_econ = _run_delivery_scenario(results_bundle, standalone_config, running_years=running_years)
     rows = [_plane_origin_row()]
-    rows.append(_plane_row("SA Health reference", reference_econ))
-    if current_economics:
-        rows.append(_plane_row("Current assumptions", current_economics))
-    rows.append(_plane_row("Standalone programme", standalone_econ))
-    return rows
+    reference = _reference_report_point()
+    values = _programme_control_values(controls)
+    current_setup = values["setup_cost"] if _additional_programme_costs_enabled(controls) else 0.0
+    current_annual = (
+        f"{_money(values['annual_running_cost'])} for {int(values['running_years'])} year(s)"
+        if _additional_programme_costs_enabled(controls)
+        else "AUD 0"
+    )
+    current_share = "100%" if _additional_programme_costs_enabled(controls) and _raw_programme_cost_total(values) > 0 else "0%"
+    current = _plane_row(
+        "Current assumptions",
+        current_economics,
+        role="current",
+        event_ledger_source="Current completed analysis",
+        analysis_basis=_analysis_basis_label(results_bundle),
+        setup_cost=_money(current_setup),
+        annual_cost=current_annual,
+        attribution_share=current_share,
+        represents_frozen_reference=False,
+    ) if current_economics else None
+    if reference and current and _points_overlap(reference, current):
+        collapsed = dict(current)
+        collapsed["Scenario"] = "Current assumptions - same as SA Health report reference"
+        collapsed["Point note"] = "Current analysis reproduces the frozen report-reference coordinates within tolerance."
+        collapsed["representsFrozenReference"] = True
+        rows.append(collapsed)
+    else:
+        if reference:
+            rows.append(reference)
+        if current:
+            rows.append(current)
+    if isinstance(results_bundle, dict):
+        for scenario in delivery_scenario_comparison_rows(
+            results_bundle=results_bundle,
+            economics_config=economics_config,
+            controls=controls,
+        ):
+            if scenario.get("_pointRole") != "scenario":
+                continue
+            rows.append(
+                _plane_row_from_values(
+                    label=scenario["Scenario"],
+                    incremental_cost=scenario["_incrementalCostRaw"],
+                    dalys_averted=scenario["_dalysAvertedRaw"],
+                    active_tb_averted=scenario.get("_activeTBAvertedRaw"),
+                    role="scenario",
+                    event_ledger_source="Current completed analysis",
+                    analysis_basis=_analysis_basis_label(results_bundle),
+                    setup_cost=scenario["Additional setup cost"],
+                    annual_cost=scenario["Annual programme cost"],
+                    attribution_share=scenario["Attributed share"],
+                    represents_frozen_reference=False,
+                    point_note=scenario["Programme-cost assumption"],
+                )
+            )
+    return _collapse_duplicate_points(rows)
 
 
 def _plane_origin_row() -> dict[str, Any]:
@@ -574,11 +730,55 @@ def _plane_origin_row() -> dict[str, Any]:
     }
 
 
-def _plane_row(label: str, econ_results: dict[str, Any]) -> dict[str, Any]:
+def _plane_row(
+    label: str,
+    econ_results: dict[str, Any] | None,
+    *,
+    role: str,
+    event_ledger_source: str,
+    analysis_basis: str,
+    setup_cost: Any,
+    annual_cost: Any,
+    attribution_share: Any,
+    represents_frozen_reference: bool,
+) -> dict[str, Any]:
+    if not econ_results:
+        return {}
     values = primary_economic_values(econ_results)
-    inc = values["incrementalCost"]
-    dalys = values["dalysAverted"]
-    classification = values["classification"]
+    return _plane_row_from_values(
+        label=label,
+        incremental_cost=values["incrementalCost"],
+        dalys_averted=values["dalysAverted"],
+        active_tb_averted=values["activeTBAverted"],
+        role=role,
+        event_ledger_source=event_ledger_source,
+        analysis_basis=analysis_basis,
+        setup_cost=setup_cost,
+        annual_cost=annual_cost,
+        attribution_share=attribution_share,
+        represents_frozen_reference=represents_frozen_reference,
+        point_note="",
+    )
+
+
+def _plane_row_from_values(
+    *,
+    label: str,
+    incremental_cost: Any,
+    dalys_averted: Any,
+    active_tb_averted: Any,
+    role: str,
+    event_ledger_source: str,
+    analysis_basis: str,
+    setup_cost: Any,
+    annual_cost: Any,
+    attribution_share: Any,
+    represents_frozen_reference: bool,
+    point_note: str,
+) -> dict[str, Any]:
+    inc = _number(incremental_cost)
+    dalys = _number(dalys_averted)
+    classification = icer_classification(inc, dalys)
     return {
         "Scenario": label,
         "DALYs averted compared with business as usual": dalys,
@@ -586,7 +786,84 @@ def _plane_row(label: str, econ_results: dict[str, Any]) -> dict[str, Any]:
         "Quadrant": _quadrant(dalys, inc),
         "Classification": "Dominant" if classification["classification"] == "Dominant" else classification["display"],
         "Arithmetic ICER": _signed_icer(_divide(inc, dalys)),
+        "Active TB averted": active_tb_averted,
+        "Event ledger": event_ledger_source,
+        "Analysis basis": analysis_basis,
+        "Additional setup cost": setup_cost,
+        "Annual programme cost": annual_cost,
+        "Attributed share": attribution_share,
+        "Point role": role,
+        "Point note": point_note,
+        "representsFrozenReference": represents_frozen_reference,
     }
+
+
+def _reference_report_point() -> dict[str, Any] | None:
+    try:
+        payload = json.loads(REFERENCE_ECONOMICS_PATH.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    return _plane_row_from_values(
+        label="SA Health report reference",
+        incremental_cost=payload.get("incrementalCost"),
+        dalys_averted=payload.get("dalysAverted"),
+        active_tb_averted=payload.get("activeTBCasesPrevented"),
+        role="reference",
+        event_ledger_source="Frozen stochastic compatibility reference package",
+        analysis_basis=(
+            f"MATLAB-v9-compatible stochastic anchor; {payload.get('nReps')} repetitions; "
+            f"seed {payload.get('seed')}"
+        ),
+        setup_cost="AUD 0 additional overhead entered",
+        annual_cost="AUD 0",
+        attribution_share="0%",
+        represents_frozen_reference=True,
+        point_note=str(payload.get("notes") or ""),
+    )
+
+
+def _analysis_basis_label(results_bundle: dict[str, Any] | None) -> str:
+    ledger = ((results_bundle or {}).get("technical") or {}).get("eventLedger") or {}
+    metadata = ledger.get("metadata") or {}
+    model_type = metadata.get("modelType") or (results_bundle or {}).get("metadata", {}).get("modelType")
+    natural_history = metadata.get("naturalHistorySemantics") or metadata.get("ltbiStateModel") or ""
+    reps = metadata.get("nReps") or metadata.get("replicates")
+    seed = metadata.get("seed")
+    parts = [str(item) for item in [model_type, natural_history] if item]
+    if reps:
+        parts.append(f"{reps} repetitions")
+    if seed is not None:
+        parts.append(f"seed {seed}")
+    return "; ".join(parts) or "Current completed analysis"
+
+
+def _points_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_cost = _number(left.get("Incremental cost compared with business as usual (AUD)"))
+    right_cost = _number(right.get("Incremental cost compared with business as usual (AUD)"))
+    left_dalys = _number(left.get("DALYs averted compared with business as usual"))
+    right_dalys = _number(right.get("DALYs averted compared with business as usual"))
+    if None in {left_cost, right_cost, left_dalys, right_dalys}:
+        return False
+    return (
+        abs(left_cost - right_cost) <= POINT_COLLAPSE_TOLERANCE["cost"]
+        and abs(left_dalys - right_dalys) <= POINT_COLLAPSE_TOLERANCE["dalys"]
+    )
+
+
+def _collapse_duplicate_points(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    collapsed: list[dict[str, Any]] = []
+    for row in rows:
+        if not row:
+            continue
+        match = next((item for item in collapsed if _points_overlap(item, row)), None)
+        if match is None:
+            collapsed.append(row)
+            continue
+        match["Scenario"] = f"{match['Scenario']} / {row['Scenario']}"
+        match["Point note"] = "Multiple scenarios share these coordinates within plotting tolerance."
+        match["Point role"] = f"{match.get('Point role')}, {row.get('Point role')}"
+        match["representsFrozenReference"] = bool(match.get("representsFrozenReference") or row.get("representsFrozenReference"))
+    return collapsed
 
 
 def _quadrant(dalys_averted: Any, incremental_cost: Any) -> str:
@@ -617,6 +894,13 @@ def _divide(a: Any, b: Any) -> float | None:
 
 def _cost_effectiveness_plane_chart(rows: list[dict[str, Any]]) -> alt.Chart:
     frame = pd.DataFrame(rows)
+    if not frame.empty:
+        frame["Chart label"] = frame.apply(
+            lambda row: str(row["Scenario"])
+            if str(row.get("Point role", "")) in {"current", "reference"} or "same as SA Health" in str(row.get("Scenario", ""))
+            else "",
+            axis=1,
+        )
     x_col = "DALYs averted compared with business as usual"
     y_col = "Incremental cost compared with business as usual (AUD)"
     points = (
@@ -633,6 +917,9 @@ def _cost_effectiveness_plane_chart(rows: list[dict[str, Any]]) -> alt.Chart:
                 alt.Tooltip("Quadrant:N"),
                 alt.Tooltip("Classification:N"),
                 alt.Tooltip("Arithmetic ICER:N"),
+                alt.Tooltip("Event ledger:N"),
+                alt.Tooltip("Analysis basis:N"),
+                alt.Tooltip("Point note:N"),
             ],
         )
     )
@@ -642,7 +929,7 @@ def _cost_effectiveness_plane_chart(rows: list[dict[str, Any]]) -> alt.Chart:
         .encode(
             x=f"{x_col}:Q",
             y=f"{y_col}:Q",
-            text="Scenario:N",
+            text="Chart label:N",
         )
     )
     horizontal = alt.Chart(pd.DataFrame({y_col: [0]})).mark_rule(color="#6b7280").encode(y=f"{y_col}:Q")
@@ -871,6 +1158,7 @@ def apply_and_recalculate(
     econ_config: dict[str, Any],
     config: dict[str, Any] | None,
     results_bundle: dict[str, Any] | None,
+    controls: dict[str, Any],
 ) -> None:
     validation = validate_editable_assumptions(working_rows, econ_config, config=config or {})
     st.session_state["health_econ_workspace"] = mark_workspace_validated(workspace_state, validation)
@@ -898,7 +1186,10 @@ def apply_and_recalculate(
     st.session_state["health_econ_workspace"] = applied_state
     mark_economics_changed()
     if results_bundle and not st.session_state.get("results_stale"):
-        run_authoritative_health_economics(results_bundle, updated_config)
+        run_authoritative_health_economics(
+            results_bundle,
+            _effective_config_for_programme_controls(updated_config, controls),
+        )
         st.success("Economic results recalculated from the current screening outcomes. Epidemiological results were not rerun.")
     else:
         st.warning("Run the screening analysis before recalculating health economics.")
@@ -949,7 +1240,10 @@ if not can_run:
     st.stop()
 
 if econ_results is None:
-    run_authoritative_health_economics(results_bundle, econ_config)
+    run_authoritative_health_economics(
+        results_bundle,
+        _effective_config_for_programme_controls(econ_config, controls),
+    )
     econ_results = st.session_state.get("economics_results")
 
 metadata = econ_config.get("metadata") or {}
@@ -981,8 +1275,8 @@ if econ_results:
 
 st.subheader("Programme-delivery scenarios")
 st.caption(
-    "All scenarios reuse the same screening outcomes. Existing resources means no additional programme overhead has been entered; "
-    "it does not mean implementation is costless."
+    "All scenarios reuse the same screening outcomes. No additional programme overhead entered means no local overhead has been "
+    "entered; it does not mean implementation is costless. AUD 500,000, when selected below, is illustrative and user-changeable."
 )
 try:
     scenario_rows = delivery_scenario_comparison_rows(
@@ -1003,6 +1297,27 @@ try:
         controls=controls,
     )
     st.altair_chart(_cost_effectiveness_plane_chart(plane_rows), use_container_width=True)
+    st.dataframe(
+        arrow_safe_dataframe(
+            [
+                {
+                    "Scenario": row.get("Scenario"),
+                    "DALYs averted": _decimal(row.get("DALYs averted compared with business as usual"), 4),
+                    "Incremental cost": _signed_money(row.get("Incremental cost compared with business as usual (AUD)")),
+                    "Event ledger": row.get("Event ledger", ""),
+                    "Analysis basis": row.get("Analysis basis", ""),
+                    "Additional setup cost": row.get("Additional setup cost", ""),
+                    "Annual programme cost": row.get("Annual programme cost", ""),
+                    "Attributed share": row.get("Attributed share", ""),
+                    "Point note": row.get("Point note", ""),
+                }
+                for row in plane_rows
+                if row.get("Scenario") != "Business as usual"
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
     st.caption(
         "Cost-only changes move points vertically on this plane: added programme costs move upward, "
         "greater savings move downward, and DALYs averted remain fixed."
@@ -1052,62 +1367,95 @@ with st.expander("Change cost assumptions", expanded=False):
         "Cost states: numerical costs are included directly; bundled/absorbed means the activity occurs but is not costed separately; "
         "reviewed exclusion means outside the selected perspective; not locally costed means evidence is still needed; compatibility zero is a placeholder."
     )
-    st.markdown("Programme-delivery scenario inputs")
-    scenario_cols = st.columns(3)
-    controls["standaloneSetupCost"] = scenario_cols[0].number_input(
-        "One-off setup/bulk implementation cost",
-        min_value=0.0,
-        value=float(controls.get("standaloneSetupCost") or 0.0),
-        step=50000.0,
-        format="%.0f",
-        help="AUD 2019 total one-off cost for the standalone-programme scenario.",
-    )
-    controls["standaloneAnnualRunningCost"] = scenario_cols[1].number_input(
-        "Annual programme running cost",
-        min_value=0.0,
-        value=float(controls.get("standaloneAnnualRunningCost") or 0.0),
-        step=10000.0,
-        format="%.0f",
-        help="AUD 2019 annual overhead applied for the selected number of years.",
-    )
-    controls["standaloneRunningYears"] = int(
-        scenario_cols[2].number_input(
-            "Years annual running costs apply",
-            min_value=0,
-            max_value=20,
-            value=int(float(controls.get("standaloneRunningYears") or 0)),
-            step=1,
-        )
-    )
-    scenario_cols = st.columns(3)
-    controls["standaloneTravelOutreachCost"] = scenario_cols[0].number_input(
-        "Travel/outreach cost per person screened",
-        min_value=0.0,
-        value=float(controls.get("standaloneTravelOutreachCost") or 0.0),
-        step=10.0,
-        format="%.0f",
-        help="AUD 2019 per person screened.",
-    )
-    controls["standaloneStaffSupportCost"] = scenario_cols[1].number_input(
-        "Additional staff/support cost per person screened",
-        min_value=0.0,
-        value=float(controls.get("standaloneStaffSupportCost") or 0.0),
-        step=10.0,
-        format="%.0f",
-        help="AUD 2019 per person screened.",
-    )
-    controls["sharedAttributionShare"] = scenario_cols[2].number_input(
-        "Share of common programme costs attributed to LTBI screening",
-        min_value=0.0,
-        max_value=1.0,
-        value=float(controls.get("sharedAttributionShare") or 0.0),
-        step=0.05,
-        format="%.2f",
-        help="Scenario assumption only; no reviewed attribution percentage has been supplied.",
+    st.markdown("Additional programme costs")
+    controls["includeAdditionalProgramCosts"] = st.toggle(
+        "Include additional programme costs",
+        value=_additional_programme_costs_enabled(controls),
+        help="When off, no additional programme overhead is applied. This is not evidence that implementation is costless.",
     )
     st.caption(
-        "Shared programme attribution changes programme overhead only. It does not bundle clinical pathway visits into test or treatment prices."
+        "AUD 500,000 is available as an illustrative user-changeable scenario assumption, not an SA Health cost estimate."
     )
+    if controls["includeAdditionalProgramCosts"]:
+        if st.button("Use illustrative AUD 500,000 setup scenario"):
+            controls["standaloneSetupCost"] = float(controls.get("illustrativeSetupCost") or 500000.0)
+            controls["sharedAttributionShare"] = 0.50
+            st.rerun()
+        scenario_cols = st.columns(3)
+        controls["standaloneSetupCost"] = scenario_cols[0].number_input(
+            "One-off setup/bulk implementation cost (AUD)",
+            min_value=0.0,
+            value=float(controls.get("standaloneSetupCost") or 0.0),
+            step=50000.0,
+            format="%.0f",
+            help="AUD 2019 total one-off cost. Enter 500000 only if you want the illustrative setup scenario.",
+        )
+        controls["standaloneAnnualRunningCost"] = scenario_cols[1].number_input(
+            "Annual programme running cost (AUD per year)",
+            min_value=0.0,
+            value=float(controls.get("standaloneAnnualRunningCost") or 0.0),
+            step=10000.0,
+            format="%.0f",
+            help="AUD 2019 annual overhead applied during the selected programme years.",
+        )
+        controls["standaloneRunningYears"] = int(
+            scenario_cols[2].number_input(
+                "Number of years annual cost applies",
+                min_value=0,
+                max_value=20,
+                value=int(float(controls.get("standaloneRunningYears") or 0)),
+                step=1,
+            )
+        )
+        scenario_cols = st.columns(3)
+        controls["annualCostFirstYear"] = int(
+            scenario_cols[0].number_input(
+                "First annual-cost year",
+                min_value=0,
+                max_value=20,
+                value=int(float(controls.get("annualCostFirstYear") or 0)),
+                step=1,
+                disabled=True,
+                help="The current economics engine applies annual programme running costs from programme start during the screening window.",
+            )
+        )
+        controls["standaloneTravelOutreachCost"] = scenario_cols[1].number_input(
+            "Travel/outreach cost (AUD per person screened)",
+            min_value=0.0,
+            value=float(controls.get("standaloneTravelOutreachCost") or 0.0),
+            step=10.0,
+            format="%.0f",
+            help="AUD 2019 per person screened.",
+        )
+        controls["standaloneStaffSupportCost"] = scenario_cols[2].number_input(
+            "Additional staff/support cost (AUD per person screened)",
+            min_value=0.0,
+            value=float(controls.get("standaloneStaffSupportCost") or 0.0),
+            step=10.0,
+            format="%.0f",
+            help="AUD 2019 per person screened.",
+        )
+        controls["sharedAttributionShare"] = st.slider(
+            "Share of common programme costs attributed to LTBI screening",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(controls.get("sharedAttributionShare") or 0.0),
+            step=0.05,
+            format="%.2f",
+            help="Scenario assumption only; no reviewed attribution percentage has been supplied.",
+        )
+        values = _programme_control_values(controls)
+        st.caption(
+            "Shared delivery attribution: "
+            f"common setup {_money(values['setup_cost'])}; "
+            f"share {values['attribution_share'] * 100:.0f}%; "
+            f"attributed LTBI setup {_money(values['setup_cost'] * values['attribution_share'])}."
+        )
+        st.caption(
+            "Shared programme attribution changes programme overhead only. It does not bundle clinical pathway visits into test or treatment prices."
+        )
+    else:
+        st.caption("No additional programme overhead has been entered; this does not mean implementation is costless.")
     st.session_state["health_econ_delivery_scenarios"] = controls
 
     if workspace_state.get("presetConflict"):
@@ -1219,6 +1567,7 @@ if action_cols[0].button("Recalculate economics", type="primary", use_container_
         econ_config=econ_config,
         config=config or {},
         results_bundle=results_bundle,
+        controls=controls,
     )
 if action_cols[1].button("Restore SA Health economic defaults", use_container_width=True):
     load_economics_config(build_unified_working_default_preset()["economicsConfig"])
@@ -1434,6 +1783,7 @@ with st.expander("View or change economic assumptions", expanded=False):
             econ_config=econ_config,
             config=config or {},
             results_bundle=results_bundle,
+            controls=controls,
         )
 
     active_validation = workspace_state.get("validation") or validate_editable_assumptions(
