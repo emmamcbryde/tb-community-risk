@@ -348,6 +348,51 @@ class SAHealthReferencePackageTests(unittest.TestCase):
             )
         )
 
+    def test_rendered_health_economics_widgets_recalculate_without_changing_health(self) -> None:
+        app = AppTest.from_file(str(ROOT / "pages" / "4_Economics.py"), default_timeout=60)
+        app.session_state["config"] = self.package["config"]
+        app.session_state["results_bundle"] = {
+            "metadata": {"scenarioLabel": "test_reference"},
+            "technical": {"eventLedger": self.package["eventLedger"]},
+        }
+        app.session_state["economics_config"] = self.package["economicsConfig"]
+        app.session_state["economics_results"] = self.package["economics"]
+        app.session_state["results_stale"] = False
+
+        app.run()
+        self.assertFalse(app.exception)
+        before = app.session_state["economics_results"]
+        before_cost = self._summary_mean(before, "incrementalCost")
+        before_dalys = self._summary_mean(before, "dalysAverted")
+        before_tb = self._summary_mean(before, "activeTBCasesPrevented")
+
+        next(item for item in app.toggle if item.label == "Include additional programme costs").set_value(True).run()
+        next(item for item in app.number_input if item.label == "One-off setup/bulk implementation cost (AUD)").set_value(100000.0).run()
+        next(item for item in app.number_input if item.label == "IGRA screening test per person - Value used by model").set_value(125.0).run()
+        next(item for item in app.button if item.label == "Recalculate economics").click().run(timeout=90)
+
+        self.assertFalse(app.exception)
+        after = app.session_state["economics_results"]
+        after_cost = self._summary_mean(after, "incrementalCost")
+        after_dalys = self._summary_mean(after, "dalysAverted")
+        after_tb = self._summary_mean(after, "activeTBCasesPrevented")
+        self.assertGreater(after_cost, before_cost + 100000.0)
+        self.assertAlmostEqual(after_dalys, before_dalys, places=10)
+        self.assertAlmostEqual(after_tb, before_tb, places=10)
+        applied_rows = app.session_state["health_econ_workspace"]["rows"]
+        igra = next(row for row in applied_rows if row["assumptionId"] == "cost.test_igra")
+        self.assertEqual(igra["sourceCitation"], "User-defined")
+        self.assertEqual(float(igra["currentValue"]), 125.0)
+
+        self.assertIn("Restore SA Health economic defaults", [item.label for item in app.button])
+
+    @staticmethod
+    def _summary_mean(economics_results: dict, metric: str) -> float:
+        for row in economics_results.get("summaryRows") or []:
+            if row.get("metric") == metric and row.get("discountProfile") == "primary":
+                return float(row.get("mean"))
+        raise AssertionError(f"Missing economics metric: {metric}")
+
     @staticmethod
     def _money_display_to_float(value: object) -> float:
         text = str(value).replace("-AUD", "-").replace("AUD", "").replace(",", "").strip()

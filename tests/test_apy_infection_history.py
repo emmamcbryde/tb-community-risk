@@ -22,6 +22,7 @@ from engine.apy.infection_history import (
 )
 from engine.apy.results_bundle import build_results_bundle
 from engine.apy.runner import run_replicates
+from engine.apy.working_defaults import build_unified_working_default_preset
 
 
 class ApyInfectionHistoryTests(unittest.TestCase):
@@ -29,6 +30,7 @@ class ApyInfectionHistoryTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.config = normalise_config(build_default_config())
         cls.parameters = load_parameters_from_config(cls.config)
+        cls.economics_config = build_unified_working_default_preset()["economicsConfig"]
 
     def test_trajectory_presets_reproduce_prevalence_and_age_or(self) -> None:
         target_prev = 47 / 624
@@ -159,6 +161,25 @@ class ApyInfectionHistoryTests(unittest.TestCase):
             )
 
         self.assertEqual([button.label for button in app.button].count("Restore APY defaults"), 1)
+
+    def test_rendered_stale_trajectory_does_not_activate_experimental_mode(self) -> None:
+        stale_config = configure_infection_history_assumptions(self.config, "falling")
+        app = AppTest.from_file(str(Path("pages/0_Start.py")))
+        app.session_state["config"] = stale_config
+        app.session_state["economics_config"] = self.economics_config
+        app.session_state["experimental_infection_history_enabled"] = False
+        app.session_state["infection_history_trajectory_label"] = "Falling"
+
+        app.run(timeout=90)
+
+        self.assertFalse(app.exception)
+        self.assertFalse(has_explicit_infection_history(app.session_state["config"]))
+        self.assertFalse(app.session_state["experimental_infection_history_enabled"])
+        self.assertNotIn("Historical TB infection pressure", [item.label for item in app.selectbox])
+        self.assertIn(
+            "Analysis basis: SA Health report reference",
+            [item.value for item in app.success],
+        )
 
     def test_stochastic_runner_records_selected_explicit_infection_history(self) -> None:
         config = configure_infection_history_assumptions(self.config, "falling")

@@ -185,7 +185,7 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
 
         self.assertIn('st.title("Health Economics")', text)
         self.assertIn("eventLedger", text)
-        self.assertIn("backend.run_economics(", text)
+        self.assertIn("run_event_ledger_health_economics(", text)
         self.assertIn("_clone_bundle_with_running_duration", text)
         self.assertIn("Run the screening analysis first", text)
 

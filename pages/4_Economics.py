@@ -115,6 +115,36 @@ DELIVERY_COMPONENTS = {
     "travelOutreachStaffSupportCost",
 }
 
+ECONOMIC_COST_WIDGET_SECTIONS = {
+    "Screening and pathway costs": [
+        "cost.test_igra",
+        "cost.return_for_results",
+        "cost.clinical_review",
+        "cost.active_tb_exclusion_workup",
+    ],
+    "Preventive treatment": [
+        "cost.regimen_3hp",
+        "cost.tpt_adr_management",
+    ],
+    "Active-TB care": [
+        "cost.active_tb_disease",
+    ],
+}
+
+ECONOMIC_COST_STATE_LABELS = [
+    "Included",
+    "Excluded",
+    "Bundled into another item",
+    "Not locally costed",
+]
+
+ECONOMIC_COST_STATE_TO_INCLUSION = {
+    "Included": "included",
+    "Excluded": "excluded",
+    "Bundled into another item": "bundled",
+    "Not locally costed": "included",
+}
+
 
 def _money(value: Any, *, saving: bool = False) -> str:
     number = _number(value)
@@ -149,6 +179,28 @@ def _number(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _first_number(*values: Any, default: float = 0.0) -> float:
+    for value in values:
+        number = _number(value)
+        if number is not None:
+            return number
+    return default
+
+
+def _cost_state_label(row: dict[str, Any]) -> str:
+    if row.get("reviewStatus") == "unresolved" and row.get("currentValue") in (None, "", []):
+        return "Not locally costed"
+    label = str(row.get("inclusionStatusLabel") or "").strip()
+    if label in ECONOMIC_COST_STATE_LABELS:
+        return label
+    inclusion = str(row.get("inclusionStatus") or "included").strip()
+    if inclusion == "excluded":
+        return "Excluded"
+    if inclusion == "bundled":
+        return "Bundled into another item"
+    return "Included"
 
 
 def _bool(value: Any) -> bool:
@@ -1085,6 +1137,73 @@ def render_standard_assumption_editor(
     return updated_state["rows"], updated_state
 
 
+def render_editable_cost_workspace(
+    *,
+    rows: list[dict[str, Any]],
+    editor_prefix: str,
+) -> list[dict[str, Any]]:
+    updated = deepcopy(rows)
+    row_by_id = {row.get("assumptionId"): row for row in updated}
+    version = int(st.session_state.get("health_econ_cost_widget_version", 0))
+    tabs = st.tabs(list(ECONOMIC_COST_WIDGET_SECTIONS))
+    for tab, (section, assumption_ids) in zip(tabs, ECONOMIC_COST_WIDGET_SECTIONS.items()):
+        with tab:
+            for assumption_id in assumption_ids:
+                row = row_by_id.get(assumption_id)
+                if not row:
+                    continue
+                label = str(row.get("description") or assumption_id)
+                source = str(row.get("sourceCitation") or "")
+                unit = str(row.get("unit") or "AUD")
+                current_state = _cost_state_label(row)
+                state_key = f"{editor_prefix}_{version}_{assumption_id}_state"
+                value_key = f"{editor_prefix}_{version}_{assumption_id}_value"
+                state = st.selectbox(
+                    f"{label} - cost state",
+                    ECONOMIC_COST_STATE_LABELS,
+                    index=ECONOMIC_COST_STATE_LABELS.index(current_state)
+                    if current_state in ECONOMIC_COST_STATE_LABELS
+                    else 0,
+                    key=state_key,
+                    help=(
+                        "Included values enter the calculation. Bundled values are not separately costed. "
+                        "Not locally costed means evidence is still needed and no additional cost is applied until a value is entered."
+                    ),
+                )
+                disabled_value = state in {"Excluded", "Bundled into another item", "Not locally costed"}
+                value = st.number_input(
+                    f"{label} - Value used by model",
+                    min_value=0.0,
+                    value=_first_number(row.get("currentValue"), default=0.0),
+                    step=10.0,
+                    format="%.4f",
+                    key=value_key,
+                    disabled=disabled_value,
+                    help=f"{unit}. Source: {source or 'Source not supplied'}.",
+                )
+                st.caption(f"Unit: {unit} | Source: {row.get('sourceCitation') or 'Source not supplied'}")
+                old_state = _cost_state_label(row)
+                old_value = _first_number(row.get("currentValue"), default=0.0)
+                changed = state != old_state or (not disabled_value and abs(float(value) - old_value) > 1e-9)
+                row["inclusionStatus"] = ECONOMIC_COST_STATE_TO_INCLUSION[state]
+                row["inclusionStatusLabel"] = "Included" if state == "Not locally costed" else state
+                if state == "Included":
+                    row["currentValue"] = float(value)
+                elif state in {"Excluded", "Bundled into another item"}:
+                    row["currentValue"] = ""
+                else:
+                    row["currentValue"] = ""
+                    row["reviewStatus"] = "unresolved"
+                    row["reviewStatusLabel"] = "Unresolved"
+                if changed:
+                    row["sourceCitation"] = "User-defined"
+                    if state == "Included":
+                        row["reviewStatus"] = row.get("reviewStatus") or "configured_reviewed"
+                        row["reviewStatusLabel"] = row.get("reviewStatusLabel") or "Reviewed numerical assumption"
+                    st.caption("User-defined")
+    return updated
+
+
 def overridden_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
@@ -1136,7 +1255,7 @@ def run_authoritative_health_economics(results_bundle: dict, econ_config: dict) 
     try:
         controls = _ensure_delivery_scenario_controls()
         running_years = int(float(controls.get("standaloneRunningYears") or 0))
-        econ = backend.run_economics(
+        econ = run_event_ledger_health_economics(
             _clone_bundle_with_running_duration(results_bundle, running_years),
             econ_config,
         )
@@ -1257,8 +1376,9 @@ primary_rate = (
     or 0.03
 )
 assumption_status = "SA Health working defaults" if override_count == 0 else f"{override_count} user-defined override(s)"
+analysis_basis_status = _analysis_basis_label(results_bundle)
 st.caption(
-    f"Analysis basis: SA Health report reference | Perspective: {metadata.get('perspective', 'Australian health-care system')} | "
+    f"Analysis basis: {analysis_basis_status} | Perspective: {metadata.get('perspective', 'Australian health-care system')} | "
     f"{currency} {price_year} | Primary discount rate: {float(primary_rate) * 100:.1f}% | Economic assumptions: {assumption_status}"
 )
 if any(row.get("assumptionId") in PROGRAMME_UNCOSTED_IDS and row.get("currentValue") in (0, 0.0, "0", "0.0") for row in working_rows):
@@ -1481,8 +1601,22 @@ with st.expander("Change cost assumptions", expanded=False):
     else:
         st.caption("No user-defined economic overrides are active.")
 
-    working_rows, workspace_state = render_standard_assumption_editor(
+    st.markdown("Editable cost inputs")
+    st.caption("Change the displayed cost values directly, then use Recalculate economics. Rows marked User-defined are included in exports.")
+    working_rows = render_editable_cost_workspace(
         rows=working_rows,
+        editor_prefix="health_econ_cost_widget",
+    )
+    workspace_state = update_workspace_rows(
+        st.session_state["health_econ_workspace"],
+        rows_from_display_rows(working_rows),
+    )
+    st.session_state["health_econ_workspace"] = workspace_state
+
+    st.markdown("Discounting, health outcomes and thresholds")
+    non_cost_rows = [row for row in working_rows if row.get("category") != "cost"]
+    working_rows, workspace_state = render_standard_assumption_editor(
+        rows=non_cost_rows,
         working_rows=working_rows,
         editor_prefix="health_econ_standard_assumption_editor",
     )
@@ -1572,6 +1706,7 @@ if action_cols[0].button("Recalculate economics", type="primary", use_container_
 if action_cols[1].button("Restore SA Health economic defaults", use_container_width=True):
     load_economics_config(build_unified_working_default_preset()["economicsConfig"])
     st.session_state["health_econ_delivery_scenarios"] = dict(DELIVERY_SCENARIO_DEFAULTS)
+    st.session_state["health_econ_cost_widget_version"] = int(st.session_state.get("health_econ_cost_widget_version", 0)) + 1
     if results_bundle and not st.session_state.get("results_stale"):
         run_authoritative_health_economics(results_bundle, st.session_state["economics_config"])
     st.rerun()

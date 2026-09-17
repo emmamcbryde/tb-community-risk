@@ -35,6 +35,7 @@ def init_session_state() -> None:
         "dirty_config": False,
         "dirty_economics": False,
         "results_stale": False,
+        "experimental_infection_history_enabled": False,
         "last_economics_run_at": "",
         "last_run_at": "",
         "last_validated_at": "",

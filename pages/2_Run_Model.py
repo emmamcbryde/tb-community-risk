@@ -17,7 +17,11 @@ from app.state import (
     sync_backend_status,
 )
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
-from engine.apy.infection_history import EXPERIMENTAL_STATUS_LABEL, is_experimental_infection_history_config
+from engine.apy.infection_history import (
+    EXPERIMENTAL_STATUS_LABEL,
+    configure_compatibility_reference_assumptions,
+    is_experimental_infection_history_config,
+)
 
 
 init_session_state()
@@ -30,6 +34,10 @@ config = st.session_state.get("config")
 if not config:
     st.info("Set up the analysis before running it.")
     st.stop()
+if is_experimental_infection_history_config(config) and not st.session_state.get("experimental_infection_history_enabled"):
+    config = configure_compatibility_reference_assumptions(config)
+    st.session_state["config"] = config
+    st.session_state.pop("infection_history_trajectory_label", None)
 
 status = backend.status()
 sync_backend_status(status)
@@ -41,7 +49,7 @@ method_label = MODEL_METHOD_LABELS.get(
     "Expected outcomes — single deterministic run",
 )
 is_stochastic = str(config.get("analysisMethod")) == "agent_based"
-is_experimental = is_experimental_infection_history_config(config)
+is_experimental = bool(st.session_state.get("experimental_infection_history_enabled")) and is_experimental_infection_history_config(config)
 trajectory_label = ((config.get("ltbiStateAssumptions") or {}).get("infectionPressureTrajectoryLabel"))
 reps = int(float(config.get("nReps") or 0))
 seed = int(float(config.get("seed") or 1))

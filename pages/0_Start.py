@@ -68,10 +68,12 @@ def _load_unified_defaults(*, show_workspace: bool) -> None:
     st.session_state["dirty_config"] = False
     st.session_state["dirty_economics"] = False
     st.session_state["results_stale"] = False
+    st.session_state["experimental_infection_history_enabled"] = False
     st.session_state["last_economics_run_at"] = ""
     st.session_state["last_run_at"] = ""
     st.session_state.pop("recent_ltbi_run_route", None)
     st.session_state.pop("infection_history_trajectory_label", None)
+    st.session_state["experimental_infection_history_enabled"] = False
     st.session_state.pop("health_econ_workspace", None)
     sync_backend_status(get_backend().status())
 
@@ -89,6 +91,7 @@ def _restore_unified_defaults() -> None:
     st.session_state["parameter_workspace_validation"] = None
     st.session_state.pop("recent_ltbi_run_route", None)
     st.session_state.pop("infection_history_trajectory_label", None)
+    st.session_state["experimental_infection_history_enabled"] = False
     st.session_state.pop("health_econ_workspace", None)
     _bump_parameter_editor_version()
     if previous_config != state["config"]:
@@ -217,8 +220,26 @@ def _target_ltbi_prevalence(config: dict[str, Any]) -> float:
     return 47 / 624 if value in (None, "", []) else float(value)
 
 
+def _experimental_infection_history_enabled() -> bool:
+    return bool(st.session_state.get("experimental_infection_history_enabled"))
+
+
+def _ensure_inactive_experimental_config_is_reference() -> None:
+    config = st.session_state.get("config")
+    if not isinstance(config, dict):
+        return
+    if _experimental_infection_history_enabled():
+        return
+    if not has_explicit_infection_history(config):
+        st.session_state.pop("infection_history_trajectory_label", None)
+        return
+    st.session_state["config"] = configure_compatibility_reference_assumptions(config)
+    st.session_state.pop("infection_history_trajectory_label", None)
+    _sync_workspace_after_direct_config_change()
+
+
 def _render_infection_history_controls(config: dict[str, Any]) -> None:
-    current_explicit = has_explicit_infection_history(config)
+    current_explicit = _experimental_infection_history_enabled() and has_explicit_infection_history(config)
     st.subheader("Epidemiological basis")
     if current_explicit:
         st.warning(
@@ -241,6 +262,7 @@ def _render_infection_history_controls(config: dict[str, Any]) -> None:
         )
         if not current_explicit:
             if st.button("Enable experimental infection-history analysis"):
+                st.session_state["experimental_infection_history_enabled"] = True
                 st.session_state["config"] = configure_infection_history_assumptions(config, "steady")
                 st.session_state.pop("recent_ltbi_run_route", None)
                 st.session_state["infection_history_trajectory_label"] = "Steady"
@@ -249,6 +271,7 @@ def _render_infection_history_controls(config: dict[str, Any]) -> None:
             return
 
         if st.button("Return to SA Health report reference"):
+            st.session_state["experimental_infection_history_enabled"] = False
             st.session_state["config"] = configure_compatibility_reference_assumptions(config)
             st.session_state.pop("recent_ltbi_run_route", None)
             st.session_state.pop("infection_history_trajectory_label", None)
@@ -600,6 +623,7 @@ def _render_age_risk_summary(config: dict[str, Any]) -> None:
 init_session_state()
 if not isinstance(st.session_state.get("config"), dict) or not isinstance(st.session_state.get("economics_config"), dict):
     _load_unified_defaults(show_workspace=True)
+_ensure_inactive_experimental_config_is_reference()
 
 st.title("Set up")
 st.write(
@@ -611,7 +635,7 @@ st.write(
 config = st.session_state.get("config")
 econ = st.session_state.get("economics_config")
 if isinstance(config, dict) and isinstance(econ, dict):
-    if has_explicit_infection_history(config):
+    if _experimental_infection_history_enabled() and has_explicit_infection_history(config):
         nested = config.get("ltbiStateAssumptions") or {}
         trajectory = str(nested.get("infectionPressureTrajectoryLabel") or nested.get("infectionPressureTrajectory") or "Steady")
         st.warning(f"Analysis basis: Experimental infection-history scenario — {trajectory}")
