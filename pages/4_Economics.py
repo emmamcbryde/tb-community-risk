@@ -1277,7 +1277,7 @@ def apply_and_recalculate(
     config: dict[str, Any] | None,
     results_bundle: dict[str, Any] | None,
     controls: dict[str, Any],
-) -> None:
+) -> bool:
     validation = validate_editable_assumptions(working_rows, econ_config, config=config or {})
     st.session_state["health_econ_workspace"] = mark_workspace_validated(workspace_state, validation)
     if not validation.get("isValidForApplication"):
@@ -1285,7 +1285,7 @@ def apply_and_recalculate(
         fatal_rows = fatal_validation_rows(validation)
         if fatal_rows:
             st.dataframe(arrow_safe_dataframe(fatal_rows), use_container_width=True, hide_index=True)
-        return
+        return False
     updated_config = apply_assumptions_to_economics_config(
         econ_config,
         working_rows,
@@ -1309,8 +1309,10 @@ def apply_and_recalculate(
             _effective_config_for_programme_controls(updated_config, controls),
         )
         st.success("Economic results recalculated from the current screening outcomes. Epidemiological results were not rerun.")
+        return True
     else:
         st.warning("Run the screening analysis before recalculating health economics.")
+        return False
 
 
 st.title("Health Economics")
@@ -1391,70 +1393,11 @@ if econ_results:
 
 st.subheader("Programme-delivery scenarios")
 st.caption(
-    "All scenarios reuse the same screening outcomes. No additional programme overhead entered means no local overhead has been "
-    "entered; it does not mean implementation is costless. AUD 500,000, when selected below, is illustrative and user-changeable."
+    "All scenarios reuse the same screening outcomes. Change costs below before interpreting the scenario table. "
+    "No additional programme overhead entered means no local overhead has been entered; it does not mean implementation is costless."
 )
-try:
-    scenario_rows = delivery_scenario_comparison_rows(
-        results_bundle=results_bundle,
-        economics_config=econ_config,
-        controls=controls,
-    )
-    st.dataframe(
-        arrow_safe_dataframe([{key: value for key, value in row.items() if not key.startswith("_")} for row in scenario_rows]),
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.markdown("Incremental cost-effectiveness plane")
-    plane_rows = cost_effectiveness_plane_rows(
-        results_bundle=results_bundle,
-        economics_config=econ_config,
-        current_economics=econ_results,
-        controls=controls,
-    )
-    st.altair_chart(_cost_effectiveness_plane_chart(plane_rows), use_container_width=True)
-    st.caption(
-        "Cost-only changes move points vertically on this plane: added programme costs move upward, "
-        "greater savings move downward, and DALYs averted remain fixed."
-    )
-except Exception as exc:
-    st.error(f"Economic scenario comparison failed: {exc}")
 
-st.subheader("Cost breakdown and budget impact")
-if econ_results:
-    cost_rows = cost_category_rows(econ_results)
-    values = primary_economic_values(econ_results, results_bundle)
-    st.dataframe(
-        arrow_safe_dataframe(
-            [
-                {"Measure": "Gross intervention delivery cost", "Value": _money(values["grossDeliveryExpenditure"])},
-                {"Measure": "Active-TB care cost offset", "Value": _money(values["activeTBCareOffset"], saving=True)},
-                {"Measure": "Net incremental health-system cost", "Value": _signed_money(values["incrementalCost"])},
-            ]
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
-    if cost_rows:
-        st.dataframe(arrow_safe_dataframe(cost_rows), use_container_width=True, hide_index=True)
-    budget_rows = budget_impact_rows(econ_results)
-    if budget_rows:
-        st.line_chart(
-            pd.DataFrame(budget_rows).set_index("Year")[
-                ["Intervention delivery expenditure", "Comparator active-TB care", "Intervention active-TB care"]
-            ],
-            use_container_width=True,
-        )
-        st.dataframe(arrow_safe_dataframe(budget_rows), use_container_width=True, hide_index=True)
-    be_rows = break_even_rows(econ_results)
-    if be_rows:
-        st.dataframe(arrow_safe_dataframe(be_rows), use_container_width=True, hide_index=True)
-    st.caption(
-        "Programme and pathway expenditure is concentrated early; active-TB care offsets occur over follow-up. "
-        "The break-even amount is a planning measure, not a willingness-to-pay threshold."
-    )
-
-with st.expander("Change cost assumptions", expanded=False):
+with st.expander("Change cost assumptions", expanded=True):
     st.caption(
         "Economic changes reuse the current screening outcomes; epidemiology is not rerun. Blank entries are not converted to zero."
     )
@@ -1670,21 +1613,86 @@ with st.expander("Change cost assumptions", expanded=False):
 
 action_cols = st.columns(2)
 if action_cols[0].button("Recalculate economics", type="primary", use_container_width=True):
-    apply_and_recalculate(
+    if apply_and_recalculate(
         working_rows=working_rows,
         workspace_state=workspace_state,
         econ_config=econ_config,
         config=config or {},
         results_bundle=results_bundle,
         controls=controls,
-    )
+    ):
+        econ_config = st.session_state["economics_config"]
+        econ_results = st.session_state["economics_results"]
 if action_cols[1].button("Restore SA Health economic defaults", use_container_width=True):
     load_economics_config(build_unified_working_default_preset()["economicsConfig"])
     st.session_state["health_econ_delivery_scenarios"] = dict(DELIVERY_SCENARIO_DEFAULTS)
     st.session_state["health_econ_cost_widget_version"] = int(st.session_state.get("health_econ_cost_widget_version", 0)) + 1
     if results_bundle and not st.session_state.get("results_stale"):
         run_authoritative_health_economics(results_bundle, st.session_state["economics_config"])
-    st.rerun()
+    econ_config = st.session_state["economics_config"]
+    econ_results = st.session_state.get("economics_results")
+    controls = st.session_state["health_econ_delivery_scenarios"]
+    st.success("SA Health economic defaults restored. Epidemiological results were not rerun.")
+
+try:
+    scenario_rows = delivery_scenario_comparison_rows(
+        results_bundle=results_bundle,
+        economics_config=econ_config,
+        controls=controls,
+    )
+    st.dataframe(
+        arrow_safe_dataframe([{key: value for key, value in row.items() if not key.startswith("_")} for row in scenario_rows]),
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.markdown("Incremental cost-effectiveness plane")
+    plane_rows = cost_effectiveness_plane_rows(
+        results_bundle=results_bundle,
+        economics_config=econ_config,
+        current_economics=st.session_state.get("economics_results"),
+        controls=controls,
+    )
+    st.altair_chart(_cost_effectiveness_plane_chart(plane_rows), use_container_width=True)
+    st.caption(
+        "Cost-only changes move points vertically on this plane: added programme costs move upward, "
+        "greater savings move downward, and DALYs averted remain fixed."
+    )
+except Exception as exc:
+    st.error(f"Economic scenario comparison failed: {exc}")
+
+st.subheader("Cost breakdown and budget impact")
+if econ_results:
+    cost_rows = cost_category_rows(econ_results)
+    values = primary_economic_values(econ_results, results_bundle)
+    st.dataframe(
+        arrow_safe_dataframe(
+            [
+                {"Measure": "Gross intervention delivery cost", "Value": _money(values["grossDeliveryExpenditure"])},
+                {"Measure": "Active-TB care cost offset", "Value": _money(values["activeTBCareOffset"], saving=True)},
+                {"Measure": "Net incremental health-system cost", "Value": _signed_money(values["incrementalCost"])},
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+    if cost_rows:
+        st.dataframe(arrow_safe_dataframe(cost_rows), use_container_width=True, hide_index=True)
+    budget_rows = budget_impact_rows(econ_results)
+    if budget_rows:
+        st.line_chart(
+            pd.DataFrame(budget_rows).set_index("Year")[
+                ["Intervention delivery expenditure", "Comparator active-TB care", "Intervention active-TB care"]
+            ],
+            use_container_width=True,
+        )
+        st.dataframe(arrow_safe_dataframe(budget_rows), use_container_width=True, hide_index=True)
+    be_rows = break_even_rows(econ_results)
+    if be_rows:
+        st.dataframe(arrow_safe_dataframe(be_rows), use_container_width=True, hide_index=True)
+    st.caption(
+        "Programme and pathway expenditure is concentrated early; active-TB care offsets occur over follow-up. "
+        "The break-even amount is a planning measure, not a willingness-to-pay threshold."
+    )
 
 download_cols = st.columns(2)
 download_cols[0].download_button(

@@ -77,6 +77,7 @@ def _restore_unified_defaults() -> None:
     st.session_state["parameter_workspace_validation"] = None
     st.session_state.pop("recent_ltbi_run_route", None)
     st.session_state.pop("health_econ_workspace", None)
+    st.session_state.pop("setup_analysis_method", None)
     _bump_parameter_editor_version()
     if previous_config != state["config"]:
         mark_config_changed()
@@ -200,11 +201,16 @@ def _render_analysis_settings_controls(config: dict[str, Any]) -> None:
     st.caption("Choose faster preview runs for exploration. The SA Health reference uses 2,000 repetitions and seed 1.")
     before = deepcopy(config)
     method_options = list(MODEL_METHOD_LABELS.values())
+    widget_key = "setup_analysis_method"
+    configured_label = _analysis_mode_label(config)
+    if st.session_state.get(widget_key) not in method_options:
+        st.session_state[widget_key] = configured_label
     method_label = st.radio(
         "Analysis type",
         method_options,
-        index=method_options.index(_analysis_mode_label(config)) if _analysis_mode_label(config) in method_options else 0,
+        index=method_options.index(configured_label) if configured_label in method_options else 0,
         horizontal=True,
+        key=widget_key,
     )
     config["analysisMethod"] = next(
         (code for code, label in MODEL_METHOD_LABELS.items() if label == method_label),
@@ -244,7 +250,6 @@ def _render_analysis_settings_controls(config: dict[str, Any]) -> None:
     if config != before:
         st.session_state["config"] = config
         _sync_workspace_after_direct_config_change()
-        st.rerun()
 
 
 def _workspace_change_scope(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> tuple[bool, bool]:
@@ -439,4 +444,12 @@ if st.button("Restore APY defaults", use_container_width=True):
     st.rerun()
 
 if isinstance(st.session_state.get("config"), dict):
+    effective_config = st.session_state["config"]
+    if str(effective_config.get("analysisMethod")) == "expected_value":
+        st.success("Run Analysis will use: Expected outcomes — single deterministic run.")
+    else:
+        st.success(
+            "Run Analysis will use: Simulated community variation — "
+            f"{int(effective_config.get('nReps') or 0):,} runs, seed {int(effective_config.get('seed') or 1)}."
+        )
     _page_link("pages/2_Run_Model.py", label="Open Run Analysis")

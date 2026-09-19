@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
 from app.state import is_supported_sa_health_analysis_basis
-from app.run_analysis_controls import TECHNICAL_DEMONSTRATION_ROUTE
+from app.run_analysis_controls import TECHNICAL_DEMONSTRATION_ROUTE, prepare_run_config_for_recent_ltbi_route
 from engine.apy.config import build_default_config, normalise_config
 from engine.apy.data import load_parameters_from_config
 from engine.apy.expected_value import run_expected_value
@@ -368,6 +369,63 @@ class ApyInfectionHistoryTests(unittest.TestCase):
         self.assertIsNotNone(econ_app.session_state["results_bundle"])
         self.assertFalse(any("not available in this SA Health version" in item.value for item in econ_app.warning))
 
+    def test_setup_deterministic_selection_is_the_configuration_executed_by_run_analysis(self) -> None:
+        setup_app = AppTest.from_file(str(Path("pages/0_Start.py")), default_timeout=90)
+        setup_app.run(timeout=90)
+        analysis_type = next(item for item in setup_app.radio if item.label == "Analysis type")
+        analysis_type.set_value("Expected outcomes — single deterministic run").run(timeout=90)
+
+        selected_config = setup_app.session_state["config"]
+        selected_config["N"] = 50
+        selected_config.setdefault("scenario", {}).setdefault("eligible", {})["number"] = 50
+        self.assertEqual(selected_config["analysisMethod"], "expected_value")
+        self.assertNotIn("Repetitions", [item.label for item in setup_app.selectbox])
+        self.assertNotIn("Random seed", [item.label for item in setup_app.number_input])
+        self.assertTrue(
+            any("Expected outcomes — single deterministic run" in item.value for item in setup_app.success)
+        )
+
+        run_app = AppTest.from_file(str(Path("pages/2_Run_Model.py")), default_timeout=90)
+        run_app.session_state["config"] = selected_config
+        run_app.session_state["economics_config"] = setup_app.session_state["economics_config"]
+        run_app.session_state["recent_ltbi_run_route"] = TECHNICAL_DEMONSTRATION_ROUTE
+        run_app.run(timeout=90)
+        self.assertNotIn("Preview analyses", [item.value for item in run_app.warning])
+        expected_bundle = {
+            "metadata": {
+                "modelType": "expected_value",
+                "analysisMethod": "expected_value",
+                "analysisBasis": "sa_health_matlab_v9_compatibility_reference",
+                "naturalHistorySemantics": "matlab_v9_implicit_early_late",
+                "nReps": None,
+                "seed": None,
+            },
+            "technical": {
+                "interfaceConfig": selected_config,
+                "eventLedger": {
+                    "metadata": {
+                        "modelType": "expected_value",
+                        "analysisMethod": "expected_value",
+                        "analysisBasis": "sa_health_matlab_v9_compatibility_reference",
+                        "naturalHistorySemantics": "matlab_v9_implicit_early_late",
+                    },
+                    "annualEvents": [],
+                },
+            },
+        }
+        with patch(
+            "adapters.python_apy_backend.PythonApyBackend.run_scenario_bundle",
+            return_value=expected_bundle,
+        ) as run_spy:
+            next(item for item in run_app.button if item.label == "Run analysis").click().run(timeout=90)
+        self.assertEqual(run_spy.call_args.args[0]["analysisMethod"], "expected_value")
+
+        bundle = run_app.session_state["results_bundle"]
+        self.assertEqual(bundle["metadata"]["modelType"], "expected_value")
+        self.assertEqual(bundle["metadata"]["analysisMethod"], "expected_value")
+        self.assertIsNone(bundle["metadata"].get("nReps"))
+        self.assertIsNone(bundle["metadata"].get("seed"))
+
     def test_supported_small_stochastic_run_survives_results_and_economics_navigation(self) -> None:
         config = build_unified_working_default_preset()["config"]
         config.update({"analysisMethod": "agent_based", "N": 50, "nReps": 2, "seed": 1})
@@ -405,6 +463,76 @@ class ApyInfectionHistoryTests(unittest.TestCase):
         econ_app.run(timeout=90)
         self.assertFalse(econ_app.exception)
         self.assertIsNotNone(econ_app.session_state["results_bundle"])
+
+    def test_health_economics_widgets_apply_cost_edits_without_changing_health_outcomes(self) -> None:
+        config = build_unified_working_default_preset()["config"]
+        config.update({"analysisMethod": "agent_based", "N": 20, "nReps": 1, "seed": 1})
+        config.setdefault("scenario", {}).setdefault("eligible", {})["number"] = 20
+        run_config = prepare_run_config_for_recent_ltbi_route(
+            config,
+            selected_route=TECHNICAL_DEMONSTRATION_ROUTE,
+        )
+        bundle = build_results_bundle(run_replicates(run_config, keep_example_cohort=False))
+
+        econ_app = AppTest.from_file(str(Path("pages/4_Economics.py")), default_timeout=90)
+        econ_app.session_state["config"] = run_config
+        econ_app.session_state["economics_config"] = self.economics_config
+        econ_app.session_state["results_bundle"] = bundle
+        econ_app.session_state["results_stale"] = False
+        econ_app.run(timeout=90)
+        before = econ_app.session_state["economics_results"]
+        def summary_mean(payload: dict, metric: str) -> float:
+            return next(
+                float(row["mean"])
+                for row in payload["summaryRows"]
+                if row.get("metric") == metric and row.get("discountProfile") == "primary"
+            )
+
+        before_cost = summary_mean(before, "incrementalCost")
+        before_dalys = summary_mean(before, "dalysAverted")
+        before_tb = summary_mean(before, "activeTBCasesPrevented")
+
+        include = next(item for item in econ_app.toggle if item.label == "Include additional programme costs")
+        include.set_value(True).run(timeout=90)
+        setup = next(
+            item for item in econ_app.number_input
+            if item.label == "One-off setup/bulk implementation cost (AUD)"
+        )
+        annual = next(
+            item for item in econ_app.number_input
+            if item.label == "Annual programme running cost (AUD per year)"
+        )
+        igra = next(
+            item for item in econ_app.number_input
+            if item.label == "IGRA screening test per person - Value used by model"
+        )
+        setup.set_value(100000.0)
+        annual.set_value(10000.0)
+        igra.set_value(120.0)
+        next(item for item in econ_app.button if item.label == "Recalculate economics").click().run(timeout=90)
+
+        after = econ_app.session_state["economics_results"]
+        self.assertGreater(summary_mean(after, "incrementalCost"), before_cost)
+        self.assertEqual(summary_mean(after, "dalysAverted"), before_dalys)
+        self.assertEqual(summary_mean(after, "activeTBCasesPrevented"), before_tb)
+        controls = econ_app.session_state["health_econ_delivery_scenarios"]
+        self.assertTrue(controls["includeAdditionalProgramCosts"])
+        self.assertEqual(controls["standaloneSetupCost"], 100000.0)
+        self.assertEqual(controls["standaloneAnnualRunningCost"], 10000.0)
+        igra_row = next(
+            row
+            for row in econ_app.session_state["health_econ_workspace"]["rows"]
+            if row["assumptionId"] == "cost.test_igra"
+        )
+        self.assertEqual(igra_row["currentValue"], 120.0)
+        self.assertEqual(igra_row["sourceCitation"], "User-defined")
+
+        next(
+            item for item in econ_app.button if item.label == "Restore SA Health economic defaults"
+        ).click().run(timeout=90)
+        restored = econ_app.session_state["economics_results"]
+        self.assertAlmostEqual(summary_mean(restored, "incrementalCost"), before_cost, places=8)
+        self.assertFalse(econ_app.session_state["health_econ_delivery_scenarios"]["includeAdditionalProgramCosts"])
 
     def test_stochastic_runner_records_selected_explicit_infection_history(self) -> None:
         config = configure_infection_history_assumptions(self.config, "falling")

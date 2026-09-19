@@ -245,7 +245,10 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         headline = app.dataframe[0].value
         self.assertIn("Dominant", str(headline.loc[headline["Result"] == "Economic result", "Value"].iloc[0]))
         self.assertIn("DALYs averted", set(headline["Result"]))
-        scenarios = app.dataframe[1].value
+        scenarios = next(
+            item.value for item in app.dataframe
+            if "Scenario" in set(getattr(item.value, "columns", []))
+        )
         self.assertEqual(
             list(scenarios["Scenario"]),
             ["No additional programme overhead entered"],
@@ -307,7 +310,10 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         app.run()
 
         self.assertFalse(app.exception)
-        scenarios = app.dataframe[1].value
+        scenarios = next(
+            item.value for item in app.dataframe
+            if "Scenario" in set(getattr(item.value, "columns", []))
+        )
         self.assertEqual(
             list(scenarios["Scenario"]),
             [
