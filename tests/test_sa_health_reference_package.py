@@ -346,7 +346,7 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "AUD 500,000 is available as an illustrative user-changeable scenario assumption" in item.value
+                "AUD 500,000 is illustrative and user-changeable" in item.value
                 for item in app.caption
             )
         )
@@ -364,13 +364,16 @@ class SAHealthReferencePackageTests(unittest.TestCase):
 
         app.run()
         self.assertFalse(app.exception)
+        self.assertNotIn("Include additional programme costs", [item.label for item in app.toggle])
+        self.assertIn("One-off programme setup cost (AUD)", [item.label for item in app.number_input])
+        self.assertIn("Annual programme running cost (AUD per year)", [item.label for item in app.number_input])
+        self.assertIn("First year annual cost is incurred", [item.label for item in app.number_input])
         before = app.session_state["economics_results"]
         before_cost = self._summary_mean(before, "incrementalCost")
         before_dalys = self._summary_mean(before, "dalysAverted")
         before_tb = self._summary_mean(before, "activeTBCasesPrevented")
 
-        next(item for item in app.toggle if item.label == "Include additional programme costs").set_value(True).run()
-        next(item for item in app.number_input if item.label == "One-off setup/bulk implementation cost (AUD)").set_value(100000.0).run()
+        next(item for item in app.number_input if item.label == "One-off programme setup cost (AUD)").set_value(100000.0).run()
         next(item for item in app.number_input if item.label == "IGRA screening test per person - Value used by model").set_value(125.0).run()
         next(item for item in app.button if item.label == "Recalculate economics").click().run(timeout=90)
 
@@ -382,6 +385,10 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         self.assertGreater(after_cost, before_cost + 100000.0)
         self.assertAlmostEqual(after_dalys, before_dalys, places=10)
         self.assertAlmostEqual(after_tb, before_tb, places=10)
+        self.assertEqual(
+            app.session_state["applied_programme_cost_controls"]["standaloneSetupCost"],
+            100000.0,
+        )
         applied_rows = app.session_state["health_econ_workspace"]["rows"]
         igra = next(row for row in applied_rows if row["assumptionId"] == "cost.test_igra")
         self.assertEqual(igra["sourceCitation"], "User-defined")

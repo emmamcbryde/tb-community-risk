@@ -173,6 +173,26 @@ class ApyEventLedgerEconomicsTests(unittest.TestCase):
         ]["programRunningCost"].sum()
         self.assertAlmostEqual(running, 120)
 
+    def test_programme_running_cost_respects_explicit_start_year_and_duration(self) -> None:
+        ledger = _toy_ledger(screening_window=5)
+        metadata = ledger["technical"]["eventLedger"]["metadata"]
+        metadata["programRunningFirstYear"] = 2
+        metadata["programRunningDurationYears"] = 2
+
+        econ = run_event_ledger_health_economics(
+            ledger,
+            _synthetic_econ({"program_running_basis": "annual_during_screening_window", "program_running": 100}),
+        )
+        annual = econ["annualByArm"]
+        running = annual[
+            (annual["arm"] == "intervention")
+            & (annual["discountRate"] == 0.0)
+            & (annual["programRunningCost"] > 0)
+        ][["modelYear", "programRunningCost"]]
+
+        self.assertEqual(set(running["modelYear"]), {2, 3})
+        self.assertTrue((running["programRunningCost"] == 100).all())
+
     def test_setup_and_running_costs_survive_zero_event_years(self) -> None:
         config = _synthetic_econ({"program_running": 25})
         ledger = _toy_ledger(screening_window=3, screened_by_year={0: 5, 1: 0, 2: 5})

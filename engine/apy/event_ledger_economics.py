@@ -665,8 +665,15 @@ def _annual_economic_row(row: pd.Series, metadata: dict[str, Any], costs: dict[s
 def _running_quantity(row: pd.Series, costs: dict[str, Any], metadata: dict[str, Any]) -> float:
     basis = costs.get("runningBasis")
     if basis == "annual_during_screening_window":
-        window = float(metadata.get("screeningWindowYears") or metadata.get("screeningWindow") or 0)
-        return 1.0 if float(row.get("modelYear", 0)) < window else 0.0
+        first_year = float(metadata.get("programRunningFirstYear") or 0)
+        duration = float(
+            metadata.get("programRunningDurationYears")
+            or metadata.get("screeningWindowYears")
+            or metadata.get("screeningWindow")
+            or 0
+        )
+        model_year = float(row.get("modelYear", 0))
+        return 1.0 if first_year <= model_year < first_year + duration else 0.0
     if basis == "total_over_screening_programme" and costs.get("runningAllocation") == "proportional_to_screening_volume":
         return 0.0
     return 0.0

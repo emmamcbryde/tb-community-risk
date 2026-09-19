@@ -492,11 +492,9 @@ class ApyInfectionHistoryTests(unittest.TestCase):
         before_dalys = summary_mean(before, "dalysAverted")
         before_tb = summary_mean(before, "activeTBCasesPrevented")
 
-        include = next(item for item in econ_app.toggle if item.label == "Include additional programme costs")
-        include.set_value(True).run(timeout=90)
         setup = next(
             item for item in econ_app.number_input
-            if item.label == "One-off setup/bulk implementation cost (AUD)"
+            if item.label == "One-off programme setup cost (AUD)"
         )
         annual = next(
             item for item in econ_app.number_input
@@ -508,6 +506,10 @@ class ApyInfectionHistoryTests(unittest.TestCase):
         )
         setup.set_value(100000.0)
         annual.set_value(10000.0)
+        next(
+            item for item in econ_app.number_input
+            if item.label == "First year annual cost is incurred"
+        ).set_value(1)
         igra.set_value(120.0)
         next(item for item in econ_app.button if item.label == "Recalculate economics").click().run(timeout=90)
 
@@ -519,6 +521,7 @@ class ApyInfectionHistoryTests(unittest.TestCase):
         self.assertTrue(controls["includeAdditionalProgramCosts"])
         self.assertEqual(controls["standaloneSetupCost"], 100000.0)
         self.assertEqual(controls["standaloneAnnualRunningCost"], 10000.0)
+        self.assertEqual(controls["annualCostFirstYear"], 1)
         igra_row = next(
             row
             for row in econ_app.session_state["health_econ_workspace"]["rows"]
