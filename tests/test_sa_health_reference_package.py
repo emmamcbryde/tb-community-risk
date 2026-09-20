@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import unittest
 
+import pyarrow as pa
+
 from app.health_economics_inputs import editable_assumption_rows
 from engine.apy.event_ledger_economics import run_event_ledger_health_economics
 from engine.apy.sa_health_reference_package import (
@@ -233,10 +235,9 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         )
         self.assertIn("Change cost assumptions", [item.label for item in app.expander])
         self.assertIn("Limitations and methods", [item.label for item in app.expander])
-        self.assertEqual(
-            [item.label for item in app.button],
-            ["Recalculate economics", "Restore SA Health economic defaults"],
-        )
+        button_labels = [item.label for item in app.button]
+        self.assertIn("Recalculate economics", button_labels)
+        self.assertIn("Restore SA Health economic defaults", button_labels)
         self.assertIn(
             "Incremental cost-effectiveness plane",
             [item.value for item in app.markdown],
@@ -351,6 +352,105 @@ class SAHealthReferencePackageTests(unittest.TestCase):
             )
         )
 
+    def test_health_economics_icer_plane_shows_vertical_programme_cost_movement(self) -> None:
+        setup_controls = self._programme_controls(setup=500000.0, annual=0.0, years=2, first_year=0)
+        bundle = self._results_bundle_with_programme_timing(setup_controls)
+        applied = run_event_ledger_health_economics(
+            bundle,
+            self._economics_config_with_programme_costs(setup=500000.0),
+        )
+
+        app = self._render_health_economics(
+            results_bundle=bundle,
+            economics_results=applied,
+            controls=setup_controls,
+            applied_controls=setup_controls,
+        )
+
+        chart_rows = self._icer_chart_rows(app)
+        scenarios = set(chart_rows["Scenario"])
+        self.assertIn("Current analysis - no additional programme overhead", scenarios)
+        self.assertIn("Current analysis - user-defined costs", scenarios)
+        self.assertIn("SA Health report reference", scenarios)
+        self.assertNotIn("Event ledger", self._scenario_table(app).columns)
+
+        no_overhead = self._chart_row(chart_rows, "Current analysis - no additional programme overhead")
+        user_defined = self._chart_row(chart_rows, "Current analysis - user-defined costs")
+        reference = self._chart_row(chart_rows, "SA Health report reference")
+        x_col = "DALYs averted compared with business as usual"
+        y_col = "Incremental cost compared with business as usual (AUD)"
+
+        self.assertAlmostEqual(no_overhead[x_col], user_defined[x_col], places=10)
+        self.assertAlmostEqual(
+            no_overhead["Active TB averted"],
+            user_defined["Active TB averted"],
+            places=10,
+        )
+        self.assertAlmostEqual(user_defined[y_col] - no_overhead[y_col], 500000.0, places=6)
+        self.assertAlmostEqual(reference[x_col], 16.173794759755, places=10)
+        self.assertAlmostEqual(reference[y_col], -92369.6296, places=2)
+        self.assertEqual(no_overhead["Legend label"], "Current: no overhead")
+        self.assertEqual(user_defined["Legend label"], "Current: user costs")
+        self.assertEqual(reference["Legend label"], "Report reference")
+        self.assertTrue(
+            any(
+                "Economic-only changes move the current analysis vertically on the ICER plane" in item.value
+                for item in app.caption
+            )
+        )
+
+        scenarios_table = self._scenario_table(app)
+        base_row = scenarios_table.loc[scenarios_table["Scenario"] == "No additional programme overhead entered"].iloc[0]
+        standalone_row = scenarios_table.loc[
+            scenarios_table["Scenario"] == "Standalone programme - user-defined additional costs"
+        ].iloc[0]
+        self.assertEqual(base_row["DALYs averted"], standalone_row["DALYs averted"])
+        self.assertEqual(base_row["Active TB averted"], standalone_row["Active TB averted"])
+
+    def test_health_economics_icer_plane_reconciles_annual_programme_cost_timing(self) -> None:
+        controls = self._programme_controls(setup=0.0, annual=50000.0, years=3, first_year=0)
+        bundle = self._results_bundle_with_programme_timing(controls)
+        applied = run_event_ledger_health_economics(
+            bundle,
+            self._economics_config_with_programme_costs(annual=50000.0),
+        )
+
+        app = self._render_health_economics(
+            results_bundle=bundle,
+            economics_results=applied,
+            controls=controls,
+            applied_controls=controls,
+        )
+        chart_rows = self._icer_chart_rows(app)
+        no_overhead = self._chart_row(chart_rows, "Current analysis - no additional programme overhead")
+        user_defined = self._chart_row(chart_rows, "Current analysis - user-defined costs")
+        x_col = "DALYs averted compared with business as usual"
+        y_col = "Incremental cost compared with business as usual (AUD)"
+        expected_added = sum(50000.0 / (1.03 ** year) for year in range(0, 3))
+
+        self.assertAlmostEqual(no_overhead[x_col], user_defined[x_col], places=10)
+        self.assertAlmostEqual(
+            no_overhead["Active TB averted"],
+            user_defined["Active TB averted"],
+            places=10,
+        )
+        self.assertAlmostEqual(user_defined[y_col] - no_overhead[y_col], expected_added, places=6)
+
+    def test_health_economics_icer_plane_collapses_identical_current_points_after_defaults(self) -> None:
+        app = self._render_health_economics(
+            results_bundle={
+                "metadata": {"scenarioLabel": "test_reference"},
+                "technical": {"eventLedger": self.package["eventLedger"]},
+            },
+            economics_results=self.package["economics"],
+            controls=self._programme_controls(),
+            applied_controls=self._programme_controls(),
+        )
+        chart_rows = self._icer_chart_rows(app)
+        scenarios = list(chart_rows["Scenario"])
+        self.assertIn("Current analysis - no additional programme overhead", scenarios)
+        self.assertNotIn("Current analysis - user-defined costs", scenarios)
+
     def test_rendered_health_economics_widgets_recalculate_without_changing_health(self) -> None:
         app = AppTest.from_file(str(ROOT / "pages" / "4_Economics.py"), default_timeout=60)
         app.session_state["config"] = self.package["config"]
@@ -395,6 +495,118 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         self.assertEqual(float(igra["currentValue"]), 125.0)
 
         self.assertIn("Restore SA Health economic defaults", [item.label for item in app.button])
+
+    def _render_health_economics(
+        self,
+        *,
+        results_bundle: dict,
+        economics_results: dict,
+        controls: dict,
+        applied_controls: dict,
+    ) -> AppTest:
+        app = AppTest.from_file(str(ROOT / "pages" / "4_Economics.py"), default_timeout=60)
+        app.session_state["config"] = self.package["config"]
+        app.session_state["results_bundle"] = results_bundle
+        app.session_state["economics_config"] = self.package["economicsConfig"]
+        app.session_state["economics_results"] = economics_results
+        app.session_state["results_stale"] = False
+        app.session_state["health_econ_delivery_scenarios"] = controls
+        app.session_state["applied_programme_cost_controls"] = applied_controls
+        app.run(timeout=90)
+        self.assertFalse(app.exception)
+        return app
+
+    @staticmethod
+    def _programme_controls(
+        *,
+        setup: float = 0.0,
+        annual: float = 0.0,
+        years: int = 2,
+        first_year: int = 0,
+        travel: float = 0.0,
+        staff: float = 0.0,
+        share: float = 0.0,
+    ) -> dict:
+        return {
+            "includeAdditionalProgramCosts": any(value > 0 for value in [setup, annual, travel, staff]),
+            "standaloneSetupCost": setup,
+            "illustrativeSetupCost": 500000.0,
+            "standaloneAnnualRunningCost": annual,
+            "standaloneRunningYears": years,
+            "annualCostFirstYear": first_year,
+            "standaloneTravelOutreachCost": travel,
+            "standaloneStaffSupportCost": staff,
+            "sharedAttributionShare": share,
+        }
+
+    def _results_bundle_with_programme_timing(self, controls: dict) -> dict:
+        bundle = {
+            "metadata": {"scenarioLabel": "test_reference"},
+            "technical": {"eventLedger": deepcopy(self.package["eventLedger"])},
+        }
+        metadata = bundle["technical"]["eventLedger"].setdefault("metadata", {})
+        metadata["programRunningDurationYears"] = int(controls["standaloneRunningYears"])
+        metadata["programRunningFirstYear"] = int(controls["annualCostFirstYear"])
+        return bundle
+
+    def _economics_config_with_programme_costs(
+        self,
+        *,
+        setup: float = 0.0,
+        annual: float = 0.0,
+        travel_staff: float = 0.0,
+    ) -> dict:
+        config = deepcopy(self.package["economicsConfig"])
+        cost_values = {
+            "program_setup": setup,
+            "program_running": annual,
+            "travel_outreach_staff_support": travel_staff,
+        }
+        for item in config.get("costItems") or []:
+            item_id = item.get("costItemId")
+            if item_id in cost_values:
+                item["originalCost"] = float(cost_values[item_id])
+                item["convertedTargetYearCost"] = float(cost_values[item_id])
+                item.setdefault("resourceUse", {})["costBasis"] = (
+                    "annual_during_screening_window"
+                    if item_id == "program_running"
+                    else "per_person_screened"
+                    if item_id == "travel_outreach_staff_support"
+                    else "total_once_at_program_start"
+                )
+        return config
+
+    @staticmethod
+    def _scenario_table(app: AppTest):
+        return next(
+            item.value for item in app.dataframe
+            if "Scenario" in set(getattr(item.value, "columns", []))
+        )
+
+    @staticmethod
+    def _icer_chart_rows(app: AppTest):
+        x_col = "DALYs averted compared with business as usual"
+        y_col = "Incremental cost compared with business as usual (AUD)"
+        for item in app:
+            if getattr(item, "type", None) != "arrow_vega_lite_chart":
+                continue
+            if x_col not in str(item.proto.spec) or y_col not in str(item.proto.spec):
+                continue
+            for dataset in item.proto.datasets:
+                try:
+                    frame = pa.ipc.open_stream(dataset.data.data).read_pandas()
+                except (pa.ArrowInvalid, OSError):
+                    continue
+                if {"Scenario", x_col, y_col}.issubset(set(frame.columns)):
+                    return frame
+        raise AssertionError("Rendered ICER chart rows were not found")
+
+    @staticmethod
+    def _chart_row(frame, scenario: str):
+        matches = frame.loc[frame["Scenario"] == scenario]
+        if matches.empty:
+            raise AssertionError(f"Missing chart scenario: {scenario}")
+        return matches.iloc[0]
 
     @staticmethod
     def _summary_mean(economics_results: dict, metric: str) -> float:

@@ -749,59 +749,57 @@ def cost_effectiveness_plane_rows(
     rows = [_plane_origin_row()]
     reference = _reference_report_point()
     values = _programme_control_values(controls)
-    current_setup = values["setup_cost"] if _additional_programme_costs_enabled(controls) else 0.0
-    current_annual = (
-        f"{_money(values['annual_running_cost'])} for {int(values['running_years'])} year(s)"
-        if _additional_programme_costs_enabled(controls)
-        else "AUD 0"
-    )
-    current_share = "100%" if _additional_programme_costs_enabled(controls) and _raw_programme_cost_total(values) > 0 else "0%"
-    current = _plane_row(
-        "Current assumptions",
-        current_economics,
-        role="current",
-        event_ledger_source="Current completed analysis",
-        analysis_basis=_analysis_basis_label(results_bundle),
-        setup_cost=_money(current_setup),
-        annual_cost=current_annual,
-        attribution_share=current_share,
-        represents_frozen_reference=False,
-    ) if current_economics and is_supported_sa_health_analysis_basis(results_bundle) else None
-    if reference and current and _points_overlap(reference, current):
-        collapsed = dict(current)
-        collapsed["Scenario"] = "Current assumptions - same as SA Health report reference"
-        collapsed["Point note"] = "Current analysis reproduces the frozen report-reference coordinates within tolerance."
-        collapsed["representsFrozenReference"] = True
-        rows.append(collapsed)
-    else:
-        if reference:
-            rows.append(reference)
-        if current:
-            rows.append(current)
-    if isinstance(results_bundle, dict):
-        for scenario in delivery_scenario_comparison_rows(
-            results_bundle=results_bundle,
-            economics_config=economics_config,
-            controls=controls,
-        ):
-            if scenario.get("_pointRole") != "scenario":
-                continue
-            rows.append(
-                _plane_row_from_values(
-                    label=scenario["Scenario"],
-                    incremental_cost=scenario["_incrementalCostRaw"],
-                    dalys_averted=scenario["_dalysAvertedRaw"],
-                    active_tb_averted=scenario.get("_activeTBAvertedRaw"),
-                    role="scenario",
-                    event_ledger_source="Current completed analysis",
-                    analysis_basis=_analysis_basis_label(results_bundle),
-                    setup_cost=scenario["Additional setup cost"],
-                    annual_cost=scenario["Annual programme cost"],
-                    attribution_share=scenario["Attributed share"],
-                    represents_frozen_reference=False,
-                    point_note=scenario["Programme-cost assumption"],
-                )
-            )
+    current_basis_supported = is_supported_sa_health_analysis_basis(results_bundle)
+    no_overhead = None
+    current = None
+    if isinstance(results_bundle, dict) and current_basis_supported:
+        no_overhead_economics = _run_delivery_scenario(
+            results_bundle,
+            economics_config,
+            running_years=int(values["running_years"]),
+            first_running_year=int(values["first_running_year"]),
+        )
+        no_overhead = _plane_row(
+            "Current analysis - no additional programme overhead",
+            no_overhead_economics,
+            role="current_no_overhead",
+            event_ledger_source="Current completed analysis",
+            analysis_basis=_analysis_basis_label(results_bundle),
+            setup_cost="AUD 0",
+            annual_cost="AUD 0",
+            attribution_share="0%",
+            represents_frozen_reference=False,
+            point_note=(
+                "Same completed event ledger as the current analysis; user-defined "
+                "additional programme setup/running/travel/staff overhead removed."
+            ),
+        )
+    if current_economics and current_basis_supported:
+        current_setup = values["setup_cost"] if _additional_programme_costs_enabled(controls) else 0.0
+        current_annual = (
+            f"{_money(values['annual_running_cost'])} for {int(values['running_years'])} year(s)"
+            if _additional_programme_costs_enabled(controls)
+            else "AUD 0"
+        )
+        current_share = "100%" if _additional_programme_costs_enabled(controls) and _raw_programme_cost_total(values) > 0 else "0%"
+        current = _plane_row(
+            "Current analysis - user-defined costs",
+            current_economics,
+            role="current_user_costs",
+            event_ledger_source="Current completed analysis",
+            analysis_basis=_analysis_basis_label(results_bundle),
+            setup_cost=_money(current_setup),
+            annual_cost=current_annual,
+            attribution_share=current_share,
+            represents_frozen_reference=False,
+            point_note="Same completed event ledger with currently applied economic assumptions.",
+        )
+    if no_overhead:
+        rows.append(no_overhead)
+    if current and (not no_overhead or not _points_overlap(no_overhead, current)):
+        rows.append(current)
+    if reference:
+        rows.append(reference)
     return _collapse_duplicate_points(rows)
 
 
@@ -827,6 +825,7 @@ def _plane_row(
     annual_cost: Any,
     attribution_share: Any,
     represents_frozen_reference: bool,
+    point_note: str = "",
 ) -> dict[str, Any]:
     if not econ_results:
         return {}
@@ -843,7 +842,7 @@ def _plane_row(
         annual_cost=annual_cost,
         attribution_share=attribution_share,
         represents_frozen_reference=represents_frozen_reference,
-        point_note="",
+        point_note=point_note,
     )
 
 
@@ -880,6 +879,7 @@ def _plane_row_from_values(
         "Attributed share": attribution_share,
         "Point role": role,
         "Point note": point_note,
+        "Economic assumption/provenance": point_note or event_ledger_source,
         "representsFrozenReference": represents_frozen_reference,
     }
 
@@ -952,6 +952,29 @@ def _collapse_duplicate_points(rows: list[dict[str, Any]]) -> list[dict[str, Any
     return collapsed
 
 
+def _chart_label(row: pd.Series) -> str:
+    scenario = str(row.get("Scenario", ""))
+    role = str(row.get("Point role", ""))
+    if scenario == "Business as usual":
+        return "BAU"
+    if "same as SA Health report reference" in scenario or ("reference" in role and "current" in role):
+        return "Current / reference"
+    if role == "current_no_overhead":
+        return "Current: no overhead"
+    if role == "current_user_costs":
+        return "Current: user costs"
+    if role == "reference":
+        return "Report reference"
+    return scenario
+
+
+def _legend_label(row: pd.Series) -> str:
+    label = _chart_label(row)
+    if len(label) > 28:
+        return label[:25].rstrip() + "..."
+    return label
+
+
 def _quadrant(dalys_averted: Any, incremental_cost: Any) -> str:
     x = _number(dalys_averted)
     y = _number(incremental_cost)
@@ -981,12 +1004,8 @@ def _divide(a: Any, b: Any) -> float | None:
 def _cost_effectiveness_plane_chart(rows: list[dict[str, Any]]) -> alt.Chart:
     frame = pd.DataFrame(rows)
     if not frame.empty:
-        frame["Chart label"] = frame.apply(
-            lambda row: str(row["Scenario"])
-            if str(row.get("Point role", "")) in {"current", "reference"} or "same as SA Health" in str(row.get("Scenario", ""))
-            else "",
-            axis=1,
-        )
+        frame["Chart label"] = frame.apply(_chart_label, axis=1)
+        frame["Legend label"] = frame.apply(_legend_label, axis=1)
     x_col = "DALYs averted compared with business as usual"
     y_col = "Incremental cost compared with business as usual (AUD)"
     points = (
@@ -995,14 +1014,16 @@ def _cost_effectiveness_plane_chart(rows: list[dict[str, Any]]) -> alt.Chart:
         .encode(
             x=alt.X(f"{x_col}:Q", title=x_col),
             y=alt.Y(f"{y_col}:Q", title=y_col),
-            color=alt.Color("Scenario:N", legend=alt.Legend(title="Scenario")),
+            color=alt.Color("Legend label:N", legend=alt.Legend(title="Point")),
             tooltip=[
                 alt.Tooltip("Scenario:N"),
-                alt.Tooltip(f"{x_col}:Q", format=".2f"),
+                alt.Tooltip(f"{x_col}:Q", format=".3f"),
                 alt.Tooltip(f"{y_col}:Q", format=",.0f"),
+                alt.Tooltip("Active TB averted:Q", format=".1f"),
                 alt.Tooltip("Quadrant:N"),
                 alt.Tooltip("Classification:N"),
                 alt.Tooltip("Arithmetic ICER:N"),
+                alt.Tooltip("Economic assumption/provenance:N"),
                 alt.Tooltip("Event ledger:N"),
                 alt.Tooltip("Analysis basis:N"),
                 alt.Tooltip("Point note:N"),
@@ -1727,12 +1748,14 @@ try:
         results_bundle=results_bundle,
         economics_config=econ_config,
         current_economics=st.session_state.get("economics_results"),
-        controls=controls,
+        controls=applied_controls,
     )
     st.altair_chart(_cost_effectiveness_plane_chart(plane_rows), use_container_width=True)
     st.caption(
-        "Cost-only changes move points vertically on this plane: added programme costs move upward, "
-        "greater savings move downward, and DALYs averted remain fixed."
+        "Economic-only changes move the current analysis vertically on the ICER plane. "
+        "They change costs but do not change DALYs or active TB cases averted. "
+        "The frozen SA Health report reference may have a different horizontal position because it is based on "
+        "the frozen stochastic report analysis rather than the current completed analysis."
     )
 except Exception as exc:
     st.error(f"Economic scenario comparison failed: {exc}")
