@@ -436,6 +436,38 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         )
         self.assertAlmostEqual(user_defined[y_col] - no_overhead[y_col], expected_added, places=6)
 
+    def test_health_economics_icer_plane_reconciles_combined_programme_costs(self) -> None:
+        controls = self._programme_controls(setup=100000.0, annual=20000.0, years=3, first_year=1)
+        bundle = self._results_bundle_with_programme_timing(controls)
+        applied = run_event_ledger_health_economics(
+            bundle,
+            self._economics_config_with_programme_costs(setup=100000.0, annual=20000.0),
+        )
+
+        app = self._render_health_economics(
+            results_bundle=bundle,
+            economics_results=applied,
+            controls=controls,
+            applied_controls=controls,
+        )
+        chart_rows = self._icer_chart_rows(app)
+        no_overhead = self._chart_row(chart_rows, "Current analysis - no additional programme overhead")
+        user_defined = self._chart_row(chart_rows, "Current analysis - user-defined costs")
+        x_col = "DALYs averted compared with business as usual"
+        y_col = "Incremental cost compared with business as usual (AUD)"
+        expected_added = 100000.0 + sum(20000.0 / (1.03 ** year) for year in range(1, 4))
+
+        self.assertAlmostEqual(no_overhead[x_col], user_defined[x_col], places=10)
+        self.assertAlmostEqual(user_defined[y_col] - no_overhead[y_col], expected_added, places=6)
+        summary = next(
+            item.value for item in app.dataframe
+            if "Discounted total additional programme cost" in set(getattr(item.value, "columns", []))
+        )
+        self.assertEqual(
+            summary["Discounted total additional programme cost"].iloc[0],
+            f"AUD {expected_added:,.0f}",
+        )
+
     def test_health_economics_icer_plane_collapses_identical_current_points_after_defaults(self) -> None:
         app = self._render_health_economics(
             results_bundle={
