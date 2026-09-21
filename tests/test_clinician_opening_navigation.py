@@ -167,14 +167,14 @@ class ClinicianOpeningNavigationTests(unittest.TestCase):
         self.assertNotIn("issue_rows", text)
         self.assertIn("Current run", text)
         self.assertIn("Repetitions", text)
-        self.assertIn("Deterministic expected-value analysis", text)
-        self.assertIn("Stochastic individual-based analysis", text)
+        self.assertIn("Quick deterministic preview", text)
+        self.assertIn("2,000-run analysis", text)
 
     def test_caveats_have_single_standard_home(self) -> None:
         evidence = (ROOT / "pages" / "6_Evidence_Assumptions.py").read_text(encoding="utf-8")
         self.assertIn("Caveats & technical information", evidence)
-        self.assertIn("Deterministic expected-value runs do not use repetitions", evidence)
-        self.assertIn("provisional working route uses a compatibility placeholder", evidence)
+        self.assertIn("Quick deterministic previews and stochastic report runs use the same fixed assumptions", evidence)
+        self.assertIn("Recent-versus-remote LTBI composition is fixed", evidence)
         for page in ["0_Start.py", "2_Run_Model.py", "3_Results.py", "4_Economics.py", "5_Decision_Analysis.py"]:
             text = (ROOT / "pages" / page).read_text(encoding="utf-8")
             self.assertNotIn("10/770", text)

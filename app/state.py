@@ -96,6 +96,9 @@ def sanitize_reference_only_state() -> bool:
         "infection_history_trajectory_label",
         "infection_history_calibration",
         "infection_history_diagnostics",
+        "recent_ltbi_run_route",
+        "stochastic_icer_cloud",
+        "stochastic_icer_cloud_source",
     ):
         if key in st.session_state:
             st.session_state.pop(key, None)

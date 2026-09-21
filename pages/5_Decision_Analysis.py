@@ -26,8 +26,8 @@ from engine.apy.sensitivity import (
 
 
 MODEL_TYPE_LABELS = {
-    "expected_value": "Expected outcomes - single deterministic run",
-    "agent_based": "Simulated community variation - multiple stochastic runs",
+    "expected_value": "Quick deterministic preview - single expected-value calculation",
+    "agent_based": "SA Health report analysis - simulated communities",
 }
 STRATEGY_LABELS = {
     "prevent": "Prioritise people most likely to avoid active TB",
@@ -111,7 +111,10 @@ init_session_state()
 sanitize_reference_only_state()
 
 st.title("Explore Decisions")
-st.caption("Compare two screening strategies using the same business-as-usual population and current economic assumptions.")
+st.caption(
+    "Compare two screening strategies using the same business-as-usual population, "
+    "current economic assumptions and fixed SA Health report assumptions for future TB."
+)
 
 config = st.session_state.get("config")
 economics_config = st.session_state.get("economics_config")
@@ -245,7 +248,7 @@ if comparison:
             st.dataframe(arrow_safe_dataframe(comparison.get("pairedDifferenceSummaries", [])), use_container_width=True, hide_index=True)
         if comparison.get("commonSeedNonpairedDiagnostics"):
             st.dataframe(arrow_safe_dataframe(comparison["commonSeedNonpairedDiagnostics"]), use_container_width=True, hide_index=True)
-    st.caption("Expected outcomes may be fractional. Simulation percentiles describe finite-population variation, not confidence intervals.")
+    st.caption("Preview outcomes may be fractional. Simulation percentiles describe finite-population variation, not confidence intervals.")
 
 with st.expander("Sensitivity and early-review tools", expanded=False):
     tab_sensitivity, tab_early = st.tabs(["Explore sensitivity", "Review early screening results"])

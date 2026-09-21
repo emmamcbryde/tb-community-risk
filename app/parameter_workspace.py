@@ -24,14 +24,18 @@ PARAMETER_GROUPS = [
     "Analysis settings",
 ]
 MODEL_METHOD_LABELS = {
-    "expected_value": "Expected outcomes — single deterministic run",
-    "agent_based": "Simulated community variation — multiple stochastic runs",
+    "expected_value": "Quick deterministic preview - single expected-value calculation",
+    "agent_based": "SA Health report analysis - 2,000 simulated communities",
 }
 MODEL_METHOD_CODES = {value: key for key, value in MODEL_METHOD_LABELS.items()}
 MODEL_METHOD_CODES.update(
     {
         "Expected outcomes": "expected_value",
         "Simulated community variation": "agent_based",
+        "Expected outcomes — single deterministic run": "expected_value",
+        "Expected outcomes - single deterministic run": "expected_value",
+        "Simulated community variation — multiple stochastic runs": "agent_based",
+        "Simulated community variation - multiple stochastic runs": "agent_based",
     }
 )
 SIMULATION_MODE_LABELS = {
@@ -272,7 +276,7 @@ def parameter_summary(config: dict[str, Any], economics_config: dict[str, Any]) 
     metadata = economics_config.get("metadata") or {}
     eligible = _eligible_population(config)
     method_code = str(config.get("analysisMethod") or "expected_value")
-    method = MODEL_METHOD_LABELS.get(method_code, "Expected outcomes — single deterministic run")
+    method = MODEL_METHOD_LABELS.get(method_code, "Quick deterministic preview - single expected-value calculation")
     discounting = economics_config.get("discounting") or {}
     profiles = discounting.get("profiles") or {}
     primary = profiles.get("primary") or {}
@@ -362,11 +366,11 @@ def _parameter_specs() -> list[dict[str, Any]]:
                 ("MJ", "Other current risk-factor prevalence"),
             ]
         ],
-        _spec("tb.ltbi_prevalence", "TB epidemiology", "Baseline LTBI prevalence", "config", ["ltbiPrevalence"], "probability", "APY calibration input", "unreviewed_repository_input", True, "probability"),
-        _spec("tb.age_pattern", "TB epidemiology", "Age pattern of infection", "config", ["targetAgeOR"], "odds ratio", "APY calibration input", "unreviewed_repository_input", True, "nonnegative_number"),
-        _spec("tb.recent_fraction", "TB epidemiology", "Baseline recent-LTBI proportion", "config", ["ltbiStateAssumptions", "baselineRecentLTBIProportion"], "probability", "No APY-specific source established", "unresolved", True, "probability"),
-        _spec("tb.transition_model", "TB epidemiology", "Recent-to-remote transition model", "config", ["ltbiStateAssumptions", "transitionModel"], "", "Inherited model structure", "configured_reviewed", False, "select"),
-        _spec("tb.transition_rate", "TB epidemiology", "Recent-to-remote transition rate", "config", ["ltbiStateAssumptions", "recentToRemoteTransitionRatePerYear"], "per year", "Inherited model structure", "configured_reviewed", False, "nonnegative_number"),
+        _spec("tb.ltbi_prevalence", "TB epidemiology", "Baseline LTBI prevalence", "config", ["ltbiPrevalence"], "probability", "Fixed report-compatible assumption", "configured_reviewed", False, "read_only", advanced=True),
+        _spec("tb.age_pattern", "TB epidemiology", "Age pattern of infection", "config", ["targetAgeOR"], "odds ratio", "Fixed report-compatible assumption", "configured_reviewed", False, "read_only", advanced=True),
+        _spec("tb.recent_fraction", "TB epidemiology", "Baseline recent-LTBI proportion", "config", ["ltbiStateAssumptions", "baselineRecentLTBIProportion"], "probability", "Fixed report-compatible assumption", "configured_reviewed", False, "read_only", advanced=True),
+        _spec("tb.transition_model", "TB epidemiology", "Recent-to-remote transition model", "config", ["ltbiStateAssumptions", "transitionModel"], "", "Fixed report-compatible assumption", "configured_reviewed", False, "read_only", advanced=True),
+        _spec("tb.transition_rate", "TB epidemiology", "Recent-to-remote transition rate", "config", ["ltbiStateAssumptions", "recentToRemoteTransitionRatePerYear"], "per year", "Fixed report-compatible assumption", "configured_reviewed", False, "read_only", advanced=True),
         _spec("tb.active_tb_target", "TB epidemiology", "Active-TB calibration target", "config", ["targetActive2y"], "probability", "APY calibration input", "unreviewed_repository_input", True, "probability", advanced=True),
         _spec("tb.active_tb_horizon", "TB epidemiology", "Active-TB calibration horizon", "config", ["activeTBCalibrationHorizonYears"], "years", "APY calibration setting", "configured_reviewed", False, "years", advanced=True),
         _spec("tb.direct_scope", "TB epidemiology", "Direct-effects-only scope statement", "static", ["directScope"], "", "Model scope", "configured_reviewed", False, "read_only", operational_status="descriptive_metadata"),

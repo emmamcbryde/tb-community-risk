@@ -80,9 +80,9 @@ with st.expander("Caveats & technical information", expanded=False):
     st.markdown(
         """
         - This tool supports planning and sequencing decisions. It does not recommend denying care to any person or group.
-        - The primary SA Health working reference uses the frozen software-compatible stochastic anchor; it excludes dynamic transmission effects.
-        - Deterministic expected-value runs do not use repetitions or random seeds; stochastic runs use the selected repetition count and seed.
-        - The provisional working route uses a compatibility placeholder for unresolved recent-versus-remote LTBI assumptions; this does not promote evidence readiness.
+        - The primary SA Health working reference uses the fixed report-compatible stochastic anchor; it excludes dynamic transmission effects.
+        - Quick deterministic previews and stochastic report runs use the same fixed assumptions for future TB; they differ by estimator.
+        - Recent-versus-remote LTBI composition is fixed as part of the report-compatible method in this release and is not a user-selectable option.
         - The inherited `10/770` active-TB calibration quantity remains unresolved and must not be interpreted as validated future progression from LTBI.
         - The implicit early/late progression structure is retained for compatibility with earlier APY analysis, not as measured recent-LTBI composition.
         - Historical infection-pressure trajectory scenarios have been withdrawn from this SA Health Streamlit release pending scientific redevelopment.

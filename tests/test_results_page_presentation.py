@@ -94,7 +94,12 @@ class ResultsPagePresentationTests(unittest.TestCase):
         sys.modules["streamlit"] = st
         app = AppTest.from_file(str(ROOT / "pages" / "3_Results.py"))
         app.session_state["results_bundle"] = {
-            "metadata": {"modelType": "expected_value", "scenarioLabel": "Deterministic check"},
+            "metadata": {
+                "modelType": "expected_value",
+                "analysisBasis": "sa_health_matlab_v9_compatibility_reference",
+                "naturalHistorySemantics": "matlab_v9_implicit_early_late",
+                "scenarioLabel": "Deterministic check",
+            },
             "headline": {
                 "keyMetricsRows": [
                     {"Metric": "nScreened", "Median": 450.0, "Low95": 450.0, "High95": 450.0}
@@ -103,7 +108,16 @@ class ResultsPagePresentationTests(unittest.TestCase):
                     {"Metric": "nScreened", "Median": 450.0, "Low95": 450.0, "High95": 450.0}
                 ],
             },
-            "technical": {"eventLedger": {}, "interfaceConfig": {}},
+            "technical": {
+                "eventLedger": {
+                    "metadata": {
+                        "modelType": "expected_value",
+                        "analysisBasis": "sa_health_matlab_v9_compatibility_reference",
+                        "naturalHistorySemantics": "matlab_v9_implicit_early_late",
+                    }
+                },
+                "interfaceConfig": {},
+            },
             "downloads": {},
         }
         app.session_state["economics_config"] = {}

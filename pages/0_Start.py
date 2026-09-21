@@ -154,7 +154,7 @@ def _sync_workspace_after_direct_config_change() -> None:
 def _analysis_mode_label(config: dict[str, Any]) -> str:
     return MODEL_METHOD_LABELS.get(
         str(config.get("analysisMethod") or "expected_value"),
-        "Expected outcomes — single deterministic run",
+        "Quick deterministic preview - single expected-value calculation",
     )
 
 
@@ -176,7 +176,7 @@ def _apply_simulation_mode(config: dict[str, Any], mode_label: str) -> None:
 
 def _run_classification(config: dict[str, Any]) -> str:
     if str(config.get("analysisMethod")) == "expected_value":
-        return "Expected-outcomes run"
+        return "Quick deterministic preview"
     reps = int(float(config.get("nReps") or 0))
     seed = int(float(config.get("seed") or 0))
     if reps == 2000 and seed == 1:
@@ -188,17 +188,20 @@ def _run_classification(config: dict[str, Any]) -> str:
 
 def _render_epidemiological_basis() -> None:
     st.subheader("Epidemiological basis")
-    st.success("Analysis basis: SA Health report reference")
+    st.success("Future TB outcomes use the assumptions applied in the SA Health report.")
     st.caption(
-        "This SA Health version uses only the report-reference APY natural-history "
-        "basis. Historical infection-pressure scenarios have been withdrawn from the "
-        "standard workflow pending scientific redevelopment."
+        "Incidence, infection-history, calibration and progression assumptions are fixed "
+        "for this SA Health version and documented in Evidence & Assumptions."
     )
 
 
 def _render_analysis_settings_controls(config: dict[str, Any]) -> None:
     st.subheader("Analysis settings")
-    st.caption("Choose faster preview runs for exploration. The SA Health reference uses 2,000 repetitions and seed 1.")
+    st.caption(
+        "Both options use the fixed SA Health report assumptions for future TB. "
+        "The quick preview is a deterministic approximation. The 2,000-run analysis "
+        "reproduces the report method and shows variation across simulated communities."
+    )
     before = deepcopy(config)
     method_options = list(MODEL_METHOD_LABELS.values())
     widget_key = "setup_analysis_method"
@@ -246,7 +249,7 @@ def _render_analysis_settings_controls(config: dict[str, Any]) -> None:
             st.warning("Preview analyses run faster but do not reproduce the SA Health reference.")
         st.info(f"{_run_classification(config)}: {int(config.get('nReps')):,} repetitions, seed {int(config.get('seed'))}.")
     else:
-        st.info("Expected outcomes run: no stochastic repetitions are used.")
+        st.info("Quick deterministic preview: no stochastic repetitions or random seed are used.")
     if config != before:
         st.session_state["config"] = config
         _sync_workspace_after_direct_config_change()
@@ -328,17 +331,23 @@ def _render_parameter_workspace() -> None:
             hide_index=True,
         )
 
-    visible_groups = PARAMETER_GROUPS
+    visible_by_group: dict[str, list[dict[str, Any]]] = {}
+    for group in PARAMETER_GROUPS:
+        group_rows = [row for row in workspace["rows"] if row.get("group") == group]
+        visible_rows = [
+            row
+            for row in group_rows
+            if not str(row.get("parameterId") or "").startswith("demography.age.")
+            and row.get("operationalStatus") != "descriptive_metadata"
+            and not row.get("advanced")
+        ]
+        if visible_rows:
+            visible_by_group[group] = visible_rows
+    visible_groups = list(visible_by_group)
     tabs = st.tabs(visible_groups)
     for tab, group in zip(tabs, visible_groups):
         with tab:
-            group_rows = [row for row in workspace["rows"] if row.get("group") == group]
-            visible_rows = [
-                row
-                for row in group_rows
-                if not str(row.get("parameterId") or "").startswith("demography.age.")
-                and row.get("operationalStatus") != "descriptive_metadata"
-            ]
+            visible_rows = visible_by_group[group]
             st.caption("Rows where Source is User-defined contain user-entered overrides.")
             edited = _editable_parameter_table(visible_rows, key=f"parameter_editor_{group}")
             edited_rows.extend(merge_parameter_display_edits(visible_rows, edited))
@@ -446,10 +455,10 @@ if st.button("Restore APY defaults", use_container_width=True):
 if isinstance(st.session_state.get("config"), dict):
     effective_config = st.session_state["config"]
     if str(effective_config.get("analysisMethod")) == "expected_value":
-        st.success("Run Analysis will use: Expected outcomes — single deterministic run.")
+        st.success("Run Analysis will use: Quick deterministic preview - single expected-value calculation.")
     else:
         st.success(
-            "Run Analysis will use: Simulated community variation — "
+            "Run Analysis will use: SA Health report analysis - "
             f"{int(effective_config.get('nReps') or 0):,} runs, seed {int(effective_config.get('seed') or 1)}."
         )
     _page_link("pages/2_Run_Model.py", label="Open Run Analysis")

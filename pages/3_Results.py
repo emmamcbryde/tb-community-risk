@@ -58,11 +58,14 @@ if scenario_label:
     st.markdown(f"**Scenario:** {scenario_label}")
 if model_type == "agent_based":
     st.caption(
-        f"Stochastic individual-based analysis; repetitions: {metadata.get('nReps')}; "
-        f"seed: {metadata.get('seed')}."
+        f"SA Health report analysis - simulated communities; repetitions: {metadata.get('nReps')}; "
+        f"seed: {metadata.get('seed')}. Future TB assumptions are fixed to the report method."
     )
 else:
-    st.caption("Deterministic expected-value analysis; stochastic repetitions and seed were not used.")
+    st.caption(
+        "Quick deterministic preview - single expected-value calculation. "
+        "Future TB assumptions are fixed to the report method; stochastic repetitions and seed were not used."
+    )
 
 scope_statement = (
     technical.get("interfaceConfig", {})

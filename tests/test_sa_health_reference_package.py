@@ -483,6 +483,75 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         self.assertIn("Current analysis - no additional programme overhead", scenarios)
         self.assertNotIn("Current analysis - user-defined costs", scenarios)
 
+    def test_health_economics_renders_paired_stochastic_icer_cloud(self) -> None:
+        app = self._render_health_economics(
+            results_bundle={
+                "metadata": {
+                    "scenarioLabel": "test_reference",
+                    "modelType": "agent_based",
+                    "analysisBasis": "sa_health_matlab_v9_compatibility_reference",
+                    "naturalHistorySemantics": "matlab_v9_implicit_early_late",
+                    "nReps": self.package["config"]["nReps"],
+                    "seed": self.package["config"]["seed"],
+                },
+                "technical": {"eventLedger": self.package["eventLedger"]},
+            },
+            economics_results=self.package["economics"],
+            controls=self._programme_controls(),
+            applied_controls=self._programme_controls(),
+        )
+        cloud = self._icer_cloud_rows(app)
+        primary_reps = self.package["economics"]["replicateResults"]
+        primary_reps = primary_reps[primary_reps["discountProfile"] == "primary"]
+
+        self.assertEqual(len(cloud), len(primary_reps))
+        first = cloud.sort_values("Replicate").iloc[0]
+        matching = primary_reps.sort_values("replicateId").iloc[0]
+        self.assertAlmostEqual(
+            first["DALYs averted compared with business as usual"],
+            matching["dalysAverted"],
+        )
+        self.assertAlmostEqual(
+            first["Incremental cost compared with business as usual (AUD)"],
+            matching["incrementalCost"],
+        )
+        self.assertAlmostEqual(first["Active TB averted"], matching["activeTBCasesPrevented"])
+        self.assertTrue(
+            any(
+                "Each point represents one simulated community using the fixed SA Health report assumptions" in item.value
+                for item in app.caption
+            )
+        )
+
+    def test_health_economics_setup_cost_shifts_every_stochastic_cloud_point_vertically(self) -> None:
+        controls = self._programme_controls(setup=500000.0, annual=0.0, years=2, first_year=0)
+        bundle = self._results_bundle_with_programme_timing(controls)
+        default_app = self._render_health_economics(
+            results_bundle=bundle,
+            economics_results=run_event_ledger_health_economics(bundle, self.package["economicsConfig"]),
+            controls=self._programme_controls(),
+            applied_controls=self._programme_controls(),
+        )
+        edited_app = self._render_health_economics(
+            results_bundle=bundle,
+            economics_results=run_event_ledger_health_economics(
+                bundle,
+                self._economics_config_with_programme_costs(setup=500000.0),
+            ),
+            controls=controls,
+            applied_controls=controls,
+        )
+        x_col = "DALYs averted compared with business as usual"
+        y_col = "Incremental cost compared with business as usual (AUD)"
+        before = self._icer_cloud_rows(default_app).sort_values("Replicate").reset_index(drop=True)
+        after = self._icer_cloud_rows(edited_app).sort_values("Replicate").reset_index(drop=True)
+
+        self.assertEqual(list(before["Replicate"]), list(after["Replicate"]))
+        self.assertTrue((before[x_col] == after[x_col]).all())
+        self.assertTrue((before["Active TB averted"] == after["Active TB averted"]).all())
+        for delta in after[y_col] - before[y_col]:
+            self.assertAlmostEqual(delta, 500000.0, places=6)
+
     def test_rendered_health_economics_widgets_recalculate_without_changing_health(self) -> None:
         app = AppTest.from_file(str(ROOT / "pages" / "4_Economics.py"), default_timeout=60)
         app.session_state["config"] = self.package["config"]
@@ -629,9 +698,27 @@ class SAHealthReferencePackageTests(unittest.TestCase):
                     frame = pa.ipc.open_stream(dataset.data.data).read_pandas()
                 except (pa.ArrowInvalid, OSError):
                     continue
-                if {"Scenario", x_col, y_col}.issubset(set(frame.columns)):
+                if {"Scenario", x_col, y_col, "Legend label"}.issubset(set(frame.columns)):
                     return frame
         raise AssertionError("Rendered ICER chart rows were not found")
+
+    @staticmethod
+    def _icer_cloud_rows(app: AppTest):
+        x_col = "DALYs averted compared with business as usual"
+        y_col = "Incremental cost compared with business as usual (AUD)"
+        for item in app:
+            if getattr(item, "type", None) != "arrow_vega_lite_chart":
+                continue
+            if x_col not in str(item.proto.spec) or y_col not in str(item.proto.spec):
+                continue
+            for dataset in item.proto.datasets:
+                try:
+                    frame = pa.ipc.open_stream(dataset.data.data).read_pandas()
+                except (pa.ArrowInvalid, OSError):
+                    continue
+                if {"Replicate", x_col, y_col}.issubset(set(frame.columns)):
+                    return frame
+        raise AssertionError("Rendered stochastic ICER cloud rows were not found")
 
     @staticmethod
     def _chart_row(frame, scenario: str):

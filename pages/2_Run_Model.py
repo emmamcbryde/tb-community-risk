@@ -4,10 +4,7 @@ import streamlit as st
 
 from app.display import arrow_safe_dataframe
 from app.parameter_workspace import MODEL_METHOD_LABELS
-from app.run_analysis_controls import (
-    TECHNICAL_DEMONSTRATION_ROUTE,
-    prepare_run_config_for_recent_ltbi_route,
-)
+from app.run_analysis_controls import prepare_run_config_for_recent_ltbi_route
 from app.run_progress import StreamlitProgressDisplay, finalising_status, initialising_status
 from app.state import (
     get_backend,
@@ -18,7 +15,6 @@ from app.state import (
     sanitize_reference_only_state,
     sync_backend_status,
 )
-from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 
 
 def _page_link(path: str, *, label: str) -> None:
@@ -51,7 +47,7 @@ if status.get("error"):
 
 method_label = MODEL_METHOD_LABELS.get(
     str(config.get("analysisMethod") or "expected_value"),
-    "Expected outcomes — single deterministic run",
+    "Quick deterministic preview - single expected-value calculation",
 )
 is_stochastic = str(config.get("analysisMethod")) == "agent_based"
 reps = int(float(config.get("nReps") or 0))
@@ -63,18 +59,18 @@ elif is_stochastic and reps < 2000:
 elif is_stochastic:
     run_type = "Modified stochastic run"
 else:
-    run_type = "Deterministic exploratory run"
+    run_type = "Quick deterministic preview"
 
 st.subheader("Current run")
 summary_rows = [
     {
         "Setting": "Analysis type",
-        "Value": "Stochastic individual-based analysis" if is_stochastic else "Deterministic expected-value analysis",
+        "Value": method_label,
     },
     {"Setting": "Run type", "Value": run_type},
     {
         "Setting": "Epidemiological basis",
-        "Value": "SA Health report reference",
+        "Value": "Fixed SA Health report assumptions for future TB",
     },
     {"Setting": "Screening test", "Value": config.get("testType")},
     {"Setting": "Preventive treatment", "Value": config.get("regimen")},
@@ -84,6 +80,11 @@ if is_stochastic:
     summary_rows.insert(2, {"Setting": "Repetitions", "Value": f"{reps:,}"})
     summary_rows.insert(3, {"Setting": "Random seed", "Value": seed})
 st.dataframe(arrow_safe_dataframe(summary_rows), use_container_width=True, hide_index=True)
+st.caption(
+    "Both options use the fixed SA Health report assumptions for future TB. "
+    "The quick preview is a deterministic approximation. The 2,000-run analysis "
+    "reproduces the report method and shows variation across simulated communities."
+)
 if is_stochastic and reps < 2000:
     st.warning("Preview analyses are useful for checking setup but do not reproduce the SA Health reference.")
 
@@ -94,48 +95,15 @@ elif st.session_state.get("results_bundle"):
 else:
     st.info("No results have been generated for this setup.")
 
-ltbi_dev_compatibility_requested = False
-ltbi_state = resolve_ltbi_state_assumptions(config)
-unresolved_ltbi_state = (
-    ltbi_state.get("baselineRecentLTBIProportion") is None
-    and ltbi_state.get("baselineRecentLTBIDerivationMethod") != "infection_history_trajectory"
-)
-if unresolved_ltbi_state:
-    st.subheader("Recent versus remote LTBI assumption")
-    st.warning("Choose the provisional working route on Set up, or review this assumption, before running.")
-    decision_cols = st.columns(2)
-    if decision_cols[0].button("Use provisional working route"):
-        st.session_state["recent_ltbi_run_route"] = TECHNICAL_DEMONSTRATION_ROUTE
-        st.rerun()
-    with decision_cols[1]:
-        _page_link(
-            "pages/6_Evidence_Assumptions.py",
-            label="Review or enter the assumption",
-        )
-    if st.session_state.get("recent_ltbi_run_route") == TECHNICAL_DEMONSTRATION_ROUTE:
-        ltbi_dev_compatibility_requested = True
-        st.caption("Provisional route selected. Detailed caveats are in Evidence & Assumptions.")
-
 run_label = "Run analysis"
 
 if st.button(run_label, type="primary"):
     try:
         progress = StreamlitProgressDisplay()
         progress.update(initialising_status())
-        ltbi_state = resolve_ltbi_state_assumptions(config)
-        if (
-            ltbi_state.get("baselineRecentLTBIProportion") is None
-            and ltbi_state.get("baselineRecentLTBIDerivationMethod") != "infection_history_trajectory"
-        ):
-            if not ltbi_dev_compatibility_requested:
-                st.info(
-                    "Choose the provisional working route, or review and enter the "
-                    "recent-versus-remote LTBI assumption, before running the analysis."
-                )
-                st.stop()
         run_config = prepare_run_config_for_recent_ltbi_route(
             config,
-            selected_route=st.session_state.get("recent_ltbi_run_route"),
+            selected_route=None,
         )
         if run_config != config:
             st.session_state["config"] = run_config

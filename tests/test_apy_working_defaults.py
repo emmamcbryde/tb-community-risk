@@ -244,14 +244,15 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         self.assertNotIn("st.dataframe(advanced_rows", text)
         self.assertNotIn('st.expander("Advanced"', text)
 
-    def test_start_page_exposes_provisional_default_run_acknowledgement(self) -> None:
+    def test_start_and_run_pages_present_fixed_report_assumptions(self) -> None:
         start_text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
         run_text = (ROOT / "pages" / "2_Run_Model.py").read_text(encoding="utf-8")
 
         self.assertNotIn("Recent versus remote LTBI assumption remains provisional", start_text)
         self.assertNotIn("Run provisional working defaults", start_text)
-        self.assertIn("Use provisional working route", run_text)
-        self.assertIn("Detailed caveats are in Evidence & Assumptions", run_text)
+        self.assertNotIn("Use provisional working route", run_text)
+        self.assertIn("fixed SA Health report assumptions for future TB", run_text)
+        self.assertIn("reproduces the report method", run_text)
 
     def test_start_and_strategy_pages_show_resolved_demographic_profile(self) -> None:
         start_text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")
@@ -490,11 +491,11 @@ class APYWorkingDefaultsTests(unittest.TestCase):
         app.run(timeout=90)
 
         analysis_type = next(radio for radio in app.radio if radio.label == "Analysis type")
-        self.assertEqual(analysis_type.value, "Simulated community variation — multiple stochastic runs")
+        self.assertEqual(analysis_type.value, "SA Health report analysis - 2,000 simulated communities")
         self.assertIn("Repetitions", [selectbox.label for selectbox in app.selectbox])
         self.assertIn("Random seed", [number_input.label for number_input in app.number_input])
 
-        analysis_type.set_value("Expected outcomes — single deterministic run").run(timeout=30)
+        analysis_type.set_value("Quick deterministic preview - single expected-value calculation").run(timeout=30)
         self.assertEqual(app.session_state["config"]["analysisMethod"], "expected_value")
         self.assertNotIn("Repetitions", [selectbox.label for selectbox in app.selectbox])
         self.assertNotIn("Random seed", [number_input.label for number_input in app.number_input])
@@ -604,7 +605,7 @@ class APYWorkingDefaultsTests(unittest.TestCase):
     def test_quick_simulation_is_labelled_preview_and_sets_one_hundred_repetitions(self) -> None:
         state = unified_default_session_state()
         rows = [dict(row) for row in state["parameter_workspace"]["rows"]]
-        next(row for row in rows if row["parameterId"] == "analysis.method")["currentValue"] = "Simulated community variation — multiple stochastic runs"
+        next(row for row in rows if row["parameterId"] == "analysis.method")["currentValue"] = "SA Health report analysis - 2,000 simulated communities"
         next(row for row in rows if row["parameterId"] == "analysis.simulation_mode")["currentValue"] = "Quick preview: 100 repetitions"
 
         config, _ = apply_parameter_workspace(state["config"], state["economics_config"], rows)
@@ -617,7 +618,7 @@ class APYWorkingDefaultsTests(unittest.TestCase):
     def test_repetitions_validation_rejects_invalid_interactive_values(self) -> None:
         workspace = unified_default_session_state()["parameter_workspace"]
         rows = [dict(row) for row in workspace["rows"]]
-        next(row for row in rows if row["parameterId"] == "analysis.method")["currentValue"] = "Simulated community variation — multiple stochastic runs"
+        next(row for row in rows if row["parameterId"] == "analysis.method")["currentValue"] = "SA Health report analysis - 2,000 simulated communities"
         reps = next(row for row in rows if row["parameterId"] == "analysis.n_reps")
 
         reps["currentValue"] = 0

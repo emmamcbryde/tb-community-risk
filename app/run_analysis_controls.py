@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from app.epidemiology_inputs import apply_ltbi_state_development_compatibility
+from engine.apy.infection_history import configure_compatibility_reference_assumptions
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 
 
@@ -23,14 +23,8 @@ def prepare_run_config_for_recent_ltbi_route(
     *,
     selected_route: str | None,
 ) -> dict[str, Any]:
-    if not recent_ltbi_decision_required(config):
-        return deepcopy(config)
-    if selected_route == TECHNICAL_DEMONSTRATION_ROUTE:
-        return apply_ltbi_state_development_compatibility(config)
-    raise ValueError(
-        "Recent versus remote LTBI is unresolved. Choose a technical demonstration "
-        "or review and enter the assumption before running the analysis."
-    )
+    del selected_route
+    return configure_compatibility_reference_assumptions(deepcopy(config))
 
 
 def technical_demonstration_summary(config: dict[str, Any]) -> dict[str, Any]:

@@ -168,7 +168,7 @@ class ApyInfectionHistoryTests(unittest.TestCase):
         self.assertNotIn("experimental_infection_history_enabled", app.session_state)
         self.assertNotIn("Historical TB infection pressure", [item.label for item in app.selectbox])
         self.assertIn(
-            "Analysis basis: SA Health report reference",
+            "Future TB outcomes use the assumptions applied in the SA Health report.",
             [item.value for item in app.success],
         )
         self.assertTrue(
@@ -373,7 +373,9 @@ class ApyInfectionHistoryTests(unittest.TestCase):
         setup_app = AppTest.from_file(str(Path("pages/0_Start.py")), default_timeout=90)
         setup_app.run(timeout=90)
         analysis_type = next(item for item in setup_app.radio if item.label == "Analysis type")
-        analysis_type.set_value("Expected outcomes — single deterministic run").run(timeout=90)
+        analysis_type.set_value(
+            "Quick deterministic preview - single expected-value calculation"
+        ).run(timeout=90)
 
         selected_config = setup_app.session_state["config"]
         selected_config["N"] = 50
@@ -382,7 +384,10 @@ class ApyInfectionHistoryTests(unittest.TestCase):
         self.assertNotIn("Repetitions", [item.label for item in setup_app.selectbox])
         self.assertNotIn("Random seed", [item.label for item in setup_app.number_input])
         self.assertTrue(
-            any("Expected outcomes — single deterministic run" in item.value for item in setup_app.success)
+            any(
+                "Quick deterministic preview - single expected-value calculation" in item.value
+                for item in setup_app.success
+            )
         )
 
         run_app = AppTest.from_file(str(Path("pages/2_Run_Model.py")), default_timeout=90)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -739,6 +740,88 @@ def break_even_rows(econ_results: dict[str, Any] | None) -> list[dict[str, str]]
     ]
 
 
+def _hash_payload(payload: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def stochastic_icer_cloud_rows(
+    *,
+    econ_results: dict[str, Any] | None,
+    results_bundle: dict[str, Any] | None,
+    economics_config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not isinstance(results_bundle, dict) or not is_supported_sa_health_analysis_basis(results_bundle):
+        return []
+    metadata = results_bundle.get("metadata") or {}
+    technical = results_bundle.get("technical") or {}
+    ledger = technical.get("eventLedger") or {}
+    ledger_metadata = ledger.get("metadata") or {}
+    model_type = metadata.get("modelType") or ledger_metadata.get("modelType")
+    if model_type != "agent_based":
+        return []
+    reps = (econ_results or {}).get("replicateResults")
+    frame = reps.copy() if isinstance(reps, pd.DataFrame) else pd.DataFrame(reps or [])
+    if frame.empty:
+        return []
+    if "discountProfile" in frame.columns:
+        frame = frame[frame["discountProfile"].astype(str).eq("primary")].copy()
+    if "economicPairComplete" in frame.columns:
+        frame = frame[frame["economicPairComplete"].astype(bool)].copy()
+    required = {"incrementalCost", "dalysAverted", "activeTBCasesPrevented"}
+    if frame.empty or not required.issubset(set(frame.columns)):
+        return []
+    analysis_basis = (
+        metadata.get("analysisBasis")
+        or ledger_metadata.get("analysisBasis")
+        or "sa_health_matlab_v9_compatibility_reference"
+    )
+    config_hash = (
+        metadata.get("configurationHash")
+        or ledger_metadata.get("configurationHash")
+        or ((technical.get("interfaceConfig") or {}).get("workingDefaultPresetHash"))
+        or ""
+    )
+    econ_hash = _hash_payload(economics_config)
+    out: list[dict[str, Any]] = []
+    for index, row in frame.reset_index(drop=True).iterrows():
+        dalys = _number(row.get("dalysAverted"))
+        cost = _number(row.get("incrementalCost"))
+        active_tb = _number(row.get("activeTBCasesPrevented"))
+        if dalys is None or cost is None:
+            continue
+        replicate_id = row.get("replicateId")
+        if replicate_id in (None, ""):
+            replicate_id = index
+        out.append(
+            {
+                "Scenario": "Stochastic replicate",
+                "Replicate": int(float(replicate_id)),
+                "DALYs averted compared with business as usual": dalys,
+                "Incremental cost compared with business as usual (AUD)": cost,
+                "Active TB averted": active_tb,
+                "Quadrant": _quadrant(dalys, cost),
+                "Classification": icer_classification(cost, dalys)["display"],
+                "Arithmetic ICER": _signed_icer(_divide(cost, dalys)),
+                "configurationHash": config_hash,
+                "economicConfigurationHash": econ_hash,
+                "seed": metadata.get("seed") or ledger_metadata.get("seed"),
+                "nReps": metadata.get("nReps") or ledger_metadata.get("nReps"),
+                "analysisBasis": analysis_basis,
+                "contractVersion": (econ_results or {}).get("contractVersion")
+                or ((econ_results or {}).get("metadata") or {}).get("economicContractVersion"),
+            }
+        )
+    return out
+
+
+def stochastic_icer_cloud_csv(rows: list[dict[str, Any]]) -> str:
+    if not rows:
+        return ""
+    return pd.DataFrame(rows).to_csv(index=False)
+
+
 def cost_effectiveness_plane_rows(
     *,
     results_bundle: dict[str, Any] | None,
@@ -897,7 +980,7 @@ def _reference_report_point() -> dict[str, Any] | None:
         role="reference",
         event_ledger_source="Frozen stochastic compatibility reference package",
         analysis_basis=(
-            f"MATLAB-v9-compatible stochastic anchor; {payload.get('nReps')} repetitions; "
+            f"SA Health report mean - {payload.get('nReps')} simulated communities; "
             f"seed {payload.get('seed')}"
         ),
         setup_cost="AUD 0 additional overhead entered",
@@ -912,15 +995,17 @@ def _analysis_basis_label(results_bundle: dict[str, Any] | None) -> str:
     ledger = ((results_bundle or {}).get("technical") or {}).get("eventLedger") or {}
     metadata = ledger.get("metadata") or {}
     model_type = metadata.get("modelType") or (results_bundle or {}).get("metadata", {}).get("modelType")
-    natural_history = metadata.get("naturalHistorySemantics") or metadata.get("ltbiStateModel") or ""
     reps = metadata.get("nReps") or metadata.get("replicates")
     seed = metadata.get("seed")
-    parts = [str(item) for item in [model_type, natural_history] if item]
-    if reps:
-        parts.append(f"{reps} repetitions")
-    if seed is not None:
-        parts.append(f"seed {seed}")
-    return "; ".join(parts) or "Current completed analysis"
+    if model_type == "agent_based":
+        if int(float(reps or 0)) == 2000 and int(float(seed or 0)) == 1:
+            return "SA Health report analysis - 2,000 simulated communities, seed 1"
+        if reps:
+            return f"Stochastic preview - {int(float(reps)):,} simulated communities, seed {int(float(seed or 1))}"
+        return "Stochastic analysis using fixed SA Health report assumptions"
+    if model_type == "expected_value":
+        return "Quick deterministic preview using fixed SA Health report assumptions"
+    return "Current completed analysis using fixed SA Health report assumptions"
 
 
 def _points_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
@@ -1001,13 +1086,35 @@ def _divide(a: Any, b: Any) -> float | None:
     return a_num / b_num
 
 
-def _cost_effectiveness_plane_chart(rows: list[dict[str, Any]]) -> alt.Chart:
+def _cost_effectiveness_plane_chart(
+    rows: list[dict[str, Any]],
+    *,
+    cloud_rows: list[dict[str, Any]] | None = None,
+) -> alt.Chart:
     frame = pd.DataFrame(rows)
     if not frame.empty:
         frame["Chart label"] = frame.apply(_chart_label, axis=1)
         frame["Legend label"] = frame.apply(_legend_label, axis=1)
     x_col = "DALYs averted compared with business as usual"
     y_col = "Incremental cost compared with business as usual (AUD)"
+    layers: list[alt.Chart] = []
+    cloud_frame = pd.DataFrame(cloud_rows or [])
+    if not cloud_frame.empty:
+        layers.append(
+            alt.Chart(cloud_frame)
+            .mark_circle(size=24, opacity=0.16, color="#2563eb")
+            .encode(
+                x=alt.X(f"{x_col}:Q", title=x_col),
+                y=alt.Y(f"{y_col}:Q", title=y_col),
+                tooltip=[
+                    alt.Tooltip("Replicate:Q", format=".0f"),
+                    alt.Tooltip(f"{x_col}:Q", format=".3f"),
+                    alt.Tooltip(f"{y_col}:Q", format=",.0f"),
+                    alt.Tooltip("Active TB averted:Q", format=".1f"),
+                    alt.Tooltip("Quadrant:N"),
+                ],
+            )
+        )
     points = (
         alt.Chart(frame)
         .mark_point(filled=True, size=120)
@@ -1041,7 +1148,7 @@ def _cost_effectiveness_plane_chart(rows: list[dict[str, Any]]) -> alt.Chart:
     )
     horizontal = alt.Chart(pd.DataFrame({y_col: [0]})).mark_rule(color="#6b7280").encode(y=f"{y_col}:Q")
     vertical = alt.Chart(pd.DataFrame({x_col: [0]})).mark_rule(color="#6b7280").encode(x=f"{x_col}:Q")
-    return (horizontal + vertical + points + labels).properties(height=360)
+    return alt.layer(horizontal, vertical, *layers, points, labels).properties(height=360)
 
 
 def headline_rows(
@@ -1750,7 +1857,29 @@ try:
         current_economics=st.session_state.get("economics_results"),
         controls=applied_controls,
     )
-    st.altair_chart(_cost_effectiveness_plane_chart(plane_rows), use_container_width=True)
+    cloud_rows = stochastic_icer_cloud_rows(
+        econ_results=st.session_state.get("economics_results"),
+        results_bundle=results_bundle,
+        economics_config=econ_config,
+    )
+    st.altair_chart(_cost_effectiveness_plane_chart(plane_rows, cloud_rows=cloud_rows), use_container_width=True)
+    if cloud_rows:
+        st.caption(
+            "Each point represents one simulated community using the fixed SA Health report assumptions. "
+            "The cloud shows variation generated by the stochastic model. It does not include all parameter, "
+            "evidence or structural uncertainty."
+        )
+        st.download_button(
+            "Download paired stochastic ICER outcomes CSV",
+            data=stochastic_icer_cloud_csv(cloud_rows),
+            file_name=f"{safe_download_stem(scenario_label, 'paired_stochastic_icer_outcomes')}.csv",
+            mime="text/csv",
+        )
+    else:
+        st.caption(
+            "Quick deterministic previews display a single expected-value point. "
+            "Run the SA Health report analysis to show the paired stochastic cloud."
+        )
     st.caption(
         "Economic-only changes move the current analysis vertically on the ICER plane. "
         "They change costs but do not change DALYs or active TB cases averted. "

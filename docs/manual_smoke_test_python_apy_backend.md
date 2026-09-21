@@ -18,12 +18,14 @@ by the Streamlit application.
 4. Review **Parameters**. Expand **View age distribution** and **View risk
    factors** if you need to check the resolved APY profile.
 
-5. In **Analysis settings**, choose the analysis mode:
+5. In **Analysis settings**, choose the estimator:
 
-   - `Expected outcomes — single deterministic run` for a rapid exploratory
-     calculation with no repetitions or random seed; or
-   - `Simulated community variation — multiple stochastic runs` for repeated
-     simulated populations.
+   - `Quick deterministic preview - single expected-value calculation` for a
+     rapid approximation with no repetitions or random seed; or
+   - `SA Health report analysis - 2,000 simulated communities` for the
+     authoritative report method.
+
+   Both use the fixed SA Health report assumptions for future TB.
 
 6. For stochastic analysis, choose either:
 
@@ -59,12 +61,11 @@ by the Streamlit application.
 12. Open **Health Economics**.
 
 13. Confirm the page leads with analysis status, headline economic results,
-    cost breakdown and economic scenario comparison.
+    cost breakdown, the programme-delivery table and the ICER plane.
 
-14. Expand **View or change economic assumptions**, edit one low-risk cost
-    in the `Value used by model` column, then click **Recalculate economics
-    using current screening outcomes**. Confirm the override summary appears
-    and screening outcomes are unchanged.
+14. Open **Change cost assumptions**, edit one low-risk cost, then click
+    **Recalculate economics**. Confirm the override summary appears and
+    screening outcomes are unchanged.
 
 15. Download the assumptions or economics summary export and confirm it opens.
 

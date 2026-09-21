@@ -104,12 +104,15 @@ class PhysicianWorkflowHelperTests(unittest.TestCase):
         )
         self.assertIn({"Assumption": "Provisional result", "Value": True}, rows)
 
-    def test_unresolved_recent_ltbi_blocks_normal_reference_analysis(self) -> None:
+    def test_default_recent_ltbi_state_is_normalised_to_report_compatibility(self) -> None:
         cfg = build_default_config()
 
         self.assertTrue(recent_ltbi_decision_required(cfg))
-        with self.assertRaisesRegex(ValueError, "Recent versus remote LTBI is unresolved"):
-            prepare_run_config_for_recent_ltbi_route(cfg, selected_route=None)
+        run_cfg = prepare_run_config_for_recent_ltbi_route(cfg, selected_route=None)
+        state = resolve_ltbi_state_assumptions(run_cfg)
+        self.assertTrue(state["developmentCompatibilityMode"])
+        self.assertEqual(run_cfg["analysisBasis"], "sa_health_matlab_v9_compatibility_reference")
+        self.assertEqual(run_cfg["naturalHistorySemantics"], "matlab_v9_implicit_early_late")
 
     def test_technical_demonstration_explicitly_enables_compatibility_mode(self) -> None:
         cfg = build_default_config()
@@ -152,16 +155,17 @@ class PhysicianWorkflowHelperTests(unittest.TestCase):
         self.assertFalse(recent_ltbi_decision_required(cfg))
         run_cfg = prepare_run_config_for_recent_ltbi_route(cfg, selected_route=None)
         state = resolve_ltbi_state_assumptions(run_cfg)
-        self.assertFalse(state["developmentCompatibilityMode"])
-        self.assertFalse(state["provisional"])
-        self.assertEqual(state["baselineRecentLTBIProportion"], 0.2)
+        self.assertTrue(state["developmentCompatibilityMode"])
+        self.assertTrue(state["provisional"])
+        self.assertEqual(state["baselineRecentLTBIProportion"], 0.0)
+        self.assertEqual(run_cfg["analysisBasis"], "sa_health_matlab_v9_compatibility_reference")
 
     def test_run_page_does_not_show_raw_model_failure_for_unresolved_ltbi(self) -> None:
         page_text = (repo_root() / "pages" / "2_Run_Model.py").read_text(encoding="utf-8")
 
-        self.assertIn("Recent versus remote LTBI assumption", page_text)
-        self.assertIn("Use provisional working route", page_text)
-        self.assertIn("Review or enter the assumption", page_text)
+        self.assertNotIn("Recent versus remote LTBI assumption", page_text)
+        self.assertNotIn("Use provisional working route", page_text)
+        self.assertIn("fixed SA Health report assumptions for future TB", page_text)
         self.assertNotIn("Model run failed", page_text)
         self.assertNotIn("Run provisional development analysis using the 0% compatibility placeholder", page_text)
 

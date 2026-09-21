@@ -194,13 +194,15 @@ def configure_compatibility_reference_assumptions(config: dict[str, Any]) -> dic
                 "Transition structure from older static/transmission-dynamic "
                 "architecture; APY-specific baseline recent fraction unresolved."
             ),
-            "status": "unresolved",
+            "status": "unresolved_development_compatibility",
             "provisional": True,
-            "developmentCompatibilityMode": False,
+            "developmentCompatibilityMode": True,
             "warnings": [],
         }
     )
     out["ltbiStateAssumptions"] = nested
+    out.pop("baselineRecentLTBIProportion", None)
+    out.pop("recentToRemoteTransitionRatePerYear", None)
     out["analysisBasis"] = COMPATIBILITY_REFERENCE_BASIS
     out["naturalHistorySemantics"] = MATLAB_V9_COMPATIBILITY_SEMANTICS
     return out
