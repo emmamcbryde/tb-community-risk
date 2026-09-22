@@ -222,8 +222,9 @@ def recalculate_frozen_reference_economics(
     payload = _load_payload()
     if not _is_primary_default_discount(econ_config):
         return None
-    if _json_like((econ_config or {}).get("dalyAssumptions")) != _json_like(
-        (payload["economicsConfig"] or {}).get("dalyAssumptions")
+    if not _daly_assumptions_recalculation_equivalent(
+        (econ_config or {}).get("dalyAssumptions"),
+        (payload["economicsConfig"] or {}).get("dalyAssumptions"),
     ):
         return None
 
@@ -441,6 +442,61 @@ def _normalised_reference_config(config: dict[str, Any]) -> dict[str, Any]:
     cfg["analysisBasis"] = SUPPORTED_ANALYSIS_BASIS
     cfg["naturalHistorySemantics"] = SUPPORTED_NATURAL_HISTORY_SEMANTICS
     return cfg
+
+
+def _daly_assumptions_recalculation_equivalent(
+    current: dict[str, Any] | None,
+    reference: dict[str, Any] | None,
+) -> bool:
+    """Compare only DALY inputs that change the frozen recalculation.
+
+    The Streamlit editable workspace can round-trip source notes and citations
+    through user-facing rows. Those text fields do not affect the frozen
+    vectorized cost recalculation, but a byte-for-byte comparison would reject
+    the fast path after a purely economic edit and force a slow generic
+    recomputation. Keep the guard strict on values, inclusion flags and review
+    states, while ignoring explanatory wording.
+    """
+
+    return _json_like(_daly_recalculation_payload(current or {})) == _json_like(
+        _daly_recalculation_payload(reference or {})
+    )
+
+
+def _daly_recalculation_payload(daly: dict[str, Any]) -> dict[str, Any]:
+    numeric_records = (
+        "activeTBDisabilityWeight",
+        "activeTBDurationYears",
+        "tbCaseFatalityRisk",
+        "yllPerTBDeath",
+        "dalyLossPerTPTStarted",
+        "dalyLossPerADRStop",
+        "postTBDALYsPerActiveTBCase",
+    )
+    flags = (
+        "method",
+        "includeTPTHealthLoss",
+        "includeADRHealthLoss",
+        "includePostTBSequelae",
+        "tptHealthLossExclusionStatus",
+        "adrHealthLossExclusionStatus",
+        "postTBSequelaeStatus",
+    )
+    payload: dict[str, Any] = {key: daly.get(key) for key in flags}
+    for key in numeric_records:
+        payload[key] = _assumption_recalculation_record(daly.get(key))
+    return payload
+
+
+def _assumption_recalculation_record(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    return {
+        "value": value.get("value"),
+        "status": value.get("status"),
+        "provisional": value.get("provisional"),
+        "unit": value.get("unit"),
+    }
 
 
 def _comparison_payload(config: dict[str, Any]) -> dict[str, Any]:

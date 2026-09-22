@@ -8,6 +8,10 @@ import pandas as pd
 
 from app.parameter_workspace import unified_default_session_state
 from app.state import ensure_frozen_reference_loaded_if_eligible
+from app.health_economics_inputs import (
+    apply_assumptions_to_economics_config,
+    reconcile_workspace_state,
+)
 from engine.apy.frozen_reference import (
     FROZEN_REFERENCE_PRIMARY_REPLICATES_PATH,
     FROZEN_REFERENCE_REPS,
@@ -103,6 +107,71 @@ class FrozenReferenceLoaderTests(unittest.TestCase):
         )
         deltas = after["incrementalCost"] - before["incrementalCost"]
         self.assertTrue(((deltas - 500000.0).abs() < 1e-6).all())
+
+    def test_workspace_setup_cost_edit_preserves_reference_cost_components(self) -> None:
+        payload = load_frozen_reference_results()
+        base = recalculate_frozen_reference_economics(
+            payload["resultsBundle"],
+            payload["economicsConfig"],
+        )
+        workspace = reconcile_workspace_state(
+            None,
+            payload["economicsConfig"],
+            registry=payload["economicsConfig"].get("assumptionEvidenceRegistry"),
+        )
+        edited_config = apply_assumptions_to_economics_config(
+            payload["economicsConfig"],
+            workspace["rows"],
+        )
+        setup = next(item for item in edited_config["costItems"] if item.get("costItemId") == "program_setup")
+        setup.update(
+            {
+                "originalCost": 500000.0,
+                "originalCurrency": "AUD",
+                "originalPriceYear": "2019",
+                "targetCurrency": "AUD",
+                "targetPriceYear": "2019",
+            }
+        )
+        setup.setdefault("resourceUse", {})["costBasis"] = "total_once_at_program_start"
+        edited = recalculate_frozen_reference_economics(payload["resultsBundle"], edited_config)
+
+        self.assertIsNotNone(edited)
+        unchanged_components = [
+            "testingCost",
+            "treatmentCost",
+            "adrManagementCost",
+            "returnForResultsCost",
+            "clinicalReviewCost",
+            "activeTBExclusionWorkupCost",
+            "baselineTBDiseaseCost",
+            "interventionTBDiseaseCost",
+        ]
+        for component in unchanged_components:
+            self.assertAlmostEqual(
+                float(edited["costs"][component]),
+                float(base["costs"][component]),
+                places=6,
+                msg=component,
+            )
+        self.assertAlmostEqual(float(base["costs"]["programSetupCost"]), 0.0, places=6)
+        self.assertAlmostEqual(float(edited["costs"]["programSetupCost"]), 500000.0, places=6)
+        base_mean = float(
+            next(
+                row["mean"]
+                for row in base["summaryRows"]
+                if row.get("metric") == "incrementalCost" and row.get("discountProfile") == "primary"
+            )
+        )
+        edited_mean = float(
+            next(
+                row["mean"]
+                for row in edited["summaryRows"]
+                if row.get("metric") == "incrementalCost" and row.get("discountProfile") == "primary"
+            )
+        )
+        self.assertAlmostEqual(base_mean, -92369.62956743593, places=6)
+        self.assertAlmostEqual(edited_mean, 407630.37043256406, places=6)
 
     def test_default_state_loader_loads_frozen_reference_without_runner_state(self) -> None:
         fake_st = _FakeStreamlit()

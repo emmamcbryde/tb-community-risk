@@ -522,6 +522,25 @@ class SAHealthReferencePackageTests(unittest.TestCase):
                 for item in app.caption
             )
         )
+        self.assertTrue(
+            any(
+                f"Showing {len(primary_reps):,} paired simulated-community outcomes" in item.value
+                for item in app.caption
+            )
+        )
+        self.assertTrue(
+            any(
+                "These are empirical simulation intervals across" in item.value
+                and "simulated communities" in item.value
+                for item in app.caption
+            )
+        )
+        self.assertTrue(
+            any(
+                {"Outcome", "Mean", "Low 95%", "High 95%"}.issubset(set(item.value.columns))
+                for item in app.dataframe
+            )
+        )
 
     def test_health_economics_setup_cost_shifts_every_stochastic_cloud_point_vertically(self) -> None:
         controls = self._programme_controls(setup=500000.0, annual=0.0, years=2, first_year=0)

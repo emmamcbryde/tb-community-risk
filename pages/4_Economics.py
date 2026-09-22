@@ -1522,6 +1522,10 @@ def apply_and_recalculate(
 
 st.title("Health Economics")
 st.caption("Review economic results, optionally change cost assumptions, and export the analysis.")
+skip_action_replay = bool(st.session_state.pop("health_econ_skip_action_replay", False))
+status_message = st.session_state.pop("health_econ_status_message", "")
+if status_message:
+    st.success(status_message)
 
 config = st.session_state.get("config")
 results_bundle = st.session_state.get("results_bundle")
@@ -1829,7 +1833,7 @@ with st.expander("Change cost assumptions", expanded=True):
     )
 
 action_cols = st.columns(2)
-if action_cols[0].button("Recalculate economics", type="primary", use_container_width=True):
+if action_cols[0].button("Recalculate economics", type="primary", use_container_width=True) and not skip_action_replay:
     if apply_and_recalculate(
         working_rows=working_rows,
         workspace_state=workspace_state,
@@ -1838,9 +1842,12 @@ if action_cols[0].button("Recalculate economics", type="primary", use_container_
         results_bundle=results_bundle,
         controls=controls,
     ):
-        econ_config = st.session_state["economics_config"]
-        econ_results = st.session_state["economics_results"]
-if action_cols[1].button("Restore SA Health economic defaults", use_container_width=True):
+        st.session_state["health_econ_status_message"] = (
+            "Economic results recalculated. Epidemiological outcomes were not rerun."
+        )
+        st.session_state["health_econ_skip_action_replay"] = True
+        st.rerun()
+if action_cols[1].button("Restore SA Health economic defaults", use_container_width=True) and not skip_action_replay:
     load_economics_config(build_unified_working_default_preset()["economicsConfig"])
     st.session_state["health_econ_delivery_scenarios"] = dict(DELIVERY_SCENARIO_DEFAULTS)
     st.session_state["health_econ_cost_widget_version"] = int(st.session_state.get("health_econ_cost_widget_version", 0)) + 1
@@ -1851,7 +1858,11 @@ if action_cols[1].button("Restore SA Health economic defaults", use_container_wi
     econ_config = st.session_state["economics_config"]
     econ_results = st.session_state.get("economics_results")
     controls = st.session_state["health_econ_delivery_scenarios"]
-    st.success("SA Health economic defaults restored. Epidemiological results were not rerun.")
+    st.session_state["health_econ_status_message"] = (
+        "SA Health economic defaults restored. Epidemiological results were not rerun."
+    )
+    st.session_state["health_econ_skip_action_replay"] = True
+    st.rerun()
 
 try:
     scenario_rows = delivery_scenario_comparison_rows(
@@ -1901,6 +1912,8 @@ try:
         results_bundle=results_bundle,
         economics_config=econ_config,
     )
+    if cloud_rows:
+        st.caption(f"Showing {len(cloud_rows):,} paired simulated-community outcomes.")
     st.altair_chart(_cost_effectiveness_plane_chart(plane_rows, cloud_rows=cloud_rows), use_container_width=True)
     if cloud_rows:
         interval_rows = stochastic_simulation_interval_rows(st.session_state.get("economics_results"))
