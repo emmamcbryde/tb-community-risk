@@ -34,6 +34,7 @@ from app.health_economics_inputs import (
 )
 from app.health_economics_presentation import classify_icer_result
 from app.state import (
+    ensure_frozen_reference_loaded_if_eligible,
     get_backend,
     has_retired_infection_history_results,
     init_session_state,
@@ -46,12 +47,14 @@ from app.state import (
 )
 from engine.apy.evidence import assess_apy_reference_readiness, load_apy_evidence_registry
 from engine.apy.event_ledger_economics import run_event_ledger_health_economics
+from engine.apy.frozen_reference import recalculate_frozen_reference_economics
 from engine.apy.working_defaults import build_unified_working_default_preset
 
 
 init_session_state()
 st.session_state["apy_backend_name"] = "python_apy"
 sanitize_reference_only_state()
+ensure_frozen_reference_loaded_if_eligible()
 backend = get_backend()
 
 
@@ -568,6 +571,9 @@ def _run_delivery_scenario(
     first_running_year: int = 0,
 ) -> dict[str, Any]:
     bundle = _clone_bundle_with_running_duration(results_bundle, running_years, first_running_year)
+    frozen = recalculate_frozen_reference_economics(bundle, economics_config)
+    if frozen is not None:
+        return frozen
     return run_event_ledger_health_economics(bundle, economics_config)
 
 
@@ -772,6 +778,13 @@ def stochastic_icer_cloud_rows(
     required = {"incrementalCost", "dalysAverted", "activeTBCasesPrevented"}
     if frame.empty or not required.issubset(set(frame.columns)):
         return []
+    expected_reps = _number(metadata.get("nReps") or ledger_metadata.get("nReps"))
+    if expected_reps is not None and int(expected_reps) > 1 and len(frame) != int(expected_reps):
+        return []
+    if "replicateId" in frame.columns:
+        ids = pd.to_numeric(frame["replicateId"], errors="coerce")
+        if ids.isna().any() or ids.nunique(dropna=True) != len(frame):
+            return []
     analysis_basis = (
         metadata.get("analysisBasis")
         or ledger_metadata.get("analysisBasis")
@@ -820,6 +833,29 @@ def stochastic_icer_cloud_csv(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return ""
     return pd.DataFrame(rows).to_csv(index=False)
+
+
+def stochastic_simulation_interval_rows(econ_results: dict[str, Any] | None) -> list[dict[str, str]]:
+    labels = {
+        "dalysAverted": ("DALYs averted", _decimal),
+        "incrementalCost": ("Incremental cost", _signed_money),
+        "activeTBCasesPrevented": ("Active TB cases averted", _decimal),
+    }
+    rows: list[dict[str, str]] = []
+    for metric, (label, formatter) in labels.items():
+        row = _summary_row(econ_results, metric)
+        if not row or row.get("p2_5") in (None, "") or row.get("p97_5") in (None, ""):
+            continue
+        if metric == "incrementalCost":
+            mean = formatter(row.get("mean"))
+            low = formatter(row.get("p2_5"))
+            high = formatter(row.get("p97_5"))
+        else:
+            mean = formatter(row.get("mean"), 1)
+            low = formatter(row.get("p2_5"), 1)
+            high = formatter(row.get("p97_5"), 1)
+        rows.append({"Outcome": label, "Mean": mean, "Low 95%": low, "High 95%": high})
+    return rows
 
 
 def cost_effectiveness_plane_rows(
@@ -1418,10 +1454,13 @@ def run_authoritative_health_economics(results_bundle: dict, econ_config: dict) 
         controls = _ensure_delivery_scenario_controls()
         running_years = int(float(controls.get("standaloneRunningYears") or 0))
         first_running_year = int(float(controls.get("annualCostFirstYear") or 0))
-        econ = run_event_ledger_health_economics(
-            _clone_bundle_with_running_duration(results_bundle, running_years, first_running_year),
-            econ_config,
-        )
+        bundle_with_timing = _clone_bundle_with_running_duration(results_bundle, running_years, first_running_year)
+        econ = recalculate_frozen_reference_economics(bundle_with_timing, econ_config)
+        if econ is None:
+            econ = run_event_ledger_health_economics(
+                bundle_with_timing,
+                econ_config,
+            )
         st.session_state["economics_results"] = econ
         mark_economics_completed()
         sync_backend_status(backend.status())
@@ -1864,6 +1903,14 @@ try:
     )
     st.altair_chart(_cost_effectiveness_plane_chart(plane_rows, cloud_rows=cloud_rows), use_container_width=True)
     if cloud_rows:
+        interval_rows = stochastic_simulation_interval_rows(st.session_state.get("economics_results"))
+        if interval_rows:
+            st.markdown("Stochastic simulation intervals")
+            st.dataframe(arrow_safe_dataframe(interval_rows), use_container_width=True, hide_index=True)
+            st.caption(
+                "These are empirical simulation intervals across the 2,000 simulated communities, "
+                "not confidence intervals for the population mean."
+            )
         st.caption(
             "Each point represents one simulated community using the fixed SA Health report assumptions. "
             "The cloud shows variation generated by the stochastic model. It does not include all parameter, "

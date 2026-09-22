@@ -15,12 +15,17 @@ from app.results_page_display import (
     key_metric_rows_for_display,
 )
 from app.results_workbook import build_results_workbook
-from app.state import init_session_state, sanitize_reference_only_state
+from app.state import (
+    ensure_frozen_reference_loaded_if_eligible,
+    init_session_state,
+    sanitize_reference_only_state,
+)
 from engine.apy.scenario import DIRECT_EFFECTS_SCOPE_STATEMENT
 
 
 init_session_state()
 sanitize_reference_only_state()
+ensure_frozen_reference_loaded_if_eligible()
 
 
 def _page_link(path: str, *, label: str) -> None:

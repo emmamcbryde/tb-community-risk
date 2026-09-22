@@ -14,7 +14,11 @@ from app.decision_comparison_presentation import (
 )
 from app.display import arrow_safe_dataframe, safe_download_stem
 from app.icon_arrays import build_100_person_visual_data, render_100_person_summary
-from app.state import init_session_state, sanitize_reference_only_state
+from app.state import (
+    ensure_frozen_reference_loaded_if_eligible,
+    init_session_state,
+    sanitize_reference_only_state,
+)
 from engine.apy.decision_analysis import run_scenario_comparison
 from engine.apy.early_review import run_early_screening_review
 from engine.apy.evidence import assess_apy_reference_readiness
@@ -109,6 +113,7 @@ def _run_strategy_comparison(
 
 init_session_state()
 sanitize_reference_only_state()
+ensure_frozen_reference_loaded_if_eligible()
 
 st.title("Explore Decisions")
 st.caption(

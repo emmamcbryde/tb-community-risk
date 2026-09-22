@@ -7,6 +7,8 @@ from app.parameter_workspace import MODEL_METHOD_LABELS
 from app.run_analysis_controls import prepare_run_config_for_recent_ltbi_route
 from app.run_progress import StreamlitProgressDisplay, finalising_status, initialising_status
 from app.state import (
+    ensure_default_config_initialized,
+    ensure_frozen_reference_loaded_if_eligible,
     get_backend,
     init_session_state,
     is_supported_sa_health_analysis_basis,
@@ -28,6 +30,7 @@ def _page_link(path: str, *, label: str) -> None:
 init_session_state()
 st.session_state["apy_backend_name"] = "python_apy"
 sanitize_reference_only_state()
+ensure_default_config_initialized()
 backend = get_backend()
 
 st.title("Run Analysis")
@@ -121,40 +124,51 @@ if st.button(run_label, type="primary"):
                 st.write(blocking[0])
             _page_link("pages/0_Start.py", label="Return to Set up")
             st.stop()
-        bundle = backend.run_scenario_bundle(
-            run_config,
-            validation_report=validation_report,
-            progress_callback=progress.callback,
-        )
-        if not is_supported_sa_health_analysis_basis(bundle):
-            bundle_metadata = bundle.get("metadata", {}) if isinstance(bundle, dict) else {}
-            ledger_metadata = (
-                (((bundle or {}).get("technical") or {}).get("eventLedger") or {}).get("metadata") or {}
-                if isinstance(bundle, dict)
-                else {}
+        loaded_frozen_reference = ensure_frozen_reference_loaded_if_eligible(force=True)
+        if loaded_frozen_reference:
+            progress.update(finalising_status())
+            st.session_state["validation_report"] = {
+                **validation_report,
+                "loadedFrozenReference": True,
+                "source": "validated SA Health report analysis",
+            }
+            sync_backend_status(backend.status())
+            st.success("Loaded the validated SA Health report analysis.")
+        else:
+            bundle = backend.run_scenario_bundle(
+                run_config,
+                validation_report=validation_report,
+                progress_callback=progress.callback,
             )
-            st.error(
-                "Analysis completed, but the result metadata did not satisfy the SA Health "
-                "compatibility provenance contract. Results were not activated."
-            )
-            st.write(
-                {
-                    "bundleAnalysisBasis": bundle_metadata.get("analysisBasis"),
-                    "bundleNaturalHistorySemantics": bundle_metadata.get("naturalHistorySemantics"),
-                    "ledgerAnalysisBasis": ledger_metadata.get("analysisBasis"),
-                    "ledgerNaturalHistorySemantics": ledger_metadata.get("naturalHistorySemantics"),
-                }
-            )
-            st.stop()
-        progress.update(finalising_status())
-        st.session_state["results_bundle"] = bundle
-        st.session_state["validation_report"] = validation_report
-        st.session_state["economics_results"] = None
-        st.session_state["dirty_economics"] = True
-        st.session_state["economics_config"] = None
-        sync_backend_status(backend.status())
-        mark_run_completed()
-        st.success("Analysis completed.")
+            if not is_supported_sa_health_analysis_basis(bundle):
+                bundle_metadata = bundle.get("metadata", {}) if isinstance(bundle, dict) else {}
+                ledger_metadata = (
+                    (((bundle or {}).get("technical") or {}).get("eventLedger") or {}).get("metadata") or {}
+                    if isinstance(bundle, dict)
+                    else {}
+                )
+                st.error(
+                    "Analysis completed, but the result metadata did not satisfy the SA Health "
+                    "compatibility provenance contract. Results were not activated."
+                )
+                st.write(
+                    {
+                        "bundleAnalysisBasis": bundle_metadata.get("analysisBasis"),
+                        "bundleNaturalHistorySemantics": bundle_metadata.get("naturalHistorySemantics"),
+                        "ledgerAnalysisBasis": ledger_metadata.get("analysisBasis"),
+                        "ledgerNaturalHistorySemantics": ledger_metadata.get("naturalHistorySemantics"),
+                    }
+                )
+                st.stop()
+            progress.update(finalising_status())
+            st.session_state["results_bundle"] = bundle
+            st.session_state["validation_report"] = validation_report
+            st.session_state["economics_results"] = None
+            st.session_state["dirty_economics"] = True
+            st.session_state["economics_config"] = None
+            sync_backend_status(backend.status())
+            mark_run_completed()
+            st.success("Analysis completed.")
     except Exception as exc:
         message = f"Analysis failed: {exc}"
         sync_backend_status(backend.status())

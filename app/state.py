@@ -15,6 +15,11 @@ from engine.apy.infection_history import (
     is_experimental_infection_history_config,
     is_experimental_infection_history_results,
 )
+from engine.apy.frozen_reference import (
+    is_frozen_sa_health_reference_eligible,
+    load_frozen_reference_results,
+    recalculate_frozen_reference_economics,
+)
 
 SUPPORTED_SA_HEALTH_ANALYSIS_BASIS = "sa_health_matlab_v9_compatibility_reference"
 SUPPORTED_SA_HEALTH_NATURAL_HISTORY_SEMANTICS = "matlab_v9_implicit_early_late"
@@ -160,6 +165,59 @@ def sanitize_reference_only_state() -> bool:
             changed = True
 
     return changed
+
+
+def ensure_default_config_initialized() -> bool:
+    """Initialise APY defaults for pages reached directly from navigation."""
+    if st.session_state.get("config"):
+        return False
+    from app.parameter_workspace import unified_default_session_state
+
+    defaults = unified_default_session_state()
+    st.session_state["config"] = configure_compatibility_reference_assumptions(defaults["config"])
+    st.session_state["economics_config"] = defaults["economics_config"]
+    st.session_state["parameter_workspace"] = defaults["parameter_workspace"]
+    st.session_state["working_default_preset"] = defaults["working_default_preset"]
+    st.session_state["dirty_config"] = False
+    st.session_state["results_stale"] = False
+    return True
+
+
+def ensure_frozen_reference_loaded_if_eligible(*, force: bool = False) -> bool:
+    """Load the frozen 2,000-run SA Health reference when current setup matches it."""
+    ensure_default_config_initialized()
+    config = st.session_state.get("config")
+    if not is_frozen_sa_health_reference_eligible(config):
+        return False
+    current = st.session_state.get("results_bundle")
+    if (
+        not force
+        and isinstance(current, dict)
+        and is_supported_sa_health_analysis_basis(current)
+        and not st.session_state.get("results_stale")
+    ):
+        return False
+    payload = load_frozen_reference_results()
+    st.session_state["config"] = payload["resultsBundle"]["technical"]["interfaceConfig"]
+    economics_config = st.session_state.get("economics_config") or payload["economicsConfig"]
+    st.session_state["economics_config"] = economics_config
+    st.session_state["results_bundle"] = payload["resultsBundle"]
+    st.session_state["economics_results"] = (
+        recalculate_frozen_reference_economics(payload["resultsBundle"], economics_config)
+        or payload["referenceEconomics"]
+    )
+    st.session_state["validation_report"] = {
+        "isValid": True,
+        "loadedFrozenReference": True,
+        "source": "validated SA Health report analysis",
+    }
+    st.session_state["dirty_config"] = False
+    st.session_state["results_stale"] = False
+    st.session_state["dirty_economics"] = False
+    st.session_state["last_economics_run_at"] = ""
+    st.session_state["frozen_reference_load_notice"] = "Loaded the validated SA Health report analysis."
+    mark_run_completed()
+    return True
 
 
 def _clear_active_completed_analysis() -> None:
