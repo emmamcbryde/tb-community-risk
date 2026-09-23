@@ -25,6 +25,7 @@ from app.parameter_workspace import (
     validate_parameter_workspace,
 )
 from app.results_workbook import build_results_workbook
+from engine.apy.frozen_reference import is_frozen_sa_health_reference_eligible
 from engine.apy.working_defaults import (
     UNIFIED_WORKING_DEFAULT_LABEL,
     UNIFIED_WORKING_DEFAULT_PRESET_ID,
@@ -492,15 +493,97 @@ class APYWorkingDefaultsTests(unittest.TestCase):
 
         analysis_type = next(radio for radio in app.radio if radio.label == "Analysis type")
         self.assertEqual(analysis_type.value, "SA Health report analysis - 2,000 simulated communities")
+        self.assertEqual(app.session_state["setup_analysis_method"], analysis_type.value)
+        self.assertEqual(app.session_state["config"]["analysisMethod"], "agent_based")
+        self.assertTrue(is_frozen_sa_health_reference_eligible(app.session_state["config"]))
+        rendered_text = " ".join(
+            str(getattr(item, "value", ""))
+            for collection in (app.caption, app.markdown, app.info, app.warning)
+            for item in collection
+        )
+        self.assertNotIn(
+            "Both options use the fixed SA Health report assumptions for future TB. "
+            "The quick preview is a deterministic approximation. The 2,000-run analysis "
+            "reproduces the report method and shows variation across simulated communities.",
+            rendered_text,
+        )
+        self.assertFalse(any("setup_analysis_method" in item.value for item in app.warning))
         self.assertIn("Repetitions", [selectbox.label for selectbox in app.selectbox])
         self.assertIn("Random seed", [number_input.label for number_input in app.number_input])
 
         analysis_type.set_value("Quick deterministic preview - single expected-value calculation").run(timeout=30)
         self.assertEqual(app.session_state["config"]["analysisMethod"], "expected_value")
+        self.assertEqual(
+            next(radio for radio in app.radio if radio.label == "Analysis type").value,
+            "Quick deterministic preview - single expected-value calculation",
+        )
         self.assertNotIn("Repetitions", [selectbox.label for selectbox in app.selectbox])
         self.assertNotIn("Random seed", [number_input.label for number_input in app.number_input])
         self.assertEqual(changed_parameter_count(app.session_state["parameter_workspace"]), 0)
         self.assertGreater(changed_analysis_settings_count(app.session_state["parameter_workspace"]), 0)
+        app.run(timeout=30)
+        self.assertEqual(
+            next(radio for radio in app.radio if radio.label == "Analysis type").value,
+            "Quick deterministic preview - single expected-value calculation",
+        )
+        self.assertEqual(app.session_state["config"]["analysisMethod"], "expected_value")
+
+        run_app = AppTest.from_file(str(ROOT / "pages" / "2_Run_Model.py"), default_timeout=90)
+        run_app.session_state["config"] = app.session_state["config"]
+        run_app.session_state["economics_config"] = app.session_state["economics_config"]
+        run_app.run(timeout=90)
+        self.assertFalse(run_app.exception)
+        run_summary = next(
+            frame.value
+            for frame in run_app.dataframe
+            if {"Setting", "Value"}.issubset(set(frame.value.columns))
+        )
+        self.assertEqual(
+            run_summary.loc[run_summary["Setting"] == "Analysis type", "Value"].iloc[0],
+            "Quick deterministic preview - single expected-value calculation",
+        )
+        self.assertNotIn("Repetitions", set(run_summary["Setting"]))
+        self.assertNotIn("Random seed", set(run_summary["Setting"]))
+
+        next(radio for radio in app.radio if radio.label == "Analysis type").set_value(
+            "SA Health report analysis - 2,000 simulated communities"
+        ).run(timeout=30)
+        self.assertEqual(app.session_state["config"]["analysisMethod"], "agent_based")
+        self.assertEqual(
+            next(radio for radio in app.radio if radio.label == "Analysis type").value,
+            "SA Health report analysis - 2,000 simulated communities",
+        )
+        self.assertTrue(is_frozen_sa_health_reference_eligible(app.session_state["config"]))
+        app.run(timeout=30)
+        self.assertEqual(
+            next(radio for radio in app.radio if radio.label == "Analysis type").value,
+            "SA Health report analysis - 2,000 simulated communities",
+        )
+
+        run_app = AppTest.from_file(str(ROOT / "pages" / "2_Run_Model.py"), default_timeout=90)
+        run_app.session_state["config"] = app.session_state["config"]
+        run_app.session_state["economics_config"] = app.session_state["economics_config"]
+        run_app.run(timeout=90)
+        run_summary = next(
+            frame.value
+            for frame in run_app.dataframe
+            if {"Setting", "Value"}.issubset(set(frame.value.columns))
+        )
+        self.assertEqual(
+            run_summary.loc[run_summary["Setting"] == "Analysis type", "Value"].iloc[0],
+            "SA Health report analysis - 2,000 simulated communities",
+        )
+        self.assertEqual(run_summary.loc[run_summary["Setting"] == "Repetitions", "Value"].iloc[0], "2,000")
+        self.assertEqual(int(run_summary.loc[run_summary["Setting"] == "Random seed", "Value"].iloc[0]), 1)
+
+        next(button for button in app.button if button.label == "Restore APY defaults").click().run(timeout=90)
+        self.assertEqual(
+            next(radio for radio in app.radio if radio.label == "Analysis type").value,
+            "SA Health report analysis - 2,000 simulated communities",
+        )
+        self.assertEqual(app.session_state["config"]["analysisMethod"], "agent_based")
+        self.assertTrue(is_frozen_sa_health_reference_eligible(app.session_state["config"]))
+        self.assertEqual([button.label for button in app.button].count("Open Run Analysis"), 1)
 
     def test_start_page_wraps_arrow_safe_tables_in_streamlit_dataframe(self) -> None:
         text = (ROOT / "pages" / "0_Start.py").read_text(encoding="utf-8")

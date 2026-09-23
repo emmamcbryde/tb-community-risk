@@ -77,7 +77,8 @@ def _restore_unified_defaults() -> None:
     st.session_state["parameter_workspace_validation"] = None
     st.session_state.pop("recent_ltbi_run_route", None)
     st.session_state.pop("health_econ_workspace", None)
-    st.session_state.pop("setup_analysis_method", None)
+    st.session_state["setup_analysis_method"] = _analysis_mode_label(state["config"])
+    st.session_state["setup_restore_defaults_message"] = "APY / SA Health defaults restored."
     _bump_parameter_editor_version()
     if previous_config != state["config"]:
         mark_config_changed()
@@ -197,11 +198,6 @@ def _render_epidemiological_basis() -> None:
 
 def _render_analysis_settings_controls(config: dict[str, Any]) -> None:
     st.subheader("Analysis settings")
-    st.caption(
-        "Both options use the fixed SA Health report assumptions for future TB. "
-        "The quick preview is a deterministic approximation. The 2,000-run analysis "
-        "reproduces the report method and shows variation across simulated communities."
-    )
     before = deepcopy(config)
     method_options = list(MODEL_METHOD_LABELS.values())
     widget_key = "setup_analysis_method"
@@ -211,10 +207,12 @@ def _render_analysis_settings_controls(config: dict[str, Any]) -> None:
     method_label = st.radio(
         "Analysis type",
         method_options,
-        index=method_options.index(configured_label) if configured_label in method_options else 0,
+        index=None,
         horizontal=True,
         key=widget_key,
     )
+    if method_label not in method_options:
+        method_label = configured_label
     config["analysisMethod"] = next(
         (code for code, label in MODEL_METHOD_LABELS.items() if label == method_label),
         "expected_value",
@@ -430,6 +428,9 @@ if not isinstance(st.session_state.get("config"), dict) or not isinstance(st.ses
 sanitize_reference_only_state()
 
 st.title("Set up")
+restore_message = st.session_state.pop("setup_restore_defaults_message", "")
+if restore_message:
+    st.success(restore_message)
 st.write(
     "Define the population, screening strategy and model assumptions for the "
     "LTBI Screening Decision Tool. Changes to population, testing, treatment "
@@ -447,10 +448,7 @@ if isinstance(config, dict) and isinstance(econ, dict):
     _render_parameter_workspace()
     _render_age_risk_summary(st.session_state["config"])
 
-if st.button("Restore APY defaults", use_container_width=True):
-    _restore_unified_defaults()
-    st.success("APY / SA Health defaults restored.")
-    st.rerun()
+st.button("Restore APY defaults", use_container_width=True, on_click=_restore_unified_defaults)
 
 if isinstance(st.session_state.get("config"), dict):
     effective_config = st.session_state["config"]
