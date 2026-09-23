@@ -15,6 +15,7 @@ from app.results_page_display import (
     key_metric_rows_for_display,
 )
 from app.results_workbook import build_results_workbook
+from app.results_workbook import results_workbook_cache_key
 from app.state import (
     ensure_frozen_reference_loaded_if_eligible,
     init_session_state,
@@ -39,6 +40,7 @@ st.title("Results")
 
 bundle = st.session_state.get("results_bundle")
 if not bundle:
+    st.session_state.pop("prepared_results_workbook", None)
     notice = st.session_state.pop("reference_only_migration_notice", "")
     if notice:
         st.warning(notice)
@@ -140,29 +142,56 @@ if visual_rows:
 
 with st.expander("Export results", expanded=False):
     if st.session_state.get("results_stale"):
+        st.session_state.pop("prepared_results_workbook", None)
         st.warning("Workbook download is disabled until the analysis is rerun with the current inputs.")
     else:
-        workbook_bytes = build_results_workbook(
-            config=technical.get("interfaceConfig", {}),
+        decision_results = {
+            "scenarioComparison": st.session_state.get("decision_scenario_comparison"),
+            "sensitivity": st.session_state.get("decision_sensitivity"),
+            "threshold": st.session_state.get("decision_threshold"),
+            "earlyReview": st.session_state.get("decision_early_review"),
+        }
+        workbook_key = results_workbook_cache_key(
             bundle=bundle,
-            backend_status=st.session_state.get("backend_status"),
             economics_results=st.session_state.get("economics_results"),
             economics_config=economics_config,
             results_stale=False,
             dirty_economics=bool(st.session_state.get("dirty_economics")),
-            decision_analysis_results={
-                "scenarioComparison": st.session_state.get("decision_scenario_comparison"),
-                "sensitivity": st.session_state.get("decision_sensitivity"),
-                "threshold": st.session_state.get("decision_threshold"),
-                "earlyReview": st.session_state.get("decision_early_review"),
-            },
+            decision_analysis_results=decision_results,
         )
-        st.download_button(
-            "Download consolidated results workbook",
-            data=workbook_bytes,
-            file_name=f"{safe_download_stem(scenario_label, 'APY_results')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+        prepared = st.session_state.get("prepared_results_workbook")
+        if not isinstance(prepared, dict) or prepared.get("cacheKey") != workbook_key:
+            prepared = None
+            st.session_state.pop("prepared_results_workbook", None)
+        st.caption("Prepare the Excel workbook only when you need to download it. The Results page does not build it during ordinary viewing.")
+        if st.button("Prepare Excel workbook"):
+            with st.spinner("Preparing Excel workbook..."):
+                workbook_bytes = build_results_workbook(
+                    config=technical.get("interfaceConfig", {}),
+                    bundle=bundle,
+                    backend_status=st.session_state.get("backend_status"),
+                    economics_results=st.session_state.get("economics_results"),
+                    economics_config=economics_config,
+                    results_stale=False,
+                    dirty_economics=bool(st.session_state.get("dirty_economics")),
+                    decision_analysis_results=decision_results,
+                )
+            prepared = {
+                "cacheKey": workbook_key,
+                "bytes": workbook_bytes,
+                "fileName": f"{safe_download_stem(scenario_label, 'APY_results')}.xlsx",
+            }
+            st.session_state["prepared_results_workbook"] = prepared
+            st.success("Excel workbook prepared for the current results.")
+        if prepared:
+            st.download_button(
+                "Download consolidated results workbook",
+                data=prepared["bytes"],
+                file_name=prepared["fileName"],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        else:
+            st.info("Use Prepare Excel workbook to generate the downloadable workbook for the current results.")
 
     if downloads.get("available"):
         for label, key in (("Summary CSV", "summaryCsv"), ("Key metrics CSV", "keyMetricsCsv")):

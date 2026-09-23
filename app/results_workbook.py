@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from io import BytesIO
+import hashlib
+import json
 import subprocess
 from typing import Any
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
+import pandas as pd
 
 from app.epidemiology_inputs import (
     AGE_GROUP_LABELS,
@@ -34,6 +37,66 @@ PROGRESSION_MULTIPLIERS = {
     "female": "",
     "BCG": "",
 }
+
+RESULTS_WORKBOOK_EXPORT_CONTRACT_VERSION = "apy_results_workbook_v2_concise"
+WORKBOOK_FULL_ROW_LIMIT = 10_000
+
+
+def results_workbook_cache_key(
+    *,
+    bundle: dict[str, Any],
+    economics_results: dict[str, Any] | None = None,
+    economics_config: dict[str, Any] | None = None,
+    results_stale: bool = False,
+    dirty_economics: bool = False,
+    decision_analysis_results: dict[str, Any] | None = None,
+) -> str:
+    metadata = bundle.get("metadata") or {}
+    ledger_metadata = (((bundle.get("technical") or {}).get("eventLedger") or {}).get("metadata") or {})
+    econ_metadata = (economics_results or {}).get("metadata") or {}
+    first_replicate = _first_table_row((economics_results or {}).get("replicateResults"))
+    payload = {
+        "contractVersion": RESULTS_WORKBOOK_EXPORT_CONTRACT_VERSION,
+        "bundle": {
+            "configurationHash": metadata.get("configurationHash"),
+            "contractVersion": metadata.get("contractVersion"),
+            "analysisMethod": metadata.get("analysisMethod"),
+            "modelType": metadata.get("modelType"),
+            "analysisBasis": metadata.get("analysisBasis"),
+            "naturalHistorySemantics": metadata.get("naturalHistorySemantics"),
+            "nReps": metadata.get("nReps"),
+            "seed": metadata.get("seed"),
+            "frozenReferenceArtifact": metadata.get("frozenReferenceArtifact"),
+        },
+        "eventLedger": {
+            "configurationHash": ledger_metadata.get("configurationHash"),
+            "contractVersion": ledger_metadata.get("contractVersion"),
+            "analysisBasis": ledger_metadata.get("analysisBasis"),
+            "naturalHistorySemantics": ledger_metadata.get("naturalHistorySemantics"),
+            "packageId": ledger_metadata.get("packageId"),
+            "frozenReferenceArtifact": ledger_metadata.get("frozenReferenceArtifact"),
+        },
+        "economicsResults": {
+            "contractVersion": (economics_results or {}).get("contractVersion"),
+            "economicContractVersion": econ_metadata.get("economicContractVersion"),
+            "referenceStatus": econ_metadata.get("referenceStatus"),
+            "replicateEconomicConfigurationHash": first_replicate.get("economicConfigurationHash"),
+            "replicateConfigurationHash": first_replicate.get("configurationHash"),
+            "replicateContractVersion": first_replicate.get("replicateContractVersion"),
+            "summaryHash": _hash_jsonable((economics_results or {}).get("summaryRows") or []),
+        },
+        "economicsConfig": {
+            "metadataHash": _hash_jsonable((economics_config or {}).get("metadata") or {}),
+            "costItemsHash": _hash_jsonable((economics_config or {}).get("costItems") or []),
+            "discountingHash": _hash_jsonable((economics_config or {}).get("discounting") or {}),
+        },
+        "state": {
+            "resultsStale": bool(results_stale),
+            "dirtyEconomics": bool(dirty_economics),
+            "decisionHash": _hash_jsonable(decision_analysis_results or {}),
+        },
+    }
+    return _hash_jsonable(payload)
 
 
 def build_results_workbook(
@@ -234,12 +297,18 @@ def _write_event_ledger(wb: Workbook, bundle: dict[str, Any]) -> None:
     _write_rows_sheet(
         wb,
         "Event_ledger_totals",
-        _rows_from_table(downloads.get("eventLedgerTotals") or ledger.get("replicateTotals")),
+        _event_ledger_rows_for_workbook(
+            downloads.get("eventLedgerTotals") or ledger.get("replicateTotals"),
+            group_fields=["arm", "eventName"],
+        ),
     )
     _write_rows_sheet(
         wb,
         "Event_ledger_annual",
-        _rows_from_table(downloads.get("eventLedgerAnnual") or ledger.get("annualEvents")),
+        _event_ledger_rows_for_workbook(
+            downloads.get("eventLedgerAnnual") or ledger.get("annualEvents"),
+            group_fields=["arm", "modelYear", "eventName"],
+        ),
     )
     _write_rows_sheet(
         wb,
@@ -412,7 +481,7 @@ def _write_event_ledger_economics(
     _write_rows_sheet(
         wb,
         "Economic_annual_by_arm",
-        _rows_from_table(economics_results.get("annualByArm")),
+        _economic_annual_rows_for_workbook(economics_results.get("annualByArm")),
     )
     _write_rows_sheet(
         wb,
@@ -706,6 +775,74 @@ def _write_rows_to_existing_sheet(ws, rows: list[dict[str, Any]]) -> None:
     ws.auto_filter.ref = ws.dimensions
 
 
+def _event_ledger_rows_for_workbook(value: Any, *, group_fields: list[str]) -> list[dict[str, Any]]:
+    if _table_row_count(value) <= WORKBOOK_FULL_ROW_LIMIT:
+        return _rows_from_table(value)
+    frame = _frame_from_table(value)
+    if frame.empty or "value" not in frame.columns:
+        return _rows_from_table(value)
+    groups = [field for field in group_fields if field in frame.columns]
+    if not groups:
+        groups = ["eventName"] if "eventName" in frame.columns else []
+    values = pd.to_numeric(frame["value"], errors="coerce")
+    work = frame[groups].copy() if groups else pd.DataFrame(index=frame.index)
+    work["value"] = values
+    grouped = work.groupby(groups, dropna=False)["value"] if groups else work.groupby(lambda _: "all")["value"]
+    out = grouped.agg(
+        rowCount="count",
+        meanValue="mean",
+        medianValue="median",
+        low95=lambda series: series.quantile(0.025),
+        high95=lambda series: series.quantile(0.975),
+        minValue="min",
+        maxValue="max",
+    ).reset_index()
+    if "replicateId" in frame.columns and groups:
+        replicate_counts = frame.groupby(groups, dropna=False)["replicateId"].nunique().reset_index(name="replicateCount")
+        out = out.merge(replicate_counts, on=groups, how="left")
+    out.insert(
+        0,
+        "Workbook export note",
+        f"Large event-ledger table summarised from {_table_row_count(value):,} technical rows.",
+    )
+    return out.to_dict(orient="records")
+
+
+def _economic_annual_rows_for_workbook(value: Any) -> list[dict[str, Any]]:
+    if _table_row_count(value) <= WORKBOOK_FULL_ROW_LIMIT:
+        return _rows_from_table(value)
+    frame = _frame_from_table(value)
+    if frame.empty:
+        return []
+    group_fields = [field for field in ["discountProfile", "modelYear", "arm"] if field in frame.columns]
+    preferred_numeric = [
+        "totalUndiscountedCost",
+        "totalDiscountedCost",
+        "screeningTestCost",
+        "returnForResultsCost",
+        "clinicalReviewCost",
+        "activeTBExclusionWorkupCost",
+        "tptRegimenCost",
+        "adrManagementCost",
+        "programSetupCost",
+        "programRunningCost",
+        "travelOutreachStaffSupportCost",
+        "activeTBDiseaseCost",
+    ]
+    numeric_fields = [field for field in preferred_numeric if field in frame.columns]
+    work = frame[group_fields + numeric_fields].copy()
+    for field in numeric_fields:
+        work[field] = pd.to_numeric(work[field], errors="coerce")
+    summary = work.groupby(group_fields, dropna=False)[numeric_fields].mean().reset_index()
+    summary.insert(
+        0,
+        "Workbook export note",
+        f"Large annual economics table summarised from {_table_row_count(value):,} arm-year technical rows.",
+    )
+    summary["Statistic"] = "Mean across simulated-community replicates"
+    return summary.to_dict(orient="records")
+
+
 def _rows_from_table(value: Any) -> list[dict[str, Any]]:
     if value is None:
         return []
@@ -714,6 +851,57 @@ def _rows_from_table(value: Any) -> list[dict[str, Any]]:
     if hasattr(value, "to_dict"):
         return value.to_dict(orient="records")
     return []
+
+
+def _frame_from_table(value: Any) -> pd.DataFrame:
+    if value is None:
+        return pd.DataFrame()
+    if isinstance(value, pd.DataFrame):
+        return value.copy()
+    if isinstance(value, list):
+        return pd.DataFrame(value)
+    if hasattr(value, "to_dict"):
+        return pd.DataFrame(value.to_dict(orient="records"))
+    return pd.DataFrame()
+
+
+def _table_row_count(value: Any) -> int:
+    if value is None:
+        return 0
+    if hasattr(value, "__len__"):
+        try:
+            return len(value)
+        except Exception:
+            return 0
+    return 0
+
+
+def _first_table_row(value: Any) -> dict[str, Any]:
+    frame = _frame_from_table(value)
+    if frame.empty:
+        return {}
+    return dict(frame.iloc[0].to_dict())
+
+
+def _hash_jsonable(value: Any) -> str:
+    return hashlib.sha256(json.dumps(_jsonable(value), sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+def _jsonable(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, pd.DataFrame):
+        return value.to_dict(orient="records")
+    try:
+        if hasattr(value, "item"):
+            return value.item()
+    except Exception:
+        pass
+    return str(value)
 
 
 def _autosize_all(wb: Workbook) -> None:

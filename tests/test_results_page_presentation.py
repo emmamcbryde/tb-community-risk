@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import importlib
+from io import BytesIO
 import sys
+import time
 import unittest
 from pathlib import Path
+from copy import deepcopy
+from unittest.mock import patch
 
+from openpyxl import load_workbook
 import streamlit as st
 from streamlit.testing.v1 import AppTest
 
@@ -15,6 +20,8 @@ from app.results_page_display import (
     key_metric_rows_for_display,
     results_rows_for_display,
 )
+from app.results_workbook import build_results_workbook, results_workbook_cache_key
+from engine.apy.frozen_reference import load_frozen_reference_results
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -133,6 +140,128 @@ class ResultsPagePresentationTests(unittest.TestCase):
         self.assertEqual(list(rendered.columns), ["Outcome", "Expected value", "Low 95%", "High 95%"])
         self.assertEqual(rendered.loc[0, "Low 95%"], "N/A")
         self.assertEqual(rendered.loc[0, "High 95%"], "N/A")
+
+    def test_results_page_does_not_build_workbook_during_render(self) -> None:
+        start = time.perf_counter()
+        with patch(
+            "app.results_workbook.build_results_workbook",
+            side_effect=AssertionError("Workbook should not be built during ordinary Results rendering"),
+        ):
+            app = AppTest.from_file(str(ROOT / "pages" / "3_Results.py"), default_timeout=120)
+            app.run(timeout=120)
+        elapsed = time.perf_counter() - start
+
+        self.assertFalse(app.exception)
+        self.assertLess(elapsed, 30.0)
+        self.assertIn("Prepare Excel workbook", [button.label for button in app.button])
+        self.assertNotIn("prepared_results_workbook", app.session_state)
+
+    def test_results_page_prepares_parseable_workbook_only_after_click_and_reuses_cache(self) -> None:
+        with patch("app.results_workbook.build_results_workbook", wraps=build_results_workbook) as wrapped:
+            app = AppTest.from_file(str(ROOT / "pages" / "3_Results.py"), default_timeout=120)
+            app.run(timeout=120)
+            self.assertEqual(wrapped.call_count, 0)
+
+            next(button for button in app.button if button.label == "Prepare Excel workbook").click().run(timeout=120)
+            self.assertEqual(wrapped.call_count, 1)
+            prepared = app.session_state["prepared_results_workbook"]
+            payload = prepared["bytes"]
+            self.assertGreater(len(payload), 1000)
+
+            workbook = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+            try:
+                self.assertIn("Headline_results", workbook.sheetnames)
+                self.assertIn("Economic_annual_by_arm", workbook.sheetnames)
+                self.assertIn("Economic_replicates", workbook.sheetnames)
+                headline_rows = list(workbook["Headline_results"].iter_rows(values_only=True))
+                self.assertGreater(len(headline_rows), 1)
+                annual_rows = list(workbook["Economic_annual_by_arm"].iter_rows(values_only=True))
+                annual_headers = set(annual_rows[0])
+                self.assertIn("Workbook export note", annual_headers)
+                self.assertLess(len(annual_rows), 500)
+            finally:
+                workbook.close()
+
+            app.run(timeout=120)
+            self.assertEqual(wrapped.call_count, 1)
+            self.assertEqual(app.session_state["prepared_results_workbook"]["bytes"], payload)
+            self.assertTrue(
+                any(
+                    getattr(item, "type", None) == "download_button"
+                    and getattr(item, "label", "") == "Download consolidated results workbook"
+                    for item in app
+                )
+            )
+
+    def test_results_workbook_cache_key_changes_with_economic_and_epidemiological_inputs(self) -> None:
+        payload = load_frozen_reference_results()
+        bundle = payload["resultsBundle"]
+        economics = payload["referenceEconomics"]
+        economics_config = payload["economicsConfig"]
+
+        base_key = results_workbook_cache_key(
+            bundle=bundle,
+            economics_results=economics,
+            economics_config=economics_config,
+            results_stale=False,
+            dirty_economics=False,
+            decision_analysis_results={},
+        )
+        changed_economics = deepcopy(economics_config)
+        changed_economics.setdefault("metadata", {})["unit-test-change"] = "changed"
+        changed_bundle = deepcopy(bundle)
+        changed_bundle.setdefault("metadata", {})["configurationHash"] = "different-configuration"
+        deterministic_bundle = deepcopy(bundle)
+        deterministic_bundle.setdefault("metadata", {})["modelType"] = "expected_value"
+        deterministic_bundle["metadata"]["analysisMethod"] = "expected_value"
+
+        self.assertNotEqual(
+            base_key,
+            results_workbook_cache_key(
+                bundle=bundle,
+                economics_results=economics,
+                economics_config=changed_economics,
+                results_stale=False,
+                dirty_economics=False,
+                decision_analysis_results={},
+            ),
+        )
+        self.assertNotEqual(
+            base_key,
+            results_workbook_cache_key(
+                bundle=changed_bundle,
+                economics_results=economics,
+                economics_config=economics_config,
+                results_stale=False,
+                dirty_economics=False,
+                decision_analysis_results={},
+            ),
+        )
+        self.assertNotEqual(
+            base_key,
+            results_workbook_cache_key(
+                bundle=deterministic_bundle,
+                economics_results=economics,
+                economics_config=economics_config,
+                results_stale=False,
+                dirty_economics=False,
+                decision_analysis_results={},
+            ),
+        )
+
+    def test_results_page_clears_prepared_workbook_for_stale_results(self) -> None:
+        payload = load_frozen_reference_results()
+        app = AppTest.from_file(str(ROOT / "pages" / "3_Results.py"), default_timeout=120)
+        app.session_state["results_bundle"] = payload["resultsBundle"]
+        app.session_state["economics_results"] = payload["referenceEconomics"]
+        app.session_state["economics_config"] = payload["economicsConfig"]
+        app.session_state["prepared_results_workbook"] = {"cacheKey": "old", "bytes": b"old", "fileName": "old.xlsx"}
+        app.session_state["results_stale"] = True
+
+        app.run(timeout=120)
+
+        self.assertFalse(app.exception)
+        self.assertNotIn("prepared_results_workbook", app.session_state)
 
     def test_key_metrics_include_active_tb_comparator_intervention_and_reduction(self) -> None:
         key_rows = [{"Metric": "nScreened", "Median": 450, "Low95": 450, "High95": 450}]
