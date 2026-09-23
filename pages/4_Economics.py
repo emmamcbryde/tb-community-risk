@@ -1187,6 +1187,138 @@ def _cost_effectiveness_plane_chart(
     return alt.layer(horizontal, vertical, *layers, points, labels).properties(height=360)
 
 
+def _annual_budget_impact_chart(rows: list[dict[str, Any]]) -> alt.Chart:
+    frame = pd.DataFrame(rows)
+    series = [
+        "Intervention delivery expenditure",
+        "Comparator active-TB care",
+        "Intervention active-TB care",
+        "Annual incremental cost",
+    ]
+    available = [column for column in series if column in frame.columns]
+    if frame.empty or not available:
+        return alt.Chart(pd.DataFrame({"Year": [], "Cost series": [], "Annual cost (AUD)": []})).mark_line()
+    long_frame = frame.melt(
+        id_vars=["Year"],
+        value_vars=available,
+        var_name="Cost series",
+        value_name="Annual cost (AUD)",
+    )
+    long_frame["Annual cost (AUD)"] = pd.to_numeric(long_frame["Annual cost (AUD)"], errors="coerce").fillna(0.0)
+    return (
+        alt.Chart(long_frame)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("Year:Q", title="Model year", axis=alt.Axis(tickMinStep=1)),
+            y=alt.Y("Annual cost (AUD):Q", title="Annual cost (AUD)", axis=alt.Axis(format=",.0f")),
+            color=alt.Color("Cost series:N", legend=alt.Legend(title="Cost series", orient="bottom")),
+            tooltip=[
+                alt.Tooltip("Year:Q", format=".0f"),
+                alt.Tooltip("Cost series:N"),
+                alt.Tooltip("Annual cost (AUD):Q", format=",.0f"),
+            ],
+        )
+        .properties(height=320)
+    )
+
+
+def render_decision_figures(
+    *,
+    results_bundle: dict[str, Any],
+    econ_config: dict[str, Any],
+    econ_results: dict[str, Any] | None,
+    controls: dict[str, Any],
+    scenario_label: str | None,
+) -> None:
+    try:
+        scenario_rows = delivery_scenario_comparison_rows(
+            results_bundle=results_bundle,
+            economics_config=econ_config,
+            controls=controls,
+        )
+        applied_controls = st.session_state.get("applied_programme_cost_controls") or DELIVERY_SCENARIO_DEFAULTS
+        applied_values = _programme_control_values(applied_controls)
+        base_incremental = float(scenario_rows[0]["_incrementalCostRaw"]) if scenario_rows else 0.0
+        current_incremental = primary_economic_values(econ_results, results_bundle)["incrementalCost"]
+        applied_source = "User-defined" if _additional_programme_costs_enabled(applied_controls) else "Not locally costed"
+        st.markdown("Applied programme costs")
+        st.dataframe(
+            arrow_safe_dataframe(
+                [
+                    {
+                        "One-off setup cost": _money(applied_values["setup_cost"]),
+                        "Annual running cost": _money(applied_values["annual_running_cost"]),
+                        "Years applied": int(applied_values["running_years"]),
+                        "First year": int(applied_values["first_running_year"]),
+                        "Discounted total additional programme cost": _money(current_incremental - base_incremental),
+                        "Source": applied_source,
+                    }
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.dataframe(
+            arrow_safe_dataframe([{key: value for key, value in row.items() if not key.startswith("_")} for row in scenario_rows]),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        budget_rows = budget_impact_rows(econ_results)
+        if budget_rows:
+            st.markdown("Annual budget impact")
+            st.altair_chart(_annual_budget_impact_chart(budget_rows), use_container_width=True)
+
+        st.markdown("Incremental cost-effectiveness plane")
+        plane_rows = cost_effectiveness_plane_rows(
+            results_bundle=results_bundle,
+            economics_config=econ_config,
+            current_economics=econ_results,
+            controls=applied_controls,
+        )
+        cloud_rows = stochastic_icer_cloud_rows(
+            econ_results=econ_results,
+            results_bundle=results_bundle,
+            economics_config=econ_config,
+        )
+        if cloud_rows:
+            st.caption(f"Showing {len(cloud_rows):,} paired simulated-community outcomes.")
+        st.altair_chart(_cost_effectiveness_plane_chart(plane_rows, cloud_rows=cloud_rows), use_container_width=True)
+        if cloud_rows:
+            interval_rows = stochastic_simulation_interval_rows(econ_results)
+            if interval_rows:
+                st.markdown("Stochastic simulation intervals")
+                st.dataframe(arrow_safe_dataframe(interval_rows), use_container_width=True, hide_index=True)
+                st.caption(
+                    "These are empirical simulation intervals across the 2,000 simulated communities, "
+                    "not confidence intervals for the population mean."
+                )
+            st.caption(
+                "Each point represents one simulated community using the fixed SA Health report assumptions. "
+                "The cloud shows variation generated by the stochastic model. It does not include all parameter, "
+                "evidence or structural uncertainty."
+            )
+            st.download_button(
+                "Download paired stochastic ICER outcomes CSV",
+                data=stochastic_icer_cloud_csv(cloud_rows),
+                file_name=f"{safe_download_stem(scenario_label, 'paired_stochastic_icer_outcomes')}.csv",
+                mime="text/csv",
+            )
+        else:
+            st.caption(
+                "Quick deterministic previews display a single expected-value point. "
+                "Run the SA Health report analysis to show the paired stochastic cloud."
+            )
+        st.caption(
+            "Economic-only changes move the current analysis vertically on the ICER plane. "
+            "They change costs but do not change DALYs or active TB cases averted. "
+            "The frozen SA Health report reference may have a different horizontal position because it is based on "
+            "the frozen stochastic report analysis rather than the current completed analysis."
+        )
+    except Exception as exc:
+        st.error(f"Economic scenario comparison failed: {exc}")
+
+
 def headline_rows(
     *,
     econ_results: dict[str, Any] | None,
@@ -1607,6 +1739,13 @@ st.caption(
     "All scenarios reuse the same screening outcomes. Change costs below before interpreting the scenario table. "
     "No additional programme overhead entered means no local overhead has been entered; it does not mean implementation is costless."
 )
+render_decision_figures(
+    results_bundle=results_bundle,
+    econ_config=econ_config,
+    econ_results=econ_results,
+    controls=controls,
+    scenario_label=scenario_label,
+)
 
 with st.expander("Change cost assumptions", expanded=True):
     st.caption(
@@ -1864,91 +2003,6 @@ if action_cols[1].button("Restore SA Health economic defaults", use_container_wi
     st.session_state["health_econ_skip_action_replay"] = True
     st.rerun()
 
-try:
-    scenario_rows = delivery_scenario_comparison_rows(
-        results_bundle=results_bundle,
-        economics_config=econ_config,
-        controls=controls,
-    )
-    applied_controls = st.session_state.get("applied_programme_cost_controls") or DELIVERY_SCENARIO_DEFAULTS
-    applied_values = _programme_control_values(applied_controls)
-    base_incremental = float(scenario_rows[0]["_incrementalCostRaw"]) if scenario_rows else 0.0
-    current_incremental = primary_economic_values(
-        st.session_state.get("economics_results"),
-        results_bundle,
-    )["incrementalCost"]
-    applied_source = "User-defined" if _additional_programme_costs_enabled(applied_controls) else "Not locally costed"
-    st.markdown("Applied programme costs")
-    st.dataframe(
-        arrow_safe_dataframe(
-            [
-                {
-                    "One-off setup cost": _money(applied_values["setup_cost"]),
-                    "Annual running cost": _money(applied_values["annual_running_cost"]),
-                    "Years applied": int(applied_values["running_years"]),
-                    "First year": int(applied_values["first_running_year"]),
-                    "Discounted total additional programme cost": _money(current_incremental - base_incremental),
-                    "Source": applied_source,
-                }
-            ]
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.dataframe(
-        arrow_safe_dataframe([{key: value for key, value in row.items() if not key.startswith("_")} for row in scenario_rows]),
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.markdown("Incremental cost-effectiveness plane")
-    plane_rows = cost_effectiveness_plane_rows(
-        results_bundle=results_bundle,
-        economics_config=econ_config,
-        current_economics=st.session_state.get("economics_results"),
-        controls=applied_controls,
-    )
-    cloud_rows = stochastic_icer_cloud_rows(
-        econ_results=st.session_state.get("economics_results"),
-        results_bundle=results_bundle,
-        economics_config=econ_config,
-    )
-    if cloud_rows:
-        st.caption(f"Showing {len(cloud_rows):,} paired simulated-community outcomes.")
-    st.altair_chart(_cost_effectiveness_plane_chart(plane_rows, cloud_rows=cloud_rows), use_container_width=True)
-    if cloud_rows:
-        interval_rows = stochastic_simulation_interval_rows(st.session_state.get("economics_results"))
-        if interval_rows:
-            st.markdown("Stochastic simulation intervals")
-            st.dataframe(arrow_safe_dataframe(interval_rows), use_container_width=True, hide_index=True)
-            st.caption(
-                "These are empirical simulation intervals across the 2,000 simulated communities, "
-                "not confidence intervals for the population mean."
-            )
-        st.caption(
-            "Each point represents one simulated community using the fixed SA Health report assumptions. "
-            "The cloud shows variation generated by the stochastic model. It does not include all parameter, "
-            "evidence or structural uncertainty."
-        )
-        st.download_button(
-            "Download paired stochastic ICER outcomes CSV",
-            data=stochastic_icer_cloud_csv(cloud_rows),
-            file_name=f"{safe_download_stem(scenario_label, 'paired_stochastic_icer_outcomes')}.csv",
-            mime="text/csv",
-        )
-    else:
-        st.caption(
-            "Quick deterministic previews display a single expected-value point. "
-            "Run the SA Health report analysis to show the paired stochastic cloud."
-        )
-    st.caption(
-        "Economic-only changes move the current analysis vertically on the ICER plane. "
-        "They change costs but do not change DALYs or active TB cases averted. "
-        "The frozen SA Health report reference may have a different horizontal position because it is based on "
-        "the frozen stochastic report analysis rather than the current completed analysis."
-    )
-except Exception as exc:
-    st.error(f"Economic scenario comparison failed: {exc}")
-
 st.subheader("Cost breakdown and budget impact")
 if econ_results:
     cost_rows = cost_category_rows(econ_results)
@@ -1968,12 +2022,7 @@ if econ_results:
         st.dataframe(arrow_safe_dataframe(cost_rows), use_container_width=True, hide_index=True)
     budget_rows = budget_impact_rows(econ_results)
     if budget_rows:
-        st.line_chart(
-            pd.DataFrame(budget_rows).set_index("Year")[
-                ["Intervention delivery expenditure", "Comparator active-TB care", "Intervention active-TB care"]
-            ],
-            use_container_width=True,
-        )
+        st.markdown("Annual budget-impact table")
         st.dataframe(arrow_safe_dataframe(budget_rows), use_container_width=True, hide_index=True)
     be_rows = break_even_rows(econ_results)
     if be_rows:

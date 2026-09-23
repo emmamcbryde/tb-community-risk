@@ -4,6 +4,7 @@ from copy import deepcopy
 import csv
 import json
 from pathlib import Path
+from unittest.mock import patch
 import unittest
 
 import pyarrow as pa
@@ -542,6 +543,45 @@ class SAHealthReferencePackageTests(unittest.TestCase):
             )
         )
 
+    def test_health_economics_direct_frozen_reference_renders_budget_and_icer_figures(self) -> None:
+        with patch(
+            "adapters.python_apy_backend.PythonApyBackend.run_scenario_bundle",
+            side_effect=AssertionError("Frozen reference page load should not invoke the stochastic runner"),
+        ):
+            app = AppTest.from_file(str(ROOT / "pages" / "4_Economics.py"), default_timeout=120)
+            app.run(timeout=120)
+
+        self.assertFalse(app.exception)
+        markdown = [item.value for item in app.markdown]
+        self.assertIn("Annual budget impact", markdown)
+        self.assertIn("Incremental cost-effectiveness plane", markdown)
+        chart_count = sum(1 for item in app if getattr(item, "type", None) == "arrow_vega_lite_chart")
+        self.assertGreaterEqual(chart_count, 2)
+
+        annual_rows = self._annual_budget_chart_rows(app)
+        self.assertEqual(set(annual_rows["Cost series"]), {
+            "Intervention delivery expenditure",
+            "Comparator active-TB care",
+            "Intervention active-TB care",
+            "Annual incremental cost",
+        })
+        self.assertGreater(len(annual_rows), 0)
+
+        cloud = self._icer_cloud_rows(app)
+        self.assertEqual(len(cloud), 2000)
+        self.assertTrue(
+            any("Showing 2,000 paired simulated-community outcomes." in item.value for item in app.caption)
+        )
+        self.assertTrue(
+            any(
+                {"Outcome", "Mean", "Low 95%", "High 95%"}.issubset(set(getattr(item.value, "columns", [])))
+                for item in app.dataframe
+            )
+        )
+        budget_table = self._budget_impact_table(app)
+        aggregate = self._summary_mean(app.session_state["economics_results"], "incrementalCost")
+        self.assertAlmostEqual(float(budget_table["Annual incremental cost"].sum()), aggregate, places=6)
+
     def test_health_economics_setup_cost_shifts_every_stochastic_cloud_point_vertically(self) -> None:
         controls = self._programme_controls(setup=500000.0, annual=0.0, years=2, first_year=0)
         bundle = self._results_bundle_with_programme_timing(controls)
@@ -592,6 +632,9 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         before_cost = self._summary_mean(before, "incrementalCost")
         before_dalys = self._summary_mean(before, "dalysAverted")
         before_tb = self._summary_mean(before, "activeTBCasesPrevented")
+        before_costs = dict(before.get("costs") or {})
+        self.assertGreater(len(self._annual_budget_chart_rows(app)), 0)
+        self.assertGreater(len(self._icer_cloud_rows(app)), 0)
 
         next(item for item in app.number_input if item.label == "One-off programme setup cost (AUD)").set_value(100000.0).run()
         next(item for item in app.number_input if item.label == "IGRA screening test per person - Value used by model").set_value(125.0).run()
@@ -602,13 +645,25 @@ class SAHealthReferencePackageTests(unittest.TestCase):
         after_cost = self._summary_mean(after, "incrementalCost")
         after_dalys = self._summary_mean(after, "dalysAverted")
         after_tb = self._summary_mean(after, "activeTBCasesPrevented")
+        after_costs = dict(after.get("costs") or {})
         self.assertGreater(after_cost, before_cost + 100000.0)
         self.assertAlmostEqual(after_dalys, before_dalys, places=10)
         self.assertAlmostEqual(after_tb, before_tb, places=10)
+        for key, value in before_costs.items():
+            if key in {"programSetupCost", "programRunningCost", "travelOutreachStaffSupportCost", "testingCost"}:
+                continue
+            try:
+                original = float(value)
+            except (TypeError, ValueError):
+                continue
+            if abs(original) > 1e-9:
+                self.assertNotAlmostEqual(float(after_costs.get(key, 0.0)), 0.0, places=6, msg=key)
         self.assertEqual(
             app.session_state["applied_programme_cost_controls"]["standaloneSetupCost"],
             100000.0,
         )
+        self.assertGreater(len(self._annual_budget_chart_rows(app)), 0)
+        self.assertGreater(len(self._icer_cloud_rows(app)), 0)
         applied_rows = app.session_state["health_econ_workspace"]["rows"]
         igra = next(row for row in applied_rows if row["assumptionId"] == "cost.test_igra")
         self.assertEqual(igra["sourceCitation"], "User-defined")
@@ -702,6 +757,31 @@ class SAHealthReferencePackageTests(unittest.TestCase):
             item.value for item in app.dataframe
             if "Scenario" in set(getattr(item.value, "columns", []))
         )
+
+    @staticmethod
+    def _budget_impact_table(app: AppTest):
+        return next(
+            item.value for item in app.dataframe
+            if {"Year", "Annual incremental cost", "Cumulative incremental cost"}.issubset(
+                set(getattr(item.value, "columns", []))
+            )
+        )
+
+    @staticmethod
+    def _annual_budget_chart_rows(app: AppTest):
+        for item in app:
+            if getattr(item, "type", None) != "arrow_vega_lite_chart":
+                continue
+            if "Annual cost (AUD)" not in str(item.proto.spec):
+                continue
+            for dataset in item.proto.datasets:
+                try:
+                    frame = pa.ipc.open_stream(dataset.data.data).read_pandas()
+                except (pa.ArrowInvalid, OSError):
+                    continue
+                if {"Year", "Cost series", "Annual cost (AUD)"}.issubset(set(frame.columns)):
+                    return frame
+        raise AssertionError("Rendered annual budget-impact chart rows were not found")
 
     @staticmethod
     def _icer_chart_rows(app: AppTest):
