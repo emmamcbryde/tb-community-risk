@@ -145,15 +145,35 @@ def build_engine_config(
 def profile_link(profile: PopulationProfile, snapshot_manifest: dict[str, Any] | None = None) -> dict[str, Any]:
     """Provenance attached to runs so saved analyses identify their exact inputs."""
     manifest = snapshot_manifest or {}
+    detail = dict(profile.incidence.source_detail)
     return {
         "linkVersion": GENERAL_PROFILE_LINK_VERSION,
         "profileId": profile.profile_id,
+        "profileName": profile.name,
         "profileSchemaVersion": profile.schema_version,
         "profileHash": profile.profile_hash(),
+        "location": profile.location.name,
+        "iso3": profile.location.iso3,
+        "incidenceProvenance": profile.incidence.provenance.value,
         "incidenceSnapshotId": profile.incidence.snapshot_id,
-        "incidenceSnapshotDataSha256": ((manifest.get("dataFile") or {}).get("sha256")),
+        "incidenceSnapshotDataSha256": detail.get("dataSha256") or ((manifest.get("dataFile") or {}).get("sha256")),
+        "incidenceDataHash": profile.incidence.data_hash,
+        "incidenceUsedByEngine": False,
         "dataVintage": profile.data_vintage,
     }
+
+
+NON_EPIDEMIOLOGICAL_KEYS = {"generalProfileLink", "scenarioLabel", "analysisMethodLabel", "simulationModeLabel"}
+
+
+def epidemiological_config_hash(config: dict[str, Any]) -> str:
+    """Hash of the engine inputs that determine health outcomes (labels and provenance excluded)."""
+    import hashlib
+    import json
+
+    payload = {key: value for key, value in config.items() if key not in NON_EPIDEMIOLOGICAL_KEYS}
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def effect_interpretation_rows(profile: PopulationProfile) -> list[dict[str, str]]:

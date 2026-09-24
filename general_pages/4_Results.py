@@ -6,10 +6,10 @@ from app.display import arrow_safe_dataframe
 from app.general.state import (
     RESULTS_CONFIG_KEY,
     RESULTS_KEY,
-    STALE_KEY,
     bundle_outcome_records,
     init_general_state,
     page_link,
+    results_status,
 )
 from app.icon_arrays import build_100_person_visual_data, render_100_person_summary
 from app.results_page_display import (
@@ -35,8 +35,8 @@ technical = bundle.get("technical", {})
 model_type = metadata.get("modelType") or metadata.get("analysisMethod")
 link = config.get("generalProfileLink") or {}
 
-if st.session_state.get(STALE_KEY):
-    st.warning("These results are out of date because inputs changed after the last run.")
+if results_status() == "stale":
+    st.warning("These results are out of date: inputs that affect health outcomes changed after the last run.")
 else:
     st.success("Results are current for the saved inputs.")
 
@@ -45,8 +45,14 @@ if model_type == "agent_based":
 else:
     st.caption("Deterministic expected-value preview: a single calculation without simulation variation.")
 if link:
+    location = link.get("location") or "Demonstration profile"
     snapshot = link.get("incidenceSnapshotId") or "none"
-    st.caption(f"Profile {link.get('profileId')} · incidence snapshot {snapshot}.")
+    st.caption(f"Profile: {link.get('profileName') or link.get('profileId')} · location: {location} · incidence snapshot: {snapshot}.")
+    if link.get("incidenceProvenance") in {"who_snapshot", "local_upload"}:
+        st.info(
+            "These results use the demonstration epidemiological assumptions. The applied incidence data are "
+            "descriptive only, so the results are not a country-specific estimate."
+        )
 st.caption(
     "Results estimate direct benefits, harms and costs for people screened and treated. "
     "Transmission-mediated benefits are not yet included."
@@ -61,9 +67,12 @@ if key_rows:
     st.dataframe(arrow_safe_dataframe(format_interval_cells_for_display(key_rows)), use_container_width=True, hide_index=True)
     if model_type == "agent_based":
         st.caption(
-            "Median and 95% range across simulated populations. These ranges describe simulation variation; "
-            "they are not confidence intervals."
+            "Median with a 95% simulation interval across simulated populations. Simulation intervals show "
+            "community-to-community variation only; they are not confidence intervals and do not include WHO "
+            "incidence uncertainty, parameter uncertainty or structural uncertainty."
         )
+    else:
+        st.caption("Simulation intervals are not applicable (N/A) to a single deterministic calculation.")
 else:
     st.info("Key results are unavailable for this run.")
 
@@ -82,3 +91,4 @@ st.warning(
     "Review Inputs still needing local evidence before using results for planning."
 )
 page_link("general_pages/5_Health_economics.py", label="Continue to Health economics")
+page_link("general_pages/6_Evidence_and_technical_information.py", label="Downloads and technical information")
