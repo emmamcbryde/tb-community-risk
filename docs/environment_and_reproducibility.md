@@ -98,6 +98,20 @@ The 90 s limits remain tight on emulated ARM64 hardware: `check_environment.py`
 warns about this, and heavy background load on the machine can still cause
 timeouts.
 
+## Test-isolation finding (full suite, clean Streamlit 1.39 environment)
+
+`tests/test_dynamic_abm_compare_page_helpers.py`, part of the frozen release,
+replaces `sys.modules["streamlit"]` with a mock at module level and never restores
+it. Any later test in the same process that imports Streamlit at run time,
+including `AppTest._run`, which reads `st.secrets`, then gets the mock. In the first
+full run, all 16 general-interface tests that sort after it failed with
+`module 'streamlit' has no attribute 'secrets'`. They pass when run alone.
+
+`tests/test_general_app_interface.py` now restores the real Streamlit module
+before each render; no assertions were changed. The existing test file was not
+edited, because it belongs to the frozen release. The recommended future fix is
+to wrap its module replacement in `patch.dict(sys.modules, ...)`.
+
 ## Windows cleanup warnings
 
 * Streamlit may log `missing ScriptRunContext` and `use_container_width` deprecation

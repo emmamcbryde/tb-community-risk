@@ -4,10 +4,12 @@ from pathlib import Path
 import io
 import re
 import socket
+import sys
 import unittest
 from unittest.mock import patch
 import zipfile
 
+import streamlit as _real_streamlit
 from streamlit.testing.v1 import AppTest
 
 from app.general.terminology import (
@@ -64,7 +66,13 @@ def _visible_text(app: AppTest) -> list[str]:
     return texts
 
 
+def _ensure_real_streamlit() -> None:
+    """Another test module replaces sys.modules["streamlit"] with a mock and does not restore it."""
+    sys.modules["streamlit"] = _real_streamlit
+
+
 def _render(path: Path, session: dict | None = None) -> AppTest:
+    _ensure_real_streamlit()
     app = AppTest.from_file(str(path), default_timeout=300)
     for key, value in (session or {}).items():
         app.session_state[key] = value
@@ -74,6 +82,7 @@ def _render(path: Path, session: dict | None = None) -> AppTest:
 
 
 def _run(element) -> None:
+    _ensure_real_streamlit()
     with patch.object(socket.socket, "connect", _no_network):
         element.run(timeout=300)
 
