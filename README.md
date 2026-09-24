@@ -10,6 +10,16 @@ streamlit run streamlit_app.py
 
 The model is intended to support public health planning and sequencing. It is not a diagnostic tool, a clinical decision rule, or a tool for denying screening or treatment to any individual.
 
+### General community TB application (in development)
+
+The `feature/general-community-tb-model` branch adds a separate, setting-neutral entry point:
+
+```bash
+streamlit run general_app.py
+```
+
+It uses demonstration working defaults, a versioned population-profile contract and an offline WHO incidence snapshot. See `docs/general_app_milestone1.md`. The frozen release (`sa-health-apy-he-v1.0.0`) and `streamlit_app.py` are unchanged.
+
 ---
 
 ## What is included

@@ -1,0 +1,69 @@
+{
+  "adapter": "gtbreport_inc_mort_est_rda",
+  "citation": "World Health Organization. Global tuberculosis report 2025. Geneva: WHO; 2025.",
+  "columns": [
+    "iso3",
+    "country",
+    "year",
+    "incidence_per_100k",
+    "incidence_per_100k_lo",
+    "incidence_per_100k_hi",
+    "incident_cases",
+    "incident_cases_lo",
+    "incident_cases_hi",
+    "population",
+    "estimation_method"
+  ],
+  "countries": [
+    "AUS",
+    "BRA",
+    "GBR",
+    "IDN",
+    "PHL",
+    "ZAF"
+  ],
+  "dataFile": {
+    "filename": "who-gtb2025-fixture-v1.csv",
+    "rows": 150,
+    "sha256": "f3e56d51bcb6f395f1d7857ad7e7e8b0c13edfa2fb68b378a236c59c06683189"
+  },
+  "extractionDate": "2026-09-24",
+  "isCompleteDataset": false,
+  "licence": {
+    "policyUrl": "https://www.who.int/about/policies/publishing/data-policy",
+    "statement": "WHO states that data are provided in accordance with WHO's data policy and their use is subject to WHO's terms and conditions. The Global TB Report repository has no licence file; only WHO estimate values are extracted here, no repository code.",
+    "status": "to_be_confirmed"
+  },
+  "publicDownloadUrl": "https://extranet.who.int/tme/generateCSV.asp?ds=estimates",
+  "schemaVersion": "who_incidence_snapshot_v1",
+  "seriesType": "retrospective series from a single report round",
+  "snapshotId": "who-gtb2025-fixture-v1",
+  "snapshotKind": "test_fixture",
+  "sourceDataset": "WHO Global Tuberculosis Report 2025 country incidence estimates",
+  "sourceReportYear": 2025,
+  "sourceUrl": "https://www.who.int/teams/global-programme-on-tuberculosis-and-lung-health/tb-reports/global-tuberculosis-report-2025",
+  "transformationVersion": "who_incidence_transform_v1",
+  "upstream": {
+    "commit": "666088cac1e20dd1e9e52016ea857a9c48e0ba8d",
+    "files": [
+      {
+        "path": "inc_mort/analysis/est.rda",
+        "role": "incidence estimates",
+        "sha256": "4639b9f878b6a1ec487a18e5fab13a2ca46d1aa5855fbd1d21d055e4929ccd10"
+      },
+      {
+        "path": "data/gtb/other/cty.rda",
+        "role": "country names",
+        "sha256": "90532ad379671ce5f5f566a9da9ec2500c7f9f08d23baa59723eb51c50d7e2f1"
+      }
+    ],
+    "repository": "https://github.com/GTB-TME/gtbreport2025",
+    "url": null
+  },
+  "validationStatus": "passed",
+  "validationWarnings": [],
+  "yearRange": [
+    2000,
+    2024
+  ]
+}

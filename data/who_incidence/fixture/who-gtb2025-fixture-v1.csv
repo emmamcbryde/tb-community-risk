@@ -1,0 +1,151 @@
+iso3,country,year,incidence_per_100k,incidence_per_100k_lo,incidence_per_100k_hi,incident_cases,incident_cases_lo,incident_cases_hi,population,estimation_method
+AUS,Australia,2000,6.82,5.55,8.22,1305,1061,1572,19132473,Notifications and standard adjustment
+AUS,Australia,2001,6.31,5.13,7.6,1221,994,1472,19365439,Notifications and standard adjustment
+AUS,Australia,2002,6.42,5.22,7.74,1258,1023,1516,19595360,Notifications and standard adjustment
+AUS,Australia,2003,5.92,4.82,7.14,1174,955,1415,19819456,Notifications and standard adjustment
+AUS,Australia,2004,6.59,5.36,7.94,1320,1074,1591,20046682,Notifications and standard adjustment
+AUS,Australia,2005,6.33,5.15,7.63,1285,1045,1548,20294493,Notifications and standard adjustment
+AUS,Australia,2006,6.91,5.62,8.33,1422,1157,1714,20590557,Notifications and standard adjustment
+AUS,Australia,2007,6.51,5.3,7.85,1364,1110,1644,20954557,Notifications and standard adjustment
+AUS,Australia,2008,6.9,5.61,8.31,1474,1199,1776,21370593,Notifications and standard adjustment
+AUS,Australia,2009,7.18,5.84,8.65,1563,1272,1884,21783011,Notifications and standard adjustment
+AUS,Australia,2010,6.83,5.56,8.23,1512,1230,1823,22141580,Notifications and standard adjustment
+AUS,Australia,2011,6.56,5.34,7.91,1475,1201,1778,22479779,Notifications and standard adjustment
+AUS,Australia,2012,6.73,5.48,8.11,1539,1252,1854,22852647,Notifications and standard adjustment
+AUS,Australia,2013,6.28,5.11,7.57,1459,1187,1759,23236273,Notifications and standard adjustment
+AUS,Australia,2014,6.52,5.3,7.85,1537,1251,1853,23595610,Notifications and standard adjustment
+AUS,Australia,2015,5.99,4.88,7.22,1435,1168,1730,23948003,Notifications and standard adjustment
+AUS,Australia,2016,6.46,5.26,7.79,1573,1280,1896,24329960,Notifications and standard adjustment
+AUS,Australia,2017,6.62,5.39,7.98,1637,1332,1973,24731028,Notifications and standard adjustment
+AUS,Australia,2018,6.55,5.33,7.89,1645,1338,1983,25119698,Notifications and standard adjustment
+AUS,Australia,2019,6.76,5.5,8.14,1722,1401,2075,25482711,Notifications and standard adjustment
+AUS,Australia,2020,7.18,5.84,8.65,1847,1503,2227,25743794,Notifications and standard adjustment
+AUS,Australia,2021,6.49,5.28,7.82,1684,1370,2030,25956421,Notifications and standard adjustment
+AUS,Australia,2022,5.57,4.53,6.71,1459,1187,1759,26200982,Notifications and standard adjustment
+AUS,Australia,2023,6.22,5.06,7.5,1645,1338,1983,26451115,Notifications and standard adjustment
+AUS,Australia,2024,6.93,5.64,8.35,1850,1506,2230,26713208,
+BRA,Brazil,2000,48.71,39.63,58.71,84765,68968,102166,174018285,Notifications and standard adjustment
+BRA,Brazil,2001,45.96,37.4,55.4,81029,65928,97664,176301200,Notifications and standard adjustment
+BRA,Brazil,2002,49.64,40.39,59.83,88614,72099,106805,178503477,Notifications and standard adjustment
+BRA,Brazil,2003,50.64,41.2,61.04,91469,74422,110246,180622693,Notifications and standard adjustment
+BRA,Brazil,2004,51.75,42.11,62.38,94539,76920,113946,182675137,Notifications and standard adjustment
+BRA,Brazil,2005,47.53,38.67,57.29,87786,71426,105807,184688111,Notifications and standard adjustment
+BRA,Brazil,2006,44.1,35.88,53.15,82314,66974,99212,186653109,Notifications and standard adjustment
+BRA,Brazil,2007,43.53,35.42,52.46,82072,66777,98920,188552322,Notifications and standard adjustment
+BRA,Brazil,2008,44.17,35.94,53.24,84092,68421,101355,190367299,Notifications and standard adjustment
+BRA,Brazil,2009,43.25,35.19,52.13,83077,67595,100132,192079956,Notifications and standard adjustment
+BRA,Brazil,2010,42.24,34.37,50.91,81824,66575,98621,193701928,Notifications and standard adjustment
+BRA,Brazil,2011,42.48,34.57,51.21,82966,67504,99998,195284741,Notifications and standard adjustment
+BRA,Brazil,2012,42.28,34.4,50.96,83234,67722,100321,196876113,Notifications and standard adjustment
+BRA,Brazil,2013,42.43,34.53,51.15,84223,68527,101513,198478300,Notifications and standard adjustment
+BRA,Brazil,2014,41.31,33.61,49.79,82658,67254,99627,200085119,Notifications and standard adjustment
+BRA,Brazil,2015,41.17,33.5,49.62,83026,67553,100070,201675529,Notifications and standard adjustment
+BRA,Brazil,2016,41.27,33.58,49.74,83869,68239,101087,203218122,Notifications and standard adjustment
+BRA,Brazil,2017,43.14,35.1,52,88312,71854,106442,204703451,Notifications and standard adjustment
+BRA,Brazil,2018,44.93,36.56,54.16,92609,75350,111621,206107261,Notifications and standard adjustment
+BRA,Brazil,2019,45.24,36.81,54.53,93861,76368,113129,207455451,Notifications and standard adjustment
+BRA,Brazil,2020,44.63,36.65,53.58,93120,76466,111797,208660841,Notifications and standard adjustment combined with Country-specific dynamic model in 2020-2023
+BRA,Brazil,2021,46.65,38.02,56.49,97764,79678,118381,209550290,Notifications and standard adjustment combined with Country-specific dynamic model in 2020-2023
+BRA,Brazil,2022,49,39.53,59.98,103060,83141,126141,210306413,Notifications and standard adjustment combined with Country-specific dynamic model in 2020-2023
+BRA,Brazil,2023,48.99,39.55,60.55,103442,83509,127842,211140731,Notifications and standard adjustment combined with Country-specific dynamic model in 2020-2023
+BRA,Brazil,2024,49.04,39.65,60.79,103957,84048,128867,211998579,
+GBR,United Kingdom of Great Britain and Northern Ireland,2000,11.85,10.98,12.75,6998,6482,7532,59057338,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2001,11.44,10.59,12.31,6780,6281,7298,59288089,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2002,13.02,12.06,14.01,7750,7180,8342,59540769,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2003,13.41,12.42,14.43,8019,7429,8631,59820380,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2004,13.16,12.19,14.17,7919,7336,8524,60169974,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2005,15.17,14.06,16.33,9195,8518,9897,60596107,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2006,15.22,14.1,16.39,9294,8610,10003,61051090,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2007,14.59,13.52,15.71,8979,8318,9664,61535854,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2008,14.95,13.85,16.09,9272,8590,9980,62027311,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2009,14.58,13.51,15.69,9114,8443,9810,62506230,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2010,13.97,12.94,15.03,8800,8152,9472,63006483,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2011,14.89,13.8,16.03,9458,8762,10180,63509291,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2012,14.54,13.47,15.66,9303,8618,10013,63960487,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2013,12.9,11.95,13.89,8307,7696,8941,64389390,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2014,11.48,10.64,12.36,7450,6901,8019,64865918,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2015,10.07,9.33,10.84,6586,6101,7089,65382102,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2016,9.89,9.16,10.65,6517,6037,7015,65893353,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2017,8.9,8.24,9.58,5904,5469,6355,66354469,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2018,8.05,7.46,8.66,5372,4976,5782,66752470,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2019,8.05,7.46,8.67,5403,5006,5816,67110962,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2020,6.99,6.48,7.52,4708,4362,5068,67351866,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2021,7.92,7.33,8.52,5357,4963,5766,67668797,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2022,7.77,7.19,8.36,5294,4905,5699,68179313,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2023,8.64,8,9.3,5934,5498,6388,68682959,Inventory study
+GBR,United Kingdom of Great Britain and Northern Ireland,2024,9.67,8.96,10.41,6684,6192,7194,69138194,
+IDN,Indonesia,2000,369.87,331.32,410.5,799204,715899,887009,216077793,Inventory study
+IDN,Indonesia,2001,368.91,330.55,409.33,808264,724228,896828,219097894,Inventory study
+IDN,Indonesia,2002,367.49,329.42,407.6,816151,731612,905228,222088489,Inventory study
+IDN,Indonesia,2003,365.6,327.92,405.29,822770,737972,912095,225048011,Inventory study
+IDN,Indonesia,2004,363.21,326.02,402.38,827857,743077,917134,227926643,Inventory study
+IDN,Indonesia,2005,360.32,323.71,398.86,831883,747350,920863,230871650,Inventory study
+IDN,Indonesia,2006,356.94,321,394.75,835071,750989,923533,233951648,Inventory study
+IDN,Indonesia,2007,353.21,318,390.22,837318,753870,925068,237062338,Inventory study
+IDN,Indonesia,2008,349.3,314.87,385.5,838881,756176,925801,240157904,Inventory study
+IDN,Indonesia,2009,345.42,311.74,380.81,840135,758204,926194,243220031,Inventory study
+IDN,Indonesia,2010,341.72,308.75,376.34,841682,760456,926955,246305322,Inventory study
+IDN,Indonesia,2011,338.3,305.97,372.23,843966,763315,928596,249470034,Inventory study
+IDN,Indonesia,2012,335.1,303.38,368.38,846802,766626,930894,252698523,Inventory study
+IDN,Indonesia,2013,332.03,300.88,364.7,849512,769799,933083,255852473,Inventory study
+IDN,Indonesia,2014,328.73,298.18,360.74,851003,771925,933869,258877417,Inventory study
+IDN,Indonesia,2015,325.42,295.48,356.79,851959,773569,934065,261799252,Inventory study
+IDN,Indonesia,2016,322.12,292.78,352.84,852420,774764,933719,264627410,Inventory study
+IDN,Indonesia,2017,318.82,290.06,348.91,852347,775476,932787,267346647,Inventory study
+IDN,Indonesia,2018,315.51,287.35,344.97,851734,775696,931265,269951843,Inventory study
+IDN,Indonesia,2019,312.21,284.62,341.05,850738,775566,929327,272489386,Inventory study
+IDN,Indonesia,2020,305.78,276.18,336.23,840331,758990,924010,274814856,Inventory study combined with Country-specific dynamic model in 2020-2023
+IDN,Indonesia,2021,330.46,290.68,370.75,914578,804468,1026075,276758054,Inventory study combined with Country-specific dynamic model in 2020-2023
+IDN,Indonesia,2022,375.42,316.99,433.37,1046791,883868,1208381,278830522,Inventory study combined with Country-specific dynamic model in 2020-2023
+IDN,Indonesia,2023,388.1,324.94,445.07,1091287,913703,1251485,281190070,Inventory study combined with Country-specific dynamic model in 2020-2023
+IDN,Indonesia,2024,382.15,319.34,432.77,1083351,905302,1226858,283487922,
+PHL,Philippines,2000,589.94,306.6,963.77,469740,244134,767405,79625394,Prevalence survey
+PHL,Philippines,2001,579.44,305.26,939.4,471673,248484,764685,81401486,Prevalence survey
+PHL,Philippines,2002,569.1,303.82,915.68,472745,252376,760641,83068884,Prevalence survey
+PHL,Philippines,2003,558.94,302.29,892.63,473599,256132,756340,84731842,Prevalence survey
+PHL,Philippines,2004,549,300.68,870.33,474303,259769,751919,86394509,Prevalence survey
+PHL,Philippines,2005,539.26,299,848.73,474631,263164,747019,88015968,Prevalence survey
+PHL,Philippines,2006,529.71,297.24,827.79,474134,266059,740946,89508990,Prevalence survey
+PHL,Philippines,2007,520.41,292.03,813.27,473967,265968,740687,91075177,Prevalence survey
+PHL,Philippines,2008,524.05,294.07,818.96,485794,272603,759168,92699097,Prevalence survey
+PHL,Philippines,2009,527.72,296.13,824.69,498086,279500,778377,94384248,Prevalence survey
+PHL,Philippines,2010,531.41,298.2,830.46,511950,287279,800041,96337130,Prevalence survey
+PHL,Philippines,2011,535.13,300.29,836.27,525761,295028,821624,98248614,Prevalence survey
+PHL,Philippines,2012,538.88,302.39,842.12,539824,302918,843599,100175508,Prevalence survey
+PHL,Philippines,2013,542.65,304.5,848.01,553917,310825,865621,102076337,Prevalence survey
+PHL,Philippines,2014,546.45,306.63,853.95,567032,318183,886115,103767132,Prevalence survey
+PHL,Philippines,2015,550.27,308.78,859.92,579507,325182,905608,105312995,Prevalence survey
+PHL,Philippines,2016,554.12,310.94,865.94,591446,331880,924264,106735708,Prevalence survey
+PHL,Philippines,2017,554.12,310.94,865.94,599115,336183,936249,108119692,Prevalence survey
+PHL,Philippines,2018,554.12,310.94,865.94,606571,340367,947901,109465291,Prevalence survey
+PHL,Philippines,2019,554.12,310.94,865.94,613993,344532,959499,110804683,Prevalence survey
+PHL,Philippines,2020,544.1,304.45,862.64,609834,341234,966862,112081263,Prevalence survey combined with Country-specific dynamic model in 2020-2023
+PHL,Philippines,2021,579.05,325.03,934.2,654909,367610,1056590,113100949,Prevalence survey combined with Country-specific dynamic model in 2020-2023
+PHL,Philippines,2022,626.78,346.4,1012.51,714302,394776,1153904,113964347,Prevalence survey combined with Country-specific dynamic model in 2020-2023
+PHL,Philippines,2023,632.01,348.28,1023.91,726118,400143,1176384,114891201,Prevalence survey combined with Country-specific dynamic model in 2020-2023
+PHL,Philippines,2024,624.9,344.3,1015.02,723902,398854,1175835,115843666,
+ZAF,South Africa,2000,762.31,416.31,1210.27,359505,196331,570759,47159718,Prevalence survey
+ZAF,South Africa,2001,867.26,429.26,1455.02,412528,204186,692108,47566798,Prevalence survey
+ZAF,South Africa,2002,971.17,434.2,1717.92,466351,208499,824937,48019414,Prevalence survey
+ZAF,South Africa,2003,1067.52,432.52,1980.44,517752,209774,960523,48500344,Prevalence survey
+ZAF,South Africa,2004,1150.24,426.82,2220.55,563520,209106,1087878,48991415,Prevalence survey
+ZAF,South Africa,2005,1213.66,420.08,2413.99,600639,207895,1194682,49490035,Prevalence survey
+ZAF,South Africa,2006,1253.66,414.86,2540.24,626806,207421,1270075,49998274,Prevalence survey
+ZAF,South Africa,2007,1272.16,412.21,2599.77,642805,208281,1313626,50528578,Prevalence survey
+ZAF,South Africa,2008,1272.79,592.39,2204.77,650582,302799,1126962,51114604,Prevalence survey
+ZAF,South Africa,2009,1259.09,634.43,2090.89,651309,328182,1081584,51728518,Prevalence survey
+ZAF,South Africa,2010,1234.17,622.02,2049.31,646017,325591,1072693,52344050,Prevalence survey
+ZAF,South Africa,2011,1200.81,667.2,1886.33,636371,353586,999663,52995199,Prevalence survey
+ZAF,South Africa,2012,1161.77,551.55,1992.13,624831,296635,1071420,53782563,Prevalence survey
+ZAF,South Africa,2013,1105.23,547.68,1852.53,604325,299463,1012939,54678793,Prevalence survey
+ZAF,South Africa,2014,1067.91,544.13,1762.98,593700,302507,980124,55594839,Prevalence survey
+ZAF,South Africa,2015,988.22,533.77,1578.61,560551,302773,895443,56723532,Prevalence survey
+ZAF,South Africa,2016,805.03,494.47,1189.33,460955,283129,681003,57259553,Prevalence survey
+ZAF,South Africa,2017,738.44,474.4,1059.47,425603,273422,610625,57635157,Prevalence survey
+ZAF,South Africa,2018,677.37,453.1,945.66,397026,265573,554281,58613004,Prevalence survey
+ZAF,South Africa,2019,614.62,427.11,835.49,366241,254506,497848,59587889,Prevalence survey
+ZAF,South Africa,2020,561.89,395.64,756.66,340293,239607,458251,60562386,Prevalence survey
+ZAF,South Africa,2021,512.64,347.84,708.7,315287,213934,435867,61502602,Prevalence survey
+ZAF,South Africa,2022,467.69,304.5,665.14,291736,189940,414906,62378415,Prevalence survey
+ZAF,South Africa,2023,426.66,265.24,625.64,269701,167662,395481,63212382,Prevalence survey
+ZAF,South Africa,2024,389.22,241.97,570.74,249127,154876,365315,64007188,
