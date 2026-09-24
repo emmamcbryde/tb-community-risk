@@ -27,7 +27,9 @@ FROZEN_REFERENCE_SHA256 = {
 }
 WORKING_DEFAULT_PRESET_HASH = "b987841c073e2d33ccaf72f053a00b0a4d0af2e4fb835c595ac3767655b9b056"
 # Files that existed at the release tag and are intentionally edited on the general branch.
-ALLOWED_MODIFIED_RELEASE_FILES = {".gitignore", "README.md"}
+# engine/apy/calibration_policy.py: memoises a duplicated, identical calibration call
+# (tests/test_calibration_memoisation.py proves outputs are unchanged).
+ALLOWED_MODIFIED_RELEASE_FILES = {".gitignore", "README.md", "engine/apy/calibration_policy.py"}
 
 
 def _git(*args: str) -> str | None:

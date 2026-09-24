@@ -26,6 +26,20 @@ CALIBRATION_POLICIES = {
     "none",
 }
 _REFERENCE_ARTIFACT_CACHE: dict[str, dict[str, Any]] = {}
+_CALIBRATION_RESULT_CACHE: dict[str, dict[str, Any]] = {}
+
+
+def _calibrate_once(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Memoised calibrate_from_config: identical normalised inputs are calibrated once per process.
+
+    The full reference-calibration policy previously calibrated the same configuration twice
+    (directly and inside build_reference_calibration_artifact). Results are deep-copied so
+    callers cannot share mutable state; outputs are identical to uncached calls.
+    """
+    key = config_hash(normalise_config(cfg))
+    if key not in _CALIBRATION_RESULT_CACHE:
+        _CALIBRATION_RESULT_CACHE[key] = calibrate_from_config(cfg)
+    return deepcopy(_CALIBRATION_RESULT_CACHE[key])
 
 
 def build_reference_calibration_artifact(config: dict[str, Any]) -> dict[str, Any]:
@@ -33,7 +47,7 @@ def build_reference_calibration_artifact(config: dict[str, Any]) -> dict[str, An
     key = config_hash({**cfg, "referenceCalibrationArtifact": None, "calibrationPolicy": "full_reference_calibration"})
     if key in _REFERENCE_ARTIFACT_CACHE:
         return deepcopy(_REFERENCE_ARTIFACT_CACHE[key])
-    calibration = calibrate_from_config(cfg)
+    calibration = _calibrate_once(cfg)
     ltbi_state = resolve_ltbi_state_assumptions(cfg)
     timing = resolve_time_settings(cfg)
     artifact = {
@@ -70,7 +84,7 @@ def resolve_calibration_for_config(config: dict[str, Any]) -> dict[str, Any]:
     if policy not in CALIBRATION_POLICIES:
         raise ValueError(f"Unknown calibrationPolicy: {policy}")
     if policy == "full_reference_calibration":
-        calibration = calibrate_from_config(cfg)
+        calibration = _calibrate_once(cfg)
         reference = build_reference_calibration_artifact(cfg)
         return _attach_policy_metadata(
             calibration,
