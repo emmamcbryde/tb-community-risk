@@ -70,19 +70,23 @@ if not results:
     st.caption("Health economics uses the outcomes of the current analysis; the epidemiological model is not rerun.")
     st.stop()
 
+stochastic = (bundle.get("metadata") or {}).get("modelType") == "agent_based"
 rows = []
 for row in results.get("summaryRows") or []:
     if row.get("discountProfile") != "primary" or row.get("metric") not in SUMMARY_METRICS:
         continue
-    rows.append(
-        {
-            "Measure": SUMMARY_METRICS[row["metric"]],
-            "Mean": _fmt(row.get("mean"), 1),
-            "Median": _fmt(row.get("median"), 1),
-            "Low 95%": _fmt(row.get("p2_5"), 1),
-            "High 95%": _fmt(row.get("p97_5"), 1),
-        }
-    )
+    if stochastic:
+        rows.append(
+            {
+                "Measure": SUMMARY_METRICS[row["metric"]],
+                "Mean": _fmt(row.get("mean"), 1),
+                "Median": _fmt(row.get("median"), 1),
+                "Low 95%": _fmt(row.get("p2_5"), 1),
+                "High 95%": _fmt(row.get("p97_5"), 1),
+            }
+        )
+    else:
+        rows.append({"Measure": SUMMARY_METRICS[row["metric"]], "Expected value": _fmt(row.get("mean"), 1)})
 icer = next(
     (
         row
@@ -94,6 +98,10 @@ icer = next(
 st.subheader("Summary (3% annual discounting)")
 if rows:
     st.dataframe(arrow_safe_dataframe(rows), use_container_width=True, hide_index=True)
+    if stochastic:
+        st.caption("Ranges describe variation across simulated populations; they are not confidence intervals.")
+    else:
+        st.caption("Deterministic preview: single expected values without simulation variation.")
 if icer:
     classification = icer.get("classification")
     if classification == "dominant":
