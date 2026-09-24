@@ -49,7 +49,7 @@ pip install -r requirements.txt pytest
 ## Tests
 
 ```bash
-python -m pytest -q                                    # full suite (about 2.5 h on the reference machine)
+python -m pytest -q                                    # full suite (654 tests, about 58 min on the reference machine)
 python -m pytest -q tests/test_general_*.py            # general application (a few minutes)
 python -m pytest -q tests/test_frozen_release_integrity.py tests/test_calibration_memoisation.py
 ```
