@@ -26,8 +26,10 @@ GENERAL_SOURCES = [
     *PAGES,
     *sorted((ROOT / "app" / "general").glob("*.py")),
     *sorted((ROOT / "engine" / "profiles").glob("*.py")),
-    *[p for p in sorted((ROOT / "engine" / "who_incidence").glob("*.py")) if p.name != "adapters.py"],
+    *sorted((ROOT / "engine" / "who_incidence").glob("*.py")),
 ]
+# Maintainer-only importer: may name the upstream repository URL, never a local checkout path.
+MAINTAINER_ONLY = {"who_import.py"}
 ELEMENT_KINDS = (
     "title", "header", "subheader", "markdown", "caption", "info", "warning", "success", "error", "text",
     "button", "selectbox", "radio", "number_input", "slider", "checkbox", "expander", "code",
@@ -72,7 +74,9 @@ class GeneralSourceGuardTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             with self.subTest(file=path.name):
                 self.assertNotRegex(source, r"import (requests|urllib|http\.client|socket)\b")
-                self.assertNotIn("gtbreport2025", source)
+                self.assertNotRegex(source, r"\.\./gtbreport2025|GITHUB[\\/]gtbreport2025")
+                if path.name not in MAINTAINER_ONLY:
+                    self.assertNotIn("gtbreport2025", source)
                 if path in PAGES or path.name == "general_app.py":
                     for match in literal.finditer(source):
                         self.assertEqual(forbidden_matches(match.group(0)), [], match.group(0))
@@ -123,8 +127,8 @@ class GeneralPageRenderingTests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertEqual(app.session_state["general_profile"]["location"]["iso3"], "ZAF")
         captions = " ".join(item.value for item in app.caption)
-        self.assertIn("WHO report year 2025", captions)
-        self.assertIn("not the complete WHO dataset", captions)
+        self.assertIn("Global Tuberculosis Report 2025 round", captions)
+        self.assertTrue("complete dataset" in captions or "not the complete WHO dataset" in captions)
 
         app.number_input(key="general_population_input").set_value(5000).run()
         self.assertFalse(app.exception)

@@ -26,7 +26,8 @@ from app.general.state import (
     set_profile,
 )
 from app.general.terminology import RESTORE_DEFAULTS_LABEL, USER_DEFINED_MARK
-from engine.profiles.country import apply_snapshot_country, apply_user_incidence
+from engine.profiles.country import USE_NEW, apply_snapshot_country
+from engine.profiles.local_incidence import apply_local_incidence, parse_local_incidence
 from engine.profiles.demonstration import (
     DEMONSTRATION_PROFILE_LABEL,
     DEMONSTRATION_WARNING,
@@ -41,7 +42,6 @@ from engine.profiles.population_profile import (
     validate_profile,
     with_population_size,
 )
-from engine.who_incidence.adapters import parse_user_incidence_csv
 
 
 DEMONSTRATION_OPTION = "Demonstration working defaults (no country selected)"
@@ -92,7 +92,7 @@ if selection != current_label:
             data_vintage=demo.data_vintage,
         )
     else:
-        profile = apply_snapshot_country(profile, snapshot, labels_to_iso3[selection])
+        profile = apply_snapshot_country(profile, snapshot, labels_to_iso3[selection], resolutions={"location": USE_NEW, "incidence": USE_NEW})
     set_profile(profile)
     st.rerun()
 
@@ -104,8 +104,8 @@ if snapshot is not None:
         else f"offline example snapshot of {len(snapshot.countries())} countries, not the complete WHO dataset"
     )
     st.caption(
-        f"Incidence data: {manifest.get('sourceDataset')} · WHO report year {manifest.get('sourceReportYear')} "
-        f"· extracted {manifest.get('extractionDate')} · {scope}."
+        f"Incidence data: WHO TB burden estimates · Global Tuberculosis Report {snapshot.report_year} round "
+        f"· accessed {(manifest.get('volatile') or {}).get('accessDate')} · {scope}."
     )
 else:
     st.info("No bundled incidence snapshot is available. The demonstration profile can still be used.")
@@ -151,16 +151,16 @@ with st.expander("Use a local or subnational incidence file"):
     )
     upload = st.file_uploader("Incidence file", type=["csv"], key=f"general_incidence_upload_{st.session_state[EDITOR_VERSION_KEY]}")
     if upload is not None:
-        records, report = parse_user_incidence_csv(upload.getvalue().decode("utf-8-sig"))
-        for issue in report.warnings:
-            st.warning(issue.message)
+        report = parse_local_incidence(upload.getvalue(), filename=upload.name)
+        for message in report.warnings:
+            st.warning(message)
         if not report.is_valid:
             st.error("The file could not be used:")
-            for issue in report.errors[:10]:
-                st.write(f"- {issue.message}")
+            for message in report.errors[:10]:
+                st.write(f"- {message}")
         elif st.button("Use this incidence file"):
             try:
-                set_profile(apply_user_incidence(get_profile(), records, source_label=upload.name))
+                set_profile(apply_local_incidence(get_profile(), report, resolutions={"incidence": USE_NEW}))
                 st.session_state.pop("general_country_select", None)
                 st.rerun()
             except ValueError as exc:

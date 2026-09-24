@@ -8,7 +8,9 @@ inputs came from. It deliberately keeps these states distinct:
 * not reviewed    - a value exists but its evidence has not been reviewed;
 * not applicable  - the quantity does not apply to this profile;
 * excluded        - deliberately excluded from the analysis;
-* bundled         - supplied with the application (demonstration or snapshot);
+* bundled         - demonstration values supplied with the application;
+* WHO snapshot    - taken from the installed, checksummed WHO data snapshot;
+* local upload    - taken from a file supplied by the user (never labelled WHO);
 * user-defined    - entered or changed by the user.
 
 Profiles round-trip through JSON and hash deterministically so that saved
@@ -26,7 +28,8 @@ import re
 from typing import Any
 
 
-PROFILE_SCHEMA_VERSION = "population_profile_v1"
+PROFILE_SCHEMA_VERSION = "population_profile_v2"
+SUPPORTED_SCHEMA_VERSIONS = ("population_profile_v1", "population_profile_v2")
 ISO3_PATTERN = re.compile(r"^[A-Z]{3}$")
 INCIDENCE_MEASURE = "estimated_tb_disease_incidence"
 INCIDENCE_UNIT = "per 100,000 population per year"
@@ -42,6 +45,8 @@ class ValueState(str, Enum):
 class Provenance(str, Enum):
     BUNDLED = "bundled"
     USER_DEFINED = "user_defined"
+    WHO_SNAPSHOT = "who_snapshot"
+    LOCAL_UPLOAD = "local_upload"
 
 
 class ReviewStatus(str, Enum):
@@ -73,6 +78,8 @@ STATUS_LABELS = {
     "excluded": "Excluded",
     "bundled": "Bundled",
     "user_defined": "User-defined",
+    "who_snapshot": "WHO snapshot",
+    "local_upload": "Local upload",
     "reviewed": "Reviewed",
 }
 
@@ -189,21 +196,44 @@ def not_applicable_value(unit: str, *, notes: str = "") -> ProfileValue:
 
 @dataclass(frozen=True)
 class Location:
+    """Identity of the modelled place; the national population is context only.
+
+    ``national_population`` is the WHO/UN population of the whole country or area;
+    it is not the simulated population size.
+    """
+
     name: str
     kind: LocationKind
     iso3: str | None = None
+    who_region: str | None = None
+    national_population: float | None = None
+    national_population_year: int | None = None
+    national_population_source: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "kind": self.kind.value, "iso3": self.iso3}
+        return {
+            "name": self.name,
+            "kind": self.kind.value,
+            "iso3": self.iso3,
+            "whoRegion": self.who_region,
+            "nationalPopulation": self.national_population,
+            "nationalPopulationYear": self.national_population_year,
+            "nationalPopulationSource": self.national_population_source,
+        }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "Location":
         _require_keys(payload, ("name", "kind"), "location")
         iso3 = payload.get("iso3")
+        year = payload.get("nationalPopulationYear")
         return cls(
             name=str(payload["name"]),
             kind=_enum(LocationKind, payload["kind"]),
             iso3=None if iso3 in (None, "") else str(iso3),
+            who_region=payload.get("whoRegion") or None,
+            national_population=_optional_float(payload.get("nationalPopulation")),
+            national_population_year=None if year is None else int(year),
+            national_population_source=str(payload.get("nationalPopulationSource") or ""),
         )
 
 
@@ -272,11 +302,24 @@ class IncidenceData:
     measure: str = INCIDENCE_MEASURE
     unit: str = INCIDENCE_UNIT
     notes: str = ""
+    source_detail: tuple[tuple[str, Any], ...] = ()
 
     @property
     def data_year_range(self) -> tuple[int, int] | None:
         years = [point.year for point in self.series]
         return (min(years), max(years)) if years else None
+
+    @property
+    def bounds_available(self) -> bool:
+        return bool(self.series) and all(p.lower is not None and p.upper is not None for p in self.series)
+
+    @property
+    def data_hash(self) -> str | None:
+        """SHA-256 of the canonical series (year, estimate, lower, upper)."""
+        if not self.series:
+            return None
+        canonical = json.dumps([point.to_dict() for point in self.series], sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def to_dict(self) -> dict[str, Any]:
         year_range = self.data_year_range
@@ -289,6 +332,8 @@ class IncidenceData:
             "dataYearRange": list(year_range) if year_range else None,
             "series": [point.to_dict() for point in self.series],
             "notes": self.notes,
+            "sourceDetail": {key: value for key, value in self.source_detail},
+            "dataHash": self.data_hash,
         }
 
     @classmethod
@@ -303,7 +348,11 @@ class IncidenceData:
             measure=str(payload.get("measure") or INCIDENCE_MEASURE),
             unit=str(payload.get("unit") or INCIDENCE_UNIT),
             notes=str(payload.get("notes") or ""),
+            source_detail=tuple(sorted((str(k), _freeze(v)) for k, v in (payload.get("sourceDetail") or {}).items())),
         )
+        declared_hash = payload.get("dataHash")
+        if declared_hash is not None and declared_hash != data.data_hash:
+            raise ProfileValidationError("Incidence dataHash does not match the series.")
         declared = payload.get("dataYearRange")
         derived = data.data_year_range
         if declared is not None and (derived is None or tuple(declared) != derived):
@@ -365,6 +414,11 @@ class RiskFactor:
     review_status: ReviewStatus = ReviewStatus.NOT_REVIEWED
     notes: str = ""
     user_modified_fields: tuple[str, ...] = ()
+    prevalence_bounds: tuple[float, float] | None = None
+    effect_bounds: tuple[float, float] | None = None
+    affected_transition: str = "progression_to_disease"
+    evidence_year: int | None = None
+    population_applicability: str = ""
 
     @property
     def is_user_override(self) -> bool:
@@ -385,6 +439,11 @@ class RiskFactor:
             "notes": self.notes,
             "userModifiedFields": list(self.user_modified_fields),
             "userOverride": self.is_user_override,
+            "prevalenceBounds": None if self.prevalence_bounds is None else list(self.prevalence_bounds),
+            "effectBounds": None if self.effect_bounds is None else list(self.effect_bounds),
+            "affectedTransition": self.affected_transition,
+            "evidenceYear": self.evidence_year,
+            "populationApplicability": self.population_applicability,
         }
 
     @classmethod
@@ -408,6 +467,11 @@ class RiskFactor:
             review_status=_enum(ReviewStatus, payload.get("reviewStatus") or ReviewStatus.NOT_REVIEWED.value),
             notes=str(payload.get("notes") or ""),
             user_modified_fields=tuple(str(item) for item in payload.get("userModifiedFields") or ()),
+            prevalence_bounds=_optional_pair(payload.get("prevalenceBounds")),
+            effect_bounds=_optional_pair(payload.get("effectBounds")),
+            affected_transition=str(payload.get("affectedTransition") or "progression_to_disease"),
+            evidence_year=None if payload.get("evidenceYear") in (None, "") else int(payload["evidenceYear"]),
+            population_applicability=str(payload.get("populationApplicability") or ""),
         )
         declared = payload.get("userOverride")
         if declared is not None and bool(declared) != factor.is_user_override:
@@ -465,17 +529,19 @@ class PopulationProfile:
         if not isinstance(payload, dict):
             raise ProfileValidationError("Profile payload must be a JSON object.")
         version = payload.get("schemaVersion")
-        if version != PROFILE_SCHEMA_VERSION:
+        if version not in SUPPORTED_SCHEMA_VERSIONS:
             raise ProfileValidationError(
-                f"Unsupported profile schema version {version!r}; expected {PROFILE_SCHEMA_VERSION!r}."
+                f"Unsupported profile schema version {version!r}; expected one of {', '.join(SUPPORTED_SCHEMA_VERSIONS)}."
             )
+        if version == "population_profile_v1":
+            payload = _migrate_v1(payload)
         _require_keys(
             payload,
             ("profileId", "name", "location", "populationSize", "ageDistribution", "ltbiPrevalence", "incidence"),
             "profile",
         )
         return cls(
-            schema_version=version,
+            schema_version=PROFILE_SCHEMA_VERSION,
             profile_id=str(payload["profileId"]),
             name=str(payload["name"]),
             location=Location.from_dict(payload["location"]),
@@ -522,8 +588,8 @@ def user_override_fields(profile: PopulationProfile) -> list[str]:
     for band in profile.age_distribution:
         if band.proportion.is_user_override:
             fields.append(f"Age distribution: {band.label}")
-    if profile.incidence.provenance is Provenance.USER_DEFINED:
-        fields.append("Incidence series")
+    if profile.incidence.provenance in {Provenance.USER_DEFINED, Provenance.LOCAL_UPLOAD}:
+        fields.append("Incidence series (local file)")
     if profile.trend.user_annual_percent_change is not None and profile.trend.user_annual_percent_change.is_user_override:
         fields.append("Incidence trend")
     for factor in profile.risk_factors:
@@ -583,6 +649,23 @@ def validate_profile(profile: PopulationProfile) -> list[dict[str, str]]:
             add(prefix, "Duplicate risk-factor identifier.")
         seen_ids.add(factor.risk_factor_id)
         _check_proportion(factor.prevalence, f"{prefix}.prevalence", add)
+        for label, bounds, value in (
+            ("prevalenceBounds", factor.prevalence_bounds, factor.prevalence.value),
+            ("effectBounds", factor.effect_bounds, factor.effect_estimate.value),
+        ):
+            if bounds is None:
+                continue
+            low, high = bounds
+            if low > high:
+                add(f"{prefix}.{label}", "Lower bound exceeds upper bound.")
+            elif value is not None and not low <= value <= high:
+                add(f"{prefix}.{label}", "Estimate lies outside its bounds.")
+            if label == "prevalenceBounds" and not (0 <= low <= 1 and 0 <= high <= 1):
+                add(f"{prefix}.{label}", "Prevalence bounds must be between 0 and 1.")
+            if label == "effectBounds" and low <= 0:
+                add(f"{prefix}.{label}", "Effect bounds must be greater than zero.")
+        if factor.evidence_year is not None and not 1900 <= factor.evidence_year <= 2100:
+            add(f"{prefix}.evidenceYear", "Evidence year is implausible.")
         effect = factor.effect_estimate
         if effect.state is ValueState.VALUE:
             if effect.value is not None and effect.value <= 0:
@@ -693,9 +776,33 @@ def _optional_float(value: Any) -> float | None:
     return float(value)
 
 
+def _optional_pair(value: Any) -> tuple[float, float] | None:
+    if value in (None, [], ()):
+        return None
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise ProfileValidationError("Bounds must be a pair [lower, upper].")
+    low, high = (_optional_float(item) for item in value)
+    if low is None or high is None:
+        raise ProfileValidationError("Bounds must contain two numbers.")
+    return (low, high)
+
+
+def _migrate_v1(payload: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade a v1 profile: WHO-snapshot and uploaded incidence get explicit provenance."""
+    migrated = json.loads(json.dumps(payload))
+    incidence = migrated.get("incidence") or {}
+    if incidence.get("provenance") == "bundled" and incidence.get("snapshotId"):
+        incidence["provenance"] = Provenance.WHO_SNAPSHOT.value
+    elif incidence.get("provenance") == "user_defined":
+        incidence["provenance"] = Provenance.LOCAL_UPLOAD.value
+    incidence.pop("dataHash", None)
+    migrated["schemaVersion"] = PROFILE_SCHEMA_VERSION
+    return migrated
+
+
 def _freeze(value: Any) -> Any:
     if isinstance(value, list):
         return tuple(_freeze(item) for item in value)
     if isinstance(value, dict):
-        raise ProfileValidationError("Nested objects are not supported in trend settings.")
+        return tuple(sorted((str(k), _freeze(v)) for k, v in value.items()))
     return value

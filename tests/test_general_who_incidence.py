@@ -5,194 +5,242 @@ import io
 import json
 from pathlib import Path
 import shutil
+import socket
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from engine.profiles.country import apply_snapshot_country, apply_user_incidence
-from engine.profiles.demonstration import build_demonstration_profile
-from engine.profiles.population_profile import LocationKind, PopulationProfile, Provenance, validate_profile
-from engine.who_incidence.adapters import WhoBurdenCsvAdapter, parse_user_incidence_csv, transform
-from engine.who_incidence.schema import (
-    RECORD_COLUMNS,
-    check_vintage_compatibility,
-    parse_rows,
-    validate_columns,
-)
+from engine.who_incidence import snapshot as snapshot_module
+from engine.who_incidence.contract import COLUMNS, SNAPSHOT_CONTRACT_VERSION, rounding_half_unit
 from engine.who_incidence.snapshot import (
-    BUNDLED_MANIFEST,
+    FIXTURE_DIR,
+    PRODUCTION_DIR,
     SnapshotError,
+    SnapshotUnavailable,
+    _as_who_csv,
+    find_manifests,
     load_bundled_snapshot,
     load_snapshot,
-    write_snapshot,
 )
-from engine.who_incidence.trend import (
-    INCIDENCE_TO_INFECTION_POLICY,
-    TrendMethod,
-    TrendSettings,
-    covid_disruption_flags,
-    estimate_trend,
+from engine.who_incidence.who_import import (
+    ImportFailed,
+    build_manifest,
+    check_dictionary,
+    cross_check,
+    parse_who_estimates,
+    snapshot_bytes,
+    write_snapshot_files,
 )
 
 
-def _row(iso3="AUS", year=2020, est=6.0, lo=5.0, hi=7.0, **extra):
-    row = {column: "" for column in RECORD_COLUMNS}
-    row.update(
-        {"iso3": iso3, "country": "Example", "year": str(year), "incidence_per_100k": str(est),
-         "incidence_per_100k_lo": str(lo), "incidence_per_100k_hi": str(hi)}
-    )
-    row.update(extra)
-    return row
+ROOT = Path(__file__).resolve().parents[1]
+FIXTURE_MANIFEST = find_manifests(FIXTURE_DIR)[0]
 
 
-class BundledSnapshotTests(unittest.TestCase):
-    def test_fixture_loads_offline_with_manifest_provenance(self) -> None:
-        snapshot = load_bundled_snapshot()
+def _no_network(*args, **kwargs):
+    raise AssertionError("network access attempted")
+
+
+def fixture_who_csv() -> bytes:
+    return _as_who_csv(list(load_snapshot(FIXTURE_MANIFEST).rows))
+
+
+def mutate(payload: bytes, code: str, at_year: int, **changes: str) -> bytes:
+    rows = list(csv.DictReader(io.StringIO(payload.decode("utf-8"))))
+    for row in rows:
+        if row["iso3"] == code and row["year"] == str(at_year):
+            row.update(changes)
+    return write_rows(rows)
+
+
+def write_rows(rows, fieldnames=None) -> bytes:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames or list(rows[0].keys()), lineterminator="\n", extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(rows)
+    return buffer.getvalue().encode("utf-8")
+
+
+class InstalledSnapshotTests(unittest.TestCase):
+    def test_production_snapshot_complete_and_valid(self) -> None:
+        manifests = find_manifests(PRODUCTION_DIR)
+        if not manifests:
+            self.skipTest("No production snapshot installed.")
+        with patch.object(socket.socket, "connect", _no_network):
+            snapshot = load_snapshot(manifests[0])
         manifest = snapshot.manifest
-        self.assertEqual(manifest["snapshotKind"], "test_fixture")
-        self.assertFalse(snapshot.is_complete_dataset)
-        self.assertEqual(manifest["sourceReportYear"], 2025)
-        self.assertEqual(manifest["upstream"]["commit"], "666088cac1e20dd1e9e52016ea857a9c48e0ba8d")
-        for key in ("repository", "files"):
-            self.assertTrue(manifest["upstream"][key])
-        for key in ("extractionDate", "transformationVersion", "schemaVersion", "licence", "citation"):
-            self.assertTrue(manifest[key])
-        self.assertGreaterEqual(len(snapshot.countries()), 5)
-        self.assertTrue(snapshot.validation["isValid"])
-        series = snapshot.series_for("ZAF")
-        self.assertEqual((series[0].year, series[-1].year), (2000, 2024))
-        self.assertTrue(all(p.lower <= p.estimate <= p.upper for p in series))
+        self.assertEqual(manifest["contractVersion"], SNAPSHOT_CONTRACT_VERSION)
+        self.assertEqual(manifest["snapshotKind"], "production")
+        self.assertTrue(manifest["isCompleteDataset"])
+        self.assertEqual(manifest["reportYear"], 2025)
+        coverage = manifest["coverage"]
+        self.assertEqual(coverage["countriesAndAreas"], len(snapshot.countries()))
+        self.assertEqual(coverage["yearRange"], [2000, 2024])
+        self.assertGreater(coverage["countriesAndAreas"], 200)
+        self.assertEqual(manifest["crossCheck"]["disagreements"], 0)
+        self.assertTrue(manifest["crossCheck"]["commit"].startswith("666088c"))
+        self.assertIn("not reviewed or endorsed", manifest["terms"]["noEndorsement"])
+        for key in ("sourceFiles", "importerVersion", "transformation", "citation", "fields", "knownExclusions", "analyticalHash"):
+            self.assertTrue(manifest[key], key)
+        self.assertEqual({item["role"] for item in manifest["sourceFiles"]}, {"estimates", "dictionary"})
 
-    def test_checksum_mismatch_is_rejected(self) -> None:
+    def test_default_loader_prefers_production(self) -> None:
+        path = snapshot_module.default_manifest_path()
+        expected = find_manifests(PRODUCTION_DIR) or find_manifests(FIXTURE_DIR)
+        self.assertEqual(path, expected[0])
+
+    def test_published_precision_is_retained(self) -> None:
+        payload = (FIXTURE_MANIFEST.parent / json.loads(FIXTURE_MANIFEST.read_text())["dataFile"]["filename"]).read_bytes()
+        rows = list(csv.DictReader(io.StringIO(payload.decode("utf-8"))))
+        aus2000 = next(row for row in rows if row["iso3"] == "AUS" and row["year"] == "2000")
+        self.assertEqual((aus2000["incidence_per_100k"], aus2000["incident_cases"], aus2000["iso_numeric"]), ("6.8", "1300", "036"))
+
+    def test_fixture_edge_cases(self) -> None:
+        snapshot = load_snapshot(FIXTURE_MANIFEST)
+        self.assertEqual(snapshot.series_for("PRK"), ())
+        self.assertIsNone(snapshot.country_summary("PRK")["latest"])
+        self.assertEqual(snapshot.country_summary("ANT")["years"], [2000, 2009])
+        self.assertIn({"iso3": "PRK", "reason": "No incidence estimates published in this report round."}, snapshot.manifest["knownExclusions"])
+
+    def test_missing_snapshot_gives_maintainer_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(snapshot_module, "PRODUCTION_DIR", Path(tmp) / "none"), patch.object(snapshot_module, "FIXTURE_DIR", Path(tmp) / "none2"):
+                with self.assertRaises(SnapshotUnavailable) as caught:
+                    load_bundled_snapshot()
+        self.assertIn("scripts/import_who_incidence.py", str(caught.exception))
+        self.assertIn("docs/who_data_update_guide.md", str(caught.exception))
+
+    def test_corruption_detected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
-            manifest = json.loads(BUNDLED_MANIFEST.read_text(encoding="utf-8"))
-            shutil.copy(BUNDLED_MANIFEST, target / BUNDLED_MANIFEST.name)
-            data = (BUNDLED_MANIFEST.parent / manifest["dataFile"]["filename"]).read_text(encoding="utf-8")
-            (target / manifest["dataFile"]["filename"]).write_text(data.replace("6.82", "6.83", 1), encoding="utf-8", newline="\n")
-            with self.assertRaises(SnapshotError):
-                load_snapshot(target / BUNDLED_MANIFEST.name)
+            manifest = json.loads(FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+            shutil.copy(FIXTURE_MANIFEST, target / FIXTURE_MANIFEST.name)
+            data = (FIXTURE_DIR / manifest["dataFile"]["filename"]).read_text(encoding="utf-8")
+            (target / manifest["dataFile"]["filename"]).write_text(data.replace("6.8", "6.9", 1), encoding="utf-8", newline="\n")
+            with self.assertRaises(SnapshotError) as caught:
+                load_snapshot(target / FIXTURE_MANIFEST.name)
+            self.assertIn("Checksum mismatch", str(caught.exception))
 
-    def test_changed_schema_version_is_rejected(self) -> None:
+    def test_invalid_manifest_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
-            manifest = json.loads(BUNDLED_MANIFEST.read_text(encoding="utf-8"))
-            shutil.copy(BUNDLED_MANIFEST.parent / manifest["dataFile"]["filename"], target)
-            manifest["schemaVersion"] = "who_incidence_snapshot_v2"
-            (target / "m.json").write_text(json.dumps(manifest), encoding="utf-8")
-            with self.assertRaises(SnapshotError):
-                load_snapshot(target / "m.json")
-
-    def test_country_selection_attaches_incidence_but_not_other_evidence(self) -> None:
-        snapshot = load_bundled_snapshot()
-        demo = build_demonstration_profile()
-        profile = apply_snapshot_country(demo, snapshot, "PHL")
-        self.assertEqual(profile.location.iso3, "PHL")
-        self.assertEqual(profile.location.kind, LocationKind.COUNTRY)
-        self.assertEqual(profile.incidence.snapshot_id, snapshot.snapshot_id)
-        self.assertEqual(profile.incidence.data_year_range, (2000, 2024))
-        self.assertEqual(profile.ltbi_prevalence, demo.ltbi_prevalence)
-        self.assertEqual(profile.risk_factors, demo.risk_factors)
-        self.assertEqual(validate_profile(profile), [])
-        self.assertEqual(PopulationProfile.from_json(profile.to_json()), profile)
-        again = apply_snapshot_country(profile, snapshot, "ZAF")
-        self.assertEqual(again.profile_id, "zaf-demonstration-working-defaults")
-        self.assertTrue(again.name.startswith("South Africa: "))
+            manifest = json.loads(FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+            shutil.copy(FIXTURE_DIR / manifest["dataFile"]["filename"], target)
+            for broken in ({**manifest, "contractVersion": "who_incidence_snapshot_v1"}, {k: v for k, v in manifest.items() if k != "terms"}):
+                (target / "m_manifest.json").write_text(json.dumps(broken), encoding="utf-8")
+                with self.assertRaises(SnapshotError):
+                    load_snapshot(target / "m_manifest.json")
 
 
-class IncidenceValidationTests(unittest.TestCase):
-    def test_valid_rows(self) -> None:
-        records, report = parse_rows([_row(year=2020), _row(year=2021)])
-        self.assertTrue(report.is_valid, report.to_dict())
-        self.assertEqual(len(records), 2)
+class ImporterValidationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.payload = fixture_who_csv()
 
-    def test_malformed_bounds(self) -> None:
-        _, report = parse_rows([_row(est=6.0, lo=6.5, hi=7.0), _row(year=2021, est=6.0, lo=5.0, hi=5.5)])
-        self.assertFalse(report.is_valid)
-        self.assertIn("lower_exceeds_estimate", report.codes())
-        self.assertIn("upper_below_estimate", report.codes())
+    def test_clean_import_and_determinism(self) -> None:
+        rows1, report1 = parse_who_estimates(self.payload, report_year=2025)
+        rows2, _ = parse_who_estimates(self.payload, report_year=2025)
+        self.assertTrue(report1.is_valid, report1.summary_markdown())
+        self.assertEqual(snapshot_bytes(rows1), snapshot_bytes(rows2))
+        kwargs = dict(report_year=2025, source_files=[], crosscheck=None, importer_commit="x", kind="test_fixture")
+        m1 = build_manifest(rows1, report1, data_bytes=snapshot_bytes(rows1), access_date="2026-01-01", **kwargs)
+        m2 = build_manifest(rows2, report1, data_bytes=snapshot_bytes(rows2), access_date="2026-02-02", **kwargs)
+        self.assertEqual(m1["analyticalHash"], m2["analyticalHash"])
+        self.assertEqual(m1["snapshotId"], m2["snapshotId"])
+        self.assertNotEqual(m1["volatile"], m2["volatile"])
 
-    def test_duplicate_rows(self) -> None:
-        _, report = parse_rows([_row(year=2020), _row(year=2020)])
-        self.assertIn("duplicate_row", report.codes())
-        self.assertFalse(report.is_valid)
+    def test_malformed_inputs_fail_clearly(self) -> None:
+        cases = {
+            "duplicate_row": self.payload + self.payload.split(b"\n", 2)[1] + b"\n",
+            "invalid_iso3": mutate(self.payload, "AUS", 2000, iso3="AU1"),
+            "lower_exceeds_estimate": mutate(self.payload, "AUS", 2001, e_inc_100k_lo="99"),
+            "upper_below_estimate": mutate(self.payload, "AUS", 2001, e_inc_100k_hi="1"),
+            "non_numeric": mutate(self.payload, "AUS", 2002, e_inc_100k="six"),
+            "negative_value": mutate(self.payload, "AUS", 2002, e_inc_num="-5"),
+            "zero_population": mutate(self.payload, "AUS", 2003, e_pop_num="0"),
+            "rate_count_inconsistent": mutate(self.payload, "ZAF", 2010, e_inc_num="10"),
+            "mixed_vintage": mutate(self.payload, "AUS", 2024, year="2025"),
+            "incomplete_triple": mutate(self.payload, "AUS", 2004, e_inc_100k_hi=""),
+            "inconsistent_identity": mutate(self.payload, "AUS", 2005, g_whoregion="EUR"),
+            "invalid_region": mutate(self.payload, "AUS", 2006, g_whoregion="XXX"),
+        }
+        for code, payload in cases.items():
+            with self.subTest(code=code):
+                _, report = parse_who_estimates(payload, report_year=2025)
+                self.assertFalse(report.is_valid)
+                self.assertIn(code, report.codes("fatal"))
 
-    def test_invalid_iso3_non_numeric_negative(self) -> None:
-        _, report = parse_rows([_row(iso3="AU"), _row(year=2021, est="six"), _row(year=2022, est=-1, lo=-2, hi=1)])
-        self.assertTrue({"invalid_iso3", "non_numeric", "negative_value"} <= report.codes())
+    def test_duplicate_iso3_mapping(self) -> None:
+        rows = list(csv.DictReader(io.StringIO(self.payload.decode("utf-8"))))
+        for row in rows:
+            if row["iso3"] == "BRA":
+                row["country"] = "Australia"
+        _, report = parse_who_estimates(write_rows(rows), report_year=2025)
+        self.assertIn("duplicate_iso3_mapping", report.codes("fatal"))
 
-    def test_missing_years_and_discontinuities_warn(self) -> None:
-        _, report = parse_rows([_row(year=2018), _row(year=2020), _row(year=2021, est=30, lo=25, hi=35)])
-        self.assertTrue(report.is_valid)
-        self.assertIn("missing_years", report.codes())
-        self.assertIn("implausible_discontinuity", report.codes())
+    def test_changed_schema_encoding_and_empty(self) -> None:
+        rows = list(csv.DictReader(io.StringIO(self.payload.decode("utf-8"))))
+        fields = [f for f in rows[0] if f != "e_inc_100k_hi"]
+        _, report = parse_who_estimates(write_rows(rows, fields), report_year=2025)
+        self.assertIn("schema_changed", report.codes("fatal"))
+        _, report = parse_who_estimates(b"\xff\xfe\x00c\x00o", report_year=2025)
+        self.assertIn("corrupt_encoding", report.codes("fatal"))
+        _, report = parse_who_estimates(self.payload.split(b"\n", 1)[0] + b"\n", report_year=2025)
+        self.assertIn("empty_file", report.codes("fatal"))
 
-    def test_schema_change_detected(self) -> None:
-        self.assertFalse(validate_columns(["iso3", "year", "e_inc_100k"]).is_valid)
-        row = _row()
-        row.pop("incidence_per_100k_hi")
-        _, report = parse_rows([row])
-        self.assertIn("schema_changed", report.codes())
+    def test_unexpected_year_range(self) -> None:
+        _, report = parse_who_estimates(self.payload, report_year=2026)
+        self.assertIn("unexpected_year_range", report.codes("fatal"))
 
-    def test_incompatible_vintages(self) -> None:
-        base = {"sourceDataset": "WHO", "schemaVersion": "who_incidence_snapshot_v1", "transformationVersion": "t1"}
-        report = check_vintage_compatibility([{**base, "sourceReportYear": 2024}, {**base, "sourceReportYear": 2025}])
-        self.assertIn("incompatible_vintage", report.codes())
-        self.assertTrue(check_vintage_compatibility([{**base, "sourceReportYear": 2025}] * 2).is_valid)
+    def test_categories_distinguish_missingness(self) -> None:
+        _, report = parse_who_estimates(self.payload, report_year=2025)
+        self.assertIn("no_estimates", report.codes("expected_missingness"))
+        self.assertIn("short_series", report.codes("incomplete_series"))
+        self.assertEqual(report.fatal, [])
+        summary = report.summary_markdown()
+        self.assertIn("Result: PASSED", summary)
+        self.assertIn("Expected missingness (1)", summary)
 
-    def test_who_public_csv_adapter_and_snapshot_writer(self) -> None:
-        header = ["country", "iso2", "iso3", "g_whoregion", "year", "e_pop_num", "e_inc_100k", "e_inc_100k_lo",
-                  "e_inc_100k_hi", "e_inc_num", "e_inc_num_lo", "e_inc_num_hi"]
-        buffer = io.StringIO()
-        writer = csv.writer(buffer)
-        writer.writerow(header)
-        writer.writerow(["Exampleland", "EX", "EXA", "AFR", 2023, 1000000, 100, 80, 120, 1000, 800, 1200])
-        writer.writerow(["Exampleland", "EX", "EXA", "AFR", 2024, 1010000, 95, 76, 115, 960, 770, 1160])
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "burden.csv"
-            source.write_text(buffer.getvalue(), encoding="utf-8")
-            records, report = transform(WhoBurdenCsvAdapter(source))
+    def test_crosscheck_tolerance(self) -> None:
+        rows, report = parse_who_estimates(self.payload, report_year=2025)
+        reference = {}
+        for row in rows:
+            values = {c: row.number(c) for c in ("incidence_per_100k", "incidence_per_100k_lo", "incidence_per_100k_hi", "incident_cases", "incident_cases_lo", "incident_cases_hi", "population")}
+            reference[(row.iso3, row.year)] = values
+        result = cross_check(rows, reference, report)
+        self.assertEqual(result["disagreements"], 0)
+        key = next(k for k in reference if k[0] == "ZAF")
+        reference[key] = {**reference[key], "incidence_per_100k": reference[key]["incidence_per_100k"] * 1.2}
+        _, fresh = parse_who_estimates(self.payload, report_year=2025)
+        self.assertEqual(cross_check(rows, reference, fresh)["disagreements"], 1)
+        self.assertIn("crosscheck_disagreement", fresh.codes("fatal"))
+        self.assertEqual(rounding_half_unit("6.8"), 0.05)
+        self.assertEqual(rounding_half_unit("1300"), 50)
+
+    def test_dictionary_check(self) -> None:
+        _, report = parse_who_estimates(self.payload, report_year=2025)
+        check_dictionary(b"variable_name,definition\niso3,code\n", report)
+        self.assertIn("dictionary_missing_variable", report.codes("fatal"))
+
+    def test_writer_refuses_invalid_report(self) -> None:
+        rows, report = parse_who_estimates(mutate(self.payload, "AUS", 2001, e_inc_100k_lo="99"), report_year=2025)
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaises(ImportFailed):
+            write_snapshot_files(Path(tmp), snapshot_bytes(rows), {"snapshotId": "x"}, report)
+
+    def test_snapshot_columns_match_contract(self) -> None:
+        payload = (FIXTURE_DIR / json.loads(FIXTURE_MANIFEST.read_text())["dataFile"]["filename"]).read_bytes()
+        self.assertEqual(tuple(payload.split(b"\n", 1)[0].decode().split(",")), COLUMNS)
+
+
+class ImporterIsOfflineTests(unittest.TestCase):
+    def test_import_and_load_without_network_or_gtbreport(self) -> None:
+        with patch.object(socket.socket, "connect", _no_network), patch("socket.create_connection", _no_network):
+            rows, report = parse_who_estimates(fixture_who_csv(), report_year=2025)
             self.assertTrue(report.is_valid)
-            manifest = write_snapshot(
-                records,
-                out_dir=Path(tmp) / "out",
-                data_filename="s.csv",
-                manifest_filename="s_manifest.json",
-                manifest_fields={
-                    "snapshotId": "s", "snapshotKind": "test_fixture", "isCompleteDataset": False,
-                    "sourceDataset": "WHO", "sourceReportYear": 2025, "upstream": {}, "extractionDate": "2026-01-01",
-                    "licence": {"status": "to_be_confirmed"}, "citation": "WHO",
-                },
-            )
-            loaded = load_snapshot(Path(tmp) / "out" / "s_manifest.json")
-            self.assertEqual(manifest["dataFile"]["rows"], 2)
-            self.assertEqual(loaded.series_for("EXA")[1].estimate, 95.0)
-
-    def test_user_subnational_upload(self) -> None:
-        text = "country,year,incidence_per_100k,incidence_per_100k_lo,incidence_per_100k_hi\nNorth District,2022,50,40,60\nNorth District,2023,48,39,58\n"
-        records, report = parse_user_incidence_csv(text)
-        self.assertTrue(report.is_valid, report.to_dict())
-        profile = apply_user_incidence(build_demonstration_profile(), records, source_label="north.csv")
-        self.assertEqual(profile.location.kind, LocationKind.SUBNATIONAL)
-        self.assertEqual(profile.incidence.provenance, Provenance.USER_DEFINED)
-        self.assertEqual(PopulationProfile.from_json(profile.to_json()), profile)
-        _, bad = parse_user_incidence_csv(text.replace("40,60", "55,60", 1))
-        self.assertFalse(bad.is_valid)
-
-
-class TrendInterfaceTests(unittest.TestCase):
-    def test_observed_values_preserved_and_unimplemented_methods_refuse(self) -> None:
-        series = load_bundled_snapshot().series_for("IDN")
-        result = estimate_trend(series, TrendSettings())
-        self.assertEqual([p.observed for p in result.points], [p.estimate for p in series])
-        self.assertTrue(all(p.fitted is None for p in result.points))
-        self.assertEqual(result.quantity, "estimated_tb_disease_incidence")
-        for method in (TrendMethod.LOG_LINEAR_RECENT, TrendMethod.PENALISED_SPLINE, TrendMethod.STATE_SPACE):
-            with self.assertRaises(NotImplementedError):
-                estimate_trend(series, TrendSettings(method=method))
-        override = estimate_trend(series, TrendSettings(method=TrendMethod.USER_OVERRIDE, user_annual_percent_change=-2.0))
-        self.assertEqual(override.annual_percent_change, -2.0)
-        self.assertEqual(covid_disruption_flags([2019, 2020, 2023]), [False, True, False])
-        self.assertIn("not used as the slope of infection pressure", INCIDENCE_TO_INFECTION_POLICY)
+            load_snapshot(FIXTURE_MANIFEST)
+        for module in ("engine/who_incidence/snapshot.py", "engine/who_incidence/who_import.py", "engine/who_incidence/contract.py"):
+            source = (ROOT / module).read_text(encoding="utf-8")
+            self.assertNotRegex(source, r"import (requests|urllib|http\.client)")
+            self.assertNotIn("../gtbreport2025", source)
 
 
 if __name__ == "__main__":

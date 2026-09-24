@@ -1,0 +1,1139 @@
+{
+  "counts": {
+    "expected_missingness": 1,
+    "fatal": 0,
+    "incomplete_series": 8,
+    "info": 2,
+    "warning": 150
+  },
+  "findings": [
+    {
+      "category": "info",
+      "code": "unused_columns",
+      "iso3": null,
+      "message": "34 published column(s) are not part of this snapshot contract.",
+      "year": null
+    },
+    {
+      "category": "incomplete_series",
+      "code": "short_series",
+      "iso3": "ANT",
+      "message": "ANT: series covers 2000-2009 rather than 2000-2024.",
+      "year": null
+    },
+    {
+      "category": "incomplete_series",
+      "code": "short_series",
+      "iso3": "CUW",
+      "message": "CUW: series covers 2010-2024 rather than 2000-2024.",
+      "year": null
+    },
+    {
+      "category": "incomplete_series",
+      "code": "short_series",
+      "iso3": "MNE",
+      "message": "MNE: series covers 2005-2024 rather than 2000-2024.",
+      "year": null
+    },
+    {
+      "category": "expected_missingness",
+      "code": "no_estimates",
+      "iso3": "PRK",
+      "message": "PRK: population published but no incidence estimates.",
+      "year": null
+    },
+    {
+      "category": "incomplete_series",
+      "code": "short_series",
+      "iso3": "SCG",
+      "message": "SCG: series covers 2000-2004 rather than 2000-2024.",
+      "year": null
+    },
+    {
+      "category": "incomplete_series",
+      "code": "short_series",
+      "iso3": "SRB",
+      "message": "SRB: series covers 2005-2024 rather than 2000-2024.",
+      "year": null
+    },
+    {
+      "category": "incomplete_series",
+      "code": "short_series",
+      "iso3": "SSD",
+      "message": "SSD: series covers 2011-2024 rather than 2000-2024.",
+      "year": null
+    },
+    {
+      "category": "incomplete_series",
+      "code": "short_series",
+      "iso3": "SXM",
+      "message": "SXM: series covers 2010-2024 rather than 2000-2024.",
+      "year": null
+    },
+    {
+      "category": "incomplete_series",
+      "code": "short_series",
+      "iso3": "TLS",
+      "message": "TLS: series covers 2002-2024 rather than 2000-2024.",
+      "year": null
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2000 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2000
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2000 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2000
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2000 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2000
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2000 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2000
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2000 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2000
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2000 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2000
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2001 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2001
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2001 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2001
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2001 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2001
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2001 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2001
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2001 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2001
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2001 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2001
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2002 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2002
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2002 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2002
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2002 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2002
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2002 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2002
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2002 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2002
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2002 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2002
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2003 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2003
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2003 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2003
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2003 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2003
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2003 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2003
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2003 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2003
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2003 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2003
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2004 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2004
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2004 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2004
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2004 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2004
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2004 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2004
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2004 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2004
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2004 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2004
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2005 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2005
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2005 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2005
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2005 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2005
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2005 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2005
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2005 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2005
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2005 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2005
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2006 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2006
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2006 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2006
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2006 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2006
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2006 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2006
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2006 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2006
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2006 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2006
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2007 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2007
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2007 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2007
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2007 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2007
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2007 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2007
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2007 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2007
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2007 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2007
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2008 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2008
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2008 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2008
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2008 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2008
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2008 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2008
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2008 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2008
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2008 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2008
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2009 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2009
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2009 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2009
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2009 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2009
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2009 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2009
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2009 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2009
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2009 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2009
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2010 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2010
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2010 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2010
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2010 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2010
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2010 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2010
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2010 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2010
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2010 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2010
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2011 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2011
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2011 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2011
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2011 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2011
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2011 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2011
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2011 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2011
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2011 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2011
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2012 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2012
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2012 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2012
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2012 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2012
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2012 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2012
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2012 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2012
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2012 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2012
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2013 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2013
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2013 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2013
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2013 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2013
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2013 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2013
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2013 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2013
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2013 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2013
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2014 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2014
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2014 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2014
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2014 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2014
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2014 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2014
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2014 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2014
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2014 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2014
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2015 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2015
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2015 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2015
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2015 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2015
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2015 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2015
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2015 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2015
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2015 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2015
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2016 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2016
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2016 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2016
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2016 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2016
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2016 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2016
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2016 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2016
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2016 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2016
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2017 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2017
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2017 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2017
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2017 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2017
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2017 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2017
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2017 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2017
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2017 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2017
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2018 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2018
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2018 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2018
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2018 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2018
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2018 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2018
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2018 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2018
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2018 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2018
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2019 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2019
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2019 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2019
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2019 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2019
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2019 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2019
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2019 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2019
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2019 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2019
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2020 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2020
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2020 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2020
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2020 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2020
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2020 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2020
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2020 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2020
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2020 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2020
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2021 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2021
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2021 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2021
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2021 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2021
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2021 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2021
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2021 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2021
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2021 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2021
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2022 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2022
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2022 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2022
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2022 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2022
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2022 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2022
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2022 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2022
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2022 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2022
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2023 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2023
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2023 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2023
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2023 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2023
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2023 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2023
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2023 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2023
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2023 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2023
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2024 incidence_per_100k: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2024
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2024 incidence_per_100k_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2024
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2024 incidence_per_100k_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2024
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2024 incident_cases: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2024
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2024 incident_cases_lo: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2024
+    },
+    {
+      "category": "warning",
+      "code": "crosscheck_unpublished",
+      "iso3": "PRK",
+      "message": "PRK 2024 incident_cases_hi: present in the report-round analysis output but not published in the public WHO dataset; the public (blank) value is kept.",
+      "year": 2024
+    },
+    {
+      "category": "info",
+      "code": "crosscheck_passed",
+      "iso3": null,
+      "message": "All 37279 values published in both sources agree within published rounding precision.",
+      "year": null
+    }
+  ],
+  "isValid": true
+}

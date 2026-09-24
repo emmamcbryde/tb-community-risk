@@ -1,4 +1,9 @@
-"""Read and write versioned, checksummed incidence snapshots (offline only)."""
+"""Offline loading of versioned, checksummed WHO incidence snapshots (contract v2).
+
+Ordinary application sessions only read local files. A production snapshot in
+``data/who_incidence/snapshots/`` is preferred; the small test fixture in
+``data/who_incidence/fixture/`` is used when no production snapshot is present.
+"""
 
 from __future__ import annotations
 
@@ -12,83 +17,123 @@ from pathlib import Path
 from typing import Any
 
 from engine.profiles.population_profile import IncidencePoint
-from engine.who_incidence.schema import (
-    RECORD_COLUMNS,
-    SNAPSHOT_SCHEMA_VERSION,
-    TRANSFORMATION_VERSION,
-    IncidenceRecord,
-    ValidationReport,
-    parse_rows,
-    validate_manifest,
-    validate_records,
+from engine.who_incidence.contract import (
+    COLUMNS,
+    MANIFEST_REQUIRED_FIELDS,
+    SNAPSHOT_CONTRACT_VERSION,
+    WHO_COLUMN_MAP,
+    SnapshotRow,
 )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BUNDLED_SNAPSHOT_DIR = REPO_ROOT / "data" / "who_incidence"
-BUNDLED_SNAPSHOT_ID = "who-gtb2025-fixture-v1"
-BUNDLED_MANIFEST = BUNDLED_SNAPSHOT_DIR / "fixture" / f"{BUNDLED_SNAPSHOT_ID}_manifest.json"
-
-
+SNAPSHOT_ROOT = REPO_ROOT / "data" / "who_incidence"
+PRODUCTION_DIR = SNAPSHOT_ROOT / "snapshots"
+FIXTURE_DIR = SNAPSHOT_ROOT / "fixture"
+UPDATE_GUIDE = "docs/who_data_update_guide.md"
 CRLF = bytes([13, 10])
 LF = bytes([10])
 
 
 class SnapshotError(ValueError):
-    """Raised when a snapshot fails integrity or schema validation."""
+    """Raised when a snapshot fails integrity or contract validation."""
+
+
+class SnapshotUnavailable(SnapshotError):
+    """Raised when no snapshot is installed; the message is maintainer-facing."""
 
 
 @dataclass(frozen=True)
 class IncidenceSnapshot:
     manifest: dict[str, Any]
-    records: tuple[IncidenceRecord, ...]
-    validation: dict[str, Any]
+    rows: tuple[SnapshotRow, ...]
+    manifest_path: str
 
     @property
     def snapshot_id(self) -> str:
         return str(self.manifest["snapshotId"])
 
     @property
+    def report_year(self) -> int:
+        return int(self.manifest["reportYear"])
+
+    @property
     def is_complete_dataset(self) -> bool:
         return bool(self.manifest.get("isCompleteDataset"))
 
-    def countries(self) -> list[dict[str, str]]:
-        names: dict[str, str] = {}
-        for record in self.records:
-            names.setdefault(record.iso3, record.country or record.iso3)
-        return [{"iso3": iso3, "name": names[iso3]} for iso3 in sorted(names, key=lambda code: names[code])]
+    @property
+    def data_sha256(self) -> str:
+        return str(self.manifest["dataFile"]["sha256"])
 
-    def records_for(self, iso3: str) -> list[IncidenceRecord]:
-        return sorted((record for record in self.records if record.iso3 == iso3), key=lambda record: record.year)
+    def countries(self) -> list[dict[str, Any]]:
+        info: dict[str, dict[str, Any]] = {}
+        for row in self.rows:
+            entry = info.setdefault(
+                row.iso3,
+                {"iso3": row.iso3, "name": row.text("country"), "region": row.text("who_region"), "estimatedYears": 0},
+            )
+            entry["estimatedYears"] += 1 if row.is_estimated else 0
+        return sorted(info.values(), key=lambda item: item["name"])
+
+    def rows_for(self, iso3: str) -> list[SnapshotRow]:
+        return sorted((row for row in self.rows if row.iso3 == iso3), key=lambda row: row.year)
 
     def series_for(self, iso3: str) -> tuple[IncidencePoint, ...]:
+        """Estimated years only; unpublished years are omitted, never imputed."""
         return tuple(
             IncidencePoint(
-                year=record.year,
-                estimate=record.incidence_per_100k,
-                lower=record.incidence_per_100k_lo,
-                upper=record.incidence_per_100k_hi,
+                year=row.year,
+                estimate=row.number("incidence_per_100k"),
+                lower=row.number("incidence_per_100k_lo"),
+                upper=row.number("incidence_per_100k_hi"),
             )
-            for record in self.records_for(iso3)
+            for row in self.rows_for(iso3)
+            if row.is_estimated
         )
 
+    def country_summary(self, iso3: str) -> dict[str, Any]:
+        rows = self.rows_for(iso3)
+        if not rows:
+            raise KeyError(f"{iso3} is not in snapshot {self.snapshot_id}.")
+        estimated = [row for row in rows if row.is_estimated]
+        latest = estimated[-1] if estimated else None
+        return {
+            "iso3": iso3,
+            "name": rows[0].text("country"),
+            "region": rows[0].text("who_region"),
+            "years": [rows[0].year, rows[-1].year],
+            "estimatedYears": [row.year for row in estimated],
+            "latest": None
+            if latest is None
+            else {
+                "year": latest.year,
+                "estimate": latest.number("incidence_per_100k"),
+                "lower": latest.number("incidence_per_100k_lo"),
+                "upper": latest.number("incidence_per_100k_hi"),
+                "cases": latest.number("incident_cases"),
+                "population": latest.number("population"),
+            },
+        }
+
     def provenance_summary(self) -> dict[str, Any]:
-        upstream = self.manifest.get("upstream") or {}
+        source = self.manifest.get("source") or {}
+        cross = self.manifest.get("crossCheck") or {}
         return {
             "snapshotId": self.snapshot_id,
             "snapshotKind": self.manifest.get("snapshotKind"),
             "isCompleteDataset": self.is_complete_dataset,
-            "sourceDataset": self.manifest.get("sourceDataset"),
-            "sourceReportYear": self.manifest.get("sourceReportYear"),
-            "sourceUrl": self.manifest.get("sourceUrl"),
-            "upstreamRepository": upstream.get("repository"),
-            "upstreamCommit": upstream.get("commit"),
-            "extractionDate": self.manifest.get("extractionDate"),
-            "transformationVersion": self.manifest.get("transformationVersion"),
-            "dataSha256": (self.manifest.get("dataFile") or {}).get("sha256"),
-            "validationStatus": self.manifest.get("validationStatus"),
+            "reportYear": self.report_year,
+            "dataset": source.get("dataset"),
+            "sourceUrl": source.get("url"),
+            "accessDate": (self.manifest.get("volatile") or {}).get("accessDate"),
+            "crossCheckRepository": cross.get("repository"),
+            "crossCheckCommit": cross.get("commit"),
+            "importerVersion": self.manifest.get("importerVersion"),
+            "dataSha256": self.data_sha256,
+            "analyticalHash": self.manifest.get("analyticalHash"),
+            "coverage": self.manifest.get("coverage"),
             "citation": self.manifest.get("citation"),
-            "licenceStatus": (self.manifest.get("licence") or {}).get("status"),
+            "terms": self.manifest.get("terms"),
         }
 
 
@@ -100,90 +145,116 @@ def sha256_file(path: Path) -> str:
     return sha256_bytes(Path(path).read_bytes())
 
 
+def validate_manifest(manifest: Any) -> list[str]:
+    if not isinstance(manifest, dict):
+        return ["Manifest must be a JSON object."]
+    problems = [f"Manifest is missing '{key}'." for key in MANIFEST_REQUIRED_FIELDS if key not in manifest]
+    if problems:
+        return problems
+    if manifest["contractVersion"] != SNAPSHOT_CONTRACT_VERSION:
+        problems.append(f"Unsupported snapshot contract {manifest['contractVersion']!r}; expected {SNAPSHOT_CONTRACT_VERSION!r}.")
+    data_file = manifest.get("dataFile")
+    if not isinstance(data_file, dict) or not {"filename", "sha256", "rows"} <= set(data_file):
+        problems.append("Manifest dataFile must record filename, sha256 and rows.")
+    if [item.get("name") for item in manifest.get("fields") or []] != list(COLUMNS):
+        problems.append("Manifest field list does not match the snapshot contract.")
+    return problems
+
+
 def load_snapshot(manifest_path: Path | str) -> IncidenceSnapshot:
-    """Load a snapshot from a local manifest, verifying checksum and schema."""
+    """Load a snapshot, verifying manifest, checksum, columns and every row."""
+    from engine.who_incidence.who_import import parse_who_estimates
+
     manifest_path = Path(manifest_path)
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    report = validate_manifest(manifest)
-    if not report.is_valid:
-        raise SnapshotError(_describe(report))
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SnapshotError(f"Cannot read snapshot manifest {manifest_path.name}: {exc}") from exc
+    problems = validate_manifest(manifest)
+    if problems:
+        raise SnapshotError(f"Invalid snapshot manifest {manifest_path.name}: " + " ".join(problems))
     data_path = manifest_path.parent / manifest["dataFile"]["filename"]
-    payload = data_path.read_bytes()
+    try:
+        payload = data_path.read_bytes()
+    except OSError as exc:
+        raise SnapshotError(f"Snapshot data file {data_path.name} is missing: {exc}") from exc
     if CRLF in payload:  # tolerate a CRLF checkout of the LF-committed text file
         payload = payload.replace(CRLF, LF)
     actual = sha256_bytes(payload)
     if actual != manifest["dataFile"]["sha256"]:
-        raise SnapshotError(f"Checksum mismatch for {data_path.name}: expected {manifest['dataFile']['sha256']}, found {actual}.")
-    reader = csv.DictReader(io.StringIO(payload.decode("utf-8")))
-    records, parse_report = parse_rows(reader)
-    if tuple(reader.fieldnames or ()) != RECORD_COLUMNS:
-        parse_report.add("schema_changed", "error", "Data file columns do not match the application schema.")
-    if not parse_report.is_valid:
-        raise SnapshotError(_describe(parse_report))
-    if len(records) != int(manifest["dataFile"]["rows"]):
-        raise SnapshotError("Row count does not match the manifest.")
-    return IncidenceSnapshot(manifest=manifest, records=tuple(records), validation=parse_report.to_dict())
+        raise SnapshotError(
+            f"Checksum mismatch for {data_path.name}: manifest records {manifest['dataFile']['sha256']}, file has {actual}. "
+            "The snapshot may be corrupted or edited; re-run the importer."
+        )
+    rows = _read_rows(payload)
+    if len(rows) != int(manifest["dataFile"]["rows"]):
+        raise SnapshotError("Snapshot row count does not match the manifest.")
+    # Re-validate by mapping back to the published column names and applying the importer's rules.
+    reparsed, report = parse_who_estimates(_as_who_csv(rows), report_year=int(manifest["reportYear"]))
+    if not report.is_valid:
+        raise SnapshotError("Snapshot failed validation: " + "; ".join(item.message for item in report.fatal[:5]))
+    if tuple(reparsed) != tuple(rows):
+        raise SnapshotError("Snapshot rows are not in canonical form.")
+    return IncidenceSnapshot(manifest=manifest, rows=tuple(rows), manifest_path=str(manifest_path))
+
+
+def find_manifests(directory: Path) -> list[Path]:
+    if not directory.is_dir():
+        return []
+    return sorted(directory.glob("*_manifest.json"))
+
+
+def default_manifest_path() -> Path:
+    """Production snapshot if installed, otherwise the bundled test fixture."""
+    for directory in (PRODUCTION_DIR, FIXTURE_DIR):
+        manifests = find_manifests(directory)
+        if len(manifests) > 1:
+            raise SnapshotError(
+                f"More than one snapshot is installed in {directory.relative_to(REPO_ROOT).as_posix()}; "
+                "keep exactly one report round per directory."
+            )
+        if manifests:
+            return manifests[0]
+    raise SnapshotUnavailable(
+        "No WHO incidence snapshot is installed under data/who_incidence/. "
+        f"Build one with scripts/import_who_incidence.py (see {UPDATE_GUIDE})."
+    )
 
 
 @lru_cache(maxsize=4)
-def _load_cached(manifest_path: str, mtime: float) -> IncidenceSnapshot:
+def _load_cached(manifest_path: str, mtime: float, size: int) -> IncidenceSnapshot:
     return load_snapshot(manifest_path)
 
 
 def load_bundled_snapshot(manifest_path: Path | str | None = None) -> IncidenceSnapshot:
-    """Load the snapshot bundled with the application (no network access)."""
-    path = Path(manifest_path or BUNDLED_MANIFEST)
-    return _load_cached(str(path), path.stat().st_mtime)
+    """Load the installed snapshot (no network access)."""
+    path = Path(manifest_path) if manifest_path else default_manifest_path()
+    if not path.is_file():
+        raise SnapshotUnavailable(f"Snapshot manifest {path.name} was not found. See {UPDATE_GUIDE}.")
+    stat = path.stat()
+    return _load_cached(str(path), stat.st_mtime, stat.st_size)
 
 
-def records_to_csv_bytes(records: list[IncidenceRecord]) -> bytes:
+def _read_rows(payload: bytes) -> list[SnapshotRow]:
+    reader = csv.reader(io.StringIO(payload.decode("utf-8"), newline=""))
+    header = next(reader, None)
+    if tuple(header or ()) != COLUMNS:
+        raise SnapshotError("Snapshot data columns do not match the snapshot contract.")
+    rows = []
+    for values in reader:
+        if len(values) != len(COLUMNS):
+            raise SnapshotError("Snapshot data file has a malformed row.")
+        rows.append(SnapshotRow(raw=tuple(zip(COLUMNS, values))))
+    return rows
+
+
+def _as_who_csv(rows: list[SnapshotRow]) -> bytes:
+    inverse = {column: who for who, column in WHO_COLUMN_MAP.items()}
     buffer = io.StringIO(newline="")
-    writer = csv.DictWriter(buffer, fieldnames=list(RECORD_COLUMNS), lineterminator="\n")
-    writer.writeheader()
-    for record in sorted(records, key=lambda item: (item.iso3, item.year)):
-        writer.writerow({key: _csv_value(value) for key, value in record.to_row().items()})
+    writer = csv.writer(buffer, lineterminator="\n")
+    who_columns = [inverse[column] for column in COLUMNS if column in inverse]
+    writer.writerow(who_columns)
+    for row in rows:
+        values = dict(row.raw)
+        writer.writerow([values[WHO_COLUMN_MAP[who]] for who in who_columns])
     return buffer.getvalue().encode("utf-8")
-
-
-def write_snapshot(
-    records: list[IncidenceRecord],
-    *,
-    out_dir: Path,
-    data_filename: str,
-    manifest_filename: str,
-    manifest_fields: dict[str, Any],
-) -> dict[str, Any]:
-    """Validate records and write a CSV plus manifest; refuses invalid data."""
-    report = validate_records(records)
-    if not report.is_valid:
-        raise SnapshotError(_describe(report))
-    out_dir.mkdir(parents=True, exist_ok=True)
-    payload = records_to_csv_bytes(records)
-    (out_dir / data_filename).write_bytes(payload)
-    years = sorted({record.year for record in records})
-    manifest = {
-        "schemaVersion": SNAPSHOT_SCHEMA_VERSION,
-        "transformationVersion": TRANSFORMATION_VERSION,
-        **manifest_fields,
-        "columns": list(RECORD_COLUMNS),
-        "dataFile": {"filename": data_filename, "sha256": sha256_bytes(payload), "rows": len(records)},
-        "countries": sorted({record.iso3 for record in records}),
-        "yearRange": [years[0], years[-1]] if years else None,
-        "validationStatus": "passed_with_warnings" if report.warnings else "passed",
-        "validationWarnings": [issue.message for issue in report.warnings],
-    }
-    text = json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-    (out_dir / manifest_filename).write_text(text, encoding="utf-8", newline="\n")
-    return manifest
-
-
-def _csv_value(value: Any) -> Any:
-    if value is None:
-        return ""
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    return value
-
-
-def _describe(report: ValidationReport) -> str:
-    return "; ".join(issue.message for issue in report.errors[:10])

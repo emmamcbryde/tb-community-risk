@@ -47,19 +47,18 @@ else:
 st.subheader("Incidence data source")
 if snapshot is not None:
     summary = snapshot.provenance_summary()
+    coverage = summary.get("coverage") or {}
     rows = [
-        {"Item": "Dataset", "Value": summary["sourceDataset"]},
-        {"Item": "WHO report year", "Value": summary["sourceReportYear"]},
-        {"Item": "Series type", "Value": snapshot.manifest.get("seriesType", "")},
+        {"Item": "Dataset", "Value": summary["dataset"]},
+        {"Item": "Report round", "Value": f"Global Tuberculosis Report {summary['reportYear']}"},
         {"Item": "Snapshot", "Value": summary["snapshotId"]},
-        {"Item": "Snapshot scope", "Value": "Complete dataset" if summary["isCompleteDataset"] else "Offline example subset (not the complete WHO dataset)"},
-        {"Item": "Extraction date", "Value": summary["extractionDate"]},
-        {"Item": "Upstream repository", "Value": summary["upstreamRepository"] or ""},
-        {"Item": "Upstream commit", "Value": summary["upstreamCommit"] or ""},
+        {"Item": "Snapshot scope", "Value": "Complete dataset" if summary["isCompleteDataset"] else "Offline example subset (not the complete dataset)"},
+        {"Item": "Coverage", "Value": f"{coverage.get('countriesAndAreas')} countries and areas, {coverage.get('yearRange')}"},
+        {"Item": "Source", "Value": summary["sourceUrl"]},
+        {"Item": "Access date", "Value": summary["accessDate"]},
+        {"Item": "Cross-check", "Value": f"{summary['crossCheckRepository'] or 'none'} @ {(summary['crossCheckCommit'] or '')[:7]}"},
         {"Item": "Data file SHA-256", "Value": summary["dataSha256"]},
-        {"Item": "Transformation", "Value": summary["transformationVersion"]},
-        {"Item": "Validation", "Value": summary["validationStatus"]},
-        {"Item": "Licence status", "Value": "To be confirmed with WHO terms of use" if summary["licenceStatus"] == "to_be_confirmed" else summary["licenceStatus"]},
+        {"Item": "Importer", "Value": summary["importerVersion"]},
         {"Item": "Citation", "Value": summary["citation"]},
     ]
     st.dataframe(arrow_safe_dataframe(rows), use_container_width=True, hide_index=True)
@@ -73,7 +72,7 @@ else:
 st.subheader("Epidemiological quantities")
 st.dataframe(
     arrow_safe_dataframe(
-        [{"Quantity": QUANTITY_LABELS[key], "Meaning": text} for key, text in EPIDEMIOLOGICAL_QUANTITIES.items()]
+        [{"Quantity": QUANTITY_LABELS.get(key, key.replace("_", " ").capitalize()), "Meaning": text} for key, text in EPIDEMIOLOGICAL_QUANTITIES.items()]
     ),
     use_container_width=True,
     hide_index=True,
