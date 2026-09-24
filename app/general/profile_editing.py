@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import replace
+import io
 import math
 from typing import Any
 
@@ -25,18 +27,32 @@ REVIEW_LABELS = {
 }
 REVIEW_CODES = {label: code for code, label in REVIEW_LABELS.items()}
 EFFECT_MEASURE_OPTIONS = [member.value for member in EffectMeasure]
+TRANSITION_LABELS = {
+    "progression_to_disease": "Progression to disease",
+    "infection": "Infection",
+    "other": "Other",
+}
+TRANSITION_CODES = {label: code for code, label in TRANSITION_LABELS.items()}
 RISK_FACTOR_COLUMNS = [
     "Enabled",
     "Risk factor",
+    "Status",
     "Prevalence (%)",
+    "Prevalence low (%)",
+    "Prevalence high (%)",
     "Effect estimate",
+    "Effect low",
+    "Effect high",
     "Effect measure",
+    "Affected transition",
+    "Evidence year",
+    "Applies to",
     "Source",
     "Review status",
-    "Status",
     "Notes",
     "id",
 ]
+CSV_COLUMNS = [column for column in RISK_FACTOR_COLUMNS if column != "Status"]
 
 
 def value_status_text(value: ProfileValue) -> str:
@@ -77,8 +93,15 @@ def risk_factor_rows(profile: PopulationProfile) -> list[dict[str, Any]]:
                 "Enabled": factor.enabled,
                 "Risk factor": factor.label,
                 "Prevalence (%)": _percent(factor.prevalence.value),
+                "Prevalence low (%)": None if factor.prevalence_bounds is None else _percent(factor.prevalence_bounds[0]),
+                "Prevalence high (%)": None if factor.prevalence_bounds is None else _percent(factor.prevalence_bounds[1]),
                 "Effect estimate": factor.effect_estimate.value,
+                "Effect low": None if factor.effect_bounds is None else factor.effect_bounds[0],
+                "Effect high": None if factor.effect_bounds is None else factor.effect_bounds[1],
                 "Effect measure": None if factor.effect_measure is None else factor.effect_measure.value,
+                "Affected transition": TRANSITION_LABELS.get(factor.affected_transition, factor.affected_transition),
+                "Evidence year": factor.evidence_year,
+                "Applies to": factor.population_applicability,
                 "Source": factor.evidence_source,
                 "Review status": REVIEW_LABELS[factor.review_status],
                 "Status": risk_factor_status(factor),
@@ -164,6 +187,32 @@ def _apply_row(factor: RiskFactor, row: dict[str, Any]) -> RiskFactor:
         changes["notes"] = notes
         mark("notes")
 
+    prevalence_bounds = _pair(row.get("Prevalence low (%)"), row.get("Prevalence high (%)"), scale=0.01, label="Prevalence")
+    if not _same_pair(prevalence_bounds, factor.prevalence_bounds):
+        changes["prevalence_bounds"] = prevalence_bounds
+        mark("prevalenceBounds")
+    effect_bounds = _pair(row.get("Effect low"), row.get("Effect high"), scale=1.0, label="Effect")
+    if not _same_pair(effect_bounds, factor.effect_bounds):
+        changes["effect_bounds"] = effect_bounds
+        mark("effectBounds")
+
+    transition_text = _text(row.get("Affected transition"))
+    transition = TRANSITION_CODES.get(transition_text, transition_text or factor.affected_transition)
+    if transition != factor.affected_transition:
+        changes["affected_transition"] = transition
+        mark("affectedTransition")
+
+    year_value = _number(row.get("Evidence year"))
+    evidence_year = None if year_value is None else int(year_value)
+    if evidence_year != factor.evidence_year:
+        changes["evidence_year"] = evidence_year
+        mark("evidenceYear")
+
+    applicability = _text(row.get("Applies to"))
+    if applicability != factor.population_applicability:
+        changes["population_applicability"] = applicability
+        mark("applicability")
+
     review = REVIEW_CODES.get(_text(row.get("Review status")), factor.review_status)
     if review != factor.review_status:
         changes["review_status"] = review
@@ -176,6 +225,60 @@ def _apply_row(factor: RiskFactor, row: dict[str, Any]) -> RiskFactor:
         return factor
     changes["user_modified_fields"] = tuple(modified)
     return replace(factor, **changes)
+
+
+def risk_factor_editing_issues(profile: PopulationProfile) -> list[str]:
+    """Engine-specific checks on edited risk factors (in addition to validate_profile)."""
+    issues = []
+    for factor in profile.risk_factors:
+        if factor.engine_key is not None and factor.affected_transition != "progression_to_disease":
+            issues.append(
+                f"{factor.label}: the current engine applies this factor to progression to disease only; "
+                "change 'Affected transition' back or add it as a separate custom factor."
+            )
+    return issues
+
+
+def risk_factors_csv(profile: PopulationProfile) -> str:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=CSV_COLUMNS, lineterminator="\n", extrasaction="ignore")
+    writer.writeheader()
+    for row in risk_factor_rows(profile):
+        writer.writerow({key: "" if row.get(key) is None else row.get(key) for key in CSV_COLUMNS})
+    return buffer.getvalue()
+
+
+def risk_factor_template_csv() -> str:
+    return ",".join(CSV_COLUMNS) + "\n"
+
+
+def parse_risk_factor_csv(payload: bytes) -> tuple[list[dict[str, Any]], list[str]]:
+    """Read an exported or template CSV into editor rows; returns (rows, errors)."""
+    try:
+        text = payload.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return [], ["The file is not UTF-8 encoded text."]
+    reader = csv.DictReader(io.StringIO(text, newline=""))
+    header = reader.fieldnames or []
+    missing = [column for column in ("Risk factor", "Prevalence (%)", "Effect estimate", "Effect measure") if column not in header]
+    if missing:
+        return [], [f"Missing column(s): {', '.join(missing)}. Use the template or an exported table."]
+    rows, errors = [], []
+    for line, raw in enumerate(reader, start=2):
+        row = {key: (value if value != "" else None) for key, value in raw.items() if key in CSV_COLUMNS}
+        enabled = str(raw.get("Enabled", "True")).strip().lower()
+        row["Enabled"] = enabled not in {"false", "0", "no"}
+        measure = _text(row.get("Effect measure")).upper()
+        if measure and measure not in EFFECT_MEASURE_OPTIONS:
+            errors.append(f"Line {line}: effect measure must be RR, HR or OR (found {measure!r}).")
+        row["Effect measure"] = measure or None
+        for column in ("Prevalence (%)", "Prevalence low (%)", "Prevalence high (%)", "Effect estimate", "Effect low", "Effect high", "Evidence year"):
+            try:
+                _number(row.get(column))
+            except ValueError:
+                errors.append(f"Line {line}: {column} is not a number.")
+        rows.append(row)
+    return rows, errors
 
 
 def population_status_text(profile: PopulationProfile) -> str:
@@ -200,6 +303,21 @@ def _number(value: Any) -> float | None:
             raise ValueError(f"Not a number: {value!r}") from exc
     number = float(value)
     return None if math.isnan(number) else number
+
+
+def _pair(low: Any, high: Any, *, scale: float, label: str) -> tuple[float, float] | None:
+    low_value, high_value = _number(low), _number(high)
+    if low_value is None and high_value is None:
+        return None
+    if low_value is None or high_value is None:
+        raise ValueError(f"{label} bounds need both a low and a high value.")
+    return (low_value * scale, high_value * scale)
+
+
+def _same_pair(a: tuple[float, float] | None, b: tuple[float, float] | None) -> bool:
+    if a is None or b is None:
+        return a is None and b is None
+    return _same_number(a[0], b[0]) and _same_number(a[1], b[1])
 
 
 def _blank_number(value: Any) -> bool:
