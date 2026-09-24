@@ -49,6 +49,7 @@ EDITOR_VERSION_KEY = "general_editor_version"
 RESULTS_CACHE_SIZE = 3
 WIDGET_KEYS = (
     "general_country_candidate",
+    "general_country_candidate_memory",
     "general_population_input",
     "general_test_type",
     "general_regimen",

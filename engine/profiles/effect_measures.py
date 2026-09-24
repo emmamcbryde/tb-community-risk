@@ -92,16 +92,19 @@ def effect_warnings(profile: PopulationProfile) -> list[EffectWarning]:
     """Warnings about how effect estimates are applied; they never change results."""
     warnings: list[EffectWarning] = []
     factors = enabled_engine_factors(profile)
-    for factor in factors:
-        if factor.effect_measure is EffectMeasure.OR:
-            warnings.append(
-                EffectWarning(
-                    "or_as_hazard_multiplier",
-                    f"{factor.label}: an odds ratio is applied as a progression-hazard multiplier without conversion.",
-                    factor.label,
-                )
+    odds_ratio_factors = [factor.label for factor in factors if factor.effect_measure is EffectMeasure.OR]
+    if odds_ratio_factors:
+        warnings.append(
+            EffectWarning(
+                "or_as_hazard_multiplier",
+                "Odds ratios are applied as progression-hazard multipliers without conversion for: "
+                + ", ".join(odds_ratio_factors)
+                + ".",
+                ", ".join(odds_ratio_factors),
             )
-        elif factor.effect_measure is None and factor.effect_estimate.state is ValueState.VALUE:
+        )
+    for factor in factors:
+        if factor.effect_measure is None and factor.effect_estimate.state is ValueState.VALUE:
             warnings.append(
                 EffectWarning("missing_measure_type", f"{factor.label}: effect-measure type is missing.", factor.label)
             )

@@ -206,6 +206,20 @@ class SummaryAndTerminologyTests(unittest.TestCase):
         self.assertNotIn("transmission", payload)
         self.assertEqual(estimate_trend(geometric(-0.02)).quantity, "estimated_tb_disease_incidence")
 
+    def test_chart_marks_excluded_years_hollow_and_labels_bands(self) -> None:
+        from app.general.country_panel import chart_caption, incidence_chart
+
+        points = geometric(-0.03, n=15)
+        result = estimate_trend(points, TrendSettings(window_years=None, covid_handling=CovidHandling.EXCLUDE))
+        spec = json.dumps(incidence_chart(points, result, source_label="WHO").to_dict())
+        self.assertIn('"filled": false', spec)
+        self.assertIn("WHO uncertainty interval", spec)
+        self.assertIn("Fitted trend", spec)
+        self.assertIn("hollow points were not", chart_caption(result))
+        local = json.dumps(incidence_chart(points, result, source_label="Local").to_dict())
+        self.assertIn("Local estimate", local)
+        self.assertNotIn("WHO estimate", local)
+
     def test_settings_round_trip(self) -> None:
         settings = TrendSettings(method=TrendMethod.PENALISED_SPLINE, window_years=15, covid_handling=CovidHandling.EXCLUDE, excluded_years=(2011,))
         self.assertEqual(TrendSettings.from_dict(json.loads(json.dumps(settings.to_dict()))), settings)

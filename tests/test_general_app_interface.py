@@ -166,6 +166,17 @@ class CountryWorkflowTests(unittest.TestCase):
         self.assertIn("Not changed by country data", texts)
         self.assertIn("They are not yet used to infer infection pressure or transmission", texts)
 
+    def test_preview_survives_page_navigation(self) -> None:
+        app = _render(SETUP)
+        option = _country_option(app, "PHL")
+        _run(app.selectbox(key="general_country_candidate").set_value(option))
+        remembered = app.session_state["general_country_candidate_memory"]
+        self.assertEqual(remembered, option)
+        # Streamlit discards widget state of pages that are not rendered; a return visit keeps only
+        # non-widget session keys, which a fresh render with the remembered value reproduces.
+        returned = _render(SETUP, {"general_country_candidate_memory": remembered})
+        self.assertEqual(returned.selectbox(key="general_country_candidate").value, option)
+
     def test_apply_changes_only_supported_fields_and_keeps_overrides(self) -> None:
         app = _render(SETUP)
         _run(app.number_input(key="general_population_input").set_value(5000))

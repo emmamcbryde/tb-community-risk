@@ -18,7 +18,7 @@ The `feature/general-community-tb-model` branch adds a separate, setting-neutral
 streamlit run general_app.py
 ```
 
-It uses demonstration working defaults, a versioned population-profile contract and an offline WHO incidence snapshot. See `docs/general_app_milestone1.md`. The frozen release (`sa-health-apy-he-v1.0.0`) and `streamlit_app.py` are unchanged.
+It uses demonstration working defaults, a versioned population-profile contract and a complete offline WHO 2025-round incidence snapshot with descriptive trend estimation. See `docs/general_app_milestone2.md` (status and decisions), `docs/environment_and_reproducibility.md` and `docs/who_data_update_guide.md`. The frozen release (`sa-health-apy-he-v1.0.0`) and `streamlit_app.py` are unchanged.
 
 ---
 

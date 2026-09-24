@@ -89,6 +89,9 @@ if any(row["Source"] == "User-defined" for row in rows):
         st.session_state[EDITOR_VERSION_KEY] = int(st.session_state[EDITOR_VERSION_KEY]) + 1
         st.rerun()
 
+if stochastic:
+    reps = int((bundle.get("metadata") or {}).get("nReps") or 0)
+    st.caption(f"Calculating economics for {reps:,} simulated populations takes about {max(0.18 * reps / 60, 0.1):.0f} minute(s).")
 status = economics_status()
 if status == "stale":
     st.warning("Cost assumptions changed since the last calculation. Recalculate to update the economic results.")

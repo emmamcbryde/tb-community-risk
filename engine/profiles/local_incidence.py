@@ -17,7 +17,7 @@ import math
 import re
 from typing import Any
 
-from engine.profiles.country import INCIDENCE_LINK_NOTE, ConflictRequiresChoice, KEEP_CURRENT
+from engine.profiles.country import INCIDENCE_LINK_NOTE, KEEP_CURRENT, ConflictRequiresChoice, _base_identity
 from engine.profiles.population_profile import (
     IncidenceData,
     IncidencePoint,
@@ -216,8 +216,12 @@ def apply_local_incidence(
         return profile
     kind = LocationKind.SUBNATIONAL if not upload.iso3 else LocationKind.COUNTRY
     latest_population = upload.populations[-1] if upload.populations else None
+    base_id, base_name = _base_identity(profile)
+    slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in upload.location).strip("-") or "local"
     return replace(
         profile,
+        profile_id=f"{slug}-{base_id}",
+        name=f"{upload.location}: {base_name}",
         location=Location(
             name=upload.location,
             kind=kind,

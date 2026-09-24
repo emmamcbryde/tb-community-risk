@@ -46,6 +46,7 @@ from engine.who_incidence.trend import (
 
 
 PLACEHOLDER = "Select a country or area"
+CANDIDATE_MEMORY_KEY = "general_country_candidate_memory"
 METHOD_LABELS = {
     TrendMethod.LOG_LINEAR_RECENT: "Log-linear trend (primary)",
     TrendMethod.PENALISED_SPLINE: "Penalised smooth (sensitivity)",
@@ -80,13 +81,16 @@ def render_country_section(snapshot: IncidenceSnapshot | None) -> None:
     options = [PLACEHOLDER] + [f"{item['name']} ({item['iso3']})" for item in snapshot.countries()]
     codes = {f"{item['name']} ({item['iso3']})": item["iso3"] for item in snapshot.countries()}
     if st.session_state.get(CANDIDATE_KEY) not in options:
-        st.session_state[CANDIDATE_KEY] = PLACEHOLDER
+        # Widget state is discarded when the user visits another page; restore the last preview.
+        remembered = st.session_state.get(CANDIDATE_MEMORY_KEY)
+        st.session_state[CANDIDATE_KEY] = remembered if remembered in options else PLACEHOLDER
     choice = st.selectbox(
         "Country or area",
         options,
         key=CANDIDATE_KEY,
         help="Choosing a country previews its WHO estimates. Nothing changes until you apply it.",
     )
+    st.session_state[CANDIDATE_MEMORY_KEY] = choice
     profile = get_profile()
     if choice == PLACEHOLDER:
         if profile.incidence.series:
@@ -168,7 +172,7 @@ def _render_apply_controls(profile: PopulationProfile, snapshot: IncidenceSnapsh
 
 
 def render_trend_section(series: Sequence[IncidencePoint], *, source_label: str, store_in_profile: bool) -> TrendResult | None:
-    settings = _trend_controls(series)
+    settings = _trend_controls(series, source_label)
     try:
         result = estimate_trend(series, settings)
     except ValueError as exc:
@@ -180,11 +184,12 @@ def render_trend_section(series: Sequence[IncidencePoint], *, source_label: str,
         if profile.trend != spec:
             set_profile(replace(profile, trend=spec))
     st.altair_chart(incidence_chart(series, result, source_label=source_label), use_container_width=True)
-    _render_trend_result(result)
+    st.caption(chart_caption(result))
+    _render_trend_result(result, source_label)
     return result
 
 
-def _trend_controls(series: Sequence[IncidencePoint]) -> TrendSettings:
+def _trend_controls(series: Sequence[IncidencePoint], source_label: str = "WHO") -> TrendSettings:
     settings = get_trend_settings()
     years = sorted(point.year for point in series)
     cols = st.columns(3)
@@ -216,7 +221,7 @@ def _trend_controls(series: Sequence[IncidencePoint]) -> TrendSettings:
         "COVID-era years",
         covid_options,
         index=covid_options.index(current_covid) if current_covid in covid_options else 0,
-        format_func=COVID_LABELS.get,
+        format_func=lambda code: _covid_label(code, source_label),
         key="general_trend_covid",
     )
     excluded: tuple[int, ...] = ()
@@ -237,24 +242,24 @@ def _trend_controls(series: Sequence[IncidencePoint]) -> TrendSettings:
     return updated
 
 
-def _render_trend_result(result: TrendResult) -> None:
-    covid_text = COVID_LABELS.get(
-        "custom" if result.settings.excluded_years else result.settings.covid_handling.value, result.settings.covid_handling.value
-    )
+def _render_trend_result(result: TrendResult, source_label: str = "WHO") -> None:
+    covid_text = _covid_label("custom" if result.settings.excluded_years else result.settings.covid_handling.value, source_label)
     if result.status != "estimated":
         st.warning("Trend not estimated: " + " ".join(result.warnings))
         return
     period = f"{result.period[0]}-{result.period[1]}"
-    cols = st.columns(4)
-    cols[0].metric("Annual change in estimated incidence", f"{result.annual_percent_change:+.1f}% per year")
     interval = result.propagated_interval
-    cols[1].metric(
+    top = st.columns(2)
+    top[0].metric("Annual change in estimated incidence", f"{result.annual_percent_change:+.1f}% per year")
+    top[1].metric(
         "Propagated uncertainty interval" if interval else "Regression interval",
         _interval_text(interval or result.fit_interval),
     )
-    cols[2].metric("Fitting period", f"{period} ({result.years_used} years)")
-    cols[3].metric("Fit", result.classification_label)
-    st.markdown(f"**{result.summary_label}** - {METHOD_LABELS[result.method].split(' (')[0].lower()}, COVID-era years: {covid_text.lower()}.")
+    st.markdown(
+        f"**{result.summary_label}** · fitting period {period} ({result.years_used} years) · "
+        f"{METHOD_LABELS[result.method].split(' (')[0].lower()} · COVID-era years: {covid_text[0].lower() + covid_text[1:]} · "
+        f"fit: {result.classification_label.lower()}"
+    )
     if result.summary == "no_clear_change":
         st.caption(NO_CLEAR_CHANGE_NOTE)
     st.caption(DESCRIPTIVE_STATEMENT)
@@ -327,14 +332,14 @@ def incidence_chart(series: Sequence[IncidencePoint], result: TrendResult | None
         years = [y for y in result.settings.disruption_years if any(p.year == y for p in series)]
         rect = pd.DataFrame([{"start": min(years) - 0.5, "end": max(years) + 0.5}])
         layers.append(alt.Chart(rect).mark_rect(opacity=0.08, color="#6b7280").encode(x="start:Q", x2="end:Q"))
-    layers.append(
-        alt.Chart(frame).mark_line(point=alt.OverlayMarkDef(filled=True, size=45)).encode(
-            x=x,
-            y=alt.Y("Estimate:Q", title="Incidence per 100,000 per year"),
-            color=alt.Color("series:N", scale=scale, legend=alt.Legend(title=None, orient="bottom")),
-            tooltip=["Year:Q", alt.Tooltip("Estimate:Q", format=".3g"), alt.Tooltip("Lower:Q", format=".3g"), alt.Tooltip("Upper:Q", format=".3g"), "Used in fit:N"],
-        )
-    )
+    tooltip = ["Year:Q", alt.Tooltip("Estimate:Q", format=".3g"), alt.Tooltip("Lower:Q", format=".3g"), alt.Tooltip("Upper:Q", format=".3g"), "Used in fit:N"]
+    color = alt.Color("series:N", scale=scale, legend=alt.Legend(title=None, orient="bottom"))
+    layers.append(alt.Chart(frame).mark_line().encode(x=x, y=alt.Y("Estimate:Q", title="Incidence per 100,000 per year"), color=color))
+    used = frame[frame["Used in fit"] == "Yes"] if result and result.status == "estimated" else frame
+    unused = frame[frame["Used in fit"] == "No"] if result and result.status == "estimated" else frame.iloc[0:0]
+    layers.append(alt.Chart(used).mark_point(filled=True, size=45).encode(x=x, y="Estimate:Q", color=color, tooltip=tooltip))
+    if not unused.empty:
+        layers.append(alt.Chart(unused).mark_point(filled=False, size=45, strokeWidth=1.5).encode(x=x, y="Estimate:Q", color=color, tooltip=tooltip))
     if result and result.status == "estimated":
         fitted = pd.DataFrame([{"Year": p.year, "Fitted": p.fitted, "series": fitted_name} for p in result.points if p.fitted is not None])
         if not fitted.empty:
@@ -344,6 +349,16 @@ def incidence_chart(series: Sequence[IncidencePoint], result: TrendResult | None
                 )
             )
     return alt.layer(*layers).properties(height=320)
+
+
+def chart_caption(result: TrendResult | None) -> str:
+    text = (
+        "Shaded band: published uncertainty interval. Dashed line: fitted trend over the fitting period. "
+        "Filled points were used in the fit; hollow points were not (outside the period or excluded)."
+    )
+    if result and result.settings.disruption_years:
+        text += " Grey background: 2020-2022 (COVID-era years)."
+    return text
 
 
 def render_upload_section() -> None:
@@ -381,6 +396,12 @@ def render_upload_section() -> None:
             set_profile(apply_local_incidence(profile, result, resolutions={"incidence": choice}))
             st.session_state["general_apply_message"] = f"Applied local incidence data from {result.filename}."
             st.rerun()
+
+
+def _covid_label(code: str, source_label: str) -> str:
+    if code == "include":
+        return "Include all WHO estimates" if source_label == "WHO" else "Include all estimates"
+    return COVID_LABELS.get(code, code)
 
 
 def _provenance_text(profile: PopulationProfile) -> str:

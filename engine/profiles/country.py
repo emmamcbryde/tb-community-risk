@@ -68,7 +68,7 @@ class ProposedChange:
 def preview_country_application(profile: PopulationProfile, snapshot: IncidenceSnapshot, iso3: str) -> list[ProposedChange]:
     summary = snapshot.country_summary(iso3)
     series = snapshot.series_for(iso3)
-    source = f"WHO snapshot {snapshot.snapshot_id}"
+    source = f"WHO {snapshot.report_year}-round snapshot"
     user_incidence = profile.incidence.provenance in {Provenance.LOCAL_UPLOAD, Provenance.USER_DEFINED}
     user_location = profile.location.kind is LocationKind.SUBNATIONAL
     latest = summary["latest"]
@@ -136,7 +136,7 @@ def apply_snapshot_country(
                 who_region=summary["region"],
                 national_population=latest_row.number("population"),
                 national_population_year=latest_row.year,
-                national_population_source=f"WHO snapshot {snapshot.snapshot_id} (UN Population Division estimates)",
+                national_population_source=f"WHO {snapshot.report_year}-round snapshot (UN Population Division estimates)",
             ),
         )
     if resolutions.get("incidence", USE_NEW) == USE_NEW:
@@ -187,6 +187,8 @@ def _base_identity(profile: PopulationProfile) -> tuple[str, str]:
     previous = profile.location.iso3
     if previous and base_id.startswith(f"{previous.lower()}-"):
         base_id = base_id[len(previous) + 1 :]
+    if DEMONSTRATION_PROFILE_ID in base_id and not base_id.startswith(DEMONSTRATION_PROFILE_ID):
+        base_id = base_id[base_id.index(DEMONSTRATION_PROFILE_ID) :]
     if base_name.startswith(f"{profile.location.name}: "):
         base_name = base_name[len(profile.location.name) + 2 :]
     if profile.demonstration and not base_id:
