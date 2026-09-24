@@ -1,5 +1,5 @@
 {
-  "analyticalHash": "361de4eeb6b2cf4aa016b24d5446f7995eecc289fb9cf7f375459f8184769d0c",
+  "analyticalHash": "32f228fc4338a9a61d56fa4770799c2274a3b9696f814d2304b3e2a3ebdee765",
   "citation": "World Health Organization. WHO TB burden estimates (country level), Global Tuberculosis Report 2025 data. Geneva: WHO; 2025. Accessed 2026-09-24. Estimates are based on data reported by countries and areas to WHO.",
   "contractVersion": "who_incidence_snapshot_v2",
   "coverage": {
@@ -145,7 +145,7 @@
       "whoSourceColumn": null
     }
   ],
-  "importerCommit": "793cac109ec7a548a5834edc760059dd05e2dc53",
+  "importerCommit": "5e91e2ca6e9b4194b65317f217a1166550aae424",
   "importerVersion": "who_incidence_importer_v2",
   "isCompleteDataset": true,
   "knownExclusions": [
