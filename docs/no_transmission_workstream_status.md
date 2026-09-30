@@ -6,76 +6,123 @@ This document is replaced at the end of each milestone. It does not keep a histo
 | --- | --- |
 | Date | 2026-09-30 |
 | Branch | `feature/generic-no-transmission-model` |
-| Milestone | Scope documentation |
-| Commit | `c485ff7` (milestone work); this status file is committed immediately after it |
+| Milestone | Terminology correction and catalytic (background-exposure) specification |
+| Commit | The commit that adds this file (see `git log -1 -- docs/no_transmission_workstream_status.md`) |
+| Previous milestone | Scope documentation (`c485ff7`, `7920889`) |
 | Merged, tagged or deployed | No |
 
 ## Objective
 
-Document the scope and intended use of the screening and preventive-treatment model before
-further model development. The model assumes no transmission; the separate Starsim workstream
-covers settings with transmission.
+1. Correct user-facing wording that implied endogenous transmission effects.
+2. Specify an optional exogenous-infection-pressure (catalytic) extension, and scaffold its
+   configuration schema, without changing any result.
 
 ## Scientific decisions made
 
-* The model estimates **direct outcomes among the modelled population** only. It assumes that
-  onward local transmission during the analysis horizon does not materially affect the comparison
-  between strategies.
-* It never reports secondary infections or cases prevented, transmission reduction, changes in
-  force of infection or community incidence, herd effects, elimination progress or outbreak
-  reduction as estimated.
-* Intended use: low-incidence communities or other clearly defined populations where the
-  assumption is defensible. It is **not selected on incidence alone**.
-* High-incidence settings, or any setting with meaningful transmission, go to the Starsim
-  workstream. Starsim is not a dependency here.
-* No incidence value is a validated cut-off. WHO low-incidence terminology is kept distinct from
-  the model's applicability boundary.
-* A provisional three-tier applicability framework was adopted **pending scientific review**:
-  * very low incidence and negligible transmission: this model may be appropriate;
-  * intermediate or uncertain settings: explicit assessment, preferably compared with the
-    dynamic model;
-  * high incidence or sustained transmission: the dynamic model is preferred.
-* Documented a second implicit assumption: infection is assigned at baseline, with no new
-  infection or reinfection during follow-up. This can bias results in either direction.
+* **Model boundary.** "A screening and preventive-treatment model with no endogenous transmission
+  feedback." Results are direct outcomes among the modelled population, compared with no screening.
+* **Future identity, if background exposure is implemented.** "... with optional exogenous
+  infection pressure and no endogenous transmission feedback." The workstream keeps the name
+  "no-transmission model". Outputs will say "no transmission feedback" and state the exposure
+  mode; this is proposed, pending review.
+* **Catalytic extension**, specified in `catalytic_infection_pressure_spec.md` and designed, not
+  implemented:
+  * an external annual infection hazard (infections per person-year) with three modes: `none`
+    (the current model), `constant` and `time_series`;
+  * no dependence on the model's own infectious people, and no intervention feedback;
+  * never inferred from WHO incidence.
+* **Distinct mechanisms.** Background exposure is kept separate from the entry of infected people,
+  the entry of people with active TB, and endogenous transmission. Imported active TB is never
+  represented as force of infection. "Importation" is not a synonym for background exposure.
+* **Applicability.** The framework stays advisory. No incidence value (10, 40, 100 per 100,000 or
+  any other) is an engine-selection threshold.
 
 ## Implementation completed
 
-* `README.md`: "Scope and intended use" section.
-* `docs/no_transmission_model_scope.md`: full scope, applicability domains and framework,
-  prohibited outputs, the validation needed before any gate, and open decisions.
-* Cross-references in `general_app_milestone1.md`, `general_app_milestone2.md` and
-  `dynamic_model_readiness_spec.md`. The dynamic-model items planned for Milestone 3 are marked as
-  superseded for this branch.
-* Terminology review table in `general_app_milestone2.md` (identified, not corrected).
-* `tests/test_no_transmission_scope_docs.py`: documentation checks.
-* No change to model calculations, epidemiological or economic logic, the SA Health release or
-  frozen artifacts.
+* `engine/model_scope.py` holds the canonical scope statements and the patterns for prohibited
+  claims. The incidence notes in `trend.py` and `country.py` now reuse them, with no "not yet"
+  wording.
+* `app/general/terminology.py` holds one general-application label per metric, plus definitions.
+  The shared, frozen `app/results_page_display.py` labels are unchanged; the Results page relabels
+  its rows.
+  * Direct active TB cases averted (`cumulative_cases_averted`, `nPreventedActiveTB` and
+    `activeTBCasesPrevented`; one quantity, one label).
+  * Relative reduction in directly modelled active TB.
+  * Active TB without screening (comparator); Active TB with screening.
+  * People screened, or treatment starts, per direct active TB case averted.
+* The Results, Run analysis and Health economics pages use the same direct-effects caption. The
+  Results page adds an "Outcome definitions" expander.
+* The `LIMITATIONS.md` export states:
+  * the model identity and the direct-effects boundary;
+  * that no infection occurs after baseline;
+  * that `dynamicComparison` fields are individual-based no-feedback results.
+* `engine/profiles/background_exposure.py` is the `background_exposure_v1` schema. It performs no
+  calculation and is not connected to the engine, the engine mapping or any page. Profiles without
+  the block map to `none`, and the population-profile contract and its hash are unchanged.
+* Docs:
+  * new: `catalytic_infection_pressure_spec.md`;
+  * updated: `no_transmission_model_scope.md`, the `general_app_milestone2.md` planning row and the
+    status of its terminology table, and the README note on the legacy dynamic model.
 
 ## Validation performed
 
-* The documentation tests, frozen-release integrity tests and general-app interface tests pass
-  (28 tests plus 57 subtests).
-* The diff against `sa-health-apy-he-v1.0.0` shows only the allowed files (`.gitignore`,
-  `README.md`, `engine/apy/calibration_policy.py`).
-* The full suite and MATLAB checks were not run, because no code changed.
+* New tests:
+  * `test_general_scope_terminology.py` (wording, exports, label consistency);
+  * `test_background_exposure_schema.py` (round-trip, hashing, legacy migration to `none`,
+    validation, isolation from calculations, no Starsim dependency);
+  * a catalytic-spec check in `test_no_transmission_scope_docs.py`;
+  * two rendered Results and Health economics tests in `test_general_app_interface.py`.
+* Broader suites: all general-app tests, frozen-release integrity, frozen reference loader, results
+  presentation, legacy static interface, calibration memoisation, health-economics inputs and the
+  SA Health reference package.
+* **What the frozen-release check measures.**
+  `test_release_files_unchanged_except_documented_exceptions` lists files that existed at tag
+  `sa-health-apy-he-v1.0.0` and are now modified, deleted, renamed or type-changed
+  (`git diff --diff-filter=MDRT`). It requires that list to contain only `.gitignore`, `README.md`
+  and `engine/apy/calibration_policy.py`.
+  * Files *added* after the release (all general-application code and documentation, including
+    this milestone's new and edited files) are outside that check by design.
+  * The other checks are: SHA-256 of the eight frozen reference artifacts; the tag and release
+    branch pointing at `03cc16e`; and the frozen numerical headline matching the working-default
+    engine configuration.
+  * The earlier statement "the diff touches only three allowed files" meant *release files
+    modified*, not all files changed on the branch.
+* Result: 210 passed and 1 failed (376 subtests). The failure is
+  `test_sa_health_reference_package.py::...test_rendered_health_economics_widgets_recalculate_without_changing_health`,
+  a 90 s AppTest timeout in the legacy `pages/4_Economics.py`. None of the modules changed here are
+  imported by that page, and the test fails identically on a clean checkout of the previous commit
+  `7920889` (379 s). This is the ARM64-emulation timing sensitivity already documented in
+  `environment_and_reproducibility.md`; it is pre-existing and unchanged.
+* MATLAB and the full suite were not run: no engine, economic or MATLAB code changed.
 
 ## Unresolved issues
 
-* User-facing wording implies transmission effects: "not yet" phrasing, "people screened and
-  treated", unqualified "cases averted" and "relative reduction" labels, and "dynamic" results
-  rows (see `general_app_milestone2.md`).
-* The framework, any numerical flag (for example 10 or 40 per 100,000) and the WHO and national
-  citations need scientific review.
-* The future of `engine/dynamic/` and the readiness specification, given the Starsim workstream.
-* Whether to model ongoing exposure (background infection and reinfection) without transmission
-  feedback.
+* Background-exposure decisions (spec section 4), especially:
+  * reinfection policy and partial protection;
+  * whether preventive treatment clears infection or reduces progression;
+  * competing mortality, which the current simulation does not model;
+  * acquisition versus progression risk factors;
+  * time-series missing-year, interpolation and extrapolation rules;
+  * the provisional plausibility bound (hazard of 1 per person-year).
+* The applicability framework, any numerical flag, and the WHO and national citations still need
+  scientific review.
+* The future of `engine/dynamic/` and `dynamic_model_readiness_spec.md`, given the Starsim
+  workstream.
+* Reports built outside the general application (the SA Health Word report and package) keep the
+  frozen wording. They should adopt the direct-effects wording only in a new, separately versioned
+  release.
+* Newly applied country or local incidence profiles carry the revised incidence note, so their
+  profile hash differs from one built before this milestone. Results and the epidemiological
+  configuration hash are unaffected.
 
 ## Recommended next milestone
 
-1. Wording-only fixes for the terminology risks (no calculation changes).
-2. A structured, advisory applicability assessment recorded in the population profile and shown
-   in outputs.
-3. A matched-scenario comparison specification with Starsim, starting with the check that Starsim
-   with transmission switched off reproduces this model's results, plus an agreed definition of a
-   material difference.
-4. A reviewed decision on optional exogenous reinfection risk.
+**Analytical core for background exposure, isolated from the engine:**
+
+1. Pure functions for cumulative hazard, infection probability and first-infection time
+   sampling (constant, age-banded and piecewise-constant).
+2. The section 10 analytical tests against the closed forms.
+3. A scientific review of the reinfection, preventive-treatment-mechanism and mortality
+   decisions.
+4. A zero-exposure identity harness that proves mode `none` consumes no random draws. It should be
+   in place before any engine wiring.

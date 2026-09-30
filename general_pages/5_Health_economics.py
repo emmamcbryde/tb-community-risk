@@ -26,7 +26,7 @@ from app.general.state import (
     results_status,
     store_economics,
 )
-from app.general.terminology import USER_DEFINED_MARK, display_text
+from app.general.terminology import DIRECT_EFFECTS_CAPTION, USER_DEFINED_MARK, display_text, general_metric_label
 
 
 SUMMARY_METRICS = {
@@ -35,8 +35,8 @@ SUMMARY_METRICS = {
     "incrementalCost": "Incremental cost",
     "comparatorDALYs": "DALYs without screening",
     "interventionDALYs": "DALYs with screening",
-    "dalysAverted": "DALYs averted",
-    "activeTBCasesPrevented": "Active TB cases prevented",
+    "dalysAverted": general_metric_label("dalysAverted"),
+    "activeTBCasesPrevented": general_metric_label("activeTBCasesPrevented"),
 }
 
 
@@ -138,6 +138,7 @@ if summary_rows:
         st.caption("Simulation intervals describe variation across simulated populations; they are not confidence intervals.")
     else:
         st.caption("Deterministic preview: single expected values; simulation intervals are not applicable.")
+    st.caption(f"{DIRECT_EFFECTS_CAPTION} Costs and DALYs follow the same boundary.")
 
 icer = next(
     (row for row in results.get("summaryRows") or [] if row.get("discountProfile") == "primary" and row.get("metric") == "primaryICER_ratioOfMeans"),

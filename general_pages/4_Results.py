@@ -12,7 +12,9 @@ from app.general.state import (
     results_status,
 )
 from app.icon_arrays import build_100_person_visual_data, render_100_person_summary
+from app.general.terminology import DIRECT_EFFECTS_CAPTION, METRIC_DEFINITIONS, relabel_outcome_rows
 from app.results_page_display import (
+    FRIENDLY_METRIC_LABELS,
     detailed_rows_for_display,
     format_interval_cells_for_display,
     key_metric_rows_for_display,
@@ -53,14 +55,19 @@ if link:
             "These results use the demonstration epidemiological assumptions. The applied incidence data are "
             "descriptive only, so the results are not a country-specific estimate."
         )
-st.caption(
-    "Results estimate direct benefits, harms and costs for people screened and treated. "
-    "Transmission-mediated benefits are not yet included."
-)
+st.caption(DIRECT_EFFECTS_CAPTION)
 
-dynamic_rows = ((technical.get("dynamicComparison") or {}).get("metricRows")) or []
-key_rows = key_metric_rows_for_display(headline.get("keyMetricsRows"), dynamic_rows, model_type=model_type)
-detail_rows = detailed_rows_for_display(headline.get("summaryRows"), headline.get("keyMetricsRows"), model_type=model_type)
+# ``dynamicComparison`` holds individual-based comparator-versus-intervention rows expressed in the
+# dynamic model's output vocabulary; it contains no transmission feedback.
+comparison_rows = ((technical.get("dynamicComparison") or {}).get("metricRows")) or []
+key_rows = relabel_outcome_rows(
+    key_metric_rows_for_display(headline.get("keyMetricsRows"), comparison_rows, model_type=model_type),
+    FRIENDLY_METRIC_LABELS,
+)
+detail_rows = relabel_outcome_rows(
+    detailed_rows_for_display(headline.get("summaryRows"), headline.get("keyMetricsRows"), model_type=model_type),
+    FRIENDLY_METRIC_LABELS,
+)
 
 st.subheader("Key results")
 if key_rows:
@@ -73,6 +80,9 @@ if key_rows:
         )
     else:
         st.caption("Simulation intervals are not applicable (N/A) to a single deterministic calculation.")
+    with st.expander("Outcome definitions"):
+        for label, definition in METRIC_DEFINITIONS.items():
+            st.markdown(f"**{label}.** {definition}")
 else:
     st.info("Key results are unavailable for this run.")
 

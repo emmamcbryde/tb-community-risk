@@ -39,7 +39,7 @@ separate Starsim workstream. See `no_transmission_model_scope.md`.
 | Effect-measure conversion policy | Designed but not implemented | `risk_factor_schema.md` |
 | Engine semantics (hazard multipliers, calibration) | Retained for backward compatibility | `risk_factor_schema.md` |
 | Country risk-factor prevalence | Blocked by external evidence | `risk_factor_schema.md` |
-| Incidence driving infection pressure or the dynamic model | Designed but not implemented | `dynamic_model_readiness_spec.md` |
+| Incidence driving infection pressure or a transmission model | Out of scope for this branch (Starsim workstream); incidence is never used as infection pressure | `no_transmission_model_scope.md` |
 | Hash-based result currency, cost-only economics, paired ICER plane | Implemented and validated | this document |
 | Lazy provenance package | Implemented and validated | this document |
 | Performance measurements | Implemented and validated | `performance_benchmark.md` |
@@ -142,8 +142,9 @@ scope decision. Transmission modelling belongs to the Starsim workstream. See
 
 ## Terminology review against the no-transmission scope (2026-09-30)
 
-These are identified, not corrected. None changes a calculation. They are listed for a
-wording-only follow-up.
+**Status:** corrected in the terminology milestone (2026-09-30), with no calculation changes. Labels
+now come from `app/general/terminology.py` and scope statements from `engine/model_scope.py`.
+The table records what was found.
 
 | Location | Current wording | Risk | Suggested direction |
 | --- | --- | --- | --- |

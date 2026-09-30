@@ -68,7 +68,7 @@ abm/output/
 
 ### 2. Python dynamic LTBI-to-TB model
 
-The repository also contains a Python dynamic model for LTBI-to-active-TB projection. It supports age-structured LTBI seeding, risk-factor multipliers, transmission feedback, intervention simulation, and annualised outputs.
+The repository also contains a Python dynamic model for LTBI-to-active-TB projection. It supports age-structured LTBI seeding, risk-factor multipliers, transmission feedback, intervention simulation, and annualised outputs. It serves the legacy research pages of `streamlit_app.py` only. The general no-transmission application does not use it, and new transmission modelling belongs to the separate Starsim workstream (see Scope and intended use).
 
 Relevant files include:
 

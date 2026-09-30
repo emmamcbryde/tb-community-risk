@@ -173,7 +173,7 @@ class CountryWorkflowTests(unittest.TestCase):
         texts = " ".join(_visible_text(app))
         self.assertIn("Annual change in estimated incidence", texts)
         self.assertIn("Not changed by country data", texts)
-        self.assertIn("They are not yet used to infer infection pressure or transmission", texts)
+        self.assertIn("They do not set infection pressure or transmission in this model", texts)
 
     def test_preview_survives_page_navigation(self) -> None:
         app = _render(SETUP)
@@ -350,6 +350,45 @@ class GeneralEndToEndTests(unittest.TestCase):
         before, after = icer_cloud_points(base), icer_cloud_points(edited)
         self.assertEqual([p["dalysAverted"] for p in before], [p["dalysAverted"] for p in after])
         self.assertTrue(all(b["incrementalCost"] < a["incrementalCost"] for b, a in zip(before, after)))
+
+    def test_results_and_economics_use_direct_effect_terminology(self) -> None:
+        from app.general.terminology import DIRECT_ACTIVE_TB_AVERTED, DIRECT_EFFECTS_CAPTION
+        from engine.model_scope import prohibited_claims
+
+        session = self._session(self.bundle, self.config, self.analysis)
+        results = _render(ROOT / "general_pages" / "4_Results.py", session)
+        self.assertFalse(results.exception)
+        economics = _render(ROOT / "general_pages" / "5_Health_economics.py", session)
+        _run(next(b for b in economics.button if b.label == "Calculate health economics").click())
+        self.assertFalse(economics.exception)
+        for page in (results, economics):
+            visible = _visible_text(page)
+            with self.subTest(page=page):
+                self.assertEqual([claim for text in visible for claim in prohibited_claims(text)], [])
+                self.assertIn(DIRECT_ACTIVE_TB_AVERTED, visible)
+                self.assertNotIn("Active TB cases averted", visible)
+                self.assertNotIn("Active TB cases prevented", visible)
+                self.assertNotIn("Relative reduction in active TB", visible)
+                self.assertNotIn("screened and treated", " ".join(visible))
+                self.assertIn(DIRECT_EFFECTS_CAPTION, " ".join(visible))
+        outcomes = list(results.dataframe[0].value["Outcome"])
+        self.assertEqual(outcomes.count(DIRECT_ACTIVE_TB_AVERTED), 1)
+        self.assertIn("Relative reduction in directly modelled active TB", outcomes)
+
+    def test_relabelling_changes_labels_only(self) -> None:
+        from app.general.terminology import relabel_outcome_rows
+        from app.results_page_display import FRIENDLY_METRIC_LABELS, key_metric_rows_for_display
+
+        technical = self.bundle["technical"]
+        shared = key_metric_rows_for_display(
+            self.bundle["headline"]["keyMetricsRows"],
+            (technical.get("dynamicComparison") or {}).get("metricRows"),
+            model_type="agent_based",
+        )
+        general = relabel_outcome_rows(shared, FRIENDLY_METRIC_LABELS)
+        strip = lambda rows: [{k: v for k, v in row.items() if k != "Outcome"} for row in rows]
+        self.assertEqual(strip(shared), strip(general))
+        self.assertEqual(len(shared), len(general))
 
     def test_effect_warnings_do_not_change_configuration(self) -> None:
         from engine.profiles.effect_measures import effect_warnings

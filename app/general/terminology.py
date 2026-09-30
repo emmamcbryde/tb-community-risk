@@ -49,3 +49,51 @@ def forbidden_matches(text: str) -> list[str]:
 def display_text(text: str, *, fallback: str) -> str:
     """Return ``text`` unless it contains an internal or setting-specific identifier."""
     return fallback if forbidden_matches(text) else str(text)
+
+
+# Metric labels for the general application. The shared ``app.results_page_display`` labels
+# belong to the frozen release and are left unchanged; these override them here so that one
+# metric has one meaning across Results, Health economics and exports.
+DIRECT_ACTIVE_TB_AVERTED = "Direct active TB cases averted"
+GENERAL_METRIC_LABELS = {
+    "cumulative_cases_averted": DIRECT_ACTIVE_TB_AVERTED,
+    "nPreventedActiveTB": DIRECT_ACTIVE_TB_AVERTED,
+    "activeTBCasesPrevented": DIRECT_ACTIVE_TB_AVERTED,
+    "relative_reduction_cumulative_active_tb_cases": "Relative reduction in directly modelled active TB",
+    "cumulative_baseline_active_tb_cases": "Active TB without screening (comparator)",
+    "cumulative_intervention_active_tb_cases": "Active TB with screening",
+    "NNS_preventActiveTB": "People screened per direct active TB case averted",
+    "NNT_started_preventActiveTB": "Treatment starts per direct active TB case averted",
+    "dalysAverted": "DALYs averted",
+}
+METRIC_DEFINITIONS = {
+    DIRECT_ACTIVE_TB_AVERTED: (
+        "Active TB cases among the modelled population without screening minus those with screening, "
+        "over the follow-up horizon. Excludes any cases prevented through reduced onward transmission."
+    ),
+    "Relative reduction in directly modelled active TB": (
+        "Direct active TB cases averted divided by active TB among the modelled population without screening."
+    ),
+    "DALYs averted": (
+        "DALYs from directly modelled health outcomes among the modelled population, without screening minus "
+        "with screening. Excludes DALYs from any cases prevented through reduced onward transmission."
+    ),
+}
+DIRECT_EFFECTS_CAPTION = (
+    "Results are direct outcomes among the modelled population, compared with no screening. "
+    "Onward transmission, herd and other indirect effects are outside this model's scope."
+)
+
+
+def general_metric_label(metric: str, default: str | None = None) -> str:
+    """Return the general-application label for an engine metric key."""
+    return GENERAL_METRIC_LABELS.get(metric, default if default is not None else metric)
+
+
+def relabel_outcome_rows(rows: list[dict], shared_labels: dict[str, str]) -> list[dict]:
+    """Replace shared (frozen-release) outcome labels with general-application labels.
+
+    ``shared_labels`` maps metric keys to the shared labels used to build ``rows``.
+    """
+    by_shared = {label: GENERAL_METRIC_LABELS[metric] for metric, label in shared_labels.items() if metric in GENERAL_METRIC_LABELS}
+    return [{**row, "Outcome": by_shared.get(row.get("Outcome"), row.get("Outcome"))} for row in rows]

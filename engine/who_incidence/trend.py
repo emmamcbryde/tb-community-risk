@@ -45,6 +45,8 @@ from typing import Any, Sequence
 
 import numpy as np
 
+from engine.model_scope import INCIDENCE_DESCRIPTIVE_STATEMENT
+from engine.model_scope import INCIDENCE_TO_INFECTION_POLICY as MODEL_SCOPE_INCIDENCE_TO_INFECTION_POLICY
 from engine.profiles.population_profile import IncidencePoint
 
 
@@ -107,21 +109,15 @@ EPIDEMIOLOGICAL_QUANTITIES = {
     "estimated_tb_disease_incidence": "Estimated new and relapse TB disease episodes per 100,000 population per year (WHO or local estimate).",
     "notification_rate": "Diagnosed and reported TB cases per 100,000; depends on case detection as well as disease occurrence.",
     "active_tb_prevalence": "People with TB disease at a point in time; depends on incidence and disease duration.",
-    "force_of_infection": "Per-capita hazard of new M. tuberculosis infection; a model quantity, not directly observed.",
+    "force_of_infection": "Per-capita hazard of new M. tuberculosis infection; a model quantity, not directly observed and not estimated by this model.",
     "annual_risk_of_infection": "Probability of infection within a year; related to force of infection.",
     "recent_infection": "Infection acquired within the last few years, with a higher progression hazard.",
     "remote_infection": "Longer-standing infection with a lower progression hazard.",
     "progression_to_disease": "Rate at which infected people develop TB disease, modified by time since infection and risk factors.",
     "detection_and_treatment": "Diagnosis, notification and treatment; changes alter notifications and infectious duration, not incidence directly.",
 }
-INCIDENCE_TO_INFECTION_POLICY = (
-    "The slope of estimated TB disease incidence is not used as the slope of infection "
-    "pressure without an explicit, documented linkage model."
-)
-DESCRIPTIVE_STATEMENT = (
-    "Country incidence data currently describe the TB disease burden and trend. "
-    "They are not yet used to infer infection pressure or transmission."
-)
+INCIDENCE_TO_INFECTION_POLICY = MODEL_SCOPE_INCIDENCE_TO_INFECTION_POLICY
+DESCRIPTIVE_STATEMENT = INCIDENCE_DESCRIPTIVE_STATEMENT
 
 
 @dataclass(frozen=True)

@@ -63,6 +63,10 @@ interpretable:
    exposure is substantial, the benefit of preventive treatment can be
    overstated (treated people may be reinfected) and baseline risk understated.
 
+An optional *background exposure to TB infection* (an exogenous, catalytic force of
+infection with no feedback) could relax assumption 2 without adding transmission dynamics. It
+is specified, not implemented, in `catalytic_infection_pressure_spec.md`.
+
 Assumption 1 usually makes results **conservative** for interventions that
 reduce disease (indirect benefits are omitted). Assumption 2 can bias results in
 **either direction**. Neither bias is quantified by this model.
@@ -212,9 +216,8 @@ Before any threshold or rule is implemented as a software gate:
    shown to users, and how it is labelled.
 3. The future of `engine/dynamic/` and `dynamic_model_readiness_spec.md` given
    the Starsim workstream.
-4. Whether to model ongoing exposure (new infection and reinfection) in the
-   modelled population as an exogenous, non-feedback hazard, which would
-   address assumption 2 without adding transmission dynamics.
-5. Standard wording for the direct-effects caveat across the interface, the
-   provenance package and reports (see the terminology review in
-   `general_app_milestone2.md`).
+4. The scientific decisions for optional background exposure
+   (`catalytic_infection_pressure_spec.md`, section 4).
+5. Standard direct-effects wording now lives in `engine/model_scope.py` and
+   `app/general/terminology.py`; reports built outside the general application
+   should adopt the same wording.

@@ -18,7 +18,7 @@ from app.general.state import (
     set_analysis,
     store_results,
 )
-from app.general.terminology import DETERMINISTIC_LABEL, STOCHASTIC_LABEL, display_text
+from app.general.terminology import DETERMINISTIC_LABEL, DIRECT_EFFECTS_CAPTION, STOCHASTIC_LABEL, display_text
 from app.run_progress import StreamlitProgressDisplay, finalising_status, initialising_status
 from engine.profiles.demonstration import GENERAL_DEFAULT_STOCHASTIC_SIMULATIONS
 from engine.profiles.population_profile import Provenance
@@ -89,12 +89,11 @@ if method == "agent_based":
     summary.insert(3, {"Setting": "Simulated populations", "Value": f"{updated['nReps']:,}"})
 st.dataframe(arrow_safe_dataframe(summary), use_container_width=True, hide_index=True)
 st.caption(
-    "Results describe direct effects for people screened and treated; transmission benefits are not included. "
-    "Future TB risk uses the demonstration epidemiological assumptions."
+    f"{DIRECT_EFFECTS_CAPTION} Future TB risk uses the demonstration epidemiological assumptions."
 )
 if profile.incidence.provenance in {Provenance.WHO_SNAPSHOT, Provenance.LOCAL_UPLOAD}:
     st.caption(
-        "The applied incidence data describe the TB burden and trend only; they do not yet change the model's "
+        "The applied incidence data describe the TB burden and trend only; they do not change the model's "
         "epidemiology, so results are not a country-specific estimate."
     )
 

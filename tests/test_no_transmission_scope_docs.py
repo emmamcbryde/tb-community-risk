@@ -55,6 +55,26 @@ class NoTransmissionScopeDocsTests(unittest.TestCase):
             with self.subTest(doc=name):
                 self.assertIn(SCOPE_LINK, _text(ROOT / "docs" / name))
 
+    def test_catalytic_specification_states_boundary(self) -> None:
+        text = _text(ROOT / "docs" / "catalytic_infection_pressure_spec.md").lower()
+        for phrase in (
+            "designed, not implemented",
+            "does **not** depend on the number of infectious people generated within the model",
+            "must **not** feed back",
+            "background exposure to tb infection",
+            "1 - exp(-λ δt)",
+            "does not uniquely identify the historical trajectory",
+            "an odds ratio for disease progression is not an infection-acquisition hazard ratio",
+            "must never be represented as force of infection",
+            "\"importation\" must not be used as a synonym for background exposure",
+            "optional exogenous infection pressure and no endogenous transmission feedback",
+            "never inferred automatically from who tb disease incidence",
+            "no equivalence is claimed",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+        self.assertIn("catalytic_infection_pressure_spec.md", _text(SCOPE_DOC))
+
     def test_starsim_is_not_a_dependency(self) -> None:
         requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").lower()
         self.assertNotIn("starsim", requirements)

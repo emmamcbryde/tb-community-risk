@@ -11,8 +11,8 @@ Engine semantics are preserved exactly:
   (RR, HR or OR). The measure type is retained; no conversion is performed.
 * A disabled or excluded risk factor, or a profile without risk factors, is run
   without stratification by that factor (prevalence 0, so no multiplier applies).
-* The attached incidence series is descriptive in this milestone; it does not
-  yet drive calibration, infection pressure or the dynamic model.
+* The attached incidence series is descriptive only; it does not drive
+  calibration or infection pressure (see ``engine.model_scope``).
 """
 
 from __future__ import annotations

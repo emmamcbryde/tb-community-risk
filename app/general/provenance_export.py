@@ -15,19 +15,30 @@ from typing import Any
 import zipfile
 
 from app.general.profile_editing import risk_factors_csv
+from engine.model_scope import (
+    DIRECT_EFFECTS_STATEMENT,
+    INCIDENCE_DESCRIPTIVE_STATEMENT,
+    MODEL_IDENTITY,
+    NO_FEEDBACK_ANALYSIS_LABEL,
+)
 from engine.profiles.effect_measures import crosswalk_rows, effect_warnings
 from engine.profiles.population_profile import PopulationProfile, Provenance, user_override_fields
 from engine.who_incidence.trend import TrendResult
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LIMITATIONS = """# Limitations of this analysis
+LIMITATIONS = f"""# Limitations of this analysis
 
+- Model: {MODEL_IDENTITY}
+- {DIRECT_EFFECTS_STATEMENT} Secondary infections or cases prevented, changes in force of infection
+  and changes in community incidence are not estimated.
+- Result fields named `dynamicComparison` hold comparator-versus-intervention results from the
+  {NO_FEEDBACK_ANALYSIS_LABEL.lower()}, expressed in the dynamic model's output vocabulary. They
+  contain no transmission feedback.
+- {INCIDENCE_DESCRIPTIVE_STATEMENT}
+- Infection status is set at baseline; new infection and reinfection during follow-up are not modelled.
 - Epidemiological, risk-factor, intervention, cost and DALY inputs are demonstration working
   defaults unless marked otherwise; they are not evidence for any particular country.
-- Country incidence data describe the TB disease burden and trend. They are not yet used to infer
-  infection pressure or transmission, and do not change the model's epidemiology.
-- Results estimate direct effects for people screened and treated; transmission benefits are excluded.
 - Stochastic simulation intervals show variation between simulated populations only. Trend
   uncertainty intervals reflect published WHO bounds only. Neither includes parameter or structural
   uncertainty.

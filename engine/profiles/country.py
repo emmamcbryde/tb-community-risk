@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
+from engine.model_scope import INCIDENCE_DESCRIPTIVE_STATEMENT
 from engine.profiles.demonstration import DEMONSTRATION_PROFILE_ID, DEMONSTRATION_PROFILE_LABEL
 from engine.profiles.population_profile import (
     IncidenceData,
@@ -22,10 +23,7 @@ from engine.profiles.population_profile import (
 from engine.who_incidence.snapshot import IncidenceSnapshot
 
 
-INCIDENCE_LINK_NOTE = (
-    "Country incidence data currently describe the TB disease burden and trend. "
-    "They are not yet used to infer infection pressure or transmission."
-)
+INCIDENCE_LINK_NOTE = INCIDENCE_DESCRIPTIVE_STATEMENT
 UNCHANGED_BY_COUNTRY_DATA = (
     "Simulated population size",
     "Age distribution",
