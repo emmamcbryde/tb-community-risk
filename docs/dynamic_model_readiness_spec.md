@@ -2,6 +2,12 @@
 
 Status: Designed, not implemented. Audit of current code; no formulas changed.
 
+Scope note (added on `feature/generic-no-transmission-model`): this
+specification predates the decision that the general screening model is a
+no-transmission model and that transmission settings belong to the separate
+Starsim workstream. It is retained unchanged for reference; its staging is not
+the plan for this branch. See `no_transmission_model_scope.md`.
+
 Scope: this document audits the Python dynamic model on branch
 `feature/general-community-tb-model` and specifies a later integration
 milestone. Citations are `file:line` against the current working tree. Where

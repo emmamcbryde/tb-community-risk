@@ -10,6 +10,17 @@ streamlit run streamlit_app.py
 
 The model is intended to support public health planning and sequencing. It is not a diagnostic tool, a clinical decision rule, or a tool for denying screening or treatment to any individual.
 
+### Scope and intended use
+
+The screening model on `feature/generic-no-transmission-model` evaluates TB screening, diagnostic, preventive-treatment and health-economic strategies. It assumes that onward local transmission generated during the analysis horizon does not materially affect the comparison between strategies.
+
+* It estimates **direct outcomes among the modelled population** only.
+* It does **not** estimate indirect transmission effects, herd effects, secondary infections or cases prevented, or changes in force of infection or community incidence.
+* It is intended primarily for low-incidence communities, or other clearly defined populations, where this assumption is defensible. It may still be inappropriate in a nominally low-incidence setting with outbreaks, clustering or substantial local transmission, so **do not select it on incidence alone**.
+* High-incidence settings, and any population with meaningful ongoing transmission, belong to the separate dynamic (Starsim) workstream. Starsim is not a dependency of this repository.
+
+No incidence value is yet a validated applicability cut-off. See `docs/no_transmission_model_scope.md` for the full scope statement, the provisional applicability framework (which needs scientific review) and the outputs this model must never report as estimated.
+
 ### General community TB application (in development)
 
 The `feature/general-community-tb-model` branch adds a separate, setting-neutral entry point:

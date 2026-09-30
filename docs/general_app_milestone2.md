@@ -6,6 +6,12 @@ deployed.
 
 Run the general application with `streamlit run general_app.py`.
 
+**Scope.** The general application estimates direct outcomes only, under a
+no-transmission assumption. On `feature/generic-no-transmission-model` it is
+intended for low-incidence or otherwise clearly defined populations where that
+assumption is defensible. Settings with meaningful transmission belong to the
+separate Starsim workstream. See `no_transmission_model_scope.md`.
+
 ## Status legend
 
 | Label | Meaning |
@@ -128,3 +134,28 @@ in the interface is recommended for Milestone 3.
   with licence tracking.
 * **Profile save and load** in the interface, with snapshot-ID verification on
   reload.
+
+**Scope update.** The two dynamic-model items above (Stage 0 and the Stage 2
+calibration prototype) are superseded for this branch by the no-transmission
+scope decision. Transmission modelling belongs to the Starsim workstream. See
+`no_transmission_model_scope.md`.
+
+## Terminology review against the no-transmission scope (2026-09-30)
+
+These are identified, not corrected. None changes a calculation. They are listed for a
+wording-only follow-up.
+
+| Location | Current wording | Risk | Suggested direction |
+| --- | --- | --- | --- |
+| `general_pages/4_Results.py:58` | "Transmission-mediated benefits are not yet included." | "not yet" implies this model will add them | "are not estimated by this model" |
+| `app/general/provenance_export.py:28-29` (`LIMITATIONS.md`); `general_pages/3_Run_analysis.py:97` | incidence "not yet used to infer infection pressure or transmission"; "do not yet change the model's" epidemiology | Same implication | State the no-transmission scope and link the scope document |
+| `engine/profiles/country.py:27` (`INCIDENCE_LINK_NOTE`) | "not yet used to infer infection pressure or transmission" | Same | As above |
+| `engine/profiles/engine_mapping.py:14-15` (docstring) | "does not yet drive calibration, infection pressure or the dynamic model" | Same (developer-facing) | As above |
+| `general_pages/3_Run_analysis.py:92`, `4_Results.py:57`, `LIMITATIONS.md` | direct effects "for people screened and treated" | Narrower than the modelled population (comparator and unscreened people are modelled too) | "among the modelled population" |
+| `app/results_page_display.py:42,50` | "Active TB cases averted" (two metrics share the label) | Could be read as community cases averted; duplicate label | "Active TB cases averted in the modelled population" |
+| `app/results_page_display.py:51` | "Relative reduction in active TB" | Could be read as a reduction in community incidence | "... in the modelled population" |
+| `general_pages/5_Health_economics.py:39` | "Active TB cases prevented" | As above | As above |
+| `general_pages/4_Results.py:61`, `technical.dynamicComparison` | "dynamic" rows | Suggests a transmission-model result; they are individual-based results in dynamic-model vocabulary | Rename in the display, or label "individual-based, no transmission" |
+| `general_pages/6_Evidence_and_technical_information.py:35` | "Force of infection" in the quantity glossary | Acceptable (it distinguishes quantities), but could suggest the model estimates it | Add "not estimated by this model" |
+| Milestone 2 components table | "Incidence driving infection pressure or the dynamic model: designed but not implemented" | Presents transmission integration as planned for this model | Re-label as out of scope (Starsim workstream) |
+| `README.md` sections 2 and "Dynamic model workflow" | Python dynamic model with "transmission feedback" | Legacy research pages; could be mistaken for this model's pathway | Keep; the Scope section now distinguishes them |

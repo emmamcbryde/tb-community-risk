@@ -8,6 +8,9 @@ community TB screening decision-support application. It does not change the
 validated engines, economic or DALY formulas, the dynamic model, the MATLAB
 reference files or the frozen release artifacts.
 
+Scope: results are direct outcomes among the modelled population under a
+no-transmission assumption; see `no_transmission_model_scope.md`.
+
 ## Entry points
 
 | Entry point | Purpose |
