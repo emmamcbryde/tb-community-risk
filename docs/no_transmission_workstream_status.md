@@ -93,10 +93,32 @@ This document is replaced at the end of each milestone. It does not keep a histo
   imported by that page, and the test fails identically on a clean checkout of the previous commit
   `7920889` (379 s). This is the ARM64-emulation timing sensitivity already documented in
   `environment_and_reproducibility.md`; it is pre-existing and unchanged.
+* **Clean-copy evidence for the pre-existing timeout.**
+  * Command, run in a detached worktree of `7920889` created with
+    `git -c core.longpaths=true worktree add --detach <tmp> 7920889`:
+    `python -m pytest -q -p no:cacheprovider "tests/test_sa_health_reference_package.py::SAHealthReferencePackageTests::test_rendered_health_economics_widgets_recalculate_without_changing_health"`.
+  * Outcome: `1 failed in 379.87s`. The process exited normally and was not interrupted or hung;
+    the temporary worktree was removed afterwards. The error is Streamlit's
+    `AppTest script run timed out after 90(s)`, raised by
+    `...click().run(timeout=90)` on the "Recalculate economics" button.
+  * An earlier attempt without `core.longpaths` stopped at checkout ("Filename too long" under
+    `reports/`, exit 128) before pytest started, so it produced no test result.
+  * The same test alone on this milestone's tree: `1 failed in 356.22s`, with none of the changed
+    modules imported by the page.
+  * Each run takes about six minutes. The AppTest timeout fires only after the page's earlier
+    runs complete. That is slow, but it is not a hang.
+* **Focused validation at `ab9ceca`.** The run was bounded by `timeout -k 30 900`:
+  `test_no_transmission_scope_docs.py`, `test_general_scope_terminology.py`,
+  `test_background_exposure_schema.py`, `test_frozen_release_integrity.py`,
+  `test_apy_source_formatting.py` and `test_general_app_interface.py`. Result: 51 passed,
+  370 subtests passed, 94 s.
 * MATLAB and the full suite were not run: no engine, economic or MATLAB code changed.
 
 ## Unresolved issues
 
+* The pre-existing 90 s AppTest timeout in the legacy SA Health Economics page test (see
+  Validation) is not fixed here. It belongs to the frozen SA Health release path, not this
+  workstream.
 * Background-exposure decisions (spec section 4), especially:
   * reinfection policy and partial protection;
   * whether preventive treatment clears infection or reduces progression;
