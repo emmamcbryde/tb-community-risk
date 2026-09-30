@@ -1,0 +1,5 @@
+# Separate environment for the Starsim TB feasibility prototype (engine/starsim_tb).
+# NOT part of the deployed SA Health / general Streamlit apps; do not merge into requirements.txt.
+# Validated with Python 3.12.13 (win-amd64). Starsim pulls in numpy, numba, sciris, networkx, etc.
+# Recorded environment for Milestone 1: numpy 2.5.3, numba 0.67.0, sciris 3.4.0, pandas 3.0.6, psutil 7.2.2, networkx 3.7.
+starsim==3.6.1
