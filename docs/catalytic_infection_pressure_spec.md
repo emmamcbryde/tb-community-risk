@@ -1,9 +1,12 @@
 # Background exposure to TB infection: catalytic extension specification
 
-Status: **designed, not implemented. Requires scientific review.** This document specifies an
-optional extension. It changes no calculations. The only code added is a non-calculating
-configuration schema (`engine/profiles/background_exposure.py`, section 9), which nothing in the
-engine or the ordinary interface reads.
+Status: **designed, not implemented in the model. Requires scientific review.** This document
+specifies an optional extension. It changes no calculations. The code added so far is a
+configuration schema (`engine/profiles/background_exposure.py`, section 9) and the isolated
+first-infection mathematics (`engine/profiles/background_exposure_hazard.py`, section 3a). Only
+tests import them; nothing in the engine, event ledger, economics or interface reads them.
+
+Background infection pressure is an externally supplied exposure hazard. It is not inferred automatically from reported active-TB incidence.
 
 Related: `no_transmission_model_scope.md` (model boundary and applicability) and
 `recent_remote_infection_history.md` (the existing experimental historical-hazard pathway).
@@ -36,23 +39,23 @@ call it "transmission" or "importation" (section 6).
 | Changing background exposure | `time_series` | λ(t) from a validated, user-supplied annual series. | Designed. |
 
 **Units.** λ is a hazard (rate) in **infections per person-year**, for susceptible people. It is not
-a probability, and not TB disease incidence per 100,000. The schema rejects other units and
-rejects values above 1 per person-year as probable unit errors. (This bound is provisional: a
-hazard of 1 corresponds to an annual infection probability of about 63%.)
+a probability, and not TB disease incidence per 100,000. The schema rejects other units, and
+negative or non-finite values. A hazard is a rate, so values above 1 per person-year are
+mathematically valid and accepted. They raise a **non-blocking** plausibility warning, because they
+usually indicate a unit error. The warning threshold (1 per person-year, an annual infection
+probability of about 63%) is provisional and not evidence-based. It is not a validity limit.
 
-**Time-series rules**, to be confirmed in review. The schema already enforces the first two.
-* Each row gives a constant hazard over the calendar year [y, y + 1). Rows are ordered by year,
-  and duplicate years are rejected.
-* A missing year stays *missing*. It is never read as zero. Proposed handling: implementation
-  refuses to run when a missing year falls inside the analysis window, unless the user chooses
-  one of two explicit rules, and the choice is recorded in provenance:
-  * *carry forward*: use the last observed value;
-  * *linear interpolation of the hazard* between observed years.
-* Years before the first row or after the last row, within the analysis horizon, need an
-  explicit extrapolation rule: hold the last value constant (proposed default) or refuse to run.
-  The rule is recorded.
-* The series must cover the full follow-up horizon after the rule is applied. The analysis start
-  year anchors engine time 0 to calendar time.
+**Time-series rules** (adopted; implemented in the mathematics, section 3a):
+* Each row gives a constant hazard over the half-open calendar year [y, y + 1). Rows are ordered
+  by year, and duplicate years are rejected.
+* A missing year stays *missing*. It is never read as zero.
+* The series must cover every year that a requested interval touches. A gap, a year before the
+  first row or a year after the last row is a validation error. There is **no automatic
+  interpolation or extrapolation**: values are never carried forward, backfilled, interpolated
+  across missing years, or replaced with zero. Any explicit fill rule would be a separate,
+  recorded scientific decision; none is provided.
+* Anchoring engine time 0 to calendar time is a wiring decision, made when the mathematics is
+  connected.
 * The series is **never inferred automatically from WHO TB disease incidence**. Incidence reflects
   past infection, progression and detection; it is not a hazard of infection
   (`INCIDENCE_TO_INFECTION_POLICY` in `engine/model_scope.py`). The schema rejects the
@@ -101,9 +104,112 @@ progression risk. A trajectory is therefore a scenario assumption unless it is i
 data (repeated cross-sections, tuberculin surveys, cohort data, or an explicit prior). The
 existing pathway already fixes the slope g as a scenario for this reason.
 
+## 3a. Adopted mathematical conventions (implemented and validated, not connected)
+
+`engine/profiles/background_exposure_hazard.py` provides pure, deterministic functions. They draw
+no random numbers.
+
+| Function | Meaning |
+| --- | --- |
+| `HazardSchedule.none()`, `.constant(λ)`, `.annual_series({year: λ})`; `schedule_from_config(config)` | Executable hazard λ(t). |
+| `hazard_at(schedule, t)` | λ(t). |
+| `cumulative_hazard(schedule, t0, t1)` | H(t0, t1) = ∫ λ(s) ds. |
+| `infection_probability(schedule, t0, t1)`, `probability_from_cumulative_hazard(H)` | P = 1 - exp(-H), computed as `-expm1(-H)`. |
+| `exponential_threshold(U)`, `first_infection_time(schedule, t0, t1, uniform=… or threshold=…)` | Inversion for one person. Returns a typed result: `InfectionOccurs(time)` or `NoInfectionInInterval(cumulative_hazard, residual_threshold)`. |
+| `first_infection_times(schedule, t0, t1, thresholds)`, `infection_probabilities(...)` | Vectorised forms with the same semantics. |
+| `requires_random_draw(schedule)` | False for mode `none`. |
+| `plausibility_warnings(schedule)` | The non-blocking warnings described in section 2. |
+
+Conventions:
+
+* **Hazard, not probability.** λ is in infections per susceptible person-year. For constant λ over
+  Δt, P = 1 - exp(-λΔt). λ is never used as a probability. Hazards must be finite and
+  non-negative, and there is no upper limit.
+* **Time.** Calendar time is in decimal years. Intervals are half-open [t0, t1) with t0 ≤ t1. A
+  reversed interval or a non-finite time is an error. A zero-duration interval gives H = 0 and
+  P = 0, needs no coverage, and gives no infection.
+* **Piecewise-constant series.** Year y applies on [y, y + 1). An interval needs the years from
+  floor(t0) to ceil(t1) - 1, so an interval ending exactly at y + 1 does not need year y + 1.
+  Coverage gaps are errors (section 2).
+* **Inversion.** The caller supplies U in the **open** interval (0, 1), so 0, 1, values outside
+  [0, 1] and non-finite values are rejected. Alternatively the caller supplies E = -log U directly
+  (finite, E ≥ 0). Infection occurs in [t0, t1) **if and only if E < H(t0, t1)**, at
+  τ = inf{s : H(t0, s) > E}: the first time at which accumulated hazard exceeds E, which skips
+  zero-hazard years. If E ≥ H, the result is "no infection in this interval" and carries the
+  residual threshold E - H. Passing that residual to the next interval gives the same infection
+  time as a single call over the whole interval. With this convention
+  P(infection) = P(E < H) = 1 - exp(-H) exactly.
+* **Numerics.** H is summed with `math.fsum`. P uses `expm1`, which is accurate for very small H
+  and exactly 1.0 for very large H. An overflowing H is an error.
+* **Scope: first infection only**, for people susceptible at t0. Reinfection (of remotely infected
+  people, after preventive treatment or after active-TB treatment), partial immunity, repeated
+  screening and progression after a new infection are **not implemented and not decided**
+  (section 4).
+* **Baseline LTBI prevalence remains a separate input.** Baseline infection status is set by the
+  existing model. The prospective hazard applies only after time zero and is not used to generate
+  or recalibrate baseline prevalence. Historical catalytic calibration is a later milestone.
+* **Age-specific hazards: specified, not yet executable.** `background_exposure_v1` accepts
+  contiguous integer age bands [ageLower, ageUpper) in constant mode. `schedule_from_config` raises
+  `AgeSpecificHazardNotExecutableError` for such a configuration rather than ignoring the bands.
+  Executing them needs decisions on the age representation at t0 (exact or completed years),
+  whether birthdays split exposure at the exact crossing time, and how age-band boundaries
+  interact with calendar-year boundaries. It also depends on decision 13 (acquisition versus
+  progression modifiers).
+* **No endogenous feedback.** λ is a fixed input. It does not depend on infectious people in the
+  model or on any intervention.
+* **Mode `none`.** λ = 0, H = 0, P = 0 and no infection. `requires_random_draw` is False, and the
+  inversion functions *reject* a variate for mode `none`, so a caller cannot consume a draw. The
+  `none` configuration and its hash are unchanged. A constant hazard of 0 is a value, distinct from
+  `none`: it requires a draw under this API. Whether that draw comes from a separate exposure
+  stream (decision 17) is a wiring decision.
+
+**Validation results** (`tests/test_background_exposure_hazard.py`):
+
+* **Analytical:** exact or tight-tolerance agreement with hand-calculated values:
+  * H, P and inverted times for constant hazards;
+  * piecewise series within one year, across two and several years, with fractional ends and at
+    exact year boundaries, including additivity and chained residual thresholds;
+  * a zero-hazard year skipped by inversion.
+* **Numerical:**
+  * relative error of P below 1e-15 at H = 1e-18 to 1e-8 (the naive formula loses about six
+    significant digits at H = 1e-12);
+  * P = 1.0 exactly at H = 5 × 10⁴;
+  * 200-year series summed exactly;
+  * monotone in hazard and duration, and bounded in [0, 1];
+  * overflow rejected.
+* **Validation:** errors for:
+  * negative, NaN and ±∞ hazards;
+  * duplicate, non-integer or missing years, and intervals outside coverage;
+  * reversed intervals and non-finite times;
+  * U ∈ {0, 1}, values outside [0, 1], and non-finite or negative thresholds.
+* **Statistical:** fixed seed, n = 200,000 caller-supplied uniforms per scenario, and a tolerance
+  of 4 standard errors fixed in advance. Each scenario compares the proportion infected and the
+  first-infection-time CDF at 20%, 50% and 80% of the interval.
+
+  | Scenario | Analytical P | Empirical | z | Max abs(z), CDF points |
+  | --- | --- | --- | --- | --- |
+  | constant 0.01 over 10 years | 0.09516 | 0.09455 | -0.93 | 1.39 |
+  | constant 0.1 over [2020.25, 2023.75) | 0.29531 | 0.29603 | +0.70 | 0.87 |
+  | constant 2.0 over half a year | 0.63212 | 0.63104 | -1.00 | 0.75 |
+  | series 0.02, 0, 0.15, 0.05 over [2020.4, 2023.6) | 0.17469 | 0.17367 | -1.21 | 1.06 |
+  | series 0.02, 0.05, 0.10, 0.01 over [2020, 2024) | 0.16473 | 0.16516 | +0.52 | 0.46 |
+
+* **Compatibility and isolation:**
+  * the `none` configuration and hash are identical to commit `9003146`;
+  * a reference caller consumes zero draws for `none`, and the generator state is unchanged;
+  * the module contains no random-number calls;
+  * importing the runner, simulation, expected-value, event-ledger, economics, engine-mapping and
+    general-application modules does not load it;
+  * no engine, app, UI or page file imports it;
+  * it imports neither Starsim nor Streamlit.
+
 ## 4. Scientific decisions required
 
-Proposed positions are given for review. None is adopted until review.
+Proposed positions are given for review. None is adopted until review, except two that are
+adopted for the isolated mathematics only (section 3a):
+* decisions 1 and 2: the prospective hazard is separate, and baseline prevalence stays a direct
+  input;
+* decision 12: age-specific execution is deferred.
 
 | # | Decision | Proposed position |
 | --- | --- | --- |
@@ -118,7 +224,7 @@ Proposed positions are given for review. None is adopted until review.
 | 9 | **Mechanism of preventive treatment.** | The current engine represents protection as cure of infection: a completed course protects with probability equal to full efficacy, a partial course with partial efficacy (`protected_full`, `protected_partial` in `engine/apy/simulation.py`). Under exposure, "cleared, then susceptible to reinfection" differs from "reduced progression hazard", and the choice changes results. Keep "clears infection" as the proposed primary, with "reduces progression" as a sensitivity. |
 | 10 | **Infection before, during or after screening.** | An infection before the screening time is latent at screening and can test positive (with the recent/remote test-accuracy rules). An infection during a preventive-treatment course is proposed to be cleared by a completed course (sensitivity: not cleared). An infection after screening is not detected by a one-time screen. |
 | 11 | **Repeated screening.** | Detecting later incident infections needs repeat screening rounds. That is a separate intervention design, and not part of this extension. |
-| 12 | **Age-specific hazard.** | Supported for the constant mode through contiguous age bands starting at 0, with the last band open-ended. Age-by-year hazards are not specified (the schema rejects them in time-series mode). Age is the person's current age, which advances during follow-up. |
+| 12 | **Age-specific hazard.** | The schema specifies contiguous age bands for the constant mode, starting at 0 with the last band open-ended. They are **not yet executable**: the calculator rejects them (section 3a). Proposed for execution: age is the person's current age, which advances during follow-up, with exposure split at the exact time a band boundary is crossed. Age-by-year hazards are not specified (the schema rejects them in time-series mode). |
 | 13 | **Risk factors: acquisition versus progression.** | Current risk-factor effects act on progression. Acquisition modifiers would need separate, acquisition-specific evidence. **An odds ratio for disease progression is not an infection-acquisition hazard ratio** and must never be reused as one. |
 | 14 | **Competing risks, death and ageing.** | The current individual-based simulation has no background mortality. With exposure, the time at risk depends on survival, so implementation must decide whether to add death as a competing risk (proposed, from the life table used by the economics) or to state explicitly that exposure is applied to survivors-to-horizon. Ageing must update age-specific λ. |
 | 15 | **Event-ledger representation.** | Add annual events: `incident_infections`, `reinfections`, and active TB split by infection origin (baseline infection versus incident infection). Existing event names and meanings stay unchanged. |
@@ -195,8 +301,9 @@ applicability framework in `no_transmission_model_scope.md` stays advisory. No i
 
 Each hazard value reuses the profile `ProfileValue` contract (value, state, provenance, review
 status, unit, source, notes), so zero and missing are distinct and user-defined values keep their
-provenance. The schema rejects negative, non-finite and implausibly large hazards, duplicate
-years, and WHO-snapshot provenance. Serialisation uses sorted keys, and the SHA-256 hash is
+provenance. The schema rejects negative and non-finite hazards, duplicate years and WHO-snapshot
+provenance. Hazards above the provisional threshold produce non-blocking warnings
+(`plausibility_warnings()`). Serialisation uses sorted keys, and the SHA-256 hash is
 deterministic. Profile payloads without a `backgroundExposure` block (all existing and legacy
 profiles) map to mode `none`. The population-profile contract and its hash are unchanged.
 Adding the block to the profile contract, as a future `population_profile_v3`, is a later
@@ -227,7 +334,10 @@ comparison has been run and meets pre-agreed tolerances.
 ## 11. Open decisions (summary)
 
 1. Everything in section 4, especially decisions 5, 9, 13 and 14.
-2. The time-series missing-year, interpolation and extrapolation rules (section 2).
-3. The plausibility bound on λ.
-4. Short name and output wording once exposure is enabled (section 7).
-5. The source of any default λ. None is proposed: the default remains mode `none`.
+2. Whether any explicit, recorded fill rule for missing time-series years should ever be offered.
+   At present there is none, and gaps are errors.
+3. The provisional plausibility-warning threshold on λ (non-blocking).
+4. How age-specific hazards execute: age representation, birthdays and band crossings
+   (decision 12).
+5. Short name and output wording once exposure is enabled (section 7).
+6. The source of any default λ. None is proposed: the default remains mode `none`.

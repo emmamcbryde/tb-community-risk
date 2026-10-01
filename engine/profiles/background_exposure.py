@@ -1,9 +1,10 @@
 """Versioned configuration for background exposure to TB infection (schema only).
 
-Status: preparatory scaffolding. Nothing in the epidemiological engine, the engine
+Status: configuration only. Nothing in the epidemiological engine, the engine
 mapping or the ordinary interface reads this module; the current model has no
-infection after baseline, which is mode ``none``. The scientific specification is
-``docs/catalytic_infection_pressure_spec.md``.
+infection after baseline, which is mode ``none``. The isolated mathematics in
+``background_exposure_hazard.py`` (used only by tests) is its one consumer. The
+scientific specification is ``docs/catalytic_infection_pressure_spec.md``.
 
 Background exposure is an *exogenous force of infection* (a catalytic model input):
 an annual infection hazard supplied from outside the model. It never depends on
@@ -42,10 +43,11 @@ BACKGROUND_EXPOSURE_SCHEMA_VERSION = "background_exposure_v1"
 SUPPORTED_BACKGROUND_EXPOSURE_VERSIONS = (BACKGROUND_EXPOSURE_SCHEMA_VERSION,)
 EXPOSURE_QUANTITY = "exogenous_infection_hazard"
 HAZARD_UNIT = "infections per person-year"
-# Provisional plausibility bound: a hazard of 1 per person-year is an annual infection
-# probability of 1 - exp(-1), about 63%. Larger values are almost always unit errors
-# (for example an incidence per 100,000 entered as a hazard).
-MAX_PLAUSIBLE_HAZARD = 1.0
+# Provisional, non-blocking plausibility threshold (not evidence-based). A hazard is a
+# rate, so values above 1 per person-year are mathematically valid; they are flagged
+# because they usually signal a unit error (for example an incidence per 100,000
+# entered as a hazard). A hazard of 1 is an annual infection probability of about 63%.
+PLAUSIBILITY_WARNING_HAZARD = 1.0
 PROFILE_PAYLOAD_KEY = "backgroundExposure"
 ACCEPTED_PROVENANCE = (Provenance.BUNDLED, Provenance.USER_DEFINED, Provenance.LOCAL_UPLOAD)
 
@@ -84,8 +86,6 @@ def _check_hazard(value: ProfileValue, context: str, *, allow_missing: bool) -> 
             _fail(f"{context}: hazard must be a finite number.")
         if value.value < 0:
             _fail(f"{context}: hazard cannot be negative.")
-        if value.value > MAX_PLAUSIBLE_HAZARD:
-            _fail(f"{context}: hazard {value.value:g} per person-year exceeds {MAX_PLAUSIBLE_HAZARD:g}; check the units.")
     elif value.state is ValueState.MISSING:
         if not allow_missing:
             _fail(f"{context}: a value is required.")
@@ -160,6 +160,17 @@ class BackgroundExposure:
     def hazard_is_identically_zero(self) -> bool:
         """True only for mode ``none``: no infection after baseline, as in the current model."""
         return self.mode is ExposureMode.NONE
+
+    def plausibility_warnings(self) -> tuple[str, ...]:
+        """Non-blocking warnings for unusually high hazards (provisional threshold)."""
+        hazards = [("constantHazard", self.constant_hazard)]
+        hazards += [(f"ageSpecificHazards[{i}]", band.hazard) for i, band in enumerate(self.age_specific_hazards)]
+        hazards += [(f"timeSeries (year {row.year})", row.hazard) for row in self.time_series]
+        return tuple(
+            hazard_plausibility_warning(value.value, context)
+            for context, value in hazards
+            if value is not None and value.value is not None and value.value > PLAUSIBILITY_WARNING_HAZARD
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -281,6 +292,14 @@ def _validate_age_bands(bands: tuple[AgeBandHazard, ...]) -> None:
             _fail("Age-specific hazard bands must be contiguous and non-overlapping.")
     if bands[-1].age_upper is not None:
         _fail("The last age-specific hazard band must be open-ended (ageUpper null).")
+
+
+def hazard_plausibility_warning(hazard: float, context: str) -> str:
+    return (
+        f"{context}: hazard {hazard:g} per person-year exceeds the provisional plausibility threshold "
+        f"{PLAUSIBILITY_WARNING_HAZARD:g} (annual infection probability above about 63%). "
+        "It is accepted; check that it is an infection hazard and not an incidence per 100,000."
+    )
 
 
 def no_background_exposure() -> BackgroundExposure:

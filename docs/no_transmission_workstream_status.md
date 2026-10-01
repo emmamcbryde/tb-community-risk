@@ -4,147 +4,155 @@ This document is replaced at the end of each milestone. It does not keep a histo
 
 | Field | Value |
 | --- | --- |
-| Date | 2026-09-30 |
+| Date | 2026-10-01 |
 | Branch | `feature/generic-no-transmission-model` |
-| Milestone | Terminology correction and catalytic (background-exposure) specification |
+| Milestone | Pure mathematics for exogenous background infection pressure (isolated, not connected) |
 | Commit | The commit that adds this file (see `git log -1 -- docs/no_transmission_workstream_status.md`) |
-| Previous milestone | Scope documentation (`c485ff7`, `7920889`) |
+| Starting point | `9003146` (previous milestone implementation `ab9ceca`) |
 | Merged, tagged or deployed | No |
 
 ## Objective
 
-1. Correct user-facing wording that implied endogenous transmission effects.
-2. Specify an optional exogenous-infection-pressure (catalytic) extension, and scaffold its
-   configuration schema, without changing any result.
+Implement and validate the pure mathematics for optional exogenous background TB infection
+pressure. Keep it entirely separate from the epidemiological engine, event ledger, economics and
+ordinary Streamlit interface.
 
-## Scientific decisions made
+## Scientific decisions applied
 
-* **Model boundary.** "A screening and preventive-treatment model with no endogenous transmission
-  feedback." Results are direct outcomes among the modelled population, compared with no screening.
-* **Future identity, if background exposure is implemented.** "... with optional exogenous
-  infection pressure and no endogenous transmission feedback." The workstream keeps the name
-  "no-transmission model". Outputs will say "no transmission feedback" and state the exposure
-  mode; this is proposed, pending review.
-* **Catalytic extension**, specified in `catalytic_infection_pressure_spec.md` and designed, not
-  implemented:
-  * an external annual infection hazard (infections per person-year) with three modes: `none`
-    (the current model), `constant` and `time_series`;
-  * no dependence on the model's own infectious people, and no intervention feedback;
-  * never inferred from WHO incidence.
-* **Distinct mechanisms.** Background exposure is kept separate from the entry of infected people,
-  the entry of people with active TB, and endogenous transmission. Imported active TB is never
-  represented as force of infection. "Importation" is not a synonym for background exposure.
-* **Applicability.** The framework stays advisory. No incidence value (10, 40, 100 per 100,000 or
-  any other) is an engine-selection threshold.
+These are adopted for the isolated mathematics only. Details are in section 3a of
+`catalytic_infection_pressure_spec.md`.
+
+1. **Baseline LTBI prevalence remains a separate input.** The prospective hazard applies after time
+   zero and does not generate or recalibrate baseline prevalence.
+2. **Hazard, not probability.** λ is in infections per susceptible person-year, and
+   P = 1 - exp(-H), computed as `-expm1(-H)`.
+3. **Modes:** `none`, `constant` and piecewise-constant annual `time_series`. There are no
+   qualitative presets.
+4. **Time series:**
+   * year y applies on [y, y + 1);
+   * an interval needs the years from floor(t0) to ceil(t1) - 1;
+   * gaps and uncovered years are errors. Nothing is carried forward, backfilled, interpolated or
+     set to zero.
+5. **Hazard range:** finite and non-negative, with no mathematical maximum. A hazard above
+   1 per person-year produces a non-blocking plausibility warning. That threshold is provisional
+   and not evidence-based.
+   * **This changed the schema:** `background_exposure_v1` previously *rejected* such values. That
+     rejection contradicted this decision, so it is now a warning (`plausibility_warnings()`).
+   * The change is more permissive only. Every previously valid payload, and its hash, is
+     unchanged.
+6. **First infection only**, for people susceptible at t0. Nothing else is implemented.
+7. **Mode `none`:** H = 0, P = 0, no event and no random draw.
+
+**Age-specific hazards are specified but not yet executable.** `schedule_from_config` raises
+`AgeSpecificHazardNotExecutableError`; the bands are never silently ignored.
 
 ## Implementation completed
 
-* `engine/model_scope.py` holds the canonical scope statements and the patterns for prohibited
-  claims. The incidence notes in `trend.py` and `country.py` now reuse them, with no "not yet"
-  wording.
-* `app/general/terminology.py` holds one general-application label per metric, plus definitions.
-  The shared, frozen `app/results_page_display.py` labels are unchanged; the Results page relabels
-  its rows.
-  * Direct active TB cases averted (`cumulative_cases_averted`, `nPreventedActiveTB` and
-    `activeTBCasesPrevented`; one quantity, one label).
-  * Relative reduction in directly modelled active TB.
-  * Active TB without screening (comparator); Active TB with screening.
-  * People screened, or treatment starts, per direct active TB case averted.
-* The Results, Run analysis and Health economics pages use the same direct-effects caption. The
-  Results page adds an "Outcome definitions" expander.
-* The `LIMITATIONS.md` export states:
-  * the model identity and the direct-effects boundary;
-  * that no infection occurs after baseline;
-  * that `dynamicComparison` fields are individual-based no-feedback results.
-* `engine/profiles/background_exposure.py` is the `background_exposure_v1` schema. It performs no
-  calculation and is not connected to the engine, the engine mapping or any page. Profiles without
-  the block map to `none`, and the population-profile contract and its hash are unchanged.
+* `engine/profiles/background_exposure_hazard.py` (new; pure; no random-number calls):
+  * `HazardSchedule` (`none`, `constant`, `annual_series`) and `schedule_from_config`;
+  * `hazard_at` and `cumulative_hazard`;
+  * `infection_probability` and `probability_from_cumulative_hazard`;
+  * `exponential_threshold` and `first_infection_time`, with a typed result: `InfectionOccurs` or
+    `NoInfectionInInterval`, which carries the residual threshold for chaining intervals;
+  * the vectorised `first_infection_times` and `infection_probabilities`;
+  * `requires_random_draw` and `plausibility_warnings`.
+* **Inversion convention.**
+  * The caller supplies U ∈ (0, 1), open, or E = -log U (finite, E ≥ 0).
+  * Infection occurs in [t0, t1) if and only if E < H(t0, t1), at τ = inf{s : H(t0, s) > E}.
+* `engine/profiles/background_exposure.py`:
+  * the hard ceiling above 1 is replaced by `plausibility_warnings()`;
+  * the docstring is updated.
 * Docs:
-  * new: `catalytic_infection_pressure_spec.md`;
-  * updated: `no_transmission_model_scope.md`, the `general_app_milestone2.md` planning row and the
-    status of its terminology table, and the README note on the legacy dynamic model.
+  * `catalytic_infection_pressure_spec.md` has a new section 3a (API, conventions and validation
+    results), the adopted time-series rules, the hazard-versus-probability and warning text, and
+    the age-specific status;
+  * it states: "Background infection pressure is an externally supplied exposure hazard. It is not
+    inferred automatically from reported active-TB incidence."
+
+Nothing is connected to cohort generation, infection or disease outcomes, the event ledger,
+economics, Streamlit, MATLAB, frozen artifacts or Starsim.
 
 ## Validation performed
 
-* New tests:
-  * `test_general_scope_terminology.py` (wording, exports, label consistency);
-  * `test_background_exposure_schema.py` (round-trip, hashing, legacy migration to `none`,
-    validation, isolation from calculations, no Starsim dependency);
-  * a catalytic-spec check in `test_no_transmission_scope_docs.py`;
-  * two rendered Results and Health economics tests in `test_general_app_interface.py`.
-* Broader suites: all general-app tests, frozen-release integrity, frozen reference loader, results
-  presentation, legacy static interface, calibration memoisation, health-economics inputs and the
-  SA Health reference package.
-* **What the frozen-release check measures.**
-  `test_release_files_unchanged_except_documented_exceptions` lists files that existed at tag
-  `sa-health-apy-he-v1.0.0` and are now modified, deleted, renamed or type-changed
-  (`git diff --diff-filter=MDRT`). It requires that list to contain only `.gitignore`, `README.md`
-  and `engine/apy/calibration_policy.py`.
-  * Files *added* after the release (all general-application code and documentation, including
-    this milestone's new and edited files) are outside that check by design.
-  * The other checks are: SHA-256 of the eight frozen reference artifacts; the tag and release
-    branch pointing at `03cc16e`; and the frozen numerical headline matching the working-default
-    engine configuration.
-  * The earlier statement "the diff touches only three allowed files" meant *release files
-    modified*, not all files changed on the branch.
-* Result: 210 passed and 1 failed (376 subtests). The failure is
-  `test_sa_health_reference_package.py::...test_rendered_health_economics_widgets_recalculate_without_changing_health`,
-  a 90 s AppTest timeout in the legacy `pages/4_Economics.py`. None of the modules changed here are
-  imported by that page, and the test fails identically on a clean checkout of the previous commit
-  `7920889` (379 s). This is the ARM64-emulation timing sensitivity already documented in
-  `environment_and_reproducibility.md`; it is pre-existing and unchanged.
-* **Clean-copy evidence for the pre-existing timeout.**
-  * Command, run in a detached worktree of `7920889` created with
-    `git -c core.longpaths=true worktree add --detach <tmp> 7920889`:
-    `python -m pytest -q -p no:cacheprovider "tests/test_sa_health_reference_package.py::SAHealthReferencePackageTests::test_rendered_health_economics_widgets_recalculate_without_changing_health"`.
-  * Outcome: `1 failed in 379.87s`. The process exited normally and was not interrupted or hung;
-    the temporary worktree was removed afterwards. The error is Streamlit's
-    `AppTest script run timed out after 90(s)`, raised by
-    `...click().run(timeout=90)` on the "Recalculate economics" button.
-  * An earlier attempt without `core.longpaths` stopped at checkout ("Filename too long" under
-    `reports/`, exit 128) before pytest started, so it produced no test result.
-  * The same test alone on this milestone's tree: `1 failed in 356.22s`, with none of the changed
-    modules imported by the page.
-  * Each run takes about six minutes. The AppTest timeout fires only after the page's earlier
-    runs complete. That is slow, but it is not a hang.
-* **Focused validation at `ab9ceca`.** The run was bounded by `timeout -k 30 900`:
-  `test_no_transmission_scope_docs.py`, `test_general_scope_terminology.py`,
-  `test_background_exposure_schema.py`, `test_frozen_release_integrity.py`,
-  `test_apy_source_formatting.py` and `test_general_app_interface.py`. Result: 51 passed,
-  370 subtests passed, 94 s.
-* MATLAB and the full suite were not run: no engine, economic or MATLAB code changed.
+* **New file `tests/test_background_exposure_hazard.py`** (29 tests). Its coverage:
+  * mode `none`, including a zero-draw proof;
+  * constant hazards and piecewise-constant series;
+  * numerical behaviour and input validation;
+  * statistical checks;
+  * isolation.
+* **Statistical checks:**
+  * fixed seed, n = 200,000 caller-supplied variates per scenario, and a tolerance of 4 standard
+    errors fixed in advance;
+  * five scenarios, each checking the proportion infected and the infection-time CDF at three
+    points;
+  * worst |z| = 1.39.
+* **Mode `none` draws nothing.**
+  * `requires_random_draw` is False.
+  * The inversion functions reject a variate for `none`.
+  * A reference caller with a counting generator makes 0 calls, and the bit-generator state is
+    unchanged.
+  * With numpy and Python RNG entry points patched to raise, every function runs, and the global
+    RNG states are unchanged.
+  * The source contains no RNG usage.
+* **Not wired in.**
+  * In a subprocess, importing the runner, simulation, expected-value, event-ledger and economics
+    modules, the frozen reference, the engine mapping and the general-application modules does not
+    load the new module.
+  * A source scan finds no import of it in `engine/`, `app/`, `ui/`, `pages/`, `general_pages/`,
+    `adapters/` or the root scripts.
+* **Mode `none` unchanged:** its configuration dict and hash (`39cac6a7…`) are identical to those
+  computed with the schema at `9003146`.
+* **Focused and guardrail tests**, bounded by `timeout -k 30 900`: 66 passed, 561 subtests, 19 s.
+  The files are:
+  * the hazard and schema tests;
+  * `test_no_transmission_scope_docs.py` and `test_general_scope_terminology.py`;
+  * `test_frozen_release_integrity.py` and `test_frozen_reference_loader.py`;
+  * `test_apy_source_formatting.py`.
+* **Broader regression**, bounded by `timeout -k 30 1500`: `test_general_*.py`,
+  `test_results_page_presentation.py` and `test_legacy_static_ui.py`. Result: 115 passed,
+  90 subtests, 102 s.
+* **Frozen outputs:** the frozen-release integrity checks pass, covering the reference-artifact
+  SHA-256 values, the release tag and branch, the frozen headline, and the release-file diff.
+* **Not run:**
+  * MATLAB and the full suite;
+  * `test_sa_health_reference_package.py::...test_rendered_health_economics_widgets_recalculate_without_changing_health`.
+    That test is the documented **pre-existing** 90 s AppTest timeout: it reproduced on a clean
+    `7920889` worktree (1 failed in 379.87 s). It was deliberately not rerun, and remains
+    classified as pre-existing.
 
 ## Unresolved issues
 
-* The pre-existing 90 s AppTest timeout in the legacy SA Health Economics page test (see
-  Validation) is not fixed here. It belongs to the frozen SA Health release path, not this
-  workstream.
-* Background-exposure decisions (spec section 4), especially:
-  * reinfection policy and partial protection;
-  * whether preventive treatment clears infection or reduces progression;
-  * competing mortality, which the current simulation does not model;
-  * acquisition versus progression risk factors;
-  * time-series missing-year, interpolation and extrapolation rules;
-  * the provisional plausibility bound (hazard of 1 per person-year).
-* The applicability framework, any numerical flag, and the WHO and national citations still need
-  scientific review.
-* The future of `engine/dynamic/` and `dynamic_model_readiness_spec.md`, given the Starsim
-  workstream.
-* Reports built outside the general application (the SA Health Word report and package) keep the
-  frozen wording. They should adopt the direct-effects wording only in a new, separately versioned
-  release.
-* Newly applied country or local incidence profiles carry the revised incidence note, so their
-  profile hash differs from one built before this milestone. Results and the epidemiological
-  configuration hash are unaffected.
+* **Scientific decisions** (spec section 4):
+  * reinfection (of remotely infected people, after preventive treatment, after active-TB
+    treatment);
+  * partial immunity;
+  * preventive-treatment semantics (clears infection or reduces progression);
+  * progression after an incident infection (recent state, duration);
+  * mortality and ageing, including competing risks;
+  * repeated screening;
+  * historical catalytic calibration of baseline prevalence;
+  * deriving scenarios from external epidemiological data (never automatically from WHO incidence).
+* **Execution of age-specific hazards:**
+  * age representation at t0;
+  * birthday and band-crossing splits;
+  * interaction with calendar years;
+  * acquisition versus progression modifiers.
+* Whether any explicit, recorded fill rule for missing years should ever be offered.
+* The provisional plausibility-warning threshold.
+* Constant λ = 0 versus `none` when wired: draw-stream design (decision 17).
+* Anchoring engine time 0 to calendar time.
+* The pre-existing SA Health Economics AppTest timeout, which is not fixed here.
+* The applicability framework and citations still need scientific review. The future of
+  `engine/dynamic/` is also undecided.
 
-## Recommended next milestone
+## Recommended next scientific decision
 
-**Analytical core for background exposure, isolated from the engine:**
+**Reinfection and the preventive-treatment mechanism**, decided together (decisions 5, 6 and 9):
 
-1. Pure functions for cumulative hazard, infection probability and first-infection time
-   sampling (constant, age-banded and piecewise-constant).
-2. The section 10 analytical tests against the closed forms.
-3. A scientific review of the reinfection, preventive-treatment-mechanism and mortality
-   decisions.
-4. A zero-exposure identity harness that proves mode `none` consumes no random draws. It should be
-   in place before any engine wiring.
+* whether completed preventive treatment clears infection and returns the person to the
+  susceptible pool;
+* the relative hazard of reinfection disease for previously infected people.
+
+Under prospective exposure these choices determine who is "susceptible at t0" for the
+first-infection mathematics, and they change the direction and size of the benefit of preventive
+treatment. They should be settled before any wiring.

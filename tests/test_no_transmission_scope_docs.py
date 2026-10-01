@@ -70,6 +70,13 @@ class NoTransmissionScopeDocsTests(unittest.TestCase):
             "optional exogenous infection pressure and no endogenous transmission feedback",
             "never inferred automatically from who tb disease incidence",
             "no equivalence is claimed",
+            "background infection pressure is an externally supplied exposure hazard. it is not inferred automatically from reported active-tb incidence.",
+            "no automatic interpolation or extrapolation",
+            "if and only if e < h(t0, t1)",
+            "scope: first infection only",
+            "baseline ltbi prevalence remains a separate input",
+            "age-specific hazards: specified, not yet executable",
+            "it is not a validity limit",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)

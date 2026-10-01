@@ -104,7 +104,6 @@ class BackgroundExposureSchemaTests(unittest.TestCase):
         not_finite = [{**_hz(0.01), "value": v} for v in (float("nan"), float("inf"), float("-inf"))]
         cases = {
             "negative": _payload("constant", constantHazard=_hz(-0.001)),
-            "implausible": _payload("constant", constantHazard=_hz(5.0)),
             "wrong hazard unit": _payload("constant", constantHazard=wrong_unit),
             "wrong config unit": _payload("constant", constantHazard=_hz(0.01), unit="per 100,000 population per year"),
             "non-numeric": _payload("constant", constantHazard={**_hz(0.01), "value": "0.01"}),
@@ -132,6 +131,18 @@ class BackgroundExposureSchemaTests(unittest.TestCase):
                     BackgroundExposure.from_dict(payload)
         with self.assertRaises(BackgroundExposureValidationError):
             BackgroundExposure(mode=ExposureMode.CONSTANT, constant_hazard=hazard_value(-1.0))
+
+    def test_high_hazard_is_valid_with_a_non_blocking_warning(self) -> None:
+        high = BackgroundExposure.from_dict(_payload("constant", constantHazard=_hz(5.0)))
+        self.assertEqual(high.constant_hazard.value, 5.0)
+        self.assertEqual(len(high.plausibility_warnings()), 1)
+        self.assertIn("provisional", high.plausibility_warnings()[0])
+        series = BackgroundExposure.from_dict(
+            _payload("time_series", timeSeries=[{"year": 2020, "hazard": _hz(1.0)}, {"year": 2021, "hazard": _hz(1.5)}])
+        )
+        self.assertEqual(len(series.plausibility_warnings()), 1)
+        self.assertEqual(BackgroundExposure.from_dict(_payload("constant", constantHazard=_hz(0.01))).plausibility_warnings(), ())
+        self.assertEqual(no_background_exposure().plausibility_warnings(), ())
 
     def test_non_finite_json_rejected(self) -> None:
         text = json.dumps(_payload("constant", constantHazard=_hz(0.01))).replace("0.01", "NaN")
@@ -162,9 +173,9 @@ class BackgroundExposureIsolationTests(unittest.TestCase):
             ROOT / "general_app.py",
             ROOT / "streamlit_app.py",
         ]
-        own = ROOT / "engine" / "profiles" / "background_exposure.py"
+        own = {ROOT / "engine" / "profiles" / name for name in ("background_exposure.py", "background_exposure_hazard.py")}
         for path in scanned:
-            if path == own:
+            if path in own:
                 continue
             with self.subTest(file=path.relative_to(ROOT).as_posix()):
                 self.assertNotIn("background_exposure", path.read_text(encoding="utf-8"))
