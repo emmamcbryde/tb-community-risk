@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+import hashlib
+import json
 import math
 from typing import Any, Iterable, Mapping
 
@@ -14,14 +16,23 @@ NATURAL_HISTORY_SEMANTICS = "explicit_recent_remote_tbi_history_v1"
 CALIBRATION_METHOD = "constant_hazard_age_window_recent_remote_v1"
 INFECTION_HISTORY_CONTRACT_VERSION = "recent_remote_tbi_history_contract_v1"
 ACTIVE_TB_OBSERVATION_SCHEMA_VERSION = "active_tb_observation_targets_v1"
+CONFIG_CONTRACT_VERSION = "explicit_recent_remote_tbi_config_v1"
+ASSIGNMENT_CONTRACT_VERSION = "explicit_recent_remote_tbi_assignment_v1"
+RECENT_HAZARD_SHAPE = "constant_recent_window_hazard_v1"
+REMOTE_HAZARD_SHAPE = "constant_remote_window_hazard_v1"
 
 RECENT_WINDOW_YEARS = 5.0
 REMOTE_HISTORY_CAP_YEARS = 100.0
+EARLY_RISK_PERIOD_YEARS = 5.0
 AGE_PROPORTION_TOLERANCE = 1e-9
 PROBABILITY_TOLERANCE = 1e-10
 ROOT_TOLERANCE = 1e-12
 MAX_ROOT_ITERATIONS = 200
 MAX_HAZARD_PER_YEAR = 1e6
+
+STATE_UNINFECTED = "uninfected"
+STATE_REMOTE_ONLY = "remote_only"
+STATE_RECENT = "recent"
 
 RECENT_LABEL = "Recently infected within 5 years"
 REMOTE_ONLY_LABEL = (
@@ -164,6 +175,52 @@ class CalibrationResult:
         }
 
 
+@dataclass(frozen=True)
+class ExplicitRecentRemoteConfig:
+    enabled: bool = False
+    recent_tbi_target: float = 0.0
+    remote_only_tbi_target: float = 0.0
+    recent_window_years: float = RECENT_WINDOW_YEARS
+    remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS
+    recent_hazard_shape: str = RECENT_HAZARD_SHAPE
+    remote_hazard_shape: str = REMOTE_HAZARD_SHAPE
+    target_source: str = ""
+    target_reference_year: int | None = None
+    review_status: str = "unreviewed"
+    notes: str = ""
+    config_contract_version: str = CONFIG_CONTRACT_VERSION
+    calibration_contract_version: str = CALIBRATION_CONTRACT_VERSION
+    analysis_basis: str = ANALYSIS_BASIS
+    natural_history_semantics: str = NATURAL_HISTORY_SEMANTICS
+    calibration_method: str = CALIBRATION_METHOD
+    infection_history_contract_version: str = INFECTION_HISTORY_CONTRACT_VERSION
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "configContractVersion": self.config_contract_version,
+            "enabled": self.enabled,
+            "targetDefinitions": {
+                "recent": RECENT_LABEL,
+                "remoteOnly": REMOTE_ONLY_LABEL,
+            },
+            "recentTBITargetProportion": self.recent_tbi_target,
+            "remoteOnlyTBITargetProportion": self.remote_only_tbi_target,
+            "recentWindowYears": self.recent_window_years,
+            "remoteHistoryCapYears": self.remote_history_cap_years,
+            "recentHazardShape": self.recent_hazard_shape,
+            "remoteHazardShape": self.remote_hazard_shape,
+            "targetSource": self.target_source,
+            "targetReferenceYear": self.target_reference_year,
+            "reviewStatus": self.review_status,
+            "notes": self.notes,
+            "calibrationContractVersion": self.calibration_contract_version,
+            "analysisBasis": self.analysis_basis,
+            "naturalHistorySemantics": self.natural_history_semantics,
+            "calibrationMethod": self.calibration_method,
+            "infectionHistoryContractVersion": self.infection_history_contract_version,
+        }
+
+
 def calibration_result_from_dict(payload: Mapping[str, Any]) -> CalibrationResult:
     return CalibrationResult(
         requested_recent_prevalence=float(payload["requestedRecentPrevalence"]),
@@ -200,6 +257,62 @@ def calibration_result_from_dict(payload: Mapping[str, Any]) -> CalibrationResul
             )
         ),
     )
+
+
+def build_explicit_recent_remote_config(
+    *,
+    enabled: bool = False,
+    recent_tbi_target: float = 0.0,
+    remote_only_tbi_target: float = 0.0,
+    recent_window_years: float = RECENT_WINDOW_YEARS,
+    remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
+    recent_hazard_shape: str = RECENT_HAZARD_SHAPE,
+    remote_hazard_shape: str = REMOTE_HAZARD_SHAPE,
+    target_source: str = "",
+    target_reference_year: int | None = None,
+    review_status: str = "unreviewed",
+    notes: str = "",
+) -> ExplicitRecentRemoteConfig:
+    return _validate_explicit_recent_remote_config(
+        {
+            "enabled": enabled,
+            "recentTBITargetProportion": recent_tbi_target,
+            "remoteOnlyTBITargetProportion": remote_only_tbi_target,
+            "recentWindowYears": recent_window_years,
+            "remoteHistoryCapYears": remote_history_cap_years,
+            "recentHazardShape": recent_hazard_shape,
+            "remoteHazardShape": remote_hazard_shape,
+            "targetSource": target_source,
+            "targetReferenceYear": target_reference_year,
+            "reviewStatus": review_status,
+            "notes": notes,
+        }
+    )
+
+
+def explicit_recent_remote_config_from_dict(
+    payload: Mapping[str, Any],
+) -> ExplicitRecentRemoteConfig:
+    return _validate_explicit_recent_remote_config(payload)
+
+
+def explicit_recent_remote_config_json(
+    config: ExplicitRecentRemoteConfig | Mapping[str, Any],
+) -> str:
+    cfg = (
+        config
+        if isinstance(config, ExplicitRecentRemoteConfig)
+        else explicit_recent_remote_config_from_dict(config)
+    )
+    return _canonical_json(cfg.as_dict())
+
+
+def explicit_recent_remote_config_hash(
+    config: ExplicitRecentRemoteConfig | Mapping[str, Any],
+) -> str:
+    return hashlib.sha256(
+        explicit_recent_remote_config_json(config).encode("utf-8")
+    ).hexdigest()
 
 
 def exposure_durations_for_ages(
@@ -314,12 +427,17 @@ def population_weighted_prevalences(
     proportions: Iterable[float],
     recent_hazard: float,
     remote_hazard: float,
+    *,
+    recent_window_years: float = RECENT_WINDOW_YEARS,
+    remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
 ) -> PopulationPrevalences:
     distribution = validate_age_distribution(ages, proportions)
     probabilities = mutually_exclusive_state_probabilities(
         distribution.ages,
         recent_hazard,
         remote_hazard,
+        recent_window_years=recent_window_years,
+        remote_history_cap_years=remote_history_cap_years,
     )
     weights = np.asarray(distribution.proportions, dtype=float)
 
@@ -344,6 +462,9 @@ def assess_calibration_feasibility(
     proportions: Iterable[float],
     requested_recent_prevalence: float,
     requested_remote_only_prevalence: float,
+    *,
+    recent_window_years: float = RECENT_WINDOW_YEARS,
+    remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
 ) -> dict[str, Any]:
     distribution = validate_age_distribution(ages, proportions)
     target_recent = _probability(requested_recent_prevalence, "requested_recent_prevalence")
@@ -351,7 +472,11 @@ def assess_calibration_feasibility(
         requested_remote_only_prevalence,
         "requested_remote_only_prevalence",
     )
-    durations = exposure_durations_for_ages(distribution.ages)
+    durations = exposure_durations_for_ages(
+        distribution.ages,
+        recent_window_years=recent_window_years,
+        remote_history_cap_years=remote_history_cap_years,
+    )
     weights = np.asarray(distribution.proportions, dtype=float)
     recent_durations = np.asarray(durations.recent_years, dtype=float)
     remote_durations = np.asarray(durations.remote_years, dtype=float)
@@ -403,6 +528,8 @@ def calibrate_recent_remote_hazards(
     requested_recent_prevalence: float,
     requested_remote_only_prevalence: float,
     *,
+    recent_window_years: float = RECENT_WINDOW_YEARS,
+    remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
     tolerance: float = ROOT_TOLERANCE,
 ) -> CalibrationResult:
     distribution = validate_age_distribution(ages, proportions)
@@ -416,6 +543,8 @@ def calibrate_recent_remote_hazards(
         distribution.proportions,
         target_recent,
         target_remote,
+        recent_window_years=recent_window_years,
+        remote_history_cap_years=remote_history_cap_years,
     )
     if not assessment["isFeasible"]:
         raise CalibrationError(
@@ -424,7 +553,11 @@ def calibrate_recent_remote_hazards(
             assessment,
         )
 
-    durations = exposure_durations_for_ages(distribution.ages)
+    durations = exposure_durations_for_ages(
+        distribution.ages,
+        recent_window_years=recent_window_years,
+        remote_history_cap_years=remote_history_cap_years,
+    )
     weights = np.asarray(distribution.proportions, dtype=float)
     recent_durations = np.asarray(durations.recent_years, dtype=float)
     remote_durations = np.asarray(durations.remote_years, dtype=float)
@@ -471,6 +604,8 @@ def calibrate_recent_remote_hazards(
         distribution.proportions,
         recent_hazard,
         remote_hazard,
+        recent_window_years=recent_window_years,
+        remote_history_cap_years=remote_history_cap_years,
     )
     residuals = {
         "recent": abs(achieved.recent - target_recent),
@@ -520,6 +655,425 @@ def infection_time_quantile(
     return start + min(max(years_after_start, 0.0), duration)
 
 
+def expected_time_since_most_recent_event(
+    *,
+    window_start_years_before_baseline: float,
+    window_duration_years: float,
+    hazard_per_year: float,
+) -> float:
+    start = _finite_nonnegative_float(
+        window_start_years_before_baseline,
+        "window_start_years_before_baseline",
+    )
+    duration = _positive_float(window_duration_years, "window_duration_years")
+    hazard = _positive_float(hazard_per_year, "hazard_per_year")
+    z = hazard * duration
+    if z < 1e-7:
+        mean_after_start = duration * (0.5 - z / 12.0 + (z ** 3) / 720.0)
+    elif z > 700.0:
+        mean_after_start = 1.0 / hazard
+    else:
+        mean_after_start = (1.0 / hazard) - (duration / math.expm1(z))
+    mean_after_start = min(max(mean_after_start, 0.0), duration)
+    return start + mean_after_start
+
+
+def sample_time_since_most_recent_event(
+    *,
+    window_start_years_before_baseline: float,
+    window_duration_years: float,
+    hazard_per_year: float,
+    rng: Any,
+) -> float:
+    if rng is None:
+        raise ValueError("rng is required for stochastic infection-time sampling.")
+    return infection_time_quantile(
+        window_start_years_before_baseline=window_start_years_before_baseline,
+        window_duration_years=window_duration_years,
+        hazard_per_year=hazard_per_year,
+        quantile=float(rng.random()),
+    )
+
+
+def deterministic_recent_remote_assignment(
+    ages: Iterable[float],
+    proportions: Iterable[float],
+    recent_hazard: float,
+    remote_hazard: float,
+    *,
+    population_size: float = 1.0,
+    recent_window_years: float = RECENT_WINDOW_YEARS,
+    remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
+    early_risk_period_years: float = EARLY_RISK_PERIOD_YEARS,
+) -> dict[str, Any]:
+    distribution = validate_age_distribution(ages, proportions)
+    pop_size = _finite_nonnegative_float(population_size, "population_size")
+    early_risk_period = _positive_float(early_risk_period_years, "early_risk_period_years")
+    recent_rate = _finite_nonnegative_float(recent_hazard, "recent_hazard")
+    remote_rate = _finite_nonnegative_float(remote_hazard, "remote_hazard")
+    durations = exposure_durations_for_ages(
+        distribution.ages,
+        recent_window_years=recent_window_years,
+        remote_history_cap_years=remote_history_cap_years,
+    )
+    probabilities = mutually_exclusive_state_probabilities(
+        distribution.ages,
+        recent_rate,
+        remote_rate,
+        recent_window_years=recent_window_years,
+        remote_history_cap_years=remote_history_cap_years,
+    )
+    weights = np.asarray(distribution.proportions, dtype=float)
+
+    def weighted(name: str) -> float:
+        return float(np.sum(weights * np.asarray(probabilities[name], dtype=float)))
+
+    recent_prop = weighted("recent")
+    remote_only_prop = weighted("remote_only")
+    uninfected_prop = weighted("uninfected")
+    prior_remote_prop = weighted("prior_remote_exposure")
+    recent_with_prior_remote_prop = weighted("recent_with_prior_remote")
+    remaining_numerator = 0.0
+    age_rows: list[dict[str, Any]] = []
+    for idx, age in enumerate(distribution.ages):
+        p_recent = float(probabilities["recent"][idx])
+        p_remote_only = float(probabilities["remote_only"][idx])
+        p_uninfected = float(probabilities["uninfected"][idx])
+        p_recent_with_prior = float(probabilities["recent_with_prior_remote"][idx])
+        p_prior_remote = float(probabilities["prior_remote_exposure"][idx])
+        tbi = p_recent + p_remote_only
+        recent_mean_time = None
+        remaining_recent = 0.0
+        if p_recent > 0.0 and durations.recent_years[idx] > 0.0 and recent_rate > 0.0:
+            recent_mean_time = expected_time_since_most_recent_event(
+                window_start_years_before_baseline=0.0,
+                window_duration_years=durations.recent_years[idx],
+                hazard_per_year=recent_rate,
+            )
+            remaining_recent = max(0.0, early_risk_period - recent_mean_time)
+        remaining_numerator += weights[idx] * p_recent * remaining_recent
+        age_rows.append(
+            {
+                "ageYears": age,
+                "populationProportion": float(weights[idx]),
+                "recentExposureYears": durations.recent_years[idx],
+                "remoteExposureYears": durations.remote_years[idx],
+                "stateProportions": {
+                    STATE_RECENT: p_recent,
+                    STATE_REMOTE_ONLY: p_remote_only,
+                    STATE_UNINFECTED: p_uninfected,
+                },
+                "stateCounts": {
+                    STATE_RECENT: pop_size * float(weights[idx]) * p_recent,
+                    STATE_REMOTE_ONLY: pop_size * float(weights[idx]) * p_remote_only,
+                    STATE_UNINFECTED: pop_size * float(weights[idx]) * p_uninfected,
+                },
+                "priorRemoteExposureProportion": p_prior_remote,
+                "priorRemotePlusRecentProportion": p_recent_with_prior,
+                "recentPrevalenceInTotalAgeGroup": p_recent,
+                "recentFractionAmongTBI": None if tbi <= 0.0 else p_recent / tbi,
+                "expectedTimeSinceMostRecentInfectionAmongRecent": recent_mean_time,
+                "expectedRemainingEarlyRiskYearsAmongRecent": remaining_recent,
+            }
+        )
+
+    expected_remaining = 0.0 if recent_prop <= 0.0 else remaining_numerator / recent_prop
+    return {
+        "assignmentContractVersion": ASSIGNMENT_CONTRACT_VERSION,
+        "naturalHistorySemantics": NATURAL_HISTORY_SEMANTICS,
+        "populationSize": pop_size,
+        "stateDefinitions": {
+            STATE_RECENT: RECENT_LABEL,
+            STATE_REMOTE_ONLY: REMOTE_ONLY_LABEL,
+            STATE_UNINFECTED: "No infection in recent or remote exposure windows",
+        },
+        "recentHazard": recent_rate,
+        "remoteHazard": remote_rate,
+        "recentWindowYears": durations.recent_window_years,
+        "remoteHistoryCapYears": durations.remote_history_cap_years,
+        "earlyRiskPeriodYears": early_risk_period,
+        "proportions": {
+            STATE_RECENT: recent_prop,
+            STATE_REMOTE_ONLY: remote_only_prop,
+            STATE_UNINFECTED: uninfected_prop,
+            "totalTBI": recent_prop + remote_only_prop,
+            "priorRemoteExposure": prior_remote_prop,
+            "priorRemotePlusRecent": recent_with_prior_remote_prop,
+        },
+        "counts": {
+            STATE_RECENT: pop_size * recent_prop,
+            STATE_REMOTE_ONLY: pop_size * remote_only_prop,
+            STATE_UNINFECTED: pop_size * uninfected_prop,
+            "totalTBI": pop_size * (recent_prop + remote_only_prop),
+            "priorRemoteExposure": pop_size * prior_remote_prop,
+            "priorRemotePlusRecent": pop_size * recent_with_prior_remote_prop,
+        },
+        "expectedRemainingEarlyRiskYearsAmongRecentlyInfected": expected_remaining,
+        "ageSpecificStateDistributions": age_rows,
+    }
+
+
+def deterministic_recent_remote_assignment_from_config(
+    config: ExplicitRecentRemoteConfig | Mapping[str, Any],
+    ages: Iterable[float],
+    proportions: Iterable[float],
+    *,
+    population_size: float = 1.0,
+) -> dict[str, Any]:
+    cfg = (
+        config
+        if isinstance(config, ExplicitRecentRemoteConfig)
+        else explicit_recent_remote_config_from_dict(config)
+    )
+    base = {
+        "assignmentContractVersion": ASSIGNMENT_CONTRACT_VERSION,
+        "configContractVersion": CONFIG_CONTRACT_VERSION,
+        "configurationHash": explicit_recent_remote_config_hash(cfg),
+        "enabled": cfg.enabled,
+        "drawsUsed": False,
+        "configuration": cfg.as_dict(),
+    }
+    if not cfg.enabled:
+        return {
+            **base,
+            "diagnosticMessages": [
+                "Explicit recent/remote pathway disabled; no calibration or assignment performed."
+            ],
+        }
+    calibration = calibrate_recent_remote_hazards(
+        ages,
+        proportions,
+        cfg.recent_tbi_target,
+        cfg.remote_only_tbi_target,
+        recent_window_years=cfg.recent_window_years,
+        remote_history_cap_years=cfg.remote_history_cap_years,
+    )
+    assignment = deterministic_recent_remote_assignment(
+        ages,
+        proportions,
+        calibration.fitted_recent_hazard,
+        calibration.fitted_remote_hazard,
+        population_size=population_size,
+        recent_window_years=cfg.recent_window_years,
+        remote_history_cap_years=cfg.remote_history_cap_years,
+    )
+    return {
+        **base,
+        **assignment,
+        "configuration": cfg.as_dict(),
+        "configurationHash": explicit_recent_remote_config_hash(cfg),
+        "calibration": calibration.as_dict(),
+    }
+
+
+def draw_recent_remote_states_for_ages(
+    ages: Iterable[float],
+    recent_hazard: float,
+    remote_hazard: float,
+    *,
+    seed: int | None = None,
+    rng: Any = None,
+    recent_window_years: float = RECENT_WINDOW_YEARS,
+    remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
+    early_risk_period_years: float = EARLY_RISK_PERIOD_YEARS,
+) -> dict[str, Any]:
+    rng_obj = _coerce_rng(seed=seed, rng=rng)
+    age_tuple = _finite_nonnegative_tuple(ages, "ages")
+    recent_rate = _finite_nonnegative_float(recent_hazard, "recent_hazard")
+    remote_rate = _finite_nonnegative_float(remote_hazard, "remote_hazard")
+    early_risk_period = _positive_float(early_risk_period_years, "early_risk_period_years")
+    durations = exposure_durations_for_ages(
+        age_tuple,
+        recent_window_years=recent_window_years,
+        remote_history_cap_years=remote_history_cap_years,
+    )
+    probabilities = mutually_exclusive_state_probabilities(
+        age_tuple,
+        recent_rate,
+        remote_rate,
+        recent_window_years=recent_window_years,
+        remote_history_cap_years=remote_history_cap_years,
+    )
+    n = len(age_tuple)
+    recent_probability = np.asarray(probabilities["recent"], dtype=float)
+    remote_event_probability = np.asarray(probabilities["prior_remote_exposure"], dtype=float)
+    recent_event = np.zeros(n, dtype=bool)
+    remote_event = np.zeros(n, dtype=bool)
+    recent_possible = recent_probability > 0.0
+    remote_possible = remote_event_probability > 0.0
+    if np.any(recent_possible):
+        recent_event[recent_possible] = (
+            rng_obj.random(int(np.sum(recent_possible)))
+            < recent_probability[recent_possible]
+        )
+    if np.any(remote_possible):
+        remote_event[remote_possible] = (
+            rng_obj.random(int(np.sum(remote_possible)))
+            < remote_event_probability[remote_possible]
+        )
+
+    effective_states: list[str] = []
+    times: list[float | None] = []
+    remaining_early_risk: list[float] = []
+    for idx in range(n):
+        if recent_event[idx]:
+            t_infection = sample_time_since_most_recent_event(
+                window_start_years_before_baseline=0.0,
+                window_duration_years=durations.recent_years[idx],
+                hazard_per_year=recent_rate,
+                rng=rng_obj,
+            )
+            effective_states.append(STATE_RECENT)
+            times.append(t_infection)
+            remaining_early_risk.append(max(0.0, early_risk_period - t_infection))
+        elif remote_event[idx]:
+            t_infection = sample_time_since_most_recent_event(
+                window_start_years_before_baseline=durations.recent_window_years,
+                window_duration_years=durations.remote_years[idx],
+                hazard_per_year=remote_rate,
+                rng=rng_obj,
+            )
+            effective_states.append(STATE_REMOTE_ONLY)
+            times.append(t_infection)
+            remaining_early_risk.append(0.0)
+        else:
+            effective_states.append(STATE_UNINFECTED)
+            times.append(None)
+            remaining_early_risk.append(0.0)
+
+    recent_count = int(np.sum(recent_event))
+    remote_only_count = int(np.sum(np.logical_and(~recent_event, remote_event)))
+    uninfected_count = n - recent_count - remote_only_count
+    prior_remote_count = int(np.sum(remote_event))
+    prior_remote_plus_recent_count = int(np.sum(np.logical_and(recent_event, remote_event)))
+    return {
+        "assignmentContractVersion": ASSIGNMENT_CONTRACT_VERSION,
+        "naturalHistorySemantics": NATURAL_HISTORY_SEMANTICS,
+        "drawsUsed": True,
+        "populationSize": n,
+        "ages": list(age_tuple),
+        "effectiveStates": effective_states,
+        "recentEvent": [bool(value) for value in recent_event],
+        "remoteEvent": [bool(value) for value in remote_event],
+        "priorRemoteExposure": [bool(value) for value in remote_event],
+        "priorRemotePlusRecent": [
+            bool(value) for value in np.logical_and(recent_event, remote_event)
+        ],
+        "timeSinceMostRecentInfection": times,
+        "remainingEarlyRiskYears": remaining_early_risk,
+        "counts": {
+            STATE_RECENT: recent_count,
+            STATE_REMOTE_ONLY: remote_only_count,
+            STATE_UNINFECTED: uninfected_count,
+            "totalTBI": recent_count + remote_only_count,
+            "priorRemoteExposure": prior_remote_count,
+            "priorRemotePlusRecent": prior_remote_plus_recent_count,
+        },
+        "proportions": {
+            STATE_RECENT: 0.0 if n == 0 else recent_count / n,
+            STATE_REMOTE_ONLY: 0.0 if n == 0 else remote_only_count / n,
+            STATE_UNINFECTED: 0.0 if n == 0 else uninfected_count / n,
+            "totalTBI": 0.0 if n == 0 else (recent_count + remote_only_count) / n,
+            "priorRemoteExposure": 0.0 if n == 0 else prior_remote_count / n,
+            "priorRemotePlusRecent": (
+                0.0 if n == 0 else prior_remote_plus_recent_count / n
+            ),
+        },
+    }
+
+
+def stochastic_recent_remote_population_assignment(
+    ages: Iterable[float],
+    proportions: Iterable[float],
+    recent_hazard: float,
+    remote_hazard: float,
+    *,
+    population_size: int,
+    seed: int | None = None,
+    rng: Any = None,
+    recent_window_years: float = RECENT_WINDOW_YEARS,
+    remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
+    early_risk_period_years: float = EARLY_RISK_PERIOD_YEARS,
+) -> dict[str, Any]:
+    rng_obj = _coerce_rng(seed=seed, rng=rng)
+    n = _positive_int(population_size, "population_size")
+    distribution = validate_age_distribution(ages, proportions)
+    sampled_ages = rng_obj.choice(
+        np.asarray(distribution.ages, dtype=float),
+        size=n,
+        p=np.asarray(distribution.proportions, dtype=float),
+    )
+    assignment = draw_recent_remote_states_for_ages(
+        sampled_ages,
+        recent_hazard,
+        remote_hazard,
+        rng=rng_obj,
+        recent_window_years=recent_window_years,
+        remote_history_cap_years=remote_history_cap_years,
+        early_risk_period_years=early_risk_period_years,
+    )
+    assignment["sourceAgeDistribution"] = distribution.as_dict()
+    return assignment
+
+
+def stochastic_recent_remote_population_assignment_from_config(
+    config: ExplicitRecentRemoteConfig | Mapping[str, Any],
+    ages: Iterable[float],
+    proportions: Iterable[float],
+    *,
+    population_size: int,
+    seed: int | None = None,
+    rng: Any = None,
+) -> dict[str, Any]:
+    cfg = (
+        config
+        if isinstance(config, ExplicitRecentRemoteConfig)
+        else explicit_recent_remote_config_from_dict(config)
+    )
+    base = {
+        "assignmentContractVersion": ASSIGNMENT_CONTRACT_VERSION,
+        "configContractVersion": CONFIG_CONTRACT_VERSION,
+        "configurationHash": explicit_recent_remote_config_hash(cfg),
+        "enabled": cfg.enabled,
+        "configuration": cfg.as_dict(),
+    }
+    if not cfg.enabled:
+        return {
+            **base,
+            "populationSize": int(population_size),
+            "drawsUsed": False,
+            "diagnosticMessages": [
+                "Explicit recent/remote pathway disabled; no stochastic draws performed."
+            ],
+        }
+    calibration = calibrate_recent_remote_hazards(
+        ages,
+        proportions,
+        cfg.recent_tbi_target,
+        cfg.remote_only_tbi_target,
+        recent_window_years=cfg.recent_window_years,
+        remote_history_cap_years=cfg.remote_history_cap_years,
+    )
+    assignment = stochastic_recent_remote_population_assignment(
+        ages,
+        proportions,
+        calibration.fitted_recent_hazard,
+        calibration.fitted_remote_hazard,
+        population_size=population_size,
+        seed=seed,
+        rng=rng,
+        recent_window_years=cfg.recent_window_years,
+        remote_history_cap_years=cfg.remote_history_cap_years,
+    )
+    return {
+        **base,
+        **assignment,
+        "configuration": cfg.as_dict(),
+        "configurationHash": explicit_recent_remote_config_hash(cfg),
+        "calibration": calibration.as_dict(),
+    }
+
+
 def infection_timing_specification() -> dict[str, Any]:
     return {
         "contractVersion": INFECTION_HISTORY_CONTRACT_VERSION,
@@ -530,6 +1084,11 @@ def infection_timing_specification() -> dict[str, Any]:
         "recentWindow": {
             "state": "recent",
             "lookbackYears": "[0, min(5, age)]",
+            "conditionalDensity": (
+                "f(t | at least one event) = lambda * exp(-lambda * t) / "
+                "(1 - exp(-lambda * L)), 0 <= t <= L"
+            ),
+            "inverseCdf": "t = -log1p(-q * (1 - exp(-lambda * L))) / lambda",
             "conditionalTiming": (
                 "Draw the most recent event in the recent window from the "
                 "constant-hazard distribution truncated to the available recent "
@@ -539,6 +1098,10 @@ def infection_timing_specification() -> dict[str, Any]:
         "remoteOnlyWindow": {
             "state": "remote_only",
             "lookbackYears": "[5, min(100, age)]",
+            "conditionalDensity": (
+                "Use the same truncated constant-hazard distribution with the "
+                "remote-window start added to the sampled offset."
+            ),
             "conditionalTiming": (
                 "Conditional on at least one remote-window event and no recent "
                 "event, draw the most recent remote-window event from the "
@@ -626,6 +1189,138 @@ def validate_active_tb_observation(row: Mapping[str, Any]) -> dict[str, Any]:
 
 def validate_active_tb_observations(rows: Iterable[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
     return tuple(validate_active_tb_observation(row) for row in rows)
+
+
+def _validate_explicit_recent_remote_config(
+    payload: Mapping[str, Any],
+) -> ExplicitRecentRemoteConfig:
+    if not isinstance(payload, Mapping):
+        raise ValueError("Explicit recent/remote configuration must be a mapping.")
+    recent_target = _probability(
+        _config_value(payload, "recentTBITargetProportion", "recent_tbi_target", 0.0),
+        "recentTBITargetProportion",
+    )
+    remote_target = _probability(
+        _config_value(
+            payload,
+            "remoteOnlyTBITargetProportion",
+            "remote_only_tbi_target",
+            0.0,
+        ),
+        "remoteOnlyTBITargetProportion",
+    )
+    if recent_target + remote_target > 1.0 + PROBABILITY_TOLERANCE:
+        raise ValueError(
+            "recentTBITargetProportion and remoteOnlyTBITargetProportion must not sum above one."
+        )
+    recent_window = _positive_float(
+        _config_value(payload, "recentWindowYears", "recent_window_years", RECENT_WINDOW_YEARS),
+        "recentWindowYears",
+    )
+    remote_cap = _positive_float(
+        _config_value(
+            payload,
+            "remoteHistoryCapYears",
+            "remote_history_cap_years",
+            REMOTE_HISTORY_CAP_YEARS,
+        ),
+        "remoteHistoryCapYears",
+    )
+    if remote_cap < recent_window:
+        raise ValueError("remoteHistoryCapYears must be at least recentWindowYears.")
+    recent_shape = str(
+        _config_value(payload, "recentHazardShape", "recent_hazard_shape", RECENT_HAZARD_SHAPE)
+    )
+    remote_shape = str(
+        _config_value(payload, "remoteHazardShape", "remote_hazard_shape", REMOTE_HAZARD_SHAPE)
+    )
+    if recent_shape != RECENT_HAZARD_SHAPE:
+        raise ValueError(f"recentHazardShape must be {RECENT_HAZARD_SHAPE!r}.")
+    if remote_shape != REMOTE_HAZARD_SHAPE:
+        raise ValueError(f"remoteHazardShape must be {REMOTE_HAZARD_SHAPE!r}.")
+
+    config_contract = str(
+        _config_value(
+            payload,
+            "configContractVersion",
+            "config_contract_version",
+            CONFIG_CONTRACT_VERSION,
+        )
+    )
+    calibration_contract = str(
+        _config_value(
+            payload,
+            "calibrationContractVersion",
+            "calibration_contract_version",
+            CALIBRATION_CONTRACT_VERSION,
+        )
+    )
+    analysis_basis = str(_config_value(payload, "analysisBasis", "analysis_basis", ANALYSIS_BASIS))
+    natural_history = str(
+        _config_value(
+            payload,
+            "naturalHistorySemantics",
+            "natural_history_semantics",
+            NATURAL_HISTORY_SEMANTICS,
+        )
+    )
+    calibration_method = str(
+        _config_value(payload, "calibrationMethod", "calibration_method", CALIBRATION_METHOD)
+    )
+    history_contract = str(
+        _config_value(
+            payload,
+            "infectionHistoryContractVersion",
+            "infection_history_contract_version",
+            INFECTION_HISTORY_CONTRACT_VERSION,
+        )
+    )
+    expected_identifiers = {
+        "configContractVersion": (config_contract, CONFIG_CONTRACT_VERSION),
+        "calibrationContractVersion": (calibration_contract, CALIBRATION_CONTRACT_VERSION),
+        "analysisBasis": (analysis_basis, ANALYSIS_BASIS),
+        "naturalHistorySemantics": (natural_history, NATURAL_HISTORY_SEMANTICS),
+        "calibrationMethod": (calibration_method, CALIBRATION_METHOD),
+        "infectionHistoryContractVersion": (
+            history_contract,
+            INFECTION_HISTORY_CONTRACT_VERSION,
+        ),
+    }
+    for field, (actual, expected) in expected_identifiers.items():
+        if actual != expected:
+            raise ValueError(f"{field} must be {expected!r}.")
+
+    enabled = bool(_config_value(payload, "enabled", "enabled", False))
+    source = str(_config_value(payload, "targetSource", "target_source", "") or "").strip()
+    review_status = str(
+        _config_value(payload, "reviewStatus", "review_status", "unreviewed") or ""
+    ).strip()
+    if enabled and not source:
+        raise ValueError("targetSource must be provided when the pathway is enabled.")
+    if not review_status:
+        raise ValueError("reviewStatus must not be empty.")
+    target_reference_year = _normalise_optional_year(
+        _config_value(payload, "targetReferenceYear", "target_reference_year", None)
+    )
+    return ExplicitRecentRemoteConfig(
+        enabled=enabled,
+        recent_tbi_target=recent_target,
+        remote_only_tbi_target=remote_target,
+        recent_window_years=recent_window,
+        remote_history_cap_years=remote_cap,
+        recent_hazard_shape=recent_shape,
+        remote_hazard_shape=remote_shape,
+        target_source=source,
+        target_reference_year=target_reference_year,
+        review_status=review_status,
+        notes=str(_config_value(payload, "notes", "notes", "") or ""),
+        config_contract_version=config_contract,
+        calibration_contract_version=calibration_contract,
+        analysis_basis=analysis_basis,
+        natural_history_semantics=natural_history,
+        calibration_method=calibration_method,
+        infection_history_contract_version=history_contract,
+    )
 
 
 def _solve_hazard_for_target(
@@ -735,6 +1430,42 @@ def _endpoint_sort_key(endpoint: Mapping[str, Any]) -> tuple[int, int, int]:
     return (int(endpoint["year"]), int(endpoint["month"]), int(endpoint["day"]))
 
 
+def _config_value(
+    payload: Mapping[str, Any],
+    camel_key: str,
+    snake_key: str,
+    default: Any,
+) -> Any:
+    if camel_key in payload:
+        return payload[camel_key]
+    if snake_key in payload:
+        return payload[snake_key]
+    return default
+
+
+def _normalise_optional_year(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    year = int(value)
+    if year < 0:
+        raise ValueError("targetReferenceYear must be non-negative when supplied.")
+    return year
+
+
+def _canonical_json(payload: Mapping[str, Any]) -> str:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def _coerce_rng(*, seed: int | None, rng: Any):
+    if seed is not None and rng is not None:
+        raise ValueError("Provide either seed or rng, not both.")
+    if rng is not None:
+        return rng
+    if seed is None:
+        raise ValueError("A seed or explicit rng is required for stochastic assignment.")
+    return np.random.default_rng(seed)
+
+
 def _required(row: Mapping[str, Any], field: str) -> Any:
     value = row.get(field)
     if value in (None, ""):
@@ -772,6 +1503,16 @@ def _positive_float(value: Any, label: str) -> float:
     number = float(value)
     if not math.isfinite(number) or number <= 0:
         raise ValueError(f"{label} must be finite and positive.")
+    return number
+
+
+def _positive_int(value: Any, label: str) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be a positive integer.") from exc
+    if number <= 0:
+        raise ValueError(f"{label} must be a positive integer.")
     return number
 
 
