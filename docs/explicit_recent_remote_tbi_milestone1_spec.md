@@ -22,6 +22,13 @@ targets. It still does not connect the pathway to the runner, Streamlit UI,
 event ledger, intervention logic, economics, DALYs, MATLAB,
 frozen-reference loading or the dynamic-transmission model.
 
+Milestone 2C adds explicit progression-calibration policy contracts,
+eligibility checks, one-parameter fixed-ratio calibration, likelihood helpers,
+identifiability enforcement and risk-factor safety diagnostics. It remains
+pure code only and still does not connect the pathway to the runner, Streamlit
+UI, population generation, interventions, event ledger, economics, DALYs,
+MATLAB, frozen-reference loading or the dynamic-transmission model.
+
 ## Selected identifiers
 
 - Analysis basis: `explicit_recent_remote_tbi_foundation_v1`
@@ -33,6 +40,8 @@ frozen-reference loading or the dynamic-transmission model.
 - Configuration contract: `explicit_recent_remote_tbi_config_v1`
 - Assignment contract: `explicit_recent_remote_tbi_assignment_v1`
 - Progression contract: `explicit_recent_remote_tbi_progression_v1`
+- Progression-calibration policy contract:
+  `explicit_recent_remote_tbi_progression_calibration_policy_v1`
 - Recent hazard shape: `constant_recent_window_hazard_v1`
 - Remote hazard shape: `constant_remote_window_hazard_v1`
 
@@ -369,6 +378,125 @@ It does not generate stochastic active-TB times.
 The cumulative hazard is continuous at the end of remaining early-risk time,
 although the instantaneous hazard may change from `lambda_E` to `lambda_L`.
 
+## Progression-calibration policies
+
+Milestone 2C defines four explicit progression-calibration policies:
+
+- Policy A, `external_progression_hazards_v1`: externally supplied early and
+  remote hazards, units, source, reference population, review status and
+  notes. No fitting occurs.
+- Policy B, `fixed_early_remote_ratio_fit_scale_v1`: externally supplied
+  ratio `R` with provenance, then `lambda_L = k` and `lambda_E = Rk`; only
+  the common scale `k` is fitted.
+- Policy C, `validation_only_v1`: observations are compared with supplied
+  hazards but no parameter is fitted. Retrospective notifications, prevalence
+  observations, screen-detected disease and mixed/insufficient observations
+  route here.
+- Policy D, `joint_early_remote_hazards_v1`: specified but unavailable unless
+  explicit identifiability criteria pass. It is not a fallback optimiser.
+
+These policies deliberately do not reuse the inherited `earlyLateRatio`,
+MATLAB-v9 compatibility assumptions or the `10/770` active-TB target.
+
+## Progression target eligibility
+
+A target is eligible for prospective progression calibration only when it has:
+
+- a defined baseline population and compatible non-baseline-active-TB strata;
+- a positive denominator;
+- a prospective incident observation window beginning at model baseline;
+- no baseline prevalent cases mixed into the numerator;
+- explicit ascertainment probability `q`;
+- explicit observation duration.
+
+Baseline prevalence, cross-sectional screening prevalence, retrospective
+notifications, mixed prevalent/incident counts, undefined denominators,
+unclear ascertainment and missing periods are ineligible for fitting and are
+routed to validation-only. Zero-case prospective incident targets are eligible
+and fit to zero progression hazards under Policy B.
+
+## Expected incident cases and fitting
+
+For eligible prospective targets:
+
+```text
+E[C] = sum_i w_i [1 - exp{-A_i(T)}] q_i
+```
+
+where `w_i` is a count or population weight, `T` is the observation horizon,
+and `q_i` is explicit ascertainment. Uninfected people contribute zero under
+the current no-new-infection pathway. Baseline/prevalent active-TB strata are
+excluded from prospective TBI progression denominators and reported as
+excluded weight.
+
+Policy B uses deterministic bounded bisection for `k`. It returns requested
+cases, denominator, horizon, ascertainment, supplied ratio, fitted remote
+hazard, derived early hazard, achieved cases, residual, convergence status,
+feasibility status, warnings, provenance and contract version. Targets above
+the achievable range are rejected rather than clipped.
+
+## Likelihood options
+
+Milestone 2C implements likelihood helpers for future uncertainty analysis:
+
+- `binomial_person_event_v1` when the denominator is persons with at most one
+  relevant event;
+- `poisson_count_v1` for count/person-time rare-event settings where
+  appropriate.
+
+The observation-model identifier must be supplied explicitly. The code does
+not choose between binomial and Poisson from numerical values alone.
+Recurrent disease, migration, changing denominators or changing ascertainment
+can violate both simple observation models.
+
+## Identifiability enforcement
+
+The pure identifiability checks enforce:
+
+- one aggregate target cannot identify both `lambda_E` and `lambda_L`;
+- fixed ratio plus scale is structurally one-dimensional;
+- externally supplied hazards require no fitting;
+- two or more targets do not automatically imply identifiability;
+- joint fitting requires target sensitivity vectors with rank two;
+- duplicate recent/remote composition has rank one and is insufficient.
+
+Policy D is returned as unavailable unless the rank check passes. No fragile
+two-parameter optimiser is implemented.
+
+## Risk-factor safety diagnostics
+
+Milestone 2C adds explicit risk-factor application policies:
+
+1. `none`: all progression multipliers are one.
+2. `reviewed_hazard_multipliers`: only effects explicitly reviewed as hazard
+   multipliers are included.
+3. `legacy_or_as_hazard_diagnostic_only`: reproduces inherited OR
+   multiplication for diagnostic comparison, labelled scientifically
+   provisional and not a production default.
+
+Diagnostics report individual factor effects, effect-measure labels, combined
+multiplier, log contributions, maximum possible multiplier, weighted
+multiplier distribution, review-threshold warnings/blocking status,
+progression probabilities and strata dominating expected cases. Multipliers
+are not silently capped. Review thresholds are safety rules, not biological
+evidence.
+
+The inherited default OR-labelled effects can still combine to `2916` under
+legacy diagnostic multiplication.
+
+## Competing-mortality interface
+
+Expected-case functions accept no-mortality mode, a scalar external survival
+probability, a horizon-indexed survival mapping or a callable survival
+function. When omitted, outputs record:
+
+```text
+competingMortality = not_modelled
+```
+
+and include a long-horizon limitation. Applying an external survival
+probability can lower or preserve expected cases; it cannot increase them.
+
 ## Inherited progression audit
 
 Current inherited progression behavior remains unchanged:
@@ -428,8 +556,8 @@ The new pure progression functions accept a generic non-negative multiplier
 
 ## Risk-factor separation
 
-Milestones 1, 2A and 2B do not use non-age risk factors in the new acquisition
-calibration. Age affects exposure only through time alive.
+Milestones 1, 2A, 2B and 2C do not use non-age risk factors in the new
+acquisition calibration. Age affects exposure only through time alive.
 
 Existing code contains several different semantics:
 
@@ -517,7 +645,9 @@ the TBI preventive-treatment cascade. The proposed sequencing is:
    conditional on infection state, progression hazards and interventions.
 
 The optional active-TB observation rows remain data for future calibration and
-review. Milestone 2B does not use them to fit progression hazards.
+review. Milestone 2C uses eligible rows only in pure diagnostic expected-count
+and fixed-ratio calculations; it does not fit or alter runner progression
+hazards.
 
 ## Identifiability
 
@@ -606,6 +736,30 @@ changing a cost or intervention parameter does not change natural-history
 progression probabilities because the progression functions do not read
 economic or intervention inputs.
 
+## Worked progression-calibration diagnostics
+
+Milestone 2C synthetic examples use a 2026 one-year prospective incident
+target with two observed cases in a denominator of 1,000 unless otherwise
+specified. These are not reviewed defaults.
+
+| example | result |
+| --- | --- |
+| external hazards `lambda_E=0.02`, `lambda_L=0.002` | expected cases `2.379733`; no fitting |
+| fixed ratio `R=10` | fitted `k=lambda_L=0.00167858`, `lambda_E=0.01678576`, achieved cases `2.000000` |
+| no multipliers | fitted `k=0.00167858`, maximum individual probability `0.016646` |
+| moderate reviewed multiplier example | fitted `k=0.00091672`, maximum individual probability `0.018167` |
+| legacy OR-as-hazard diagnostic | fitted `k=0.00033747`, top 1% by weight contributes `0.832978` of expected cases |
+| retrospective notification | routed to validation-only as `retrospective_notification_incidence_target` |
+| baseline prevalence | routed to validation-only as `baseline_prevalence_target` |
+| impossible high target | rejected as `infeasible_above_achievable_range`; maximum achievable cases `300` |
+| zero-case target | fitted `lambda_E=lambda_L=0` |
+| incomplete ascertainment `q=0.5` | fitted `k=0.00338139`; ascertainment retained explicitly |
+| external survival probability `0.8` | fitted `k=0.00210198`; mortality mode recorded as external survival |
+
+The multiplier examples show that calibration can shrink the fitted baseline
+hazard when high multipliers are present. The concentration diagnostics are
+therefore part of the calibration output and should not be suppressed.
+
 ## Architecture audit
 
 Existing recent/remote and early/late implementations:
@@ -677,25 +831,28 @@ Dynamic model:
 
 ## Planned integration
 
-Milestones 1, 2A and 2B have added explicit calibration, isolated assignment
-helpers and pure prospective progression mathematics. Future integration must
-still decide how to connect these pieces to the APY runner while preserving
-the frozen SA Health compatibility workflow. That work should include reviewed
-progression-calibration policy, cache-key updates, metadata propagation,
-baseline active-TB sequencing and migration tests before any event-ledger,
-economics or DALY integration.
+Milestones 1, 2A, 2B and 2C have added explicit calibration, isolated
+assignment helpers, pure prospective progression mathematics and policy-level
+progression-calibration diagnostics. Future integration must still decide how
+to connect these pieces to the APY runner while preserving the frozen SA
+Health compatibility workflow. That work should include cache-key updates,
+metadata propagation, baseline active-TB sequencing and migration tests before
+any event-ledger, economics or DALY integration.
 
 ## Limitations and unanswered decisions
 
-- Progression hazards are not calibrated here.
+- Progression hazards are calibrated only in the isolated diagnostic Policy B
+  fixed-ratio scale helper; no production policy is wired into the runner.
 - The runner is not yet able to distinguish first infection, most recent
   infection and recent reinfection reset mechanisms.
 - Recent reinfection resetting the higher-risk clock is a modelling assumption
   requiring scientific review.
 - No risk-factor acquisition effects are included beyond age/time alive.
 - Exact limiting targets may imply infinite hazards.
-- Active-TB observations are validated and classified for future use but not
-  fitted.
-- Competing mortality is not yet incorporated into prospective progression.
+- Active-TB observations are validated, classified and optionally used in pure
+  diagnostic expected-count/fixed-ratio calculations, but not fitted in the
+  main model.
+- Competing mortality is supported only through external survival inputs; no
+  mortality data are invented.
 - Parameter uncertainty is not propagated.
 - The new pathway is not decision-ready and is not for denying care.

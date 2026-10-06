@@ -45,20 +45,44 @@ from engine.apy.explicit_recent_remote_tbi import (
     validate_age_distribution,
 )
 from engine.apy.explicit_recent_remote_progression import (
+    OBSERVATION_MODEL_BINOMIAL,
+    OBSERVATION_MODEL_POISSON,
     POLICY_BOTH_HAZARDS_SUPPLIED,
     POLICY_EXTERNAL_VALIDATION_ONLY,
+    POLICY_EXTERNAL_HAZARDS,
     POLICY_FIXED_EARLY_LATE_RATIO,
+    POLICY_FIXED_RATIO_FIT_SCALE,
     POLICY_JOINT_LIKELIHOOD,
+    POLICY_JOINT_EARLY_REMOTE_HAZARDS,
     POLICY_ONE_HAZARD_SUPPLIED,
+    POLICY_VALIDATION_ONLY,
     PROGRESSION_CONTRACT_VERSION,
+    PROGRESSION_CALIBRATION_CONTRACT_VERSION,
+    RISK_POLICY_LEGACY_OR_AS_HAZARD_DIAGNOSTIC,
+    RISK_POLICY_NONE,
+    RISK_POLICY_REVIEWED_HAZARD_MULTIPLIERS,
+    STATE_BASELINE_ACTIVE_TB,
     TARGET_BASELINE_PREVALENCE,
     TARGET_PROSPECTIVE_INCIDENT,
     TARGET_RETROSPECTIVE_NOTIFICATION,
     TARGET_SCREEN_DETECTED,
+    ProgressionCalibrationError,
+    active_tb_observation_log_likelihood,
+    assess_observation_prospective_calibration_eligibility,
+    assess_progression_policy_identifiability,
     baseline_active_tb_state_sequence_specification,
+    build_progression_calibration_policy,
+    build_risk_factor_application_policy,
     classify_active_tb_observation_target,
+    evaluate_external_hazard_policy,
+    evaluate_validation_only_policy,
     expected_progression_events,
     expected_prospective_incident_cases_for_observation,
+    fit_fixed_ratio_progression_scale,
+    fixed_ratio_calibration_multiplier_sensitivity,
+    progression_calibration_policy_contract_options,
+    progression_calibration_policy_hash,
+    progression_calibration_policy_json,
     progression_calibration_policy_options,
     progression_cumulative_hazard,
     progression_identifiability_assessment,
@@ -67,8 +91,12 @@ from engine.apy.explicit_recent_remote_progression import (
     progression_sampling_specification,
     progression_survival_probability,
     progression_time_quantile,
+    risk_factor_multiplier_diagnostics,
+    risk_factor_multiplier_for_row,
     remaining_early_risk_years,
     synthetic_natural_history_cost_invariance_example,
+    target_progression_sensitivity_vector,
+    worked_progression_calibration_examples,
     worked_progression_diagnostic_table,
 )
 
@@ -1118,6 +1146,448 @@ class ExplicitRecentRemoteProgressionTests(unittest.TestCase):
             high_cost["expectedProgressionEvents"],
             places=12,
         )
+
+
+class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
+    def valid_row(self, **overrides) -> dict:
+        row = {
+            "observationId": "obs-policy",
+            "startYear": 2026,
+            "endYear": 2026,
+            "observedActiveTBCaseCount": 2,
+            "populationDenominator": 1000,
+            "personYears": 1000,
+            "denominatorType": "census_population",
+            "populationScope": "whole_population",
+            "caseClassification": "incident_follow_up",
+            "observationWindowMeaning": "follow_up_incident",
+            "ascertainmentMethod": "combined",
+            "activeTBClassification": "all_active_tb",
+            "source": "unit test fixture",
+            "reviewStatus": "unreviewed_test_fixture",
+            "notes": "policy fixture",
+            "uncertainty": {},
+        }
+        row.update(overrides)
+        return row
+
+    def strata(self):
+        return [
+            {"state": STATE_RECENT, "weight": 100.0, "remainingEarlyRiskYears": 4.5},
+            {"state": STATE_REMOTE_ONLY, "weight": 200.0, "remainingEarlyRiskYears": 0.0},
+            {"state": STATE_UNINFECTED, "weight": 700.0, "remainingEarlyRiskYears": 0.0},
+        ]
+
+    def test_progression_calibration_policy_serialization_and_hashing(self) -> None:
+        policy = build_progression_calibration_policy(
+            policy_id=POLICY_EXTERNAL_HAZARDS,
+            early_hazard=0.02,
+            remote_hazard=0.002,
+            source="unit test source",
+            reference_population="unit test population",
+            review_status="reviewed_test_fixture",
+            notes="external hazard policy",
+            observation_model_id=OBSERVATION_MODEL_POISSON,
+        )
+        payload = json.loads(progression_calibration_policy_json(policy))
+        shuffled = dict(reversed(list(payload.items())))
+
+        self.assertEqual(
+            payload["contractVersion"],
+            PROGRESSION_CALIBRATION_CONTRACT_VERSION,
+        )
+        self.assertEqual(
+            progression_calibration_policy_hash(payload),
+            progression_calibration_policy_hash(shuffled),
+        )
+        self.assertEqual(
+            {item["policyId"] for item in progression_calibration_policy_contract_options()},
+            {
+                POLICY_EXTERNAL_HAZARDS,
+                POLICY_FIXED_RATIO_FIT_SCALE,
+                POLICY_VALIDATION_ONLY,
+                POLICY_JOINT_EARLY_REMOTE_HAZARDS,
+            },
+        )
+
+    def test_external_hazard_policy_performs_no_fitting(self) -> None:
+        policy = build_progression_calibration_policy(
+            policy_id=POLICY_EXTERNAL_HAZARDS,
+            early_hazard=0.02,
+            remote_hazard=0.002,
+            source="unit test source",
+            reference_population="unit test population",
+            review_status="reviewed_test_fixture",
+        )
+        result = evaluate_external_hazard_policy(
+            self.valid_row(),
+            self.strata(),
+            policy,
+            model_baseline_year=2026,
+        )
+
+        self.assertFalse(result["fittingPerformed"])
+        self.assertEqual(result["earlyHazard"], 0.02)
+        self.assertEqual(result["remoteHazard"], 0.002)
+
+    def test_fixed_ratio_policy_preserves_ratio_and_reproduces_target(self) -> None:
+        result = fit_fixed_ratio_progression_scale(
+            self.valid_row(),
+            self.strata(),
+            model_baseline_year=2026,
+            early_to_remote_ratio=10.0,
+            ratio_source="unit test ratio",
+            ratio_review_status="reviewed_test_fixture",
+            ratio_provenance="synthetic fixture",
+        )
+
+        self.assertEqual(result["policyId"], POLICY_FIXED_RATIO_FIT_SCALE)
+        self.assertAlmostEqual(
+            result["derivedEarlyHazard"] / result["fittedRemoteHazard"],
+            10.0,
+            places=12,
+        )
+        self.assertAlmostEqual(result["achievedExpectedCases"], 2.0, places=8)
+        self.assertEqual(result["convergenceStatus"], "converged")
+
+    def test_zero_target_returns_zero_hazards(self) -> None:
+        result = fit_fixed_ratio_progression_scale(
+            self.valid_row(observedActiveTBCaseCount=0),
+            self.strata(),
+            model_baseline_year=2026,
+            early_to_remote_ratio=10.0,
+            ratio_source="unit test ratio",
+            ratio_review_status="reviewed_test_fixture",
+            ratio_provenance="synthetic fixture",
+        )
+
+        self.assertEqual(result["fittedRemoteHazard"], 0.0)
+        self.assertEqual(result["derivedEarlyHazard"], 0.0)
+        self.assertEqual(result["achievedExpectedCases"], 0.0)
+
+    def test_impossible_targets_are_rejected_rather_than_clipped(self) -> None:
+        with self.assertRaises(ProgressionCalibrationError) as caught:
+            fit_fixed_ratio_progression_scale(
+                self.valid_row(observedActiveTBCaseCount=500),
+                self.strata(),
+                model_baseline_year=2026,
+                early_to_remote_ratio=10.0,
+                ratio_source="unit test ratio",
+                ratio_review_status="reviewed_test_fixture",
+                ratio_provenance="synthetic fixture",
+            )
+
+        self.assertEqual(
+            caught.exception.diagnostics["feasibilityStatus"],
+            "infeasible_above_achievable_range",
+        )
+
+    def test_ineligible_targets_cannot_be_used_for_fitting(self) -> None:
+        retrospective = self.valid_row(startYear=2023, endYear=2024)
+        baseline = self.valid_row(
+            caseClassification="prevalent_baseline",
+            observationWindowMeaning="baseline_prevalent",
+        )
+
+        for target in (retrospective, baseline):
+            with self.assertRaises(ProgressionCalibrationError):
+                fit_fixed_ratio_progression_scale(
+                    target,
+                    self.strata(),
+                    model_baseline_year=2026,
+                    early_to_remote_ratio=10.0,
+                    ratio_source="unit test ratio",
+                    ratio_review_status="reviewed_test_fixture",
+                    ratio_provenance="synthetic fixture",
+                )
+
+    def test_observation_eligibility_reports_reasons(self) -> None:
+        eligible = assess_observation_prospective_calibration_eligibility(
+            self.valid_row(),
+            model_baseline_year=2026,
+            strata=self.strata(),
+            ascertainment_probability=0.8,
+        )
+        retrospective = assess_observation_prospective_calibration_eligibility(
+            self.valid_row(startYear=2023, endYear=2024),
+            model_baseline_year=2026,
+            strata=self.strata(),
+            ascertainment_probability=1.0,
+        )
+
+        self.assertTrue(eligible["eligible"])
+        self.assertIn("Incomplete ascertainment", eligible["warnings"][0])
+        self.assertFalse(retrospective["eligible"])
+        self.assertIn("before baseline", " ".join(retrospective["reasons"]))
+
+    def test_validation_only_mode_never_modifies_hazards(self) -> None:
+        policy = build_progression_calibration_policy(
+            policy_id=POLICY_VALIDATION_ONLY,
+            source="unit test source",
+            reference_population="unit test population",
+            review_status="reviewed_test_fixture",
+        )
+        result = evaluate_validation_only_policy(
+            self.valid_row(startYear=2023, endYear=2024),
+            self.strata(),
+            policy,
+            model_baseline_year=2026,
+            early_hazard=0.02,
+            remote_hazard=0.002,
+        )
+
+        self.assertFalse(result["fittingPerformed"])
+        self.assertEqual(result["earlyHazard"], 0.02)
+        self.assertEqual(result["remoteHazard"], 0.002)
+        self.assertEqual(result["targetType"], TARGET_RETROSPECTIVE_NOTIFICATION)
+
+    def test_ascertainment_enters_expected_cases_explicitly(self) -> None:
+        full = expected_prospective_incident_cases_for_observation(
+            self.valid_row(),
+            self.strata(),
+            model_baseline_year=2026,
+            early_hazard=0.02,
+            remote_hazard=0.002,
+            ascertainment_probability=1.0,
+        )
+        half = expected_prospective_incident_cases_for_observation(
+            self.valid_row(),
+            self.strata(),
+            model_baseline_year=2026,
+            early_hazard=0.02,
+            remote_hazard=0.002,
+            ascertainment_probability=0.5,
+        )
+
+        self.assertAlmostEqual(
+            half["expectedActiveTBCaseCount"],
+            full["expectedActiveTBCaseCount"] * 0.5,
+            places=12,
+        )
+
+    def test_binomial_and_poisson_likelihoods_are_analytic_and_explicit(self) -> None:
+        binomial = active_tb_observation_log_likelihood(
+            observed_cases=2,
+            expected_cases=10,
+            denominator=100,
+            observation_model_id=OBSERVATION_MODEL_BINOMIAL,
+        )
+        poisson = active_tb_observation_log_likelihood(
+            observed_cases=2,
+            expected_cases=3,
+            denominator=100,
+            observation_model_id=OBSERVATION_MODEL_POISSON,
+        )
+        expected_binomial = (
+            math.log(math.comb(100, 2))
+            + 2 * math.log(0.1)
+            + 98 * math.log(0.9)
+        )
+        expected_poisson = 2 * math.log(3) - 3 - math.lgamma(3)
+
+        self.assertAlmostEqual(binomial["logLikelihood"], expected_binomial, places=12)
+        self.assertAlmostEqual(poisson["logLikelihood"], expected_poisson, places=12)
+        with self.assertRaisesRegex(ValueError, "observation_model_id"):
+            active_tb_observation_log_likelihood(
+                observed_cases=2,
+                expected_cases=3,
+                denominator=100,
+                observation_model_id="auto",
+            )
+
+    def test_identifiability_enforcement(self) -> None:
+        one_target = assess_progression_policy_identifiability(
+            POLICY_JOINT_EARLY_REMOTE_HAZARDS,
+            [self.valid_row()],
+            model_baseline_year=2026,
+            strata_by_target=[self.strata()],
+        )
+        fixed_ratio = assess_progression_policy_identifiability(
+            POLICY_FIXED_RATIO_FIT_SCALE,
+            [self.valid_row()],
+            model_baseline_year=2026,
+            strata_by_target=[self.strata()],
+            early_to_remote_ratio=10.0,
+        )
+        duplicate = assess_progression_policy_identifiability(
+            POLICY_JOINT_EARLY_REMOTE_HAZARDS,
+            [self.valid_row(observationId="a"), self.valid_row(observationId="b")],
+            model_baseline_year=2026,
+            strata_by_target=[self.strata(), self.strata()],
+        )
+
+        self.assertFalse(one_target["identified"])
+        self.assertTrue(fixed_ratio["identified"])
+        self.assertEqual(fixed_ratio["identifiabilityStatus"], "identified_one_dimensional")
+        self.assertFalse(duplicate["identified"])
+        self.assertEqual(duplicate["sensitivityRank"], 1)
+
+    def test_target_sensitivity_vectors_can_support_joint_identifiability(self) -> None:
+        recent_heavy = [{"state": STATE_RECENT, "weight": 100.0, "remainingEarlyRiskYears": 1.0}]
+        remote_heavy = [{"state": STATE_REMOTE_ONLY, "weight": 100.0, "remainingEarlyRiskYears": 0.0}]
+
+        self.assertEqual(
+            target_progression_sensitivity_vector(recent_heavy, horizon_years=1.0),
+            (100.0, 0.0),
+        )
+        self.assertEqual(
+            target_progression_sensitivity_vector(remote_heavy, horizon_years=1.0),
+            (0.0, 100.0),
+        )
+        identified = assess_progression_policy_identifiability(
+            POLICY_JOINT_EARLY_REMOTE_HAZARDS,
+            [self.valid_row(observationId="a"), self.valid_row(observationId="b")],
+            model_baseline_year=2026,
+            strata_by_target=[recent_heavy, remote_heavy],
+        )
+        self.assertTrue(identified["identified"])
+
+    def test_risk_multiplier_policies(self) -> None:
+        none = risk_factor_multiplier_for_row(
+            {"diabetes": True, "smoking": True},
+            build_risk_factor_application_policy(policy_id=RISK_POLICY_NONE),
+        )
+        reviewed = risk_factor_multiplier_for_row(
+            {"diabetes": True, "smoking": True},
+            build_risk_factor_application_policy(
+                policy_id=RISK_POLICY_REVIEWED_HAZARD_MULTIPLIERS,
+                reviewed_factor_names=("diabetes",),
+            ),
+        )
+        legacy = risk_factor_multiplier_for_row(
+            {"contact": True, "renal": True, "diabetes": True},
+            build_risk_factor_application_policy(
+                policy_id=RISK_POLICY_LEGACY_OR_AS_HAZARD_DIAGNOSTIC,
+            ),
+        )
+
+        self.assertEqual(none["combinedMultiplier"], 1.0)
+        self.assertEqual(reviewed["combinedMultiplier"], 3.0)
+        self.assertTrue(any("diagnostic only" in item for item in legacy["warnings"]))
+        self.assertAlmostEqual(legacy["combinedMultiplier"], 5.0 * 3.6 * 3.0)
+
+    def test_large_joint_multipliers_generate_review_status(self) -> None:
+        row = {
+            "MJ": True,
+            "contact": True,
+            "renal": True,
+            "diabetes": True,
+            "smoking": True,
+            "cld": True,
+            "alcohol": True,
+        }
+        result = risk_factor_multiplier_for_row(
+            row,
+            build_risk_factor_application_policy(
+                policy_id=RISK_POLICY_LEGACY_OR_AS_HAZARD_DIAGNOSTIC,
+                review_warning_threshold=10.0,
+                review_block_threshold=100.0,
+            ),
+        )
+
+        self.assertEqual(result["combinedMultiplier"], 2916.0)
+        self.assertEqual(result["reviewStatus"], "blocking_review_required")
+
+    def test_calibration_reports_high_risk_concentration(self) -> None:
+        high_risk_strata = [
+            {
+                "state": STATE_RECENT,
+                "weight": 1.0,
+                "remainingEarlyRiskYears": 4.5,
+                "contact": True,
+                "renal": True,
+                "diabetes": True,
+            },
+            {"state": STATE_REMOTE_ONLY, "weight": 99.0, "remainingEarlyRiskYears": 0.0},
+        ]
+        scenarios = fixed_ratio_calibration_multiplier_sensitivity(
+            self.valid_row(populationDenominator=100, observedActiveTBCaseCount=1),
+            [
+                {
+                    "scenarioId": "none",
+                    "riskPolicy": build_risk_factor_application_policy(policy_id=RISK_POLICY_NONE),
+                    "strata": high_risk_strata,
+                },
+                {
+                    "scenarioId": "legacy",
+                    "riskPolicy": build_risk_factor_application_policy(
+                        policy_id=RISK_POLICY_LEGACY_OR_AS_HAZARD_DIAGNOSTIC
+                    ),
+                    "strata": high_risk_strata,
+                },
+            ],
+            model_baseline_year=2026,
+            early_to_remote_ratio=10.0,
+            ratio_source="unit test ratio",
+            ratio_review_status="reviewed_test_fixture",
+            ratio_provenance="synthetic fixture",
+        )
+
+        none, legacy = scenarios
+        self.assertLess(legacy["fittedRemoteHazard"], none["fittedRemoteHazard"])
+        self.assertGreater(
+            legacy["caseConcentration"]["shareExpectedCasesTop1PercentByWeight"],
+            none["caseConcentration"]["shareExpectedCasesTop1PercentByWeight"],
+        )
+
+    def test_optional_survival_lowers_or_preserves_expected_cases(self) -> None:
+        no_mortality = expected_progression_events(
+            self.strata(),
+            horizon_years=20.0,
+            early_hazard=0.02,
+            remote_hazard=0.002,
+        )
+        with_survival = expected_progression_events(
+            self.strata(),
+            horizon_years=20.0,
+            early_hazard=0.02,
+            remote_hazard=0.002,
+            competing_survival_probability=0.8,
+        )
+        callable_survival = expected_progression_events(
+            self.strata(),
+            horizon_years=20.0,
+            early_hazard=0.02,
+            remote_hazard=0.002,
+            competing_survival_probability=lambda horizon, row: 0.7,
+        )
+
+        self.assertEqual(no_mortality["competingMortality"], "not_modelled")
+        self.assertIn("not modelled", no_mortality["diagnosticMessages"][0])
+        self.assertLessEqual(with_survival["expectedCases"], no_mortality["expectedCases"])
+        self.assertLessEqual(callable_survival["expectedCases"], no_mortality["expectedCases"])
+
+    def test_baseline_active_tb_is_excluded_from_expected_cases(self) -> None:
+        result = expected_progression_events(
+            [
+                {"state": STATE_BASELINE_ACTIVE_TB, "weight": 900.0},
+                {"state": STATE_RECENT, "weight": 100.0, "remainingEarlyRiskYears": 4.5},
+            ],
+            horizon_years=1.0,
+            early_hazard=0.02,
+            remote_hazard=0.002,
+        )
+
+        self.assertEqual(result["totalWeight"], 1000.0)
+        self.assertEqual(result["includedWeight"], 100.0)
+        self.assertEqual(result["excludedBaselineActiveTBWeight"], 900.0)
+        self.assertAlmostEqual(result["expectedCases"], 100.0 * (1 - math.exp(-0.02)))
+
+    def test_worked_policy_examples_are_reviewable(self) -> None:
+        examples = worked_progression_calibration_examples()
+        by_id = {example["exampleId"]: example["result"] for example in examples}
+
+        self.assertIn("eligible_external_hazards", by_id)
+        self.assertIn("eligible_fixed_ratio_fit", by_id)
+        self.assertIn("no_multipliers_vs_moderate_reviewed_multipliers", by_id)
+        self.assertIn("legacy_or_as_hazard_diagnostic", by_id)
+        self.assertIn("retrospective_validation_only", by_id)
+        self.assertIn("baseline_prevalence_validation_only", by_id)
+        self.assertIn("impossible_high_target", by_id)
+        self.assertIn("zero_case_target", by_id)
+        self.assertIn("incomplete_ascertainment", by_id)
+        self.assertIn("survival_curve", by_id)
+        self.assertIsNotNone(by_id["impossible_high_target"])
 
 
 class ActiveTBObservationSchemaTests(unittest.TestCase):

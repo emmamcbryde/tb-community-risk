@@ -25,6 +25,13 @@ wiring the pathway into the runner, UI, event ledger, intervention logic,
 economics, DALYs, MATLAB, frozen-reference loading or dynamic-transmission
 code.
 
+Milestone 2C purpose: add explicit progression-calibration policy contracts,
+prospective target eligibility, one-parameter fixed-ratio calibration,
+likelihood helpers, identifiability enforcement and risk-factor safety
+diagnostics without wiring the pathway into runner, UI, population generation,
+interventions, event ledgers, economics, DALYs, MATLAB, frozen-reference
+loading or dynamic-transmission code.
+
 ## Implemented in Milestone 1
 
 New pure module:
@@ -65,6 +72,7 @@ Selected identifiers:
 - `explicit_recent_remote_tbi_config_v1`
 - `explicit_recent_remote_tbi_assignment_v1`
 - `explicit_recent_remote_tbi_progression_v1`
+- `explicit_recent_remote_tbi_progression_calibration_policy_v1`
 - `constant_recent_window_hazard_v1`
 - `constant_remote_window_hazard_v1`
 
@@ -151,6 +159,63 @@ P(T <= t) = 1 - exp[-A(t)]
 
 where `r = max(0, recentWindowYears - timeSinceMostRecentInfection)`.
 
+## Implemented in Milestone 2C
+
+New work remains isolated in:
+
+- `engine/apy/explicit_recent_remote_progression.py`
+- `tests/test_explicit_recent_remote_tbi.py`
+- `docs/explicit_recent_remote_tbi_milestone1_spec.md`
+- `docs/explicit_recent_remote_tbi_v2_status.md`
+
+Implemented 2C pieces:
+
+- versioned progression-calibration policy contract with deterministic JSON
+  serialization and hashing;
+- Policy A `external_progression_hazards_v1`: supplied early/remote hazards,
+  no fitting;
+- Policy B `fixed_early_remote_ratio_fit_scale_v1`: `lambda_L=k` and
+  `lambda_E=Rk`, with one fitted scale only;
+- Policy C `validation_only_v1`: no fitting for retrospective, prevalence,
+  screen-detected or unsuitable observations;
+- Policy D `joint_early_remote_hazards_v1`: specified but unavailable unless
+  sensitivity-rank identifiability criteria pass;
+- prospective observation eligibility diagnostics with human-readable reasons;
+- expected incident-case calculations retaining numerator, denominator,
+  horizon and explicit ascertainment;
+- deterministic bounded bisection for Policy B, with infeasible targets
+  rejected rather than clipped;
+- binomial and Poisson log-likelihood helpers requiring an explicit
+  observation-model identifier;
+- identifiability checks showing one aggregate target cannot identify both
+  early and remote hazards, and duplicate-composition targets do not create
+  false identifiability;
+- competing-mortality interface accepting no-mortality mode, scalar external
+  survival, horizon-indexed survival mappings or callables;
+- baseline active-TB strata excluded from prospective incident calibration;
+- risk-factor multiplier policies: `none`,
+  `reviewed_hazard_multipliers`, and
+  `legacy_or_as_hazard_diagnostic_only`;
+- inherited OR-as-hazard multiplication exposed only as a diagnostic, with
+  warnings/blocking review status when configured thresholds are exceeded;
+- concentration diagnostics reporting expected-case shares from the highest
+  1%, 5% and 10% of eligible population weight;
+- synthetic worked examples for eligible, ineligible, zero, impossible,
+  incomplete-ascertainment, survival and high-multiplier cases.
+
+Worked diagnostic highlights:
+
+- external hazards `lambda_E=0.02`, `lambda_L=0.002`: expected cases
+  `2.379733`, no fitting;
+- fixed ratio `R=10`: fitted `lambda_L=0.00167858`,
+  `lambda_E=0.01678576`, achieved cases `2.000000`;
+- moderate reviewed multiplier example: fitted `lambda_L=0.00091672`;
+- legacy OR-as-hazard diagnostic: fitted `lambda_L=0.00033747`, with the
+  highest 1% by weight contributing `0.832978` of expected cases;
+- impossible high target: rejected as `infeasible_above_achievable_range`,
+  maximum achievable cases `300`;
+- zero-case target: fitted early and remote hazards are both zero.
+
 ## Age representation audit
 
 The inherited Python APY path represents ages for calibration and assignment
@@ -231,7 +296,7 @@ Competing mortality is not present in the inherited no-transmission
 progression path. This likely overstates 20-year prospective progression in
 older groups; future integration should allow an explicit survival function.
 
-## Not done in Milestones 1, 2A and 2B
+## Not done in Milestones 1, 2A, 2B and 2C
 
 Do not assume the new module is wired into the model. It is intentionally not
 connected to:
@@ -264,15 +329,20 @@ This also remains true after Milestone 2B. The new progression module is not
 imported or consumed by runner, UI, event-ledger, economics, DALY,
 frozen-reference, MATLAB or dynamic-model code.
 
+This also remains true after Milestone 2C. The policy/fitting helpers are
+pure diagnostics and are not imported or consumed by runner, UI, population
+generation, intervention, event-ledger, economics, DALY, frozen-reference,
+MATLAB or dynamic-model code.
+
 No release branch or tag should be moved. No deployment should be updated.
 
-## Future Milestone 2C recommendation
+## Future Milestone 2D recommendation
 
-Milestone 2C should choose a reviewed progression-calibration policy or
-explicit external progression hazards before connecting the new baseline
-states to the APY runner. The next integration milestone should still preserve
-the frozen SA Health compatibility workflow, update cache keys and metadata
-only for the new pathway, and keep event-ledger, economics and DALY integration
-separate unless explicitly scoped.
+Milestone 2D should decide, with scientific review, whether the new pathway
+will use externally supplied hazards, the fixed-ratio one-parameter policy, or
+validation-only mode for initial integration. Only after that decision should
+the branch begin runner integration behind explicit new-pathway metadata and
+cache keys. Event-ledger, economics and DALY integration should remain a later
+separate milestone unless explicitly scoped.
 
 The model remains for planning and sequencing, not for denying care.
