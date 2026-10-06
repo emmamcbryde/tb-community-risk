@@ -23,7 +23,12 @@ REMOTE_HAZARD_SHAPE = "constant_remote_window_hazard_v1"
 
 RECENT_WINDOW_YEARS = 5.0
 REMOTE_HISTORY_CAP_YEARS = 100.0
-EARLY_RISK_PERIOD_YEARS = 5.0
+AGE85_PLUS_MAX_DEFAULT = 89
+AGE_SUPPORT_PROVENANCE = (
+    "Inherited APY age-band expansion: open-ended 85+ source bands are "
+    "expanded uniformly through age85PlusMax; the default 89 is a modelling "
+    "implementation choice, not an evidence-based maximum age."
+)
 AGE_PROPORTION_TOLERANCE = 1e-9
 PROBABILITY_TOLERANCE = 1e-10
 ROOT_TOLERANCE = 1e-12
@@ -182,6 +187,8 @@ class ExplicitRecentRemoteConfig:
     remote_only_tbi_target: float = 0.0
     recent_window_years: float = RECENT_WINDOW_YEARS
     remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS
+    age85_plus_max: int = AGE85_PLUS_MAX_DEFAULT
+    age_support_provenance: str = AGE_SUPPORT_PROVENANCE
     recent_hazard_shape: str = RECENT_HAZARD_SHAPE
     remote_hazard_shape: str = REMOTE_HAZARD_SHAPE
     target_source: str = ""
@@ -207,6 +214,8 @@ class ExplicitRecentRemoteConfig:
             "remoteOnlyTBITargetProportion": self.remote_only_tbi_target,
             "recentWindowYears": self.recent_window_years,
             "remoteHistoryCapYears": self.remote_history_cap_years,
+            "age85PlusMax": self.age85_plus_max,
+            "ageSupportProvenance": self.age_support_provenance,
             "recentHazardShape": self.recent_hazard_shape,
             "remoteHazardShape": self.remote_hazard_shape,
             "targetSource": self.target_source,
@@ -266,6 +275,8 @@ def build_explicit_recent_remote_config(
     remote_only_tbi_target: float = 0.0,
     recent_window_years: float = RECENT_WINDOW_YEARS,
     remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
+    age85_plus_max: int = AGE85_PLUS_MAX_DEFAULT,
+    age_support_provenance: str = AGE_SUPPORT_PROVENANCE,
     recent_hazard_shape: str = RECENT_HAZARD_SHAPE,
     remote_hazard_shape: str = REMOTE_HAZARD_SHAPE,
     target_source: str = "",
@@ -280,6 +291,8 @@ def build_explicit_recent_remote_config(
             "remoteOnlyTBITargetProportion": remote_only_tbi_target,
             "recentWindowYears": recent_window_years,
             "remoteHistoryCapYears": remote_history_cap_years,
+            "age85PlusMax": age85_plus_max,
+            "ageSupportProvenance": age_support_provenance,
             "recentHazardShape": recent_hazard_shape,
             "remoteHazardShape": remote_hazard_shape,
             "targetSource": target_source,
@@ -634,6 +647,52 @@ def calibrate_recent_remote_hazards(
     )
 
 
+def age_support_calibration_sensitivity(
+    scenarios: Iterable[Mapping[str, Any]],
+    *,
+    requested_recent_prevalence: float,
+    requested_remote_only_prevalence: float,
+    recent_window_years: float = RECENT_WINDOW_YEARS,
+    remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
+) -> tuple[dict[str, Any], ...]:
+    rows = []
+    for idx, scenario in enumerate(scenarios):
+        age85_plus_max = _positive_int(
+            scenario.get("age85PlusMax", AGE85_PLUS_MAX_DEFAULT),
+            f"scenarios[{idx}].age85PlusMax",
+        )
+        if age85_plus_max < 85:
+            raise ValueError("age85PlusMax must be at least 85.")
+        distribution = validate_age_distribution(
+            scenario.get("ages", ()),
+            scenario.get("proportions", ()),
+        )
+        calibration = calibrate_recent_remote_hazards(
+            distribution.ages,
+            distribution.proportions,
+            requested_recent_prevalence,
+            requested_remote_only_prevalence,
+            recent_window_years=recent_window_years,
+            remote_history_cap_years=remote_history_cap_years,
+        )
+        rows.append(
+            {
+                "age85PlusMax": age85_plus_max,
+                "ageSupportProvenance": str(
+                    scenario.get("ageSupportProvenance", AGE_SUPPORT_PROVENANCE)
+                ),
+                "minAge": min(distribution.ages),
+                "maxAge": max(distribution.ages),
+                "ageStrata": len(distribution.ages),
+                "fittedRecentHazard": calibration.fitted_recent_hazard,
+                "fittedRemoteHazard": calibration.fitted_remote_hazard,
+                "achievedRecentPrevalence": calibration.achieved_recent_prevalence,
+                "achievedRemoteOnlyPrevalence": calibration.achieved_remote_only_prevalence,
+            }
+        )
+    return tuple(rows)
+
+
 def infection_time_quantile(
     *,
     window_start_years_before_baseline: float,
@@ -704,11 +763,9 @@ def deterministic_recent_remote_assignment(
     population_size: float = 1.0,
     recent_window_years: float = RECENT_WINDOW_YEARS,
     remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
-    early_risk_period_years: float = EARLY_RISK_PERIOD_YEARS,
 ) -> dict[str, Any]:
     distribution = validate_age_distribution(ages, proportions)
     pop_size = _finite_nonnegative_float(population_size, "population_size")
-    early_risk_period = _positive_float(early_risk_period_years, "early_risk_period_years")
     recent_rate = _finite_nonnegative_float(recent_hazard, "recent_hazard")
     remote_rate = _finite_nonnegative_float(remote_hazard, "remote_hazard")
     durations = exposure_durations_for_ages(
@@ -750,7 +807,7 @@ def deterministic_recent_remote_assignment(
                 window_duration_years=durations.recent_years[idx],
                 hazard_per_year=recent_rate,
             )
-            remaining_recent = max(0.0, early_risk_period - recent_mean_time)
+            remaining_recent = max(0.0, durations.recent_window_years - recent_mean_time)
         remaining_numerator += weights[idx] * p_recent * remaining_recent
         age_rows.append(
             {
@@ -791,7 +848,7 @@ def deterministic_recent_remote_assignment(
         "remoteHazard": remote_rate,
         "recentWindowYears": durations.recent_window_years,
         "remoteHistoryCapYears": durations.remote_history_cap_years,
-        "earlyRiskPeriodYears": early_risk_period,
+        "earlyRiskPeriodYears": durations.recent_window_years,
         "proportions": {
             STATE_RECENT: recent_prop,
             STATE_REMOTE_ONLY: remote_only_prop,
@@ -875,13 +932,11 @@ def draw_recent_remote_states_for_ages(
     rng: Any = None,
     recent_window_years: float = RECENT_WINDOW_YEARS,
     remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
-    early_risk_period_years: float = EARLY_RISK_PERIOD_YEARS,
 ) -> dict[str, Any]:
     rng_obj = _coerce_rng(seed=seed, rng=rng)
     age_tuple = _finite_nonnegative_tuple(ages, "ages")
     recent_rate = _finite_nonnegative_float(recent_hazard, "recent_hazard")
     remote_rate = _finite_nonnegative_float(remote_hazard, "remote_hazard")
-    early_risk_period = _positive_float(early_risk_period_years, "early_risk_period_years")
     durations = exposure_durations_for_ages(
         age_tuple,
         recent_window_years=recent_window_years,
@@ -925,7 +980,9 @@ def draw_recent_remote_states_for_ages(
             )
             effective_states.append(STATE_RECENT)
             times.append(t_infection)
-            remaining_early_risk.append(max(0.0, early_risk_period - t_infection))
+            remaining_early_risk.append(
+                max(0.0, durations.recent_window_years - t_infection)
+            )
         elif remote_event[idx]:
             t_infection = sample_time_since_most_recent_event(
                 window_start_years_before_baseline=durations.recent_window_years,
@@ -951,6 +1008,9 @@ def draw_recent_remote_states_for_ages(
         "naturalHistorySemantics": NATURAL_HISTORY_SEMANTICS,
         "drawsUsed": True,
         "populationSize": n,
+        "recentWindowYears": durations.recent_window_years,
+        "remoteHistoryCapYears": durations.remote_history_cap_years,
+        "earlyRiskPeriodYears": durations.recent_window_years,
         "ages": list(age_tuple),
         "effectiveStates": effective_states,
         "recentEvent": [bool(value) for value in recent_event],
@@ -993,7 +1053,6 @@ def stochastic_recent_remote_population_assignment(
     rng: Any = None,
     recent_window_years: float = RECENT_WINDOW_YEARS,
     remote_history_cap_years: float = REMOTE_HISTORY_CAP_YEARS,
-    early_risk_period_years: float = EARLY_RISK_PERIOD_YEARS,
 ) -> dict[str, Any]:
     rng_obj = _coerce_rng(seed=seed, rng=rng)
     n = _positive_int(population_size, "population_size")
@@ -1010,7 +1069,6 @@ def stochastic_recent_remote_population_assignment(
         rng=rng_obj,
         recent_window_years=recent_window_years,
         remote_history_cap_years=remote_history_cap_years,
-        early_risk_period_years=early_risk_period_years,
     )
     assignment["sourceAgeDistribution"] = distribution.as_dict()
     return assignment
@@ -1083,7 +1141,7 @@ def infection_timing_specification() -> dict[str, Any]:
         ),
         "recentWindow": {
             "state": "recent",
-            "lookbackYears": "[0, min(5, age)]",
+            "lookbackYears": "[0, min(recentWindowYears, age)]",
             "conditionalDensity": (
                 "f(t | at least one event) = lambda * exp(-lambda * t) / "
                 "(1 - exp(-lambda * L)), 0 <= t <= L"
@@ -1097,7 +1155,7 @@ def infection_timing_specification() -> dict[str, Any]:
         },
         "remoteOnlyWindow": {
             "state": "remote_only",
-            "lookbackYears": "[5, min(100, age)]",
+            "lookbackYears": "[recentWindowYears, min(remoteHistoryCapYears, age)]",
             "conditionalDensity": (
                 "Use the same truncated constant-hazard distribution with the "
                 "remote-window start added to the sampled offset."
@@ -1228,6 +1286,23 @@ def _validate_explicit_recent_remote_config(
     )
     if remote_cap < recent_window:
         raise ValueError("remoteHistoryCapYears must be at least recentWindowYears.")
+    age85_plus_max = _positive_int(
+        _config_value(payload, "age85PlusMax", "age85_plus_max", AGE85_PLUS_MAX_DEFAULT),
+        "age85PlusMax",
+    )
+    if age85_plus_max < 85:
+        raise ValueError("age85PlusMax must be at least 85.")
+    age_support_provenance = str(
+        _config_value(
+            payload,
+            "ageSupportProvenance",
+            "age_support_provenance",
+            AGE_SUPPORT_PROVENANCE,
+        )
+        or ""
+    ).strip()
+    if not age_support_provenance:
+        raise ValueError("ageSupportProvenance must not be empty.")
     recent_shape = str(
         _config_value(payload, "recentHazardShape", "recent_hazard_shape", RECENT_HAZARD_SHAPE)
     )
@@ -1308,6 +1383,8 @@ def _validate_explicit_recent_remote_config(
         remote_only_tbi_target=remote_target,
         recent_window_years=recent_window,
         remote_history_cap_years=remote_cap,
+        age85_plus_max=age85_plus_max,
+        age_support_provenance=age_support_provenance,
         recent_hazard_shape=recent_shape,
         remote_hazard_shape=remote_shape,
         target_source=source,

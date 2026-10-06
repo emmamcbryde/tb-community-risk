@@ -10,6 +10,7 @@ import numpy as np
 
 from engine.apy.explicit_recent_remote_tbi import (
     ACTIVE_TB_OBSERVATION_SCHEMA_VERSION,
+    AGE85_PLUS_MAX_DEFAULT,
     ANALYSIS_BASIS,
     ASSIGNMENT_CONTRACT_VERSION,
     CALIBRATION_CONTRACT_VERSION,
@@ -20,6 +21,7 @@ from engine.apy.explicit_recent_remote_tbi import (
     STATE_REMOTE_ONLY,
     STATE_UNINFECTED,
     CalibrationError,
+    age_support_calibration_sensitivity,
     assess_calibration_feasibility,
     build_explicit_recent_remote_config,
     calibrate_recent_remote_hazards,
@@ -41,6 +43,33 @@ from engine.apy.explicit_recent_remote_tbi import (
     validate_active_tb_observation,
     validate_active_tb_observations,
     validate_age_distribution,
+)
+from engine.apy.explicit_recent_remote_progression import (
+    POLICY_BOTH_HAZARDS_SUPPLIED,
+    POLICY_EXTERNAL_VALIDATION_ONLY,
+    POLICY_FIXED_EARLY_LATE_RATIO,
+    POLICY_JOINT_LIKELIHOOD,
+    POLICY_ONE_HAZARD_SUPPLIED,
+    PROGRESSION_CONTRACT_VERSION,
+    TARGET_BASELINE_PREVALENCE,
+    TARGET_PROSPECTIVE_INCIDENT,
+    TARGET_RETROSPECTIVE_NOTIFICATION,
+    TARGET_SCREEN_DETECTED,
+    baseline_active_tb_state_sequence_specification,
+    classify_active_tb_observation_target,
+    expected_progression_events,
+    expected_prospective_incident_cases_for_observation,
+    progression_calibration_policy_options,
+    progression_cumulative_hazard,
+    progression_identifiability_assessment,
+    progression_piecewise_hazard,
+    progression_probability,
+    progression_sampling_specification,
+    progression_survival_probability,
+    progression_time_quantile,
+    remaining_early_risk_years,
+    synthetic_natural_history_cost_invariance_example,
+    worked_progression_diagnostic_table,
 )
 
 
@@ -70,8 +99,42 @@ class ExplicitRecentRemoteConfigTests(unittest.TestCase):
             explicit_recent_remote_config_hash(payload),
             explicit_recent_remote_config_hash(shuffled_payload),
         )
+        self.assertEqual(payload["age85PlusMax"], AGE85_PLUS_MAX_DEFAULT)
+        self.assertIn("85+", payload["ageSupportProvenance"])
         self.assertEqual(payload["recentHazardShape"], RECENT_HAZARD_SHAPE)
         self.assertEqual(payload["remoteHazardShape"], REMOTE_HAZARD_SHAPE)
+
+    def test_age85_plus_max_participates_in_configuration_hash(self) -> None:
+        base = build_explicit_recent_remote_config(
+            enabled=True,
+            recent_tbi_target=0.01,
+            remote_only_tbi_target=0.02,
+            target_source="unit test source",
+            review_status="reviewed_test_fixture",
+            age85_plus_max=89,
+        )
+        wider = build_explicit_recent_remote_config(
+            enabled=True,
+            recent_tbi_target=0.01,
+            remote_only_tbi_target=0.02,
+            target_source="unit test source",
+            review_status="reviewed_test_fixture",
+            age85_plus_max=95,
+        )
+
+        self.assertNotEqual(
+            explicit_recent_remote_config_hash(base),
+            explicit_recent_remote_config_hash(wider),
+        )
+        with self.assertRaisesRegex(ValueError, "age85PlusMax"):
+            build_explicit_recent_remote_config(
+                enabled=True,
+                recent_tbi_target=0.01,
+                remote_only_tbi_target=0.02,
+                target_source="unit test source",
+                review_status="reviewed_test_fixture",
+                age85_plus_max=84,
+            )
 
     def test_configuration_does_not_reuse_retired_or_frozen_identifiers(self) -> None:
         cfg = build_explicit_recent_remote_config(
@@ -290,6 +353,25 @@ class ExplicitRecentRemoteCalibrationTests(unittest.TestCase):
         self.assertAlmostEqual(achieved.recent, 0.04, places=10)
         self.assertAlmostEqual(achieved.remote_only, 0.08, places=10)
 
+    def test_age_support_sensitivity_reports_remote_hazard_changes(self) -> None:
+        narrow = {"age85PlusMax": 89, "ages": list(range(85, 90)), "proportions": [0.2] * 5}
+        wider = {"age85PlusMax": 95, "ages": list(range(85, 96)), "proportions": [1 / 11] * 11}
+
+        rows = age_support_calibration_sensitivity(
+            [narrow, wider],
+            requested_recent_prevalence=0.05,
+            requested_remote_only_prevalence=0.40,
+        )
+
+        self.assertEqual([row["age85PlusMax"] for row in rows], [89, 95])
+        self.assertNotAlmostEqual(
+            rows[0]["fittedRemoteHazard"],
+            rows[1]["fittedRemoteHazard"],
+            places=6,
+        )
+        self.assertAlmostEqual(rows[0]["achievedRemoteOnlyPrevalence"], 0.40, places=10)
+        self.assertAlmostEqual(rows[1]["achievedRemoteOnlyPrevalence"], 0.40, places=10)
+
     def test_infection_time_quantile_uses_truncated_window(self) -> None:
         median_recent = infection_time_quantile(
             window_start_years_before_baseline=0.0,
@@ -419,10 +501,48 @@ class ExplicitRecentRemoteAssignmentTests(unittest.TestCase):
         self.assertEqual(assignment["effectiveStates"], [STATE_RECENT])
         self.assertAlmostEqual(
             assignment["remainingEarlyRiskYears"][0],
-            max(0.0, 5.0 - time_since),
+            max(0.0, assignment["recentWindowYears"] - time_since),
             places=12,
         )
         self.assertLess(assignment["remainingEarlyRiskYears"][0], 5.0)
+
+    def test_non_default_recent_window_controls_remaining_risk(self) -> None:
+        recent_window = 7.0
+        assignment = draw_recent_remote_states_for_ages(
+            [12],
+            1000.0,
+            0.0,
+            seed=9,
+            recent_window_years=recent_window,
+            remote_history_cap_years=100.0,
+        )
+        time_since = assignment["timeSinceMostRecentInfection"][0]
+
+        self.assertEqual(assignment["effectiveStates"], [STATE_RECENT])
+        self.assertLessEqual(time_since, recent_window)
+        self.assertAlmostEqual(
+            assignment["remainingEarlyRiskYears"][0],
+            max(0.0, recent_window - time_since),
+            places=12,
+        )
+
+    def test_deterministic_non_default_recent_window_controls_remaining_risk(self) -> None:
+        assignment = deterministic_recent_remote_assignment(
+            [20],
+            [1.0],
+            1.0,
+            0.0,
+            recent_window_years=7.0,
+            remote_history_cap_years=100.0,
+        )
+        row = assignment["ageSpecificStateDistributions"][0]
+
+        self.assertEqual(assignment["earlyRiskPeriodYears"], 7.0)
+        self.assertAlmostEqual(
+            row["expectedRemainingEarlyRiskYearsAmongRecent"],
+            7.0 - row["expectedTimeSinceMostRecentInfectionAmongRecent"],
+            places=12,
+        )
 
     def test_remote_only_receives_no_remaining_early_risk_duration(self) -> None:
         assignment = draw_recent_remote_states_for_ages([80], 0.0, 10.0, seed=5)
@@ -570,6 +690,436 @@ class ExplicitRecentRemoteAssignmentTests(unittest.TestCase):
         self.assertFalse(assignment["drawsUsed"])
 
 
+class ExplicitRecentRemoteProgressionTests(unittest.TestCase):
+    def valid_row(self, **overrides) -> dict:
+        row = {
+            "observationId": "obs-prog",
+            "startYear": 2026,
+            "endYear": 2026,
+            "observedActiveTBCaseCount": 5,
+            "populationDenominator": 10000,
+            "personYears": 10000,
+            "denominatorType": "census_population",
+            "populationScope": "whole_population",
+            "caseClassification": "incident_follow_up",
+            "observationWindowMeaning": "follow_up_incident",
+            "ascertainmentMethod": "combined",
+            "activeTBClassification": "all_active_tb",
+            "source": "unit test fixture",
+            "reviewStatus": "unreviewed_test_fixture",
+            "notes": "progression fixture",
+            "uncertainty": {},
+        }
+        row.update(overrides)
+        return row
+
+    def test_recent_cumulative_hazard_is_piecewise_correct(self) -> None:
+        self.assertAlmostEqual(
+            progression_cumulative_hazard(
+                state=STATE_RECENT,
+                horizon_years=1.0,
+                early_hazard=0.2,
+                remote_hazard=0.02,
+                multiplier=2.0,
+                remaining_early_risk_years=2.0,
+            ),
+            2.0 * 0.2 * 1.0,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            progression_cumulative_hazard(
+                state=STATE_RECENT,
+                horizon_years=5.0,
+                early_hazard=0.2,
+                remote_hazard=0.02,
+                multiplier=2.0,
+                remaining_early_risk_years=2.0,
+            ),
+            2.0 * (0.2 * 2.0 + 0.02 * 3.0),
+            places=12,
+        )
+
+    def test_remote_only_and_uninfected_progression_math(self) -> None:
+        self.assertAlmostEqual(
+            progression_cumulative_hazard(
+                state=STATE_REMOTE_ONLY,
+                horizon_years=10.0,
+                early_hazard=0.2,
+                remote_hazard=0.02,
+                multiplier=3.0,
+            ),
+            3.0 * 0.02 * 10.0,
+            places=12,
+        )
+        self.assertEqual(
+            progression_probability(
+                state=STATE_UNINFECTED,
+                horizon_years=20.0,
+                early_hazard=1.0,
+                remote_hazard=1.0,
+                multiplier=100.0,
+            ),
+            0.0,
+        )
+
+    def test_survival_plus_cumulative_incidence_equals_one(self) -> None:
+        survival = progression_survival_probability(
+            state=STATE_RECENT,
+            horizon_years=6.0,
+            early_hazard=0.15,
+            remote_hazard=0.01,
+            multiplier=1.4,
+            remaining_early_risk_years=4.0,
+        )
+        incidence = progression_probability(
+            state=STATE_RECENT,
+            horizon_years=6.0,
+            early_hazard=0.15,
+            remote_hazard=0.01,
+            multiplier=1.4,
+            remaining_early_risk_years=4.0,
+        )
+
+        self.assertAlmostEqual(survival + incidence, 1.0, places=12)
+
+    def test_progression_probability_is_monotonic(self) -> None:
+        p1 = progression_probability(
+            state=STATE_RECENT,
+            horizon_years=1.0,
+            early_hazard=0.05,
+            remote_hazard=0.01,
+            remaining_early_risk_years=2.0,
+        )
+        p2 = progression_probability(
+            state=STATE_RECENT,
+            horizon_years=2.0,
+            early_hazard=0.05,
+            remote_hazard=0.01,
+            remaining_early_risk_years=2.0,
+        )
+        p3 = progression_probability(
+            state=STATE_RECENT,
+            horizon_years=2.0,
+            early_hazard=0.10,
+            remote_hazard=0.01,
+            remaining_early_risk_years=2.0,
+        )
+        p4 = progression_probability(
+            state=STATE_REMOTE_ONLY,
+            horizon_years=2.0,
+            early_hazard=0.10,
+            remote_hazard=0.02,
+        )
+        p5 = progression_probability(
+            state=STATE_REMOTE_ONLY,
+            horizon_years=2.0,
+            early_hazard=0.10,
+            remote_hazard=0.04,
+        )
+
+        self.assertLess(p1, p2)
+        self.assertLess(p2, p3)
+        self.assertLess(p4, p5)
+
+    def test_transition_from_early_to_late_cumulative_hazard_is_continuous(self) -> None:
+        boundary = progression_cumulative_hazard(
+            state=STATE_RECENT,
+            horizon_years=2.0,
+            early_hazard=0.2,
+            remote_hazard=0.02,
+            multiplier=1.5,
+            remaining_early_risk_years=2.0,
+        )
+        left = progression_cumulative_hazard(
+            state=STATE_RECENT,
+            horizon_years=2.0 - 1e-9,
+            early_hazard=0.2,
+            remote_hazard=0.02,
+            multiplier=1.5,
+            remaining_early_risk_years=2.0,
+        )
+        right = progression_cumulative_hazard(
+            state=STATE_RECENT,
+            horizon_years=2.0 + 1e-9,
+            early_hazard=0.2,
+            remote_hazard=0.02,
+            multiplier=1.5,
+            remaining_early_risk_years=2.0,
+        )
+
+        self.assertAlmostEqual(boundary, 1.5 * 0.2 * 2.0, places=12)
+        self.assertAlmostEqual(left, boundary, places=8)
+        self.assertAlmostEqual(right, boundary, places=8)
+        self.assertAlmostEqual(
+            progression_piecewise_hazard(
+                state=STATE_RECENT,
+                time_years=1.999,
+                early_hazard=0.2,
+                remote_hazard=0.02,
+                multiplier=1.5,
+                remaining_early_risk_years=2.0,
+            ),
+            0.3,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            progression_piecewise_hazard(
+                state=STATE_RECENT,
+                time_years=2.0,
+                early_hazard=0.2,
+                remote_hazard=0.02,
+                multiplier=1.5,
+                remaining_early_risk_years=2.0,
+            ),
+            0.03,
+            places=12,
+        )
+
+    def test_remaining_risk_examples_use_recent_window(self) -> None:
+        self.assertAlmostEqual(
+            remaining_early_risk_years(4.9, recent_window_years=5.0),
+            0.1,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            remaining_early_risk_years(0.5, recent_window_years=5.0),
+            4.5,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            remaining_early_risk_years(0.5, recent_window_years=7.0),
+            6.5,
+            places=12,
+        )
+
+    def test_multipliers_scale_hazard_but_probability_saturates(self) -> None:
+        base_hazard = progression_cumulative_hazard(
+            state=STATE_REMOTE_ONLY,
+            horizon_years=20.0,
+            early_hazard=0.2,
+            remote_hazard=0.02,
+            multiplier=1.0,
+        )
+        high_hazard = progression_cumulative_hazard(
+            state=STATE_REMOTE_ONLY,
+            horizon_years=20.0,
+            early_hazard=0.2,
+            remote_hazard=0.02,
+            multiplier=10.0,
+        )
+        base_probability = progression_probability(
+            state=STATE_REMOTE_ONLY,
+            horizon_years=20.0,
+            early_hazard=0.2,
+            remote_hazard=0.02,
+            multiplier=1.0,
+        )
+        high_probability = progression_probability(
+            state=STATE_REMOTE_ONLY,
+            horizon_years=20.0,
+            early_hazard=0.2,
+            remote_hazard=0.02,
+            multiplier=10.0,
+        )
+
+        self.assertAlmostEqual(high_hazard, 10.0 * base_hazard, places=12)
+        self.assertGreater(high_probability, base_probability)
+        self.assertLess(high_probability, 1.0)
+        self.assertLess(high_probability, 10.0 * base_probability)
+
+    def test_invalid_negative_hazards_and_multipliers_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "early_hazard"):
+            progression_probability(
+                state=STATE_RECENT,
+                horizon_years=1,
+                early_hazard=-0.1,
+                remote_hazard=0.01,
+            )
+        with self.assertRaisesRegex(ValueError, "multiplier"):
+            progression_probability(
+                state=STATE_RECENT,
+                horizon_years=1,
+                early_hazard=0.1,
+                remote_hazard=0.01,
+                multiplier=-1,
+            )
+
+    def test_expected_count_aggregation_and_ascertainment(self) -> None:
+        strata = [
+            {"state": STATE_RECENT, "weight": 100.0, "remainingEarlyRiskYears": 2.0},
+            {"state": STATE_UNINFECTED, "weight": 900.0},
+        ]
+        full = expected_progression_events(
+            strata,
+            horizon_years=1.0,
+            early_hazard=0.1,
+            remote_hazard=0.01,
+        )
+        half = expected_progression_events(
+            strata,
+            horizon_years=1.0,
+            early_hazard=0.1,
+            remote_hazard=0.01,
+            default_ascertainment_probability=0.5,
+        )
+
+        expected = 100.0 * (1.0 - math.exp(-0.1))
+        self.assertAlmostEqual(full["expectedCases"], expected, places=12)
+        self.assertAlmostEqual(half["expectedCases"], expected * 0.5, places=12)
+
+    def test_progression_time_quantile_and_sampling_specification(self) -> None:
+        q = 1.0 - math.exp(-0.1)
+        self.assertAlmostEqual(
+            progression_time_quantile(
+                state=STATE_RECENT,
+                quantile=q,
+                early_hazard=0.1,
+                remote_hazard=0.01,
+                multiplier=1.0,
+                remaining_early_risk_years=2.0,
+            ),
+            1.0,
+            places=12,
+        )
+        spec = progression_sampling_specification()
+        self.assertEqual(spec["contractVersion"], PROGRESSION_CONTRACT_VERSION)
+        self.assertIn("explicit RNG", spec["rngRequirement"])
+
+    def test_active_tb_target_classification(self) -> None:
+        baseline = classify_active_tb_observation_target(
+            self.valid_row(
+                caseClassification="prevalent_baseline",
+                observationWindowMeaning="baseline_prevalent",
+            ),
+            model_baseline_year=2026,
+        )
+        screen = classify_active_tb_observation_target(
+            self.valid_row(
+                caseClassification="screen_detected",
+                observationWindowMeaning="screen_detected_prevalent",
+                ascertainmentMethod="active_screening",
+            ),
+            model_baseline_year=2026,
+        )
+        prospective = classify_active_tb_observation_target(
+            self.valid_row(startYear=2026, endYear=2027),
+            model_baseline_year=2026,
+        )
+        retrospective = classify_active_tb_observation_target(
+            self.valid_row(startYear=2023, endYear=2024, ascertainmentMethod="passive_notification"),
+            model_baseline_year=2026,
+        )
+
+        self.assertEqual(baseline["targetType"], TARGET_BASELINE_PREVALENCE)
+        self.assertEqual(screen["targetType"], TARGET_SCREEN_DETECTED)
+        self.assertEqual(prospective["targetType"], TARGET_PROSPECTIVE_INCIDENT)
+        self.assertEqual(retrospective["targetType"], TARGET_RETROSPECTIVE_NOTIFICATION)
+
+    def test_prospective_incident_expected_cases_retain_observation_components(self) -> None:
+        result = expected_prospective_incident_cases_for_observation(
+            self.valid_row(startYear=2026, endYear=2026, observedActiveTBCaseCount=8),
+            [{"state": STATE_REMOTE_ONLY, "weight": 100.0, "multiplier": 1.0}],
+            model_baseline_year=2026,
+            early_hazard=0.2,
+            remote_hazard=0.01,
+            ascertainment_probability=0.8,
+        )
+
+        self.assertEqual(result["observedActiveTBCaseCount"], 8.0)
+        self.assertEqual(result["populationDenominator"], 10000.0)
+        self.assertEqual(result["personYears"], 10000.0)
+        self.assertAlmostEqual(
+            result["expectedActiveTBCaseCount"],
+            100.0 * (1.0 - math.exp(-0.01)) * 0.8,
+            places=12,
+        )
+
+    def test_retrospective_targets_are_not_silently_accepted(self) -> None:
+        with self.assertRaisesRegex(ValueError, "prospective incident"):
+            expected_prospective_incident_cases_for_observation(
+                self.valid_row(
+                    startYear=2023,
+                    endYear=2024,
+                    ascertainmentMethod="passive_notification",
+                ),
+                [{"state": STATE_REMOTE_ONLY, "weight": 100.0}],
+                model_baseline_year=2026,
+                early_hazard=0.2,
+                remote_hazard=0.01,
+            )
+
+    def test_one_active_tb_target_is_insufficient_for_two_free_hazards(self) -> None:
+        assessment = progression_identifiability_assessment(
+            [self.valid_row(startYear=2026, endYear=2026)],
+            model_baseline_year=2026,
+        )
+
+        self.assertFalse(assessment["isIdentifiedByAggregateTargets"])
+        self.assertIn("cannot identify both", assessment["diagnosticMessages"][0])
+
+    def test_baseline_active_tb_sequence_is_separate_from_tbi(self) -> None:
+        spec = baseline_active_tb_state_sequence_specification()
+
+        self.assertEqual(
+            spec["mutuallyExclusiveBaselineSequence"][0],
+            "baseline_prevalent_active_tb",
+        )
+        self.assertIn("not counted simultaneously", spec["rule"])
+        self.assertIn(STATE_RECENT, spec["futureIntegrationStates"])
+
+    def test_policy_options_are_explicit_and_no_hidden_default_is_chosen(self) -> None:
+        policies = {item["policyId"] for item in progression_calibration_policy_options()}
+
+        self.assertEqual(
+            policies,
+            {
+                POLICY_BOTH_HAZARDS_SUPPLIED,
+                POLICY_ONE_HAZARD_SUPPLIED,
+                POLICY_FIXED_EARLY_LATE_RATIO,
+                POLICY_JOINT_LIKELIHOOD,
+                POLICY_EXTERNAL_VALIDATION_ONLY,
+            },
+        )
+
+    def test_worked_diagnostics_and_cost_invariance_are_reviewable(self) -> None:
+        rows = worked_progression_diagnostic_table(
+            early_hazard=0.04,
+            remote_hazard=0.004,
+            multipliers=(1.0, 4.0),
+            horizons=(1.0, 20.0),
+        )
+        first = next(
+            row
+            for row in rows
+            if row["scenario"] == "recent_s_0_5"
+            and row["multiplier"] == 1.0
+            and row["horizonYears"] == 1.0
+        )
+        low_cost = synthetic_natural_history_cost_invariance_example(
+            cost_parameter=1.0,
+            intervention_parameter=0.0,
+            early_hazard=0.04,
+            remote_hazard=0.004,
+        )
+        high_cost = synthetic_natural_history_cost_invariance_example(
+            cost_parameter=999999.0,
+            intervention_parameter=1.0,
+            early_hazard=0.04,
+            remote_hazard=0.004,
+        )
+
+        self.assertAlmostEqual(
+            first["progressionProbability"],
+            1.0 - math.exp(-0.04),
+            places=12,
+        )
+        self.assertAlmostEqual(
+            low_cost["expectedProgressionEvents"],
+            high_cost["expectedProgressionEvents"],
+            places=12,
+        )
+
+
 class ActiveTBObservationSchemaTests(unittest.TestCase):
     def valid_row(self, **overrides) -> dict:
         row = {
@@ -676,6 +1226,7 @@ class ScopeProtectionTests(unittest.TestCase):
         )
 
         self.assertNotIn("explicit_recent_remote_tbi", combined)
+        self.assertNotIn("explicit_recent_remote_progression", combined)
         self.assertNotIn("Recently infected within 5 years", combined)
         self.assertNotIn("Remote infection only", combined)
 
@@ -695,6 +1246,7 @@ class ScopeProtectionTests(unittest.TestCase):
         )
 
         self.assertNotIn("explicit_recent_remote_tbi", combined)
+        self.assertNotIn("explicit_recent_remote_progression", combined)
         self.assertNotIn("deterministic_recent_remote_assignment", combined)
         self.assertNotIn("stochastic_recent_remote_population_assignment", combined)
         self.assertNotIn("ExplicitRecentRemoteConfig", combined)

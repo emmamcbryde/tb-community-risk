@@ -19,6 +19,12 @@ stochastic state assignment and infection-time timing helpers without wiring
 the pathway into any runner, UI, event ledger, economics, DALY, MATLAB,
 frozen-reference or dynamic-transmission code.
 
+Milestone 2B purpose: add isolated natural-history progression specification
+and pure expected-value mathematics for the explicit baseline states without
+wiring the pathway into the runner, UI, event ledger, intervention logic,
+economics, DALYs, MATLAB, frozen-reference loading or dynamic-transmission
+code.
+
 ## Implemented in Milestone 1
 
 New pure module:
@@ -58,6 +64,7 @@ Selected identifiers:
 - `active_tb_observation_targets_v1`
 - `explicit_recent_remote_tbi_config_v1`
 - `explicit_recent_remote_tbi_assignment_v1`
+- `explicit_recent_remote_tbi_progression_v1`
 - `constant_recent_window_hazard_v1`
 - `constant_remote_window_hazard_v1`
 
@@ -95,10 +102,54 @@ Implemented 2A pieces:
   `uninfected`;
 - prior remote exposure retained for recent reinfection without double-counting
   remote-only prevalence;
-- `remainingEarlyRiskYears = max(0, 5 - timeSinceMostRecentInfection)`, with
-  zero remaining early-risk years for remote-only and uninfected states;
+- `remainingEarlyRiskYears = max(0, recentWindowYears -
+  timeSinceMostRecentInfection)`, with zero remaining early-risk years for
+  remote-only and uninfected states;
 - documented baseline active-TB sequencing proposal that keeps prevalent
   active TB, screen-detected active TB and incident active TB distinct.
+
+## Implemented in Milestone 2B
+
+New pure module:
+
+- `engine/apy/explicit_recent_remote_progression.py`
+
+Implemented 2B pieces:
+
+- resolved recent-window consistency so the recent/remote classification
+  boundary and remaining early-risk duration use the same `recentWindowYears`;
+- recorded `age85PlusMax` and age-support provenance in the isolated
+  configuration contract and deterministic hash;
+- added age-support calibration sensitivity diagnostics showing the inherited
+  `85+` expansion cap can affect fitted remote hazard;
+- added pure prospective progression functions for cumulative hazard,
+  piecewise hazard, survival probability, cumulative incidence and exact
+  quantile inversion;
+- added expected progression-event aggregation across weighted strata with
+  explicit ascertainment probability;
+- classified active-TB observation rows as baseline/prevalence,
+  screen-detected, prospective incident, retrospective notification/incidence,
+  or mixed/insufficiently defined;
+- added a pure expected-count diagnostic only for genuinely prospective
+  incident observations beginning at model baseline;
+- documented that one aggregate active-TB count generally cannot identify both
+  early and late progression hazards;
+- listed future calibration policies without selecting a hidden default;
+- documented historical notification limitations and the inherited absence of
+  competing mortality in no-transmission progression;
+- added worked synthetic diagnostic tables for reviewable progression
+  probabilities.
+
+The pure progression equations are:
+
+```text
+recent:      A(t) = m [lambda_E min(t, r) + lambda_L max(0, t-r)]
+remote_only: A(t) = m lambda_L t
+uninfected:  P(T <= t) = 0 under the current no-new-infection pathway
+P(T <= t) = 1 - exp[-A(t)]
+```
+
+where `r = max(0, recentWindowYears - timeSinceMostRecentInfection)`.
 
 ## Age representation audit
 
@@ -118,6 +169,12 @@ use band midpoints silently. If a future integration receives only broad bands,
 it must call or document an explicit within-band expansion before calibration
 and assignment.
 
+Milestone 2B makes the open-ended cap explicit in the new config provenance.
+The default `age85PlusMax = 89` is an inherited implementation choice, not a
+reviewed maximum age. A synthetic all-85-plus sensitivity changed fitted remote
+hazard from `0.00666571` at support 85-89 to `0.00643236` at support 85-95
+for the same 40% remote-only target.
+
 ## Audit findings to preserve
 
 The inherited code already has recent/remote-like language, but it is not the
@@ -132,6 +189,9 @@ calibration:
 - `engine/apy/calibration.py`, `engine/apy/simulation.py` and
   `engine/apy/expected_value.py` preserve MATLAB-v9-compatible and
   progression-state behavior.
+- The inherited default active-TB calibration target is `10/770` and
+  `earlyLateRatio` sets `lambdaLate = lambdaEarly / earlyLateRatio`; those
+  are not automatically reused by the explicit pathway.
 - `app/state.py` sanitizes unsupported experimental state from the standard SA
   Health workflow.
 - `engine/apy/frozen_reference.py` remains the loader for frozen SA Health
@@ -142,10 +202,36 @@ Risk-factor semantics remain separated:
 - `infOR` is used by inherited infection-prevalence compatibility calibration.
 - `diseaseOR` / `disOR` are applied as progression hazard multipliers despite
   odds-ratio naming.
+- default normalized disease multipliers are jointly multiplied and can reach
+  `2916` if all flags are present; no cap was found;
 - The new Milestone 1 calibration uses age/time alive only and does not use
   disease-progression ORs as acquisition multipliers.
+- The Milestone 2B pure progression functions accept a generic non-negative
+  multiplier but do not endorse odds ratios as hazard multipliers.
 
-## Not done in Milestones 1 and 2A
+## Active-TB and identifiability status
+
+Milestone 2B keeps baseline active TB conceptually separate from TBI. Future
+integration must assign baseline/prevalent active TB before latent-state
+assignment; those people must not enter the ordinary TBI preventive-treatment
+cascade or be counted simultaneously in TBI prevalence totals.
+
+Prospective incident active-TB observations can be used by the new pure
+expected-count diagnostic only when the observation window begins at model
+baseline and the baseline population composition is defined. Retrospective
+notification counts remain validation data unless a separate retrospective
+population reconstruction is implemented.
+
+No production progression-calibration policy is chosen. Supported future
+policy options are external hazards, one supplied hazard plus one fitted
+hazard, externally fixed early-to-late ratio with common scale, multiple
+targets in a joint likelihood, or external validation only.
+
+Competing mortality is not present in the inherited no-transmission
+progression path. This likely overstates 20-year prospective progression in
+older groups; future integration should allow an explicit survival function.
+
+## Not done in Milestones 1, 2A and 2B
 
 Do not assume the new module is wired into the model. It is intentionally not
 connected to:
@@ -174,21 +260,19 @@ This remains true after Milestone 2A. The new assignments are not consumed by:
 - MATLAB;
 - `engine/dynamic/*`.
 
+This also remains true after Milestone 2B. The new progression module is not
+imported or consumed by runner, UI, event-ledger, economics, DALY,
+frozen-reference, MATLAB or dynamic-model code.
+
 No release branch or tag should be moved. No deployment should be updated.
 
-## Future Milestone 2B recommendation
+## Future Milestone 2C recommendation
 
-Milestone 2B should integrate, behind an explicit new-pathway switch, the two
-mutually exclusive population targets:
-
-- recently infected within five years;
-- remote infection only.
-
-It should connect the calibrated hazards and assignment outputs to population
-generation and runner state assignment, update metadata and cache keys, and
-preserve the SA Health compatibility workflow unless a reviewed migration plan
-explicitly changes that release behavior. Event-ledger, economics and DALY
-integration should remain a later reviewed step unless Milestone 2B explicitly
-expands scope.
+Milestone 2C should choose a reviewed progression-calibration policy or
+explicit external progression hazards before connecting the new baseline
+states to the APY runner. The next integration milestone should still preserve
+the frozen SA Health compatibility workflow, update cache keys and metadata
+only for the new pathway, and keep event-ledger, economics and DALY integration
+separate unless explicitly scoped.
 
 The model remains for planning and sequencing, not for denying care.

@@ -16,6 +16,12 @@ It still does not connect the new pathway to the runner, Streamlit UI,
 active-TB progression, active-TB calibration, interventions, event ledger,
 health economics, DALYs, MATLAB or the dynamic-transmission model.
 
+Milestone 2B adds pure natural-history progression mathematics for the new
+baseline states and expected-value diagnostics for prospective active-TB
+targets. It still does not connect the pathway to the runner, Streamlit UI,
+event ledger, intervention logic, economics, DALYs, MATLAB,
+frozen-reference loading or the dynamic-transmission model.
+
 ## Selected identifiers
 
 - Analysis basis: `explicit_recent_remote_tbi_foundation_v1`
@@ -26,6 +32,7 @@ health economics, DALYs, MATLAB or the dynamic-transmission model.
 - Active-TB observation schema: `active_tb_observation_targets_v1`
 - Configuration contract: `explicit_recent_remote_tbi_config_v1`
 - Assignment contract: `explicit_recent_remote_tbi_assignment_v1`
+- Progression contract: `explicit_recent_remote_tbi_progression_v1`
 - Recent hazard shape: `constant_recent_window_hazard_v1`
 - Remote hazard shape: `constant_remote_window_hazard_v1`
 
@@ -39,7 +46,7 @@ metadata.
 At baseline, each person has one effective infection state:
 
 1. `uninfected`: no infection in either exposure window.
-2. `remote_only`: at least one infection acquired more than five years before
+2. `remote_only`: at least one infection acquired five or more years before
    baseline and no infection during the most recent five years.
 3. `recent`: at least one TB infection acquired during the five years
    immediately before baseline.
@@ -99,12 +106,22 @@ calculation. Instead:
   `pars["exactAgeValues"]` using `pars["exactAgeProb"]`.
 - `engine/apy/expected_value.py::_build_strata` iterates the same exact-age
   support and probabilities.
+- The explicit recent/remote config now records `age85PlusMax` and
+  age-support provenance, and those fields participate in deterministic
+  configuration hashing.
 
 Milestone 2A assignment functions therefore accept exact ages and probabilities
 and use the same representation for calibration and assignment. They do not
 silently substitute age-band midpoints. If a future caller supplies only broad
 bands, that caller must first apply an explicit within-band expansion rule
 with labelled provenance.
+
+The default `age85PlusMax = 89` is an inherited implementation choice, not an
+evidence-based biological maximum. A synthetic sensitivity using all population
+weight in the open-ended age group showed that changing the support from
+85-89 to 85-95 changed the fitted remote hazard for a 40% remote-only target
+from `0.00666571` to `0.00643236` per year while preserving the target. This
+demonstrates that the cap can matter and should remain explicit.
 
 ## Mutually exclusive probabilities
 
@@ -251,12 +268,13 @@ concentrate the most recent event close to baseline.
 
 Conditional on the effective state:
 
-- `recent`: draw the most recent infection event within `[0, min(5, age)]`
-  years before baseline from the constant-hazard distribution truncated to the
-  available recent window.
+- `recent`: draw the most recent infection event within
+  `[0, min(recentWindowYears, age)]` years before baseline from the
+  constant-hazard distribution truncated to the available recent window.
 - `remote_only`: draw the most recent remote-window infection event within
-  `[5, min(100, age)]` years before baseline from the constant-hazard
-  distribution truncated to the remote window, conditional on no recent event.
+  `[recentWindowYears, min(remoteHistoryCapYears, age)]` years before baseline
+  from the constant-hazard distribution truncated to the remote window,
+  conditional on no recent event.
 - both remote and recent: classify effective state as `recent`, retain
   `priorRemoteExposure=true`, and treat recent reinfection as resetting the
   higher-progression-risk state in future integration unless a later scientific
@@ -267,17 +285,22 @@ effective state. For recent-with-prior-remote exposure, the older remote event
 is retained only as an auditable history flag and is not used as the effective
 progression clock.
 
-The isolated assignment output also calculates:
+The isolated assignment output also calculates remaining early-risk duration
+using the same authoritative recent window that defines recent versus remote
+infection:
 
 ```text
-remainingEarlyRiskYears = max(0, 5 - timeSinceMostRecentInfection)
+remainingEarlyRiskYears =
+    max(0, recentWindowYears - timeSinceMostRecentInfection)
 ```
 
 Recent states therefore receive between zero and five remaining early-risk
-years depending on sampled or expected infection timing. Remote-only states
-receive zero. Uninfected states have no infection time and zero remaining
-early-risk years in the current serializable output. This avoids giving every
-recently infected person a fresh five-year high-risk period at baseline.
+years under the default five-year window, or the corresponding amount under a
+reviewed non-default window. Remote-only states receive zero. Uninfected states
+have no infection time and zero remaining early-risk years in the current
+serializable output. This avoids giving every recently infected person a fresh
+five-year high-risk period at baseline, and it prevents the recent/remote
+classification boundary from diverging from the early-risk duration.
 
 Audit finding: the inherited runner currently uses a baseline recent flag plus
 a Markov recent-to-remote progression compartment. It does not distinguish
@@ -310,9 +333,102 @@ people whose effective state requires an infection clock, retain prior remote
 exposure for recent reinfection, and avoid draws for structurally impossible
 events.
 
+## Pure prospective progression
+
+Milestone 2B adds `engine/apy/explicit_recent_remote_progression.py`, a pure
+module with no Streamlit, runner, event-ledger, economics, DALY, MATLAB or
+dynamic-model dependency.
+
+For a recently infected person with time since most recent infection `s`,
+recent-window duration `W`, remaining early-risk duration
+`r = max(0, W - s)`, early progression hazard `lambda_E`, remote progression
+hazard `lambda_L` and multiplier `m_i`, the prospective cumulative hazard is:
+
+```text
+A_i(t) = m_i [lambda_E min(t, r) + lambda_L max(0, t-r)]
+P_i(T <= t) = 1 - exp[-A_i(t)]
+```
+
+For remote-only infection:
+
+```text
+A_i(t) = m_i lambda_L t
+```
+
+For uninfected people under the current no-new-infection pathway:
+
+```text
+P_i(T <= t) = 0
+```
+
+The pure module supports cumulative hazard, piecewise instantaneous hazard,
+survival probability, cumulative incidence by horizon, expected events across
+weighted strata and exact quantile inversion for future stochastic sampling.
+It does not generate stochastic active-TB times.
+
+The cumulative hazard is continuous at the end of remaining early-risk time,
+although the instantaneous hazard may change from `lambda_E` to `lambda_L`.
+
+## Inherited progression audit
+
+Current inherited progression behavior remains unchanged:
+
+- `engine/apy/timing.py` contains scientifically reusable pure piecewise
+  early/late survival helpers for a fixed early-period duration.
+- `engine/apy/ltbi_state.py` defines the retired
+  `continuous_markov_recent_remote` latent-state model, including a default
+  recent-to-remote transition rate of `1/5` per year.
+- `engine/apy/calibration.py` calibrates infection prevalence and active-TB
+  progression to inherited targets. The default active-TB target is `10/770`
+  at the active-TB calibration horizon. `earlyLateRatio` must be at least one;
+  `lambdaLate = lambdaEarly / earlyLateRatio`.
+- `engine/apy/calibration.py::MATLAB_V9_IMPLICIT_EARLY_LATE` preserves MATLAB
+  v9 compatibility by treating all infected people as beginning in the early
+  state for the calibration window. This is compatibility behavior, not the
+  new explicit recent/remote pathway.
+- `engine/apy/simulation.py::_draw_ltbi_state_history` stochastically draws
+  inherited recent/remote latent state, recent-to-remote transition time and
+  untreated active-TB time. In the MATLAB-v9 branch, people not active during
+  the screening window transition to remote at the screening-window boundary.
+- `engine/apy/expected_value.py` uses inherited recent/remote probabilities
+  and `mixed_baseline_survival`/`mixed_baseline_event_between` for deterministic
+  event calculations.
+
+Reusable for the new pathway: pure hazard/survival algebra where the state and
+remaining early-risk time are explicit. Unsafe to reuse silently:
+`continuous_markov_recent_remote`, inherited `baselineRecentLTBIProportion`,
+MATLAB-v9 compatibility semantics and automatic reuse of the `10/770`
+active-TB target.
+
+## Progression multiplier crosswalk
+
+The inherited engine currently applies disease-risk effects by multiplying
+progression hazards. The parameter names and default normalized values are:
+
+| parameter | label | recorded measure | current engine use |
+| --- | --- | --- | --- |
+| `disOR["MJ"]` | Other current risk-factor prevalence | OR disease | hazard multiplier |
+| `disOR["contact"]` | Contact history | OR disease | hazard multiplier |
+| `disOR["renal"]` | Renal impairment | OR disease | hazard multiplier |
+| `disOR["diabetes"]` | Diabetes | OR disease | hazard multiplier |
+| `disOR["smoking"]` | Smoking | OR disease | hazard multiplier |
+| `disOR["cld"]` | Chronic lung disease | OR disease | hazard multiplier |
+| `disOR["alcohol"]` | Alcohol/drug exposure | OR disease | hazard multiplier |
+
+The defaults loaded through the normal Python APY configuration are:
+`MJ=3.0`, `contact=5.0`, `renal=3.6`, `diabetes=3.0`, `smoking=2.0`,
+`cld=3.0`, `alcohol=3.0`. They are multiplied jointly, giving a possible
+combined multiplier of `2916` if all flags are present. No cap was found. The
+input fields and source CSV label these as odds ratios; their use as hazard
+multipliers is an inherited modelling choice and is not scientifically
+endorsed by Milestone 2B.
+
+The new pure progression functions accept a generic non-negative multiplier
+`m_i`; they do not infer, cap or reinterpret risk-factor ORs.
+
 ## Risk-factor separation
 
-Milestones 1 and 2A do not use non-age risk factors in the new acquisition
+Milestones 1, 2A and 2B do not use non-age risk factors in the new acquisition
 calibration. Age affects exposure only through time alive.
 
 Existing code contains several different semantics:
@@ -356,7 +472,31 @@ underlying numerator, denominator or observation period.
 Prevalent active TB at or near baseline, active TB detected during screening
 and incident active TB during later follow-up remain distinct. The schema does
 not infer one from another and does not fit progression hazards in Milestones
-1 or 2A.
+1, 2A or 2B.
+
+Milestone 2B classifies each observation row for future use as one of:
+
+- `baseline_prevalence_target`;
+- `screen_detected_disease_target`;
+- `prospective_incident_disease_target`;
+- `retrospective_notification_incidence_target`;
+- `mixed_or_insufficiently_defined`.
+
+Only a genuinely prospective incident target can be passed to the pure
+expected-count diagnostic function. That requires the baseline population to
+be defined, the observation window to begin at model baseline, the
+recent/remote/uninfected composition to be supplied externally, ascertainment
+to be complete or explicitly parameterised, and competing mortality to be
+explicitly addressed. The expected count calculation is:
+
+```text
+E[C] = sum_i w_i P_i(T <= T_obs) q_i
+```
+
+where `q_i` is an ascertainment probability if used. The function retains the
+observed numerator, denominator, person-years if supplied and observation
+period; it does not reduce the row to an annual rate and discard those
+components.
 
 ## Baseline active-TB sequencing proposal
 
@@ -377,7 +517,7 @@ the TBI preventive-treatment cascade. The proposed sequencing is:
    conditional on infection state, progression hazards and interventions.
 
 The optional active-TB observation rows remain data for future calibration and
-review. Milestone 2A does not use them to fit progression hazards.
+review. Milestone 2B does not use them to fit progression hazards.
 
 ## Identifiability
 
@@ -392,6 +532,18 @@ Risk-factor progression effects do not identify acquisition effects.
 Uncertainty in age distribution and target estimates should eventually be
 propagated.
 
+One aggregate active-TB count generally cannot identify both `lambda_E` and
+`lambda_L`. Milestone 2B therefore exposes identifiability diagnostics but
+does not choose a hidden progression-calibration policy.
+
+Potential future progression-calibration policies are:
+
+1. Both hazards externally supplied.
+2. One hazard externally supplied and the other fitted.
+3. Early-to-late hazard ratio fixed externally and a common scale fitted.
+4. Multiple sufficiently informative targets used in a joint likelihood.
+5. Active-TB data used only for external validation.
+
 Future progression calibration would require combinations such as:
 
 - explicit recent and remote-only TBI prevalence targets;
@@ -401,6 +553,58 @@ Future progression calibration would require combinations such as:
 - explicit handling of prevalent baseline active TB versus incident follow-up;
 - assumptions about risk-factor effects on progression, separate from
   acquisition.
+
+The inherited `10/770` active-TB target is not automatically reused for the
+new explicit recent/remote pathway.
+
+## Historical observations
+
+A retrospective notification count from before model baseline is not
+automatically equivalent to prospective active TB arising from the present
+baseline cohort. Reasons include population turnover, migration, depletion
+through prior disease, prior preventive or active-TB treatment, mortality,
+changing ascertainment, changing infection pressure and changing denominators.
+Such rows are classified as validation data unless a separate retrospective
+population reconstruction is implemented.
+
+## Competing mortality
+
+The inherited no-transmission APY natural-history progression path does not
+apply competing all-cause mortality before active-TB progression. Mortality and
+TB fatality appear later in burden/economic calculations, not as a competing
+risk in the untreated progression-time generation or deterministic
+expected-value progression functions.
+
+Over a long horizon such as 20 years, omitting competing mortality will tend
+to overstate prospective progression events among older age groups, because it
+leaves people at risk for active TB after they might otherwise have died. The
+importance depends on age structure, comorbidity, follow-up duration and local
+mortality. Milestone 2B designs the pure expected-count interface so a future
+survival function can be incorporated, but it does not invent mortality data.
+
+## Worked progression diagnostics
+
+The following synthetic diagnostics use illustrative hazards
+`lambda_E = 0.04` per year and `lambda_L = 0.004` per year. They are not
+reviewed defaults.
+
+| state/scenario | multiplier | P(1y) | P(2y) | P(5y) | P(10y) | P(20y) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| recent, infected 0.5y ago | 1 | 0.039211 | 0.076884 | 0.166399 | 0.182905 | 0.214944 |
+| recent, infected 0.5y ago | 4 | 0.147856 | 0.273851 | 0.517126 | 0.554251 | 0.620158 |
+| recent, infected 2.5y ago | 1 | 0.039211 | 0.076884 | 0.104166 | 0.121905 | 0.156335 |
+| recent, infected 2.5y ago | 4 | 0.147856 | 0.273851 | 0.355964 | 0.405479 | 0.493383 |
+| recent, infected 4.9y ago | 1 | 0.007571 | 0.011533 | 0.023324 | 0.042663 | 0.080201 |
+| recent, infected 4.9y ago | 4 | 0.029943 | 0.045340 | 0.090081 | 0.160039 | 0.284233 |
+| remote-only | 1 | 0.003992 | 0.007968 | 0.019801 | 0.039211 | 0.076884 |
+| remote-only | 4 | 0.015873 | 0.031493 | 0.076884 | 0.147856 | 0.273851 |
+| uninfected | 1 | 0 | 0 | 0 | 0 | 0 |
+| uninfected | 4 | 0 | 0 | 0 | 0 | 0 |
+
+The same pure module includes a synthetic cost-invariance diagnostic:
+changing a cost or intervention parameter does not change natural-history
+progression probabilities because the progression functions do not read
+economic or intervention inputs.
 
 ## Architecture audit
 
@@ -473,11 +677,13 @@ Dynamic model:
 
 ## Planned integration
 
-Milestone 2A has added explicit configuration and isolated assignment helpers.
-Milestone 2B should decide how to integrate the new assignments into the APY
-runner while preserving the frozen SA Health compatibility workflow. That work
-should include cache-key updates, metadata propagation and migration tests
-before any event-ledger, economics or DALY integration.
+Milestones 1, 2A and 2B have added explicit calibration, isolated assignment
+helpers and pure prospective progression mathematics. Future integration must
+still decide how to connect these pieces to the APY runner while preserving
+the frozen SA Health compatibility workflow. That work should include reviewed
+progression-calibration policy, cache-key updates, metadata propagation,
+baseline active-TB sequencing and migration tests before any event-ledger,
+economics or DALY integration.
 
 ## Limitations and unanswered decisions
 
@@ -488,6 +694,8 @@ before any event-ledger, economics or DALY integration.
   requiring scientific review.
 - No risk-factor acquisition effects are included beyond age/time alive.
 - Exact limiting targets may imply infinite hazards.
-- Active-TB observations are validated for future use but not fitted.
+- Active-TB observations are validated and classified for future use but not
+  fitted.
+- Competing mortality is not yet incorporated into prospective progression.
 - Parameter uncertainty is not propagated.
 - The new pathway is not decision-ready and is not for denying care.
