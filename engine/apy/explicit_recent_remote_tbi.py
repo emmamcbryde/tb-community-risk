@@ -1208,6 +1208,20 @@ def validate_active_tb_observation(row: Mapping[str, Any]) -> dict[str, Any]:
     population_scope = _one_of(row, "populationScope", POPULATION_SCOPES)
     ascertainment = _one_of(row, "ascertainmentMethod", ASCERTAINMENT_METHODS)
     tb_classification = _one_of(row, "activeTBClassification", ACTIVE_TB_CLASSIFICATIONS)
+    numerator_includes_baseline = _optional_bool(
+        row.get("numeratorIncludesBaselineActiveTB"),
+        "numeratorIncludesBaselineActiveTB",
+    )
+    numerator_includes_prevalent = _optional_bool(
+        row.get("numeratorIncludesPrevalentCases"),
+        "numeratorIncludesPrevalentCases",
+    )
+    baseline_active_count = None
+    if row.get("baselineActiveTBCount") not in (None, ""):
+        baseline_active_count = _finite_nonnegative_float(
+            row.get("baselineActiveTBCount"),
+            "baselineActiveTBCount",
+        )
     uncertainty = row.get("uncertainty", {})
     if uncertainty in (None, ""):
         uncertainty = {}
@@ -1222,7 +1236,11 @@ def validate_active_tb_observation(row: Mapping[str, Any]) -> dict[str, Any]:
         "endYear": end["year"],
         "observedActiveTBCaseCount": observed_count,
         "populationDenominator": population_denominator,
+        "sourcePopulationDenominator": population_denominator,
         "personYears": person_years,
+        "baselineActiveTBCount": baseline_active_count,
+        "numeratorIncludesBaselineActiveTB": numerator_includes_baseline,
+        "numeratorIncludesPrevalentCases": numerator_includes_prevalent,
         "denominatorType": denominator_type,
         "populationScope": population_scope,
         "caseClassification": case_classification,
@@ -1591,6 +1609,20 @@ def _positive_int(value: Any, label: str) -> int:
     if number <= 0:
         raise ValueError(f"{label} must be a positive integer.")
     return number
+
+
+def _optional_bool(value: Any, label: str) -> bool | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "1"}:
+            return True
+        if normalized in {"false", "no", "0"}:
+            return False
+    raise ValueError(f"{label} must be true, false or omitted.")
 
 
 def _probability(value: Any, label: str) -> float:

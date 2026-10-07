@@ -41,12 +41,26 @@ OBSERVATION_MODEL_POISSON = "poisson_count_v1"
 RISK_POLICY_NONE = "none"
 RISK_POLICY_REVIEWED_HAZARD_MULTIPLIERS = "reviewed_hazard_multipliers"
 RISK_POLICY_LEGACY_OR_AS_HAZARD_DIAGNOSTIC = "legacy_or_as_hazard_diagnostic_only"
+RECOMMENDED_PRODUCTION_RISK_POLICY = RISK_POLICY_NONE
 
 STATE_BASELINE_ACTIVE_TB = "baseline_prevalent_active_tb"
+
+COMPETING_MORTALITY_NOT_MODELLED = "not_modelled"
+COMPETING_MORTALITY_CONSTANT_HAZARD = "external_constant_mortality_hazard"
+COMPETING_MORTALITY_SURVIVAL_CURVE = "external_survival_curve"
+COMPETING_MORTALITY_SCALAR_APPROXIMATION = (
+    "scalar_horizon_survival_nonproduction_approximation"
+)
+INTEGRATION_ANALYTIC_PIECEWISE_CONSTANT = "analytic_piecewise_constant_tb_and_death_hazards"
+INTEGRATION_NUMERICAL_TRAPEZOID = "numerical_trapezoid_external_survival_curve"
 
 ROOT_TOLERANCE = 1e-12
 MAX_ROOT_ITERATIONS = 200
 MAX_HAZARD_PER_YEAR = 1e6
+DEFAULT_INTEGRATION_TOLERANCE = 1e-10
+DEFAULT_NUMERICAL_INTEGRATION_STEPS = 2048
+PRACTICAL_IDENTIFIABILITY_CONDITION_NUMBER_THRESHOLD = 1.0e4
+PRACTICAL_IDENTIFIABILITY_COMPOSITION_CONTRAST_THRESHOLD = 0.05
 
 DEFAULT_REVIEW_WARNING_MULTIPLIER = 10.0
 DEFAULT_REVIEW_BLOCK_MULTIPLIER = 100.0
@@ -367,6 +381,94 @@ def progression_probability(
     )
 
 
+def competing_risk_progression_probability(
+    *,
+    state: str,
+    horizon_years: float,
+    early_hazard: float,
+    remote_hazard: float,
+    multiplier: float = 1.0,
+    remaining_early_risk_years: float = 0.0,
+    competing_mortality_hazard: Any = None,
+    competing_survival_curve: Any = None,
+    integration_tolerance: float = DEFAULT_INTEGRATION_TOLERANCE,
+    integration_steps: int = DEFAULT_NUMERICAL_INTEGRATION_STEPS,
+) -> dict[str, Any]:
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    tolerance = _positive_float(integration_tolerance, "integration_tolerance")
+    if competing_mortality_hazard is not None and competing_survival_curve is not None:
+        raise ValueError(
+            "Provide either competing_mortality_hazard or competing_survival_curve, not both."
+        )
+    if competing_mortality_hazard is None and competing_survival_curve is None:
+        probability = progression_probability(
+            state=state,
+            horizon_years=horizon,
+            early_hazard=early_hazard,
+            remote_hazard=remote_hazard,
+            multiplier=multiplier,
+            remaining_early_risk_years=remaining_early_risk_years,
+        )
+        return {
+            "cumulativeIncidence": probability,
+            "competingMortality": COMPETING_MORTALITY_NOT_MODELLED,
+            "integrationMethod": "closed_form_no_competing_mortality",
+            "integrationTolerance": tolerance,
+            "diagnosticMessages": [
+                "Competing mortality is not modelled; long-horizon expected cases may be overstated."
+            ],
+        }
+    if competing_mortality_hazard is not None:
+        death_hazard = _finite_nonnegative_float(
+            competing_mortality_hazard,
+            "competing_mortality_hazard",
+        )
+        probability = _analytic_competing_incidence(
+            state=state,
+            horizon_years=horizon,
+            early_hazard=early_hazard,
+            remote_hazard=remote_hazard,
+            multiplier=multiplier,
+            remaining_early_risk_years=remaining_early_risk_years,
+            death_hazard=death_hazard,
+        )
+        return {
+            "cumulativeIncidence": probability,
+            "competingMortality": COMPETING_MORTALITY_CONSTANT_HAZARD,
+            "competingMortalityHazard": death_hazard,
+            "integrationMethod": INTEGRATION_ANALYTIC_PIECEWISE_CONSTANT,
+            "integrationTolerance": tolerance,
+            "diagnosticMessages": [
+                "Competing mortality was integrated as an external cause-specific death hazard."
+            ],
+        }
+    survival = _validate_survival_curve(
+        competing_survival_curve,
+        horizon_years=horizon,
+        integration_steps=integration_steps,
+    )
+    probability = _numerical_competing_incidence_with_survival_curve(
+        state=state,
+        horizon_years=horizon,
+        early_hazard=early_hazard,
+        remote_hazard=remote_hazard,
+        multiplier=multiplier,
+        remaining_early_risk_years=remaining_early_risk_years,
+        survival_at=survival,
+        integration_steps=integration_steps,
+    )
+    return {
+        "cumulativeIncidence": probability,
+        "competingMortality": COMPETING_MORTALITY_SURVIVAL_CURVE,
+        "integrationMethod": INTEGRATION_NUMERICAL_TRAPEZOID,
+        "integrationTolerance": tolerance,
+        "integrationSteps": int(integration_steps),
+        "diagnosticMessages": [
+            "Competing mortality was integrated from an externally supplied survival curve."
+        ],
+    }
+
+
 def progression_time_quantile(
     *,
     state: str,
@@ -415,6 +517,11 @@ def expected_progression_events(
     remote_hazard: float,
     default_ascertainment_probability: float = 1.0,
     competing_survival_probability: Any = None,
+    competing_survival_curve: Any = None,
+    competing_mortality_hazard: Any = None,
+    allow_scalar_survival_approximation: bool = False,
+    integration_tolerance: float = DEFAULT_INTEGRATION_TOLERANCE,
+    integration_steps: int = DEFAULT_NUMERICAL_INTEGRATION_STEPS,
     exclude_baseline_active_tb: bool = True,
 ) -> dict[str, Any]:
     horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
@@ -422,20 +529,25 @@ def expected_progression_events(
         default_ascertainment_probability,
         "default_ascertainment_probability",
     )
+    mortality_spec = _resolve_competing_mortality_inputs(
+        competing_survival_probability=competing_survival_probability,
+        competing_survival_curve=competing_survival_curve,
+        competing_mortality_hazard=competing_mortality_hazard,
+        allow_scalar_survival_approximation=allow_scalar_survival_approximation,
+    )
     rows = []
     total = 0.0
     total_weight = 0.0
     included_weight = 0.0
     excluded_baseline_weight = 0.0
-    survival_mode = (
-        "not_modelled"
-        if competing_survival_probability is None
-        else "external_survival_probability"
-    )
     diagnostic_messages: list[str] = []
-    if competing_survival_probability is None:
+    if mortality_spec["mode"] == COMPETING_MORTALITY_NOT_MODELLED:
         diagnostic_messages.append(
             "Competing mortality is not modelled; long-horizon expected cases may be overstated."
+        )
+    if mortality_spec["mode"] == COMPETING_MORTALITY_SCALAR_APPROXIMATION:
+        diagnostic_messages.append(
+            "Scalar horizon survival is a non-production approximation and is not a competing-risk cumulative-incidence calculation."
         )
     for idx, row in enumerate(strata):
         weight = _row_weight(row, idx)
@@ -460,22 +572,45 @@ def expected_progression_events(
             row.get("ascertainmentProbability", ascertainment_default),
             f"strata[{idx}].ascertainmentProbability",
         )
-        competing_survival = _survival_probability_at(
-            competing_survival_probability,
-            horizon,
-            row,
-            f"strata[{idx}].competingSurvivalProbability",
-        )
-        probability = progression_probability(
-            state=state,
-            horizon_years=horizon,
-            early_hazard=early_hazard,
-            remote_hazard=remote_hazard,
-            multiplier=multiplier,
-            remaining_early_risk_years=remaining,
-        )
-        adjusted_probability = probability * competing_survival
-        expected = weight * adjusted_probability * ascertainment
+        if mortality_spec["mode"] == COMPETING_MORTALITY_SCALAR_APPROXIMATION:
+            base = progression_probability(
+                state=state,
+                horizon_years=horizon,
+                early_hazard=early_hazard,
+                remote_hazard=remote_hazard,
+                multiplier=multiplier,
+                remaining_early_risk_years=remaining,
+            )
+            competing_survival = _survival_probability_at(
+                mortality_spec["scalarSurvival"],
+                horizon,
+                row,
+                f"strata[{idx}].competingSurvivalProbability",
+            )
+            incidence = base * competing_survival
+            mortality_diagnostics = {
+                "cumulativeIncidence": incidence,
+                "competingMortality": COMPETING_MORTALITY_SCALAR_APPROXIMATION,
+                "integrationMethod": COMPETING_MORTALITY_SCALAR_APPROXIMATION,
+                "diagnosticMessages": [
+                    "Scalar horizon survival approximation used only because allow_scalar_survival_approximation=True."
+                ],
+            }
+        else:
+            mortality_diagnostics = competing_risk_progression_probability(
+                state=state,
+                horizon_years=horizon,
+                early_hazard=early_hazard,
+                remote_hazard=remote_hazard,
+                multiplier=multiplier,
+                remaining_early_risk_years=remaining,
+                competing_mortality_hazard=mortality_spec["mortalityHazard"],
+                competing_survival_curve=mortality_spec["survivalCurve"],
+                integration_tolerance=integration_tolerance,
+                integration_steps=integration_steps,
+            )
+            incidence = mortality_diagnostics["cumulativeIncidence"]
+        expected = weight * incidence * ascertainment
         total += expected
         total_weight += weight
         included_weight += weight
@@ -486,12 +621,21 @@ def expected_progression_events(
                 "multiplier": multiplier,
                 "remainingEarlyRiskYears": remaining,
                 "ascertainmentProbability": ascertainment,
-                "competingSurvivalProbability": competing_survival,
-                "progressionProbability": probability,
-                "survivalAdjustedProgressionProbability": adjusted_probability,
+                "progressionProbabilityNoCompetingMortality": progression_probability(
+                    state=state,
+                    horizon_years=horizon,
+                    early_hazard=early_hazard,
+                    remote_hazard=remote_hazard,
+                    multiplier=multiplier,
+                    remaining_early_risk_years=remaining,
+                ),
+                "competingRiskProgressionProbability": incidence,
+                "competingMortality": mortality_diagnostics["competingMortality"],
+                "integrationMethod": mortality_diagnostics["integrationMethod"],
                 "expectedCases": expected,
             }
         )
+    tbi_eligible_weight = included_weight
     return {
         "contractVersion": PROGRESSION_CONTRACT_VERSION,
         "horizonYears": horizon,
@@ -500,8 +644,13 @@ def expected_progression_events(
         "expectedCases": total,
         "totalWeight": total_weight,
         "includedWeight": included_weight,
+        "prospectiveAtRiskPopulation": included_weight,
+        "tbiEligiblePopulation": tbi_eligible_weight,
+        "baselineActiveTBCount": excluded_baseline_weight,
         "excludedBaselineActiveTBWeight": excluded_baseline_weight,
-        "competingMortality": survival_mode,
+        "competingMortality": mortality_spec["mode"],
+        "integrationMethod": mortality_spec["integrationMethod"],
+        "integrationTolerance": _positive_float(integration_tolerance, "integration_tolerance"),
         "diagnosticMessages": diagnostic_messages,
         "rows": rows,
     }
@@ -558,6 +707,8 @@ def assess_observation_prospective_calibration_eligibility(
     model_baseline_year: int,
     strata: Iterable[Mapping[str, Any]] | None = None,
     ascertainment_probability: float | None = None,
+    ascertainment_source: str = "",
+    ascertainment_review_status: str = "",
 ) -> dict[str, Any]:
     classified = classify_active_tb_observation_target(
         row,
@@ -566,6 +717,8 @@ def assess_observation_prospective_calibration_eligibility(
     observed = classified["observation"]
     reasons: list[str] = []
     warnings: list[str] = []
+    source_row = row
+    strata_tuple = None if strata is None else tuple(strata)
     if classified["targetType"] != TARGET_PROSPECTIVE_INCIDENT:
         reasons.append(classified["reason"])
     if observed["caseClassification"] != "incident_follow_up":
@@ -580,15 +733,26 @@ def assess_observation_prospective_calibration_eligibility(
     if ascertainment_probability is None:
         reasons.append("An explicit ascertainment probability is required for fitting.")
     else:
-        _probability(ascertainment_probability, "ascertainment_probability")
-        if ascertainment_probability < 1.0:
+        q = _strict_positive_probability(
+            ascertainment_probability,
+            "ascertainment_probability",
+        )
+        if not str(ascertainment_source).strip():
+            reasons.append("Ascertainment probability requires a source.")
+        if not str(ascertainment_review_status).strip():
+            reasons.append("Ascertainment probability requires a review status.")
+        if q == 1.0 and "complete" not in str(ascertainment_source).lower():
+            reasons.append(
+                "q=1 requires an explicit complete-ascertainment assumption in the source."
+            )
+        if q < 1.0:
             warnings.append("Incomplete ascertainment is modelled explicitly through q.")
-    if strata is None:
+    if strata_tuple is None:
         reasons.append("Compatible baseline population composition/strata are required.")
         included_weight = 0.0
         excluded_baseline = 0.0
     else:
-        prepared = _prepare_progression_strata(strata)
+        prepared = _prepare_progression_strata(strata_tuple)
         included_weight = sum(row_out["weight"] for row_out in prepared["includedRows"])
         excluded_baseline = prepared["excludedBaselineActiveTBWeight"]
         if included_weight <= 0.0:
@@ -599,6 +763,32 @@ def assess_observation_prospective_calibration_eligibility(
             warnings.append(
                 "Baseline active-TB strata are excluded from prospective progression calibration."
             )
+    denominator_summary = _progression_denominator_summary(
+        observed,
+        strata=() if strata_tuple is None else strata_tuple,
+        horizon_years=horizon,
+        numerator_includes_baseline_active_tb=source_row.get(
+            "numeratorIncludesBaselineActiveTB",
+            observed.get("numeratorIncludesBaselineActiveTB"),
+        ),
+        numerator_includes_prevalent_cases=source_row.get(
+            "numeratorIncludesPrevalentCases",
+            observed.get("numeratorIncludesPrevalentCases"),
+        ),
+    )
+    if denominator_summary["baselineActiveTBCount"] > 0.0:
+        if denominator_summary["numeratorIncludesBaselineActiveTB"] is None:
+            reasons.append(
+                "Baseline active TB is present but numerator composition is ambiguous."
+            )
+        elif denominator_summary["numeratorIncludesBaselineActiveTB"]:
+            reasons.append(
+                "Prospective incident calibration cannot use a numerator that includes baseline active TB."
+            )
+    if denominator_summary["numeratorIncludesPrevalentCases"] is True:
+        reasons.append(
+            "Prospective incident calibration cannot use a numerator that includes prevalent cases."
+        )
     if observed["observedActiveTBCaseCount"] > observed["populationDenominator"]:
         reasons.append("Observed cases cannot exceed the population denominator.")
     return {
@@ -611,6 +801,17 @@ def assess_observation_prospective_calibration_eligibility(
         "horizonYears": horizon,
         "includedPopulationWeight": included_weight,
         "excludedBaselineActiveTBWeight": excluded_baseline,
+        "denominatorSummary": denominator_summary,
+        "ascertainment": {
+            "probability": None
+            if ascertainment_probability is None
+            else _strict_positive_probability(
+                ascertainment_probability,
+                "ascertainment_probability",
+            ),
+            "source": str(ascertainment_source),
+            "reviewStatus": str(ascertainment_review_status),
+        },
     }
 
 
@@ -621,18 +822,37 @@ def expected_prospective_incident_cases_for_observation(
     model_baseline_year: int,
     early_hazard: float,
     remote_hazard: float,
-    ascertainment_probability: float = 1.0,
+    ascertainment_probability: float | None = None,
+    ascertainment_source: str = "",
+    ascertainment_review_status: str = "",
     competing_survival_function: Any = None,
     competing_survival_probability: Any = None,
+    competing_survival_curve: Any = None,
+    competing_mortality_hazard: Any = None,
+    allow_scalar_survival_approximation: bool = False,
+    integration_tolerance: float = DEFAULT_INTEGRATION_TOLERANCE,
 ) -> dict[str, Any]:
-    if competing_survival_function is not None and competing_survival_probability is not None:
+    supplied_survival_specs = [
+        value
+        for value in (
+            competing_survival_function,
+            competing_survival_probability,
+            competing_survival_curve,
+        )
+        if value is not None
+    ]
+    if len(supplied_survival_specs) > 1:
         raise ValueError(
-            "Provide either competing_survival_function or competing_survival_probability, not both."
+            "Provide only one survival-curve input."
         )
     survival_spec = (
         competing_survival_function
         if competing_survival_function is not None
-        else competing_survival_probability
+        else (
+            competing_survival_curve
+            if competing_survival_curve is not None
+            else competing_survival_probability
+        )
     )
     strata_tuple = tuple(strata)
     eligibility = assess_observation_prospective_calibration_eligibility(
@@ -640,6 +860,8 @@ def expected_prospective_incident_cases_for_observation(
         model_baseline_year=model_baseline_year,
         strata=strata_tuple,
         ascertainment_probability=ascertainment_probability,
+        ascertainment_source=ascertainment_source,
+        ascertainment_review_status=ascertainment_review_status,
     )
     if not eligibility["eligible"]:
         raise ValueError(
@@ -653,8 +875,12 @@ def expected_prospective_incident_cases_for_observation(
         early_hazard=early_hazard,
         remote_hazard=remote_hazard,
         default_ascertainment_probability=ascertainment_probability,
-        competing_survival_probability=survival_spec,
+        competing_survival_curve=survival_spec,
+        competing_mortality_hazard=competing_mortality_hazard,
+        allow_scalar_survival_approximation=allow_scalar_survival_approximation,
+        integration_tolerance=integration_tolerance,
     )
+    denominators = eligibility["denominatorSummary"]
     return {
         "contractVersion": PROGRESSION_CONTRACT_VERSION,
         "calibrationContractVersion": PROGRESSION_CALIBRATION_CONTRACT_VERSION,
@@ -665,11 +891,19 @@ def expected_prospective_incident_cases_for_observation(
         "observationHorizonYears": horizon,
         "observedActiveTBCaseCount": observed["observedActiveTBCaseCount"],
         "populationDenominator": observed["populationDenominator"],
+        "sourcePopulationDenominator": denominators["sourcePopulationDenominator"],
+        "baselineActiveTBCount": denominators["baselineActiveTBCount"],
+        "prospectiveAtRiskPopulation": denominators["prospectiveAtRiskPopulation"],
+        "tbiEligiblePopulation": denominators["tbiEligiblePopulation"],
+        "personTimeAtRisk": denominators["personTimeAtRisk"],
+        "denominatorSummary": denominators,
         "personYears": observed["personYears"],
-        "ascertainmentProbability": _probability(
+        "ascertainmentProbability": _strict_positive_probability(
             ascertainment_probability,
             "ascertainment_probability",
         ),
+        "ascertainmentSource": str(ascertainment_source),
+        "ascertainmentReviewStatus": str(ascertainment_review_status),
         "expectedActiveTBCaseCount": expected["expectedCases"],
         "expectedProgression": expected,
         "competingMortality": expected["competingMortality"],
@@ -684,8 +918,12 @@ def evaluate_external_hazard_policy(
     policy: Mapping[str, Any],
     *,
     model_baseline_year: int,
-    ascertainment_probability: float = 1.0,
+    ascertainment_probability: float | None = None,
+    ascertainment_source: str = "",
+    ascertainment_review_status: str = "",
     competing_survival_probability: Any = None,
+    competing_survival_curve: Any = None,
+    competing_mortality_hazard: Any = None,
 ) -> dict[str, Any]:
     validated = validate_progression_calibration_policy(policy)
     if validated["policyId"] != POLICY_EXTERNAL_HAZARDS:
@@ -697,7 +935,11 @@ def evaluate_external_hazard_policy(
         early_hazard=float(validated["earlyHazard"]),
         remote_hazard=float(validated["remoteHazard"]),
         ascertainment_probability=ascertainment_probability,
+        ascertainment_source=ascertainment_source,
+        ascertainment_review_status=ascertainment_review_status,
         competing_survival_probability=competing_survival_probability,
+        competing_survival_curve=competing_survival_curve,
+        competing_mortality_hazard=competing_mortality_hazard,
     )
     return {
         **expected,
@@ -718,8 +960,12 @@ def evaluate_validation_only_policy(
     model_baseline_year: int,
     early_hazard: float,
     remote_hazard: float,
-    ascertainment_probability: float = 1.0,
+    ascertainment_probability: float | None = None,
+    ascertainment_source: str = "",
+    ascertainment_review_status: str = "",
     competing_survival_probability: Any = None,
+    competing_survival_curve: Any = None,
+    competing_mortality_hazard: Any = None,
 ) -> dict[str, Any]:
     validated = validate_progression_calibration_policy(policy)
     if validated["policyId"] != POLICY_VALIDATION_ONLY:
@@ -738,7 +984,11 @@ def evaluate_validation_only_policy(
             early_hazard=early_hazard,
             remote_hazard=remote_hazard,
             ascertainment_probability=ascertainment_probability,
+            ascertainment_source=ascertainment_source,
+            ascertainment_review_status=ascertainment_review_status,
             competing_survival_probability=competing_survival_probability,
+            competing_survival_curve=competing_survival_curve,
+            competing_mortality_hazard=competing_mortality_hazard,
         )
     else:
         messages.append(classified["reason"])
@@ -765,8 +1015,12 @@ def fit_fixed_ratio_progression_scale(
     ratio_source: str,
     ratio_review_status: str,
     ratio_provenance: str,
-    ascertainment_probability: float = 1.0,
+    ascertainment_probability: float | None = None,
+    ascertainment_source: str = "",
+    ascertainment_review_status: str = "",
     competing_survival_probability: Any = None,
+    competing_survival_curve: Any = None,
+    competing_mortality_hazard: Any = None,
     tolerance: float = ROOT_TOLERANCE,
 ) -> dict[str, Any]:
     ratio = _positive_float(early_to_remote_ratio, "early_to_remote_ratio")
@@ -776,12 +1030,31 @@ def fit_fixed_ratio_progression_scale(
         raise ValueError("ratio_review_status must be supplied.")
     if not str(ratio_provenance).strip():
         raise ValueError("ratio_provenance must be supplied.")
+    try:
+        ascertainment = _validate_ascertainment_assumption(
+            ascertainment_probability,
+            ascertainment_source=ascertainment_source,
+            ascertainment_review_status=ascertainment_review_status,
+        )
+    except ValueError as exc:
+        diagnostics = {
+            "contractVersion": PROGRESSION_CALIBRATION_CONTRACT_VERSION,
+            "policyId": POLICY_FIXED_RATIO_FIT_SCALE,
+            "feasibilityStatus": "ineligible_ascertainment_identifiability",
+            "diagnosticMessages": [str(exc)],
+        }
+        raise ProgressionCalibrationError(
+            "Ascertainment must be fixed externally before fixed-ratio calibration.",
+            diagnostics,
+        ) from exc
     strata_tuple = tuple(strata)
     eligibility = assess_observation_prospective_calibration_eligibility(
         row,
         model_baseline_year=model_baseline_year,
         strata=strata_tuple,
-        ascertainment_probability=ascertainment_probability,
+        ascertainment_probability=ascertainment["probability"],
+        ascertainment_source=ascertainment["source"],
+        ascertainment_review_status=ascertainment["reviewStatus"],
     )
     if not eligibility["eligible"]:
         diagnostics = {
@@ -805,8 +1078,10 @@ def fit_fixed_ratio_progression_scale(
             horizon_years=horizon,
             early_hazard=ratio * scale,
             remote_hazard=scale,
-            default_ascertainment_probability=ascertainment_probability,
+            default_ascertainment_probability=ascertainment["probability"],
             competing_survival_probability=competing_survival_probability,
+            competing_survival_curve=competing_survival_curve,
+            competing_mortality_hazard=competing_mortality_hazard,
         )["expectedCases"]
 
     maximum = expected_for_scale(MAX_HAZARD_PER_YEAR)
@@ -816,7 +1091,9 @@ def fit_fixed_ratio_progression_scale(
             requested=requested,
             denominator=denominator,
             horizon=horizon,
-            ascertainment_probability=ascertainment_probability,
+            ascertainment_probability=ascertainment["probability"],
+            ascertainment_source=ascertainment["source"],
+            ascertainment_review_status=ascertainment["reviewStatus"],
             ratio=ratio,
             fitted_remote_hazard=None,
             achieved_expected_cases=maximum,
@@ -848,7 +1125,9 @@ def fit_fixed_ratio_progression_scale(
                 requested=requested,
                 denominator=denominator,
                 horizon=horizon,
-                ascertainment_probability=ascertainment_probability,
+                ascertainment_probability=ascertainment["probability"],
+                ascertainment_source=ascertainment["source"],
+                ascertainment_review_status=ascertainment["reviewStatus"],
                 ratio=ratio,
                 fitted_remote_hazard=None,
                 achieved_expected_cases=expected_for_scale(hi),
@@ -890,8 +1169,10 @@ def fit_fixed_ratio_progression_scale(
         horizon_years=horizon,
         early_hazard=ratio * scale,
         remote_hazard=scale,
-        default_ascertainment_probability=ascertainment_probability,
+        default_ascertainment_probability=ascertainment["probability"],
         competing_survival_probability=competing_survival_probability,
+        competing_survival_curve=competing_survival_curve,
+        competing_mortality_hazard=competing_mortality_hazard,
     )
     concentration = progression_case_concentration_diagnostics(expected["rows"])
     if concentration["shareExpectedCasesTop1PercentByWeight"] > 0.5:
@@ -900,7 +1181,9 @@ def fit_fixed_ratio_progression_scale(
         requested=requested,
         denominator=denominator,
         horizon=horizon,
-        ascertainment_probability=ascertainment_probability,
+        ascertainment_probability=ascertainment["probability"],
+        ascertainment_source=ascertainment["source"],
+        ascertainment_review_status=ascertainment["reviewStatus"],
         ratio=ratio,
         fitted_remote_hazard=scale,
         achieved_expected_cases=expected["expectedCases"],
@@ -1062,7 +1345,15 @@ def assess_progression_policy_identifiability(
     model_baseline_year: int,
     strata_by_target: Iterable[Iterable[Mapping[str, Any]]] | None = None,
     ascertainment_probability: float = 1.0,
+    ascertainment_source: str = "complete ascertainment assumption for structural diagnostic",
+    ascertainment_review_status: str = "diagnostic_only",
     early_to_remote_ratio: float | None = None,
+    condition_number_review_threshold: float = (
+        PRACTICAL_IDENTIFIABILITY_CONDITION_NUMBER_THRESHOLD
+    ),
+    composition_contrast_review_threshold: float = (
+        PRACTICAL_IDENTIFIABILITY_COMPOSITION_CONTRAST_THRESHOLD
+    ),
 ) -> dict[str, Any]:
     policy = str(policy_id)
     target_tuple = tuple(targets)
@@ -1077,6 +1368,7 @@ def assess_progression_policy_identifiability(
     messages: list[str] = []
     sensitivity_vectors: list[tuple[float, float]] = []
     rank = 0
+    singular_diagnostics: dict[str, Any] = _sensitivity_singular_diagnostics(())
     if strata_groups is not None:
         for target, strata in zip(target_tuple, strata_groups):
             assessment = assess_observation_prospective_calibration_eligibility(
@@ -1084,6 +1376,8 @@ def assess_progression_policy_identifiability(
                 model_baseline_year=model_baseline_year,
                 strata=strata,
                 ascertainment_probability=ascertainment_probability,
+                ascertainment_source=ascertainment_source,
+                ascertainment_review_status=ascertainment_review_status,
             )
             if assessment["eligible"]:
                 sensitivity_vectors.append(
@@ -1093,7 +1387,11 @@ def assess_progression_policy_identifiability(
                         ascertainment_probability=ascertainment_probability,
                     )
                 )
-        rank = _rank_2d(sensitivity_vectors)
+        singular_diagnostics = _sensitivity_singular_diagnostics(
+            sensitivity_vectors,
+            rank_tolerance=1e-10,
+        )
+        rank = int(singular_diagnostics["rank"])
     if policy == POLICY_EXTERNAL_HAZARDS:
         status = "no_fitting_required"
         identified = True
@@ -1112,7 +1410,24 @@ def assess_progression_policy_identifiability(
         identified = True
         messages.append("Validation-only policy does not estimate progression hazards.")
     elif policy == POLICY_JOINT_EARLY_REMOTE_HAZARDS:
-        identified = len(eligible) >= 2 and rank >= 2
+        condition_threshold = _positive_float(
+            condition_number_review_threshold,
+            "condition_number_review_threshold",
+        )
+        contrast_threshold = _probability(
+            composition_contrast_review_threshold,
+            "composition_contrast_review_threshold",
+        )
+        condition_number = singular_diagnostics["conditionNumber"]
+        composition_contrast = singular_diagnostics["compositionContrast"]
+        structural = len(eligible) >= 2 and rank >= 2
+        practical = (
+            structural
+            and math.isfinite(condition_number)
+            and condition_number <= condition_threshold
+            and composition_contrast >= contrast_threshold
+        )
+        identified = practical
         status = "available" if identified else "unavailable_nonidentifiable"
         if len(eligible) < 2:
             messages.append(
@@ -1121,6 +1436,10 @@ def assess_progression_policy_identifiability(
         if len(eligible) >= 2 and rank < 2:
             messages.append(
                 "Targets with identical or near-identical recent/remote sensitivity do not add independent information."
+            )
+        if structural and not practical:
+            messages.append(
+                "Sensitivity rank is not sufficient; practical identifiability review failed under numerical conditioning/composition rules."
             )
     else:
         raise ValueError("Unsupported policy_id for identifiability assessment.")
@@ -1134,6 +1453,20 @@ def assess_progression_policy_identifiability(
             {"early": vector[0], "remote": vector[1]} for vector in sensitivity_vectors
         ],
         "sensitivityRank": rank,
+        "singularValues": singular_diagnostics["singularValues"],
+        "conditionNumber": singular_diagnostics["conditionNumber"],
+        "compositionContrast": singular_diagnostics["compositionContrast"],
+        "practicalIdentifiability": {
+            "conditionNumberReviewThreshold": condition_number_review_threshold,
+            "compositionContrastReviewThreshold": composition_contrast_review_threshold,
+            "thresholdMeaning": "numerical review rule, not biological evidence",
+            "profileLikelihoodStatus": (
+                "not_implemented; required before production joint estimation"
+            ),
+            "parameterBoundaryStatus": (
+                "not_evaluated; boundary effects must be reviewed before production"
+            ),
+        },
         "classifiedTargets": classified,
         "diagnosticMessages": messages,
     }
@@ -1146,6 +1479,10 @@ def target_progression_sensitivity_vector(
     ascertainment_probability: float = 1.0,
     competing_survival_probability: Any = None,
 ) -> tuple[float, float]:
+    if competing_survival_probability is not None:
+        raise ValueError(
+            "Competing survival is not supported in this linear sensitivity diagnostic; use expected-case competing-risk functions for mortality-aware calculations."
+        )
     horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
     q_default = _probability(ascertainment_probability, "ascertainment_probability")
     early = 0.0
@@ -1168,17 +1505,11 @@ def target_progression_sensitivity_vector(
             row.get("ascertainmentProbability", q_default),
             f"strata[{idx}].ascertainmentProbability",
         )
-        survival = _survival_probability_at(
-            competing_survival_probability,
-            horizon,
-            row,
-            f"strata[{idx}].competingSurvivalProbability",
-        )
         if state == STATE_RECENT:
-            early += weight * multiplier * min(horizon, remaining) * ascertainment * survival
-            remote += weight * multiplier * max(0.0, horizon - remaining) * ascertainment * survival
+            early += weight * multiplier * min(horizon, remaining) * ascertainment
+            remote += weight * multiplier * max(0.0, horizon - remaining) * ascertainment
         elif state == STATE_REMOTE_ONLY:
-            remote += weight * multiplier * horizon * ascertainment * survival
+            remote += weight * multiplier * horizon * ascertainment
     return (early, remote)
 
 
@@ -1188,6 +1519,7 @@ def build_risk_factor_application_policy(
     reviewed_factor_names: Iterable[str] = (),
     review_warning_threshold: float = DEFAULT_REVIEW_WARNING_MULTIPLIER,
     review_block_threshold: float = DEFAULT_REVIEW_BLOCK_MULTIPLIER,
+    production_default: bool = False,
 ) -> dict[str, Any]:
     policy = str(policy_id)
     if policy not in {
@@ -1200,12 +1532,18 @@ def build_risk_factor_application_policy(
     blocking = _positive_float(review_block_threshold, "review_block_threshold")
     if blocking < warning:
         raise ValueError("review_block_threshold must be at least review_warning_threshold.")
+    if production_default and policy == RISK_POLICY_LEGACY_OR_AS_HAZARD_DIAGNOSTIC:
+        raise ValueError(
+            "legacy_or_as_hazard_diagnostic_only cannot be selected as a production/default runner policy."
+        )
     reviewed = tuple(str(name) for name in reviewed_factor_names)
     return {
         "policyId": policy,
         "reviewedFactorNames": list(reviewed),
         "reviewWarningThreshold": warning,
         "reviewBlockThreshold": blocking,
+        "productionDefault": bool(production_default),
+        "recommendedProductionPolicy": RECOMMENDED_PRODUCTION_RISK_POLICY,
         "scientificStatus": (
             "scientifically_provisional_diagnostic"
             if policy == RISK_POLICY_LEGACY_OR_AS_HAZARD_DIAGNOSTIC
@@ -1231,6 +1569,7 @@ def risk_factor_multiplier_for_row(
             "reviewBlockThreshold",
             DEFAULT_REVIEW_BLOCK_MULTIPLIER,
         ),
+        production_default=bool(policy.get("productionDefault", False)),
     )
     reviewed_names = set(validated_policy["reviewedFactorNames"])
     multiplier = 1.0
@@ -1439,7 +1778,9 @@ def fixed_ratio_calibration_multiplier_sensitivity(
     ratio_source: str,
     ratio_review_status: str,
     ratio_provenance: str,
-    ascertainment_probability: float = 1.0,
+    ascertainment_probability: float | None = None,
+    ascertainment_source: str = "",
+    ascertainment_review_status: str = "",
 ) -> tuple[dict[str, Any], ...]:
     results = []
     for scenario in scenarios:
@@ -1458,6 +1799,8 @@ def fixed_ratio_calibration_multiplier_sensitivity(
             ratio_review_status=ratio_review_status,
             ratio_provenance=ratio_provenance,
             ascertainment_probability=ascertainment_probability,
+            ascertainment_source=ascertainment_source,
+            ascertainment_review_status=ascertainment_review_status,
         )
         diagnostics = risk_factor_multiplier_diagnostics(
             enriched_rows,
@@ -1524,6 +1867,8 @@ def worked_progression_calibration_examples() -> tuple[dict[str, Any], ...]:
         ratio_review_status="unreviewed_synthetic",
         ratio_provenance="not a reviewed default",
         ascertainment_probability=1.0,
+        ascertainment_source="synthetic complete ascertainment assumption",
+        ascertainment_review_status="unreviewed_synthetic",
     )
     incomplete = fit_fixed_ratio_progression_scale(
         target,
@@ -1534,6 +1879,8 @@ def worked_progression_calibration_examples() -> tuple[dict[str, Any], ...]:
         ratio_review_status="unreviewed_synthetic",
         ratio_provenance="not a reviewed default",
         ascertainment_probability=0.5,
+        ascertainment_source="synthetic incomplete ascertainment assumption",
+        ascertainment_review_status="unreviewed_synthetic",
     )
     survival = fit_fixed_ratio_progression_scale(
         target,
@@ -1544,7 +1891,9 @@ def worked_progression_calibration_examples() -> tuple[dict[str, Any], ...]:
         ratio_review_status="unreviewed_synthetic",
         ratio_provenance="not a reviewed default",
         ascertainment_probability=1.0,
-        competing_survival_probability=0.8,
+        ascertainment_source="synthetic complete ascertainment assumption",
+        ascertainment_review_status="unreviewed_synthetic",
+        competing_mortality_hazard=0.01,
     )
     zero_target = fit_fixed_ratio_progression_scale(
         {**target, "observationId": "worked-zero", "observedActiveTBCaseCount": 0},
@@ -1555,6 +1904,8 @@ def worked_progression_calibration_examples() -> tuple[dict[str, Any], ...]:
         ratio_review_status="unreviewed_synthetic",
         ratio_provenance="not a reviewed default",
         ascertainment_probability=1.0,
+        ascertainment_source="synthetic complete ascertainment assumption",
+        ascertainment_review_status="unreviewed_synthetic",
     )
     multiplier_sensitivity = fixed_ratio_calibration_multiplier_sensitivity(
         target,
@@ -1595,6 +1946,9 @@ def worked_progression_calibration_examples() -> tuple[dict[str, Any], ...]:
         ratio_source="synthetic worked example",
         ratio_review_status="unreviewed_synthetic",
         ratio_provenance="not a reviewed default",
+        ascertainment_probability=1.0,
+        ascertainment_source="synthetic complete ascertainment assumption",
+        ascertainment_review_status="unreviewed_synthetic",
     )
     validation_policy = build_progression_calibration_policy(
         policy_id=POLICY_VALIDATION_ONLY,
@@ -1629,6 +1983,9 @@ def worked_progression_calibration_examples() -> tuple[dict[str, Any], ...]:
         ratio_source="synthetic worked example",
         ratio_review_status="unreviewed_synthetic",
         ratio_provenance="not a reviewed default",
+        ascertainment_probability=1.0,
+        ascertainment_source="synthetic complete ascertainment assumption",
+        ascertainment_review_status="unreviewed_synthetic",
     )[0]
     impossible = None
     try:
@@ -1641,6 +1998,8 @@ def worked_progression_calibration_examples() -> tuple[dict[str, Any], ...]:
             ratio_review_status="unreviewed_synthetic",
             ratio_provenance="not a reviewed default",
             ascertainment_probability=1.0,
+            ascertainment_source="synthetic complete ascertainment assumption",
+            ascertainment_review_status="unreviewed_synthetic",
         )
     except ProgressionCalibrationError as exc:
         impossible = exc.diagnostics
@@ -1652,6 +2011,9 @@ def worked_progression_calibration_examples() -> tuple[dict[str, Any], ...]:
                 strata,
                 external_policy,
                 model_baseline_year=2026,
+                ascertainment_probability=1.0,
+                ascertainment_source="synthetic complete ascertainment assumption",
+                ascertainment_review_status="unreviewed_synthetic",
             ),
         },
         {"exampleId": "eligible_fixed_ratio_fit", "result": fixed},
@@ -1822,12 +2184,491 @@ def synthetic_natural_history_cost_invariance_example(
     }
 
 
+def ascertainment_progression_scale_confounding_diagnostic(
+    *,
+    observed_cases: float,
+    expected_true_cases_at_scale: float,
+    ascertainment_probability: float,
+) -> dict[str, Any]:
+    observed = _finite_nonnegative_float(observed_cases, "observed_cases")
+    expected_true = _positive_float(
+        expected_true_cases_at_scale,
+        "expected_true_cases_at_scale",
+    )
+    q = _strict_positive_probability(
+        ascertainment_probability,
+        "ascertainment_probability",
+    )
+    required_scale_multiplier = observed / (q * expected_true)
+    return {
+        "observedCases": observed,
+        "expectedTrueCasesAtUnitScale": expected_true,
+        "ascertainmentProbability": q,
+        "requiredProgressionScaleMultiplier": required_scale_multiplier,
+        "identifiabilityStatus": "q_and_progression_scale_are_confounding_without_external_q",
+        "diagnosticMessage": (
+            "For E[C]=q E[C_true(k)], lower q can be offset by higher progression scale."
+        ),
+    }
+
+
+def _validate_ascertainment_assumption(
+    ascertainment_probability: float | None,
+    *,
+    ascertainment_source: str,
+    ascertainment_review_status: str,
+) -> dict[str, Any]:
+    if ascertainment_probability is None:
+        raise ValueError(
+            "ascertainment_probability must be fixed externally before Policy B can fit."
+        )
+    q = _strict_positive_probability(
+        ascertainment_probability,
+        "ascertainment_probability",
+    )
+    source = str(ascertainment_source or "").strip()
+    review_status = str(ascertainment_review_status or "").strip()
+    if not source:
+        raise ValueError("ascertainment_source must be supplied.")
+    if not review_status:
+        raise ValueError("ascertainment_review_status must be supplied.")
+    if q == 1.0 and "complete" not in source.lower():
+        raise ValueError(
+            "q=1 requires an explicit complete-ascertainment assumption in ascertainment_source."
+        )
+    return {
+        "probability": q,
+        "source": source,
+        "reviewStatus": review_status,
+    }
+
+
+def _progression_denominator_summary(
+    observed: Mapping[str, Any],
+    *,
+    strata: Iterable[Mapping[str, Any]],
+    horizon_years: float,
+    numerator_includes_baseline_active_tb: Any = None,
+    numerator_includes_prevalent_cases: Any = None,
+) -> dict[str, Any]:
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    prepared = _prepare_progression_strata(strata)
+    prospective_at_risk = sum(row["weight"] for row in prepared["includedRows"])
+    baseline_active = float(prepared["excludedBaselineActiveTBWeight"])
+    source_denominator = float(observed["populationDenominator"])
+    supplied_person_years = observed.get("personYears")
+    if supplied_person_years is None:
+        person_time = prospective_at_risk * horizon
+        person_time_source = "calculated_from_prospective_at_risk_population_and_horizon"
+    else:
+        person_time = float(supplied_person_years)
+        person_time_source = "source_observation_person_years"
+    return {
+        "sourcePopulationDenominator": source_denominator,
+        "sourceObservedActiveTBCaseCount": float(observed["observedActiveTBCaseCount"]),
+        "baselineActiveTBCount": baseline_active,
+        "prospectiveAtRiskPopulation": prospective_at_risk,
+        "personTimeAtRisk": person_time,
+        "personTimeAtRiskSource": person_time_source,
+        "tbiEligiblePopulation": prospective_at_risk,
+        "sourceDenominatorPreserved": True,
+        "numeratorIncludesBaselineActiveTB": _optional_bool_from_any(
+            numerator_includes_baseline_active_tb,
+            "numeratorIncludesBaselineActiveTB",
+        ),
+        "numeratorIncludesPrevalentCases": _optional_bool_from_any(
+            numerator_includes_prevalent_cases,
+            "numeratorIncludesPrevalentCases",
+        ),
+        "denominatorRelationship": (
+            "source denominator is preserved separately from modelled at-risk and TBI-eligible counts"
+        ),
+    }
+
+
+def _resolve_competing_mortality_inputs(
+    *,
+    competing_survival_probability: Any,
+    competing_survival_curve: Any,
+    competing_mortality_hazard: Any,
+    allow_scalar_survival_approximation: bool,
+) -> dict[str, Any]:
+    supplied = [
+        value
+        for value in (
+            competing_survival_probability,
+            competing_survival_curve,
+            competing_mortality_hazard,
+        )
+        if value is not None
+    ]
+    if len(supplied) > 1:
+        raise ValueError(
+            "Provide only one competing-mortality input: survival probability, survival curve or mortality hazard."
+        )
+    if competing_mortality_hazard is not None:
+        return {
+            "mode": COMPETING_MORTALITY_CONSTANT_HAZARD,
+            "integrationMethod": INTEGRATION_ANALYTIC_PIECEWISE_CONSTANT,
+            "mortalityHazard": competing_mortality_hazard,
+            "survivalCurve": None,
+        }
+    if competing_survival_curve is not None:
+        return {
+            "mode": COMPETING_MORTALITY_SURVIVAL_CURVE,
+            "integrationMethod": INTEGRATION_NUMERICAL_TRAPEZOID,
+            "mortalityHazard": None,
+            "survivalCurve": competing_survival_curve,
+        }
+    if competing_survival_probability is not None:
+        if callable(competing_survival_probability) or isinstance(
+            competing_survival_probability,
+            Mapping,
+        ):
+            return {
+                "mode": COMPETING_MORTALITY_SURVIVAL_CURVE,
+                "integrationMethod": INTEGRATION_NUMERICAL_TRAPEZOID,
+                "mortalityHazard": None,
+                "survivalCurve": competing_survival_probability,
+            }
+        if not allow_scalar_survival_approximation:
+            raise ValueError(
+                "A scalar horizon survival probability is insufficient for production competing-risk cumulative incidence."
+            )
+        return {
+            "mode": COMPETING_MORTALITY_SCALAR_APPROXIMATION,
+            "integrationMethod": COMPETING_MORTALITY_SCALAR_APPROXIMATION,
+            "mortalityHazard": None,
+            "survivalCurve": None,
+            "scalarSurvival": competing_survival_probability,
+        }
+    return {
+        "mode": COMPETING_MORTALITY_NOT_MODELLED,
+        "integrationMethod": "closed_form_no_competing_mortality",
+        "mortalityHazard": None,
+        "survivalCurve": None,
+    }
+
+
+def _analytic_competing_incidence(
+    *,
+    state: str,
+    horizon_years: float,
+    early_hazard: float,
+    remote_hazard: float,
+    multiplier: float,
+    remaining_early_risk_years: float,
+    death_hazard: float,
+) -> float:
+    segments = _tb_hazard_segments(
+        state=state,
+        horizon_years=horizon_years,
+        early_hazard=early_hazard,
+        remote_hazard=remote_hazard,
+        multiplier=multiplier,
+        remaining_early_risk_years=remaining_early_risk_years,
+    )
+    cumulative_tb = 0.0
+    probability = 0.0
+    for start, end, tb_hazard in segments:
+        duration = end - start
+        if duration <= 0.0:
+            continue
+        if tb_hazard <= 0.0:
+            cumulative_tb += tb_hazard * duration
+            continue
+        total_hazard = tb_hazard + death_hazard
+        survival_to_start = math.exp(-(cumulative_tb + death_hazard * start))
+        if total_hazard == 0.0:
+            contribution = survival_to_start * tb_hazard * duration
+        else:
+            contribution = (
+                survival_to_start
+                * tb_hazard
+                * (-math.expm1(-total_hazard * duration))
+                / total_hazard
+            )
+        probability += contribution
+        cumulative_tb += tb_hazard * duration
+    return min(max(probability, 0.0), 1.0)
+
+
+def _numerical_competing_incidence_with_survival_curve(
+    *,
+    state: str,
+    horizon_years: float,
+    early_hazard: float,
+    remote_hazard: float,
+    multiplier: float,
+    remaining_early_risk_years: float,
+    survival_at,
+    integration_steps: int,
+) -> float:
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    if horizon == 0.0:
+        return 0.0
+    steps = int(integration_steps)
+    if steps < 16:
+        raise ValueError("integration_steps must be at least 16.")
+    breakpoints = {0.0, horizon}
+    remaining = _finite_nonnegative_float(
+        remaining_early_risk_years,
+        "remaining_early_risk_years",
+    )
+    if 0.0 < remaining < horizon:
+        breakpoints.add(remaining)
+    probability = 0.0
+    sorted_points = sorted(breakpoints)
+    for left, right in zip(sorted_points[:-1], sorted_points[1:]):
+        width = right - left
+        if width <= 0.0:
+            continue
+        local_steps = max(16, int(math.ceil(steps * width / horizon)))
+        dt = width / local_steps
+        previous = _competing_integrand(
+            left,
+            state=state,
+            early_hazard=early_hazard,
+            remote_hazard=remote_hazard,
+            multiplier=multiplier,
+            remaining_early_risk_years=remaining,
+            death_survival=survival_at(left),
+        )
+        segment = 0.0
+        for step in range(1, local_steps + 1):
+            t = left + step * dt
+            current = _competing_integrand(
+                t,
+                state=state,
+                early_hazard=early_hazard,
+                remote_hazard=remote_hazard,
+                multiplier=multiplier,
+                remaining_early_risk_years=remaining,
+                death_survival=survival_at(t),
+            )
+            segment += 0.5 * (previous + current) * dt
+            previous = current
+        probability += segment
+    return min(max(probability, 0.0), 1.0)
+
+
+def _competing_integrand(
+    time_years: float,
+    *,
+    state: str,
+    early_hazard: float,
+    remote_hazard: float,
+    multiplier: float,
+    remaining_early_risk_years: float,
+    death_survival: float,
+) -> float:
+    tb_survival = progression_survival_probability(
+        state=state,
+        horizon_years=time_years,
+        early_hazard=early_hazard,
+        remote_hazard=remote_hazard,
+        multiplier=multiplier,
+        remaining_early_risk_years=remaining_early_risk_years,
+    )
+    tb_hazard = progression_piecewise_hazard(
+        state=state,
+        time_years=time_years,
+        early_hazard=early_hazard,
+        remote_hazard=remote_hazard,
+        multiplier=multiplier,
+        remaining_early_risk_years=remaining_early_risk_years,
+    )
+    return tb_survival * death_survival * tb_hazard
+
+
+def _tb_hazard_segments(
+    *,
+    state: str,
+    horizon_years: float,
+    early_hazard: float,
+    remote_hazard: float,
+    multiplier: float,
+    remaining_early_risk_years: float,
+) -> tuple[tuple[float, float, float], ...]:
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    state_key = _state_key(state)
+    early = _finite_nonnegative_float(early_hazard, "early_hazard")
+    late = _finite_nonnegative_float(remote_hazard, "remote_hazard")
+    mult = _finite_nonnegative_float(multiplier, "multiplier")
+    remaining = _finite_nonnegative_float(
+        remaining_early_risk_years,
+        "remaining_early_risk_years",
+    )
+    if horizon == 0.0 or state_key == STATE_UNINFECTED:
+        return ()
+    if state_key == STATE_REMOTE_ONLY:
+        return ((0.0, horizon, mult * late),)
+    early_end = min(horizon, remaining)
+    segments = []
+    if early_end > 0.0:
+        segments.append((0.0, early_end, mult * early))
+    if horizon > early_end:
+        segments.append((early_end, horizon, mult * late))
+    return tuple(segments)
+
+
+def _validate_survival_curve(
+    survival_spec: Any,
+    *,
+    horizon_years: float,
+    integration_steps: int,
+):
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    steps = int(integration_steps)
+    if steps < 16:
+        raise ValueError("integration_steps must be at least 16.")
+    if callable(survival_spec):
+        times = [horizon * idx / min(steps, 128) for idx in range(min(steps, 128) + 1)]
+
+        def survival_at_callable(t: float) -> float:
+            try:
+                value = survival_spec(t)
+            except TypeError:
+                value = survival_spec(t, {})
+            return _probability(value, "competing_survival_curve")
+
+        _validate_survival_values(times, [survival_at_callable(t) for t in times])
+        return survival_at_callable
+    if isinstance(survival_spec, Mapping):
+        raw_points = sorted((float(key), value) for key, value in survival_spec.items())
+    else:
+        raw_points = []
+        for item in survival_spec:
+            if isinstance(item, Mapping):
+                raw_points.append((float(item["timeYears"]), item["survivalProbability"]))
+            else:
+                time_value, survival_value = item
+                raw_points.append((float(time_value), survival_value))
+        raw_points.sort()
+    if not raw_points:
+        raise ValueError("competing_survival_curve must include at least time 0.")
+    times = [point[0] for point in raw_points]
+    values = [_probability(point[1], "competing_survival_curve") for point in raw_points]
+    _validate_survival_values(times, values)
+    if times[-1] < horizon - 1e-12:
+        raise ValueError("competing_survival_curve must cover the observation horizon.")
+
+    def survival_at_points(t: float) -> float:
+        if t <= times[0]:
+            return values[0]
+        for idx in range(1, len(times)):
+            if t <= times[idx]:
+                left_t = times[idx - 1]
+                right_t = times[idx]
+                left_s = values[idx - 1]
+                right_s = values[idx]
+                if right_t == left_t:
+                    return right_s
+                fraction = (t - left_t) / (right_t - left_t)
+                return left_s + fraction * (right_s - left_s)
+        return values[-1]
+
+    return survival_at_points
+
+
+def _validate_survival_values(times: Iterable[float], values: Iterable[float]) -> None:
+    time_tuple = tuple(float(value) for value in times)
+    value_tuple = tuple(float(value) for value in values)
+    if len(time_tuple) != len(value_tuple):
+        raise ValueError("survival times and values must have the same length.")
+    if not time_tuple or abs(time_tuple[0]) > 1e-12:
+        raise ValueError("competing survival must begin at time 0.")
+    if abs(value_tuple[0] - 1.0) > 1e-10:
+        raise ValueError("competing survival must begin at one.")
+    previous_time = time_tuple[0]
+    previous_value = value_tuple[0]
+    for time_value, survival_value in zip(time_tuple, value_tuple):
+        if not math.isfinite(time_value) or time_value < 0.0:
+            raise ValueError("survival times must be finite and non-negative.")
+        if time_value < previous_time - 1e-12:
+            raise ValueError("survival times must be non-decreasing.")
+        if not math.isfinite(survival_value) or survival_value < 0.0 or survival_value > 1.0:
+            raise ValueError("survival probabilities must be finite and in [0,1].")
+        if survival_value > previous_value + 1e-10:
+            raise ValueError("competing survival must be non-increasing.")
+        previous_time = time_value
+        previous_value = survival_value
+
+
+def _sensitivity_singular_diagnostics(
+    vectors: Iterable[tuple[float, float]],
+    *,
+    rank_tolerance: float = 1e-10,
+) -> dict[str, Any]:
+    vector_tuple = tuple(vectors)
+    nonzero = [
+        vector for vector in vector_tuple if abs(vector[0]) > rank_tolerance or abs(vector[1]) > rank_tolerance
+    ]
+    if not nonzero:
+        return {
+            "rank": 0,
+            "singularValues": (0.0, 0.0),
+            "conditionNumber": math.inf,
+            "compositionContrast": 0.0,
+        }
+    a = sum(vector[0] * vector[0] for vector in nonzero)
+    b = sum(vector[0] * vector[1] for vector in nonzero)
+    c = sum(vector[1] * vector[1] for vector in nonzero)
+    trace = a + c
+    disc = max((a - c) * (a - c) + 4.0 * b * b, 0.0)
+    lambda_1 = max((trace + math.sqrt(disc)) / 2.0, 0.0)
+    lambda_2 = max((trace - math.sqrt(disc)) / 2.0, 0.0)
+    s1 = math.sqrt(lambda_1)
+    s2 = math.sqrt(lambda_2)
+    if s1 <= rank_tolerance:
+        rank = 0
+    elif s2 <= rank_tolerance:
+        rank = 1
+    else:
+        rank = 2
+    condition = math.inf if s2 <= rank_tolerance else s1 / s2
+    composition_contrast = 0.0
+    for i, left in enumerate(nonzero):
+        left_norm = math.hypot(left[0], left[1])
+        for right in nonzero[i + 1 :]:
+            right_norm = math.hypot(right[0], right[1])
+            if left_norm == 0.0 or right_norm == 0.0:
+                continue
+            determinant = abs(left[0] * right[1] - left[1] * right[0])
+            composition_contrast = max(
+                composition_contrast,
+                determinant / (left_norm * right_norm),
+            )
+    return {
+        "rank": rank,
+        "singularValues": (s1, s2),
+        "conditionNumber": condition,
+        "compositionContrast": composition_contrast,
+    }
+
+
+def _optional_bool_from_any(value: Any, label: str) -> bool | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "1"}:
+            return True
+        if normalized in {"false", "no", "0"}:
+            return False
+    raise ValueError(f"{label} must be true, false or omitted.")
+
+
 def _fixed_ratio_result(
     *,
     requested: float,
     denominator: float,
     horizon: float,
     ascertainment_probability: float,
+    ascertainment_source: str,
+    ascertainment_review_status: str,
     ratio: float,
     fitted_remote_hazard: float | None,
     achieved_expected_cases: float,
@@ -1849,11 +2690,38 @@ def _fixed_ratio_result(
         "policyId": POLICY_FIXED_RATIO_FIT_SCALE,
         "requestedCases": float(requested),
         "denominator": float(denominator),
+        "sourcePopulationDenominator": float(
+            eligibility.get("denominatorSummary", {}).get(
+                "sourcePopulationDenominator",
+                denominator,
+            )
+        ),
+        "baselineActiveTBCount": float(
+            eligibility.get("denominatorSummary", {}).get("baselineActiveTBCount", 0.0)
+        ),
+        "prospectiveAtRiskPopulation": float(
+            eligibility.get("denominatorSummary", {}).get(
+                "prospectiveAtRiskPopulation",
+                eligibility.get("includedPopulationWeight", 0.0),
+            )
+        ),
+        "tbiEligiblePopulation": float(
+            eligibility.get("denominatorSummary", {}).get(
+                "tbiEligiblePopulation",
+                eligibility.get("includedPopulationWeight", 0.0),
+            )
+        ),
+        "personTimeAtRisk": eligibility.get("denominatorSummary", {}).get(
+            "personTimeAtRisk"
+        ),
+        "denominatorSummary": dict(eligibility.get("denominatorSummary", {})),
         "horizonYears": float(horizon),
         "ascertainmentProbability": _probability(
             ascertainment_probability,
             "ascertainment_probability",
         ),
+        "ascertainmentSource": str(ascertainment_source),
+        "ascertainmentReviewStatus": str(ascertainment_review_status),
         "suppliedEarlyToRemoteRatio": float(ratio),
         "fittedRemoteHazard": remote_hazard,
         "derivedEarlyHazard": early_hazard,
@@ -2032,4 +2900,11 @@ def _probability(value: Any, label: str) -> float:
     number = float(value)
     if not math.isfinite(number) or number < 0.0 or number > 1.0:
         raise ValueError(f"{label} must be a finite probability in [0,1].")
+    return number
+
+
+def _strict_positive_probability(value: Any, label: str) -> float:
+    number = _probability(value, label)
+    if number <= 0.0:
+        raise ValueError(f"{label} must be in (0,1].")
     return number

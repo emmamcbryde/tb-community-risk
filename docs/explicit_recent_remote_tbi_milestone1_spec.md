@@ -29,6 +29,17 @@ pure code only and still does not connect the pathway to the runner, Streamlit
 UI, population generation, interventions, event ledger, economics, DALYs,
 MATLAB, frozen-reference loading or the dynamic-transmission model.
 
+Milestone 2D corrects calibration-audit issues before any runner integration:
+denominator concepts are separated, competing mortality is treated as a
+cause-specific competing-risk integral rather than horizon survival
+multiplication, ascertainment is required as an externally fixed assumption
+for Policy B, practical identifiability checks are strengthened, the initial
+production risk-factor policy is `none`, and candidate natural-history
+parameterisations are documented from a focused evidence review. It remains
+pure code only and still does not connect the pathway to the runner,
+Streamlit UI, population generation, interventions, event ledger, economics,
+DALYs, MATLAB, frozen-reference loading or the dynamic-transmission model.
+
 ## Selected identifiers
 
 - Analysis basis: `explicit_recent_remote_tbi_foundation_v1`
@@ -484,18 +495,53 @@ evidence.
 The inherited default OR-labelled effects can still combine to `2916` under
 legacy diagnostic multiplication.
 
-## Competing-mortality interface
+## Corrected competing-mortality interface
 
-Expected-case functions accept no-mortality mode, a scalar external survival
-probability, a horizon-indexed survival mapping or a callable survival
-function. When omitted, outputs record:
+Milestone 2D removes scalar horizon survival from production-capable
+expected-case calculations. A scalar `S_D(T)` cannot reconstruct the
+competing-risk cumulative incidence curve and must not be used as:
 
 ```text
-competingMortality = not_modelled
+P(TB by T) * S_D(T)
 ```
 
-and include a long-horizon limitation. Applying an external survival
-probability can lower or preserve expected cases; it cannot increase them.
+For a cause-specific TB progression hazard `h_TB(t)` and external competing
+death survival `S_D(t)`, prospective TB cumulative incidence is:
+
+```text
+F_TB(T) = integral_0^T S_TB(t) S_D(t) h_TB(t) dt
+```
+
+where:
+
+```text
+S_TB(t) = exp[-integral_0^t h_TB(u) du]
+```
+
+The pure functions now support:
+
+- no competing mortality, recorded as `competingMortality = not_modelled`;
+- an externally supplied constant death hazard, integrated analytically across
+  the early/late TB-hazard boundary;
+- an externally supplied survival curve, validated to start at one, remain
+  finite, lie in `[0,1]`, be non-increasing and cover the horizon, then
+  integrated numerically by trapezoid quadrature.
+
+Scalar horizon survival can only be used behind an explicit
+`allow_scalar_survival_approximation=True` flag and is labelled
+`scalar_horizon_survival_nonproduction_approximation`. It is not used by
+Milestone 2D tests, examples or fitting policies.
+
+For a constant TB hazard `h_TB` and constant death hazard `h_D`, the analytic
+test identity is:
+
+```text
+F_TB(T) = h_TB / (h_TB + h_D) * [1 - exp{-(h_TB + h_D)T}]
+```
+
+For piecewise early/late TB hazards the same expression is evaluated by
+segment, carrying forward TB survival and death survival at each segment
+start. Including competing mortality cannot increase expected TB cases.
 
 ## Inherited progression audit
 
@@ -754,11 +800,147 @@ specified. These are not reviewed defaults.
 | impossible high target | rejected as `infeasible_above_achievable_range`; maximum achievable cases `300` |
 | zero-case target | fitted `lambda_E=lambda_L=0` |
 | incomplete ascertainment `q=0.5` | fitted `k=0.00338139`; ascertainment retained explicitly |
-| external survival probability `0.8` | fitted `k=0.00210198`; mortality mode recorded as external survival |
+| external constant death hazard `0.01` | fitted `k=lambda_L=0.00168702`, `lambda_E=0.01687023`; mortality mode recorded as external constant mortality hazard |
 
 The multiplier examples show that calibration can shrink the fitted baseline
 hazard when high multipliers are present. The concentration diagnostics are
 therefore part of the calibration output and should not be suppressed.
+
+## Milestone 2D calibration audit corrections
+
+Denominator semantics are now explicit:
+
+- `sourcePopulationDenominator`: denominator recorded in the observed data.
+  It is preserved and is not silently rewritten.
+- `baselineActiveTBCount`: people already in the baseline/prevalent
+  active-TB state. They are excluded from TBI states and prospective
+  progression calculations.
+- `prospectiveAtRiskPopulation`: non-baseline-active-TB population eligible
+  to contribute a first prospective incident active-TB event.
+- `personTimeAtRisk`: supplied person-years when present, otherwise a
+  labelled calculation from prospective at-risk population and horizon.
+- `tbiEligiblePopulation`: non-baseline-active-TB population potentially
+  entering future TBI screening/TPT sequencing. This is separate from the
+  observed source denominator.
+
+If baseline active TB is present and the observed numerator does not state
+whether baseline/prevalent cases are included, fitting is blocked. If the
+numerator explicitly includes baseline/prevalent active TB, prospective
+incident calibration is also blocked. Example: a source row with 10 cases
+among 1,500 people and two baseline active-TB cases still reports
+`sourcePopulationDenominator = 1500`; the at-risk population is reported
+separately as 1,498, and fitting proceeds only if the numerator explicitly
+excludes baseline/prevalent disease.
+
+Ascertainment is now a fitted-policy requirement, not a hidden default. Policy
+B requires `q` to be fixed externally, in `(0,1]`, sourced and assigned review
+status. If `q=1`, the source must state that complete ascertainment is an
+explicit assumption. With `E[C]=q E[C_true(k)]`, one aggregate count cannot
+identify both `q` and the progression scale `k`; lower `q` can be offset by a
+higher fitted scale.
+
+Policy D now requires structural and practical identifiability. Diagnostics
+include sensitivity/Jacobian rank, singular values, condition number,
+recent/remote composition contrast, and flags stating that profile-likelihood
+width and parameter-boundary effects remain required before production joint
+estimation. The condition-number and composition-contrast thresholds are
+numerical review rules, not biological evidence. Near-collinear targets do
+not pass simply because floating-point rank is two.
+
+The initial recommended production risk-factor policy is:
+
+```text
+none
+```
+
+`legacy_or_as_hazard_diagnostic_only` remains available for audit comparisons
+but is blocked from being selected as a production/default runner policy. The
+diagnostic still shows inherited factors can combine to `2916`, and the
+synthetic high-multiplier example still has the highest 1% by population
+weight contributing about `0.832978` of expected cases. Calibrating a lower
+baseline hazard does not fix misspecified relative-risk concentration.
+
+## Focused evidence review
+
+The following evidence table is for scientific review. It does not create
+production defaults and does not convert odds ratios, relative risks or
+cumulative risks into hazards without a future documented transformation.
+
+| topic | candidate evidence | population/setting/design | measure and outcome | applicability and limitations | status |
+| --- | --- | --- | --- | --- | --- |
+| Progression by time since infection | Behr et al. 2018, *BMJ*; Menzies et al. / Campbell et al. time-since-infection syntheses; classic tuberculin-converter cohorts including Sutherland, Ferebee and Comstock | Cohort/synthesis of tuberculosis after infection or conversion, mostly non-contemporary settings | Absolute risk and hazard/risk concentrated soon after infection | Supports high early risk after recent infection, but estimates vary by age, setting, comorbidity and treatment era | reviewed candidate |
+| Higher-risk period duration | WHO TB preventive treatment guidance and cohort syntheses commonly emphasise recent infection/contact, especially within two years, while this model uses a five-year recent window | Programmatic guidance plus cohort evidence | Eligibility/risk period rather than direct constant-hazard estimate | Five years is a modelling window; two-year and continuous-decline alternatives should be sensitivity analyses | sensitivity only |
+| Early versus remote hazards/ratio | Natural-history model syntheses including Vynnycky/Fine-style lifetime risk work and recent time-since-infection reviews | Model synthesis from historical cohorts | Early:remote relationship inferred from time-varying risk | A fixed two-phase ratio is an approximation; evidence may favor a declining continuous hazard | unresolved |
+| Reinfection | Molecular epidemiology and high-incidence cohort studies such as Verver et al.; systematic reviews of recurrent TB distinguish relapse/reinfection | High-burden settings, often recurrence after disease rather than asymptomatic baseline TBI | Reinfection contribution and recurrence risk | Does not directly prove that recent reinfection resets latent progression risk in this model; reset assumption remains review-required | unresolved |
+| Age effects | WHO guidance for child contacts; individual-participant meta-analyses of child household contacts; natural-history syntheses | Children and household contacts, mixed settings | Disease risk after infection/contact by age | Stronger support for young-child risk; adult age effects need careful mortality/comorbidity separation | reviewed candidate for age sensitivity |
+| Diabetes | Jeon and Murray 2008 systematic review/meta-analysis; later updates | Observational studies, global | Relative risk/OR for active TB among people with diabetes | Suitable for risk review, but not automatically a hazard multiplier in this model | reviewed candidate, transformation unresolved |
+| Renal disease | CKD/dialysis TB risk systematic reviews and national guidance identifying dialysis/renal failure as high risk | CKD and dialysis populations | Relative risks/incidence ratios for active TB | High-risk group but effect size depends on dialysis, transplant, setting and screening | reviewed candidate/sensitivity |
+| Smoking | Bates et al. 2007 and later meta-analyses | Observational studies | Relative risk/OR for infection, disease and mortality outcomes | Smoking may affect infection and progression; do not conflate acquisition and progression | sensitivity only until pathway-specific effect reviewed |
+| Harmful alcohol/drug exposure | Lonnroth et al. 2008 systematic review/meta-analysis and WHO risk-factor discussions | Observational studies | RR/OR for active TB and heavy alcohol use | Confounding and exposure definition vary; drug exposure not identical to alcohol | sensitivity only |
+| Close contact | Household-contact systematic reviews/IPD meta-analyses and WHO preventive-treatment guidance | Household/close contacts | Incident TB and infection risk after exposure | Contact is an acquisition/exposure marker and may also proxy recent infection; should not be reused as progression HR without review | unsuitable as generic progression multiplier |
+| Chronic lung disease | COPD/chronic airway disease meta-analyses | Observational cohorts/case-control | RR/OR/HR for active TB among COPD/chronic lung disease | Potential progression and detection bias; local disease definitions needed | sensitivity only |
+| Competing all-cause mortality | Australian Bureau of Statistics life tables, Australian Government Actuary tables, WHO life tables | National life tables | Age/sex all-cause death rates or survival | Use as external mortality input only; do not invent mortality in this milestone | reviewed candidate source |
+
+Candidate sources reviewed or queued for production review include:
+
+- WHO consolidated TB preventive-treatment guidance, 2020 and second edition
+  2024:
+  https://www.who.int/publications/i/item/9789240096196
+- Behr, Edelstein and Ramakrishnan 2018, *BMJ*, "Revisiting the timetable of
+  tuberculosis": https://pubmed.ncbi.nlm.nih.gov/30139910/
+- Menzies et al. 2018, progression assumptions in TB transmission models:
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC6070419/
+- Time-since-infection natural-history synthesis for the United States:
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC7707158/
+- Jeon and Murray 2008, diabetes and active TB systematic review:
+  https://doi.org/10.1371/journal.pmed.0050152
+- Bates et al. 2007, tobacco smoke and TB systematic review/meta-analysis:
+  https://pubmed.ncbi.nlm.nih.gov/17325294/
+- Lonnroth et al. 2008, alcohol and TB systematic review:
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC2533327/
+- Martinez et al. 2020, child close-exposure individual-participant
+  meta-analysis: https://pmc.ncbi.nlm.nih.gov/articles/PMC7289654/
+- CKD without kidney failure TB-risk systematic review/meta-analysis:
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC10573716/
+- CKD/dialysis TB-incidence systematic review/meta-analysis:
+  https://pubmed.ncbi.nlm.nih.gov/35609860/
+- Chronic airway disease and active TB systematic review:
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC9070518/
+- ABS Life expectancy/life tables 2021-2023:
+  https://www.abs.gov.au/statistics/people/population/life-expectancy/2021-2023
+- WHO Global Health Observatory life tables:
+  https://www.who.int/data/gho/data/themes/mortality-and-global-health-estimates/ghe-life-expectancy-and-healthy-life-expectancy
+
+## Candidate natural-history parameterisations
+
+These are proposals for review, not implemented production defaults.
+
+| candidate | recent-window definition | early/remote progression | age modification | reinfection treatment | evidence quality and limitations |
+| --- | --- | --- | --- | --- | --- |
+| Conservative | Five-year recent window retained for compatibility with TBI target definitions | Lower early hazard, low remote hazard, weak early:remote contrast | none initially; age used only through infection history until reviewed | recent reinfection reset retained as assumption | least aggressive; may understate short-term disease among very recent infections |
+| Central | Five-year recent window, with diagnostics also reporting two-year sensitivity | Fixed early:remote ratio plus fitted scale or externally supplied hazards from reviewed synthesis | consider child/older-age sensitivity only after mortality and age-specific evidence review | recent reinfection reset flagged for scientific sign-off | compatible with current two-phase functions but evidence may favor continuous decline |
+| Higher-progression sensitivity | Two-year high-risk core inside five-year recent state, or higher early hazard over remaining recent window | higher early hazard and/or higher early:remote ratio; remote hazard externally bounded | optional higher risk in young children and clinically reviewed comorbidity strata | reset assumption retained but stress-tested | useful for sensitivity; not a default without stronger local evidence |
+
+If the evidence review concludes that risk declines continuously with time
+since infection, the current two-phase constant-hazard approximation should
+be treated as a simplification and compared against a continuous-time hazard
+shape before production integration.
+
+## Active-TB observation examples after 2D
+
+| example | fitting permitted? | policy/use | denominator retained | at-risk population | required information |
+| --- | --- | --- | --- | --- | --- |
+| Baseline prevalence found by screening | no | validation only or baseline active-TB assignment model | source denominator retained | not prospective TBI progression | prevalence ascertainment and baseline active-TB sequencing |
+| Incident cases prospectively observed after baseline | yes, if eligible | external hazards or Policy B/other reviewed policy | source denominator retained | non-baseline-active-TB population | explicit q, numerator excludes baseline disease, composition and horizon |
+| Retrospective notifications over previous years | no | validation only unless retrospective reconstruction exists | source denominator retained | not present baseline cohort | migration, mortality, turnover, ascertainment and historical infection pressure |
+| Mixed prevalent and incident numerator | no | validation only or split after source review | source denominator retained | ambiguous | numerator decomposition |
+| Changing population denominator with changed detections | rerun required | calibration/validation rerun with both old and new source rows visible | each source denominator retained | recalculated from modelled baseline composition | source numerator, denominator, period and q for each row |
+| Incomplete ascertainment | yes only if q fixed | same eligible policy with q retained | source denominator retained | non-baseline-active-TB population | q, source and review status |
+
+When stakeholders change the population denominator and observed/expected TB
+detections change, calibration must rerun. The original source numerator,
+denominator and observation period remain visible; the model does not overwrite
+the observed denominator with a derived at-risk count.
 
 ## Architecture audit
 
@@ -852,7 +1034,7 @@ any event-ledger, economics or DALY integration.
 - Active-TB observations are validated, classified and optionally used in pure
   diagnostic expected-count/fixed-ratio calculations, but not fitted in the
   main model.
-- Competing mortality is supported only through external survival inputs; no
-  mortality data are invented.
+- Competing mortality is supported only through an external death hazard or a
+  validated external survival curve; no mortality data are invented.
 - Parameter uncertainty is not propagated.
 - The new pathway is not decision-ready and is not for denying care.

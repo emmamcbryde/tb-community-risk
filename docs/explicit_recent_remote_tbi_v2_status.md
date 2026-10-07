@@ -32,6 +32,15 @@ diagnostics without wiring the pathway into runner, UI, population generation,
 interventions, event ledgers, economics, DALYs, MATLAB, frozen-reference
 loading or dynamic-transmission code.
 
+Milestone 2D purpose: correct calibration-audit issues and perform a focused
+evidence review before runner integration. This separates denominator
+concepts, corrects competing-mortality mathematics, makes ascertainment
+identifiability explicit, strengthens practical identifiability checks,
+recommends `none` as the initial production risk-factor policy, and documents
+candidate natural-history parameterisations without wiring the pathway into
+runner, UI, population generation, interventions, event ledgers, economics,
+DALYs, MATLAB, frozen-reference loading or dynamic-transmission code.
+
 ## Implemented in Milestone 1
 
 New pure module:
@@ -190,8 +199,8 @@ Implemented 2C pieces:
 - identifiability checks showing one aggregate target cannot identify both
   early and remote hazards, and duplicate-composition targets do not create
   false identifiability;
-- competing-mortality interface accepting no-mortality mode, scalar external
-  survival, horizon-indexed survival mappings or callables;
+- competing-mortality interface accepting no-mortality mode, external
+  constant death hazards or validated external survival curves;
 - baseline active-TB strata excluded from prospective incident calibration;
 - risk-factor multiplier policies: `none`,
   `reviewed_hazard_multipliers`, and
@@ -215,6 +224,63 @@ Worked diagnostic highlights:
 - impossible high target: rejected as `infeasible_above_achievable_range`,
   maximum achievable cases `300`;
 - zero-case target: fitted early and remote hazards are both zero.
+
+## Implemented in Milestone 2D
+
+New work remains isolated in:
+
+- `engine/apy/explicit_recent_remote_tbi.py`
+- `engine/apy/explicit_recent_remote_progression.py`
+- `tests/test_explicit_recent_remote_tbi.py`
+- `docs/explicit_recent_remote_tbi_milestone1_spec.md`
+- `docs/explicit_recent_remote_tbi_v2_status.md`
+
+Implemented 2D pieces:
+
+- active-TB observations now preserve `sourcePopulationDenominator` alongside
+  the existing `populationDenominator`;
+- optional numerator-composition fields are validated:
+  `numeratorIncludesBaselineActiveTB`,
+  `numeratorIncludesPrevalentCases`, and `baselineActiveTBCount`;
+- prospective expected-case outputs now separately report
+  `sourcePopulationDenominator`, `baselineActiveTBCount`,
+  `prospectiveAtRiskPopulation`, `personTimeAtRisk`, and
+  `tbiEligiblePopulation`;
+- baseline active-TB strata remain excluded from TBI/prospective progression
+  calculations, but the observed source denominator is not changed;
+- fitting is blocked when baseline active TB is present and numerator
+  composition is ambiguous or explicitly includes baseline/prevalent disease;
+- competing mortality now uses the cause-specific cumulative-incidence
+  integral `integral S_TB(t) S_D(t) h_TB(t) dt`;
+- constant external death hazards are integrated analytically across the
+  early/late TB-hazard boundary;
+- external survival curves are validated to start at one, be finite, remain
+  within `[0,1]`, be non-increasing and cover the horizon, then integrated
+  numerically;
+- scalar horizon survival is rejected for production-capable expected-case
+  calculations unless explicitly labelled as a non-production approximation;
+- Policy B now requires externally fixed ascertainment `q` in `(0,1]` with
+  source and review status; `q=1` must explicitly state complete
+  ascertainment;
+- a diagnostic records that `q` and progression scale `k` are confounded in
+  `E[C] = q E[C_true(k)]` if `q` is not fixed externally;
+- Policy D practical-identifiability diagnostics now include sensitivity rank,
+  singular values, condition number, composition contrast and notes that
+  profile-likelihood/boundary review remains required before production;
+- near-collinear target compositions fail practical-identifiability review
+  even when floating-point rank is two;
+- the recommended initial production risk-factor application policy is
+  `none`;
+- `legacy_or_as_hazard_diagnostic_only` remains available for audit but is
+  blocked from production/default runner policy selection;
+- the evidence table and candidate natural-history parameterisations were
+  added to the scientific specification.
+
+Milestone 2D retained the risk diagnostic that inherited OR-labelled factors
+can multiply to `2916`, and retained the synthetic example in which the
+highest 1% of population weight contributes about `0.832978` of expected
+cases. This remains a warning that shrinking the fitted baseline hazard does
+not correct misspecified relative-risk concentration.
 
 ## Age representation audit
 
@@ -296,7 +362,7 @@ Competing mortality is not present in the inherited no-transmission
 progression path. This likely overstates 20-year prospective progression in
 older groups; future integration should allow an explicit survival function.
 
-## Not done in Milestones 1, 2A, 2B and 2C
+## Not done in Milestones 1, 2A, 2B, 2C and 2D
 
 Do not assume the new module is wired into the model. It is intentionally not
 connected to:
@@ -334,15 +400,21 @@ pure diagnostics and are not imported or consumed by runner, UI, population
 generation, intervention, event-ledger, economics, DALY, frozen-reference,
 MATLAB or dynamic-model code.
 
+This also remains true after Milestone 2D. Denominator, ascertainment,
+competing-mortality, identifiability, evidence-review and risk-policy audit
+corrections are still pure explicit-pathway helpers and documentation only.
+
 No release branch or tag should be moved. No deployment should be updated.
 
-## Future Milestone 2D recommendation
+## Future Milestone 2E recommendation
 
-Milestone 2D should decide, with scientific review, whether the new pathway
-will use externally supplied hazards, the fixed-ratio one-parameter policy, or
-validation-only mode for initial integration. Only after that decision should
-the branch begin runner integration behind explicit new-pathway metadata and
-cache keys. Event-ledger, economics and DALY integration should remain a later
-separate milestone unless explicitly scoped.
+Milestone 2E should make the scientific policy decision needed before runner
+integration: externally supplied hazards, fixed-ratio one-parameter fitting,
+or validation-only for initial use. It should also choose reviewed
+ascertainment assumptions, competing-mortality source handling and whether the
+two-phase constant-hazard approximation is adequate. Only after those
+decisions should the branch begin runner integration behind explicit
+new-pathway metadata and cache keys. Event-ledger, economics and DALY
+integration should remain a later separate milestone unless explicitly scoped.
 
 The model remains for planning and sequencing, not for denying care.

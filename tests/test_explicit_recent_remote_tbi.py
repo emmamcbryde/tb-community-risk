@@ -70,10 +70,12 @@ from engine.apy.explicit_recent_remote_progression import (
     active_tb_observation_log_likelihood,
     assess_observation_prospective_calibration_eligibility,
     assess_progression_policy_identifiability,
+    ascertainment_progression_scale_confounding_diagnostic,
     baseline_active_tb_state_sequence_specification,
     build_progression_calibration_policy,
     build_risk_factor_application_policy,
     classify_active_tb_observation_target,
+    competing_risk_progression_probability,
     evaluate_external_hazard_policy,
     evaluate_validation_only_policy,
     expected_progression_events,
@@ -741,6 +743,17 @@ class ExplicitRecentRemoteProgressionTests(unittest.TestCase):
         row.update(overrides)
         return row
 
+    def ascertainment_kwargs(self, probability: float = 1.0) -> dict:
+        return {
+            "ascertainment_probability": probability,
+            "ascertainment_source": (
+                "unit test complete ascertainment assumption"
+                if probability == 1.0
+                else "unit test incomplete ascertainment assumption"
+            ),
+            "ascertainment_review_status": "reviewed_test_fixture",
+        }
+
     def test_recent_cumulative_hazard_is_piecewise_correct(self) -> None:
         self.assertAlmostEqual(
             progression_cumulative_hazard(
@@ -1050,11 +1063,12 @@ class ExplicitRecentRemoteProgressionTests(unittest.TestCase):
             model_baseline_year=2026,
             early_hazard=0.2,
             remote_hazard=0.01,
-            ascertainment_probability=0.8,
+            **self.ascertainment_kwargs(0.8),
         )
 
         self.assertEqual(result["observedActiveTBCaseCount"], 8.0)
         self.assertEqual(result["populationDenominator"], 10000.0)
+        self.assertEqual(result["sourcePopulationDenominator"], 10000.0)
         self.assertEqual(result["personYears"], 10000.0)
         self.assertAlmostEqual(
             result["expectedActiveTBCaseCount"],
@@ -1074,6 +1088,7 @@ class ExplicitRecentRemoteProgressionTests(unittest.TestCase):
                 model_baseline_year=2026,
                 early_hazard=0.2,
                 remote_hazard=0.01,
+                **self.ascertainment_kwargs(),
             )
 
     def test_one_active_tb_target_is_insufficient_for_two_free_hazards(self) -> None:
@@ -1171,6 +1186,17 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
         row.update(overrides)
         return row
 
+    def ascertainment_kwargs(self, probability: float = 1.0) -> dict:
+        return {
+            "ascertainment_probability": probability,
+            "ascertainment_source": (
+                "unit test complete ascertainment assumption"
+                if probability == 1.0
+                else "unit test incomplete ascertainment assumption"
+            ),
+            "ascertainment_review_status": "reviewed_test_fixture",
+        }
+
     def strata(self):
         return [
             {"state": STATE_RECENT, "weight": 100.0, "remainingEarlyRiskYears": 4.5},
@@ -1224,6 +1250,7 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             self.strata(),
             policy,
             model_baseline_year=2026,
+            **self.ascertainment_kwargs(),
         )
 
         self.assertFalse(result["fittingPerformed"])
@@ -1239,6 +1266,7 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             ratio_source="unit test ratio",
             ratio_review_status="reviewed_test_fixture",
             ratio_provenance="synthetic fixture",
+            **self.ascertainment_kwargs(),
         )
 
         self.assertEqual(result["policyId"], POLICY_FIXED_RATIO_FIT_SCALE)
@@ -1259,11 +1287,29 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             ratio_source="unit test ratio",
             ratio_review_status="reviewed_test_fixture",
             ratio_provenance="synthetic fixture",
+            **self.ascertainment_kwargs(),
         )
 
         self.assertEqual(result["fittedRemoteHazard"], 0.0)
         self.assertEqual(result["derivedEarlyHazard"], 0.0)
         self.assertEqual(result["achievedExpectedCases"], 0.0)
+
+    def test_missing_ascertainment_blocks_fixed_ratio_policy(self) -> None:
+        with self.assertRaises(ProgressionCalibrationError) as caught:
+            fit_fixed_ratio_progression_scale(
+                self.valid_row(),
+                self.strata(),
+                model_baseline_year=2026,
+                early_to_remote_ratio=10.0,
+                ratio_source="unit test ratio",
+                ratio_review_status="reviewed_test_fixture",
+                ratio_provenance="synthetic fixture",
+            )
+
+        self.assertEqual(
+            caught.exception.diagnostics["feasibilityStatus"],
+            "ineligible_ascertainment_identifiability",
+        )
 
     def test_impossible_targets_are_rejected_rather_than_clipped(self) -> None:
         with self.assertRaises(ProgressionCalibrationError) as caught:
@@ -1275,6 +1321,7 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
                 ratio_source="unit test ratio",
                 ratio_review_status="reviewed_test_fixture",
                 ratio_provenance="synthetic fixture",
+                **self.ascertainment_kwargs(),
             )
 
         self.assertEqual(
@@ -1299,6 +1346,7 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
                     ratio_source="unit test ratio",
                     ratio_review_status="reviewed_test_fixture",
                     ratio_provenance="synthetic fixture",
+                    **self.ascertainment_kwargs(),
                 )
 
     def test_observation_eligibility_reports_reasons(self) -> None:
@@ -1307,18 +1355,69 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             model_baseline_year=2026,
             strata=self.strata(),
             ascertainment_probability=0.8,
+            ascertainment_source="unit test incomplete ascertainment assumption",
+            ascertainment_review_status="reviewed_test_fixture",
         )
         retrospective = assess_observation_prospective_calibration_eligibility(
             self.valid_row(startYear=2023, endYear=2024),
             model_baseline_year=2026,
             strata=self.strata(),
             ascertainment_probability=1.0,
+            ascertainment_source="unit test complete ascertainment assumption",
+            ascertainment_review_status="reviewed_test_fixture",
         )
 
         self.assertTrue(eligible["eligible"])
         self.assertIn("Incomplete ascertainment", eligible["warnings"][0])
         self.assertFalse(retrospective["eligible"])
         self.assertIn("before baseline", " ".join(retrospective["reasons"]))
+
+    def test_source_denominator_is_preserved_and_at_risk_population_is_separate(self) -> None:
+        strata = [
+            {"state": STATE_BASELINE_ACTIVE_TB, "weight": 2.0},
+            {"state": STATE_RECENT, "weight": 100.0, "remainingEarlyRiskYears": 4.5},
+            {"state": STATE_REMOTE_ONLY, "weight": 1398.0},
+        ]
+        result = expected_prospective_incident_cases_for_observation(
+            self.valid_row(
+                observedActiveTBCaseCount=10,
+                populationDenominator=1500,
+                personYears=None,
+                numeratorIncludesBaselineActiveTB=False,
+            ),
+            strata,
+            model_baseline_year=2026,
+            early_hazard=0.02,
+            remote_hazard=0.002,
+            **self.ascertainment_kwargs(),
+        )
+
+        self.assertEqual(result["sourcePopulationDenominator"], 1500.0)
+        self.assertEqual(result["populationDenominator"], 1500.0)
+        self.assertEqual(result["baselineActiveTBCount"], 2.0)
+        self.assertEqual(result["prospectiveAtRiskPopulation"], 1498.0)
+        self.assertEqual(result["tbiEligiblePopulation"], 1498.0)
+        self.assertEqual(result["personTimeAtRisk"], 1498.0)
+        self.assertTrue(result["denominatorSummary"]["sourceDenominatorPreserved"])
+
+    def test_ambiguous_baseline_numerator_composition_blocks_fitting(self) -> None:
+        with self.assertRaises(ProgressionCalibrationError) as caught:
+            fit_fixed_ratio_progression_scale(
+                self.valid_row(populationDenominator=1500, observedActiveTBCaseCount=10),
+                [
+                    {"state": STATE_BASELINE_ACTIVE_TB, "weight": 2.0},
+                    {"state": STATE_REMOTE_ONLY, "weight": 1498.0},
+                ],
+                model_baseline_year=2026,
+                early_to_remote_ratio=10.0,
+                ratio_source="unit test ratio",
+                ratio_review_status="reviewed_test_fixture",
+                ratio_provenance="synthetic fixture",
+                **self.ascertainment_kwargs(),
+            )
+
+        reasons = " ".join(caught.exception.diagnostics["eligibility"]["reasons"])
+        self.assertIn("numerator composition is ambiguous", reasons)
 
     def test_validation_only_mode_never_modifies_hazards(self) -> None:
         policy = build_progression_calibration_policy(
@@ -1348,7 +1447,7 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             model_baseline_year=2026,
             early_hazard=0.02,
             remote_hazard=0.002,
-            ascertainment_probability=1.0,
+            **self.ascertainment_kwargs(),
         )
         half = expected_prospective_incident_cases_for_observation(
             self.valid_row(),
@@ -1356,7 +1455,7 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             model_baseline_year=2026,
             early_hazard=0.02,
             remote_hazard=0.002,
-            ascertainment_probability=0.5,
+            **self.ascertainment_kwargs(0.5),
         )
 
         self.assertAlmostEqual(
@@ -1364,6 +1463,38 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             full["expectedActiveTBCaseCount"] * 0.5,
             places=12,
         )
+
+    def test_ascertainment_and_progression_scale_are_confounding(self) -> None:
+        full_q = fit_fixed_ratio_progression_scale(
+            self.valid_row(),
+            self.strata(),
+            model_baseline_year=2026,
+            early_to_remote_ratio=10.0,
+            ratio_source="unit test ratio",
+            ratio_review_status="reviewed_test_fixture",
+            ratio_provenance="synthetic fixture",
+            **self.ascertainment_kwargs(),
+        )
+        half_q = fit_fixed_ratio_progression_scale(
+            self.valid_row(),
+            self.strata(),
+            model_baseline_year=2026,
+            early_to_remote_ratio=10.0,
+            ratio_source="unit test ratio",
+            ratio_review_status="reviewed_test_fixture",
+            ratio_provenance="synthetic fixture",
+            **self.ascertainment_kwargs(0.5),
+        )
+        diagnostic = ascertainment_progression_scale_confounding_diagnostic(
+            observed_cases=2,
+            expected_true_cases_at_scale=2,
+            ascertainment_probability=0.5,
+        )
+
+        self.assertGreater(half_q["fittedRemoteHazard"], full_q["fittedRemoteHazard"])
+        self.assertAlmostEqual(full_q["achievedExpectedCases"], 2.0, places=8)
+        self.assertAlmostEqual(half_q["achievedExpectedCases"], 2.0, places=8)
+        self.assertEqual(diagnostic["requiredProgressionScaleMultiplier"], 2.0)
 
     def test_binomial_and_poisson_likelihoods_are_analytic_and_explicit(self) -> None:
         binomial = active_tb_observation_log_likelihood(
@@ -1401,6 +1532,7 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             [self.valid_row()],
             model_baseline_year=2026,
             strata_by_target=[self.strata()],
+            **self.ascertainment_kwargs(),
         )
         fixed_ratio = assess_progression_policy_identifiability(
             POLICY_FIXED_RATIO_FIT_SCALE,
@@ -1408,12 +1540,14 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             model_baseline_year=2026,
             strata_by_target=[self.strata()],
             early_to_remote_ratio=10.0,
+            **self.ascertainment_kwargs(),
         )
         duplicate = assess_progression_policy_identifiability(
             POLICY_JOINT_EARLY_REMOTE_HAZARDS,
             [self.valid_row(observationId="a"), self.valid_row(observationId="b")],
             model_baseline_year=2026,
             strata_by_target=[self.strata(), self.strata()],
+            **self.ascertainment_kwargs(),
         )
 
         self.assertFalse(one_target["identified"])
@@ -1421,6 +1555,24 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
         self.assertEqual(fixed_ratio["identifiabilityStatus"], "identified_one_dimensional")
         self.assertFalse(duplicate["identified"])
         self.assertEqual(duplicate["sensitivityRank"], 1)
+
+    def test_near_collinear_targets_fail_practical_identifiability(self) -> None:
+        near_a = [{"state": STATE_RECENT, "weight": 100.0, "remainingEarlyRiskYears": 1.0}]
+        near_b = [
+            {"state": STATE_RECENT, "weight": 100.0, "remainingEarlyRiskYears": 1.0},
+            {"state": STATE_REMOTE_ONLY, "weight": 0.1},
+        ]
+        assessment = assess_progression_policy_identifiability(
+            POLICY_JOINT_EARLY_REMOTE_HAZARDS,
+            [self.valid_row(observationId="near-a"), self.valid_row(observationId="near-b")],
+            model_baseline_year=2026,
+            strata_by_target=[near_a, near_b],
+            **self.ascertainment_kwargs(),
+        )
+
+        self.assertEqual(assessment["sensitivityRank"], 2)
+        self.assertFalse(assessment["identified"])
+        self.assertLess(assessment["compositionContrast"], 0.05)
 
     def test_target_sensitivity_vectors_can_support_joint_identifiability(self) -> None:
         recent_heavy = [{"state": STATE_RECENT, "weight": 100.0, "remainingEarlyRiskYears": 1.0}]
@@ -1439,8 +1591,10 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             [self.valid_row(observationId="a"), self.valid_row(observationId="b")],
             model_baseline_year=2026,
             strata_by_target=[recent_heavy, remote_heavy],
+            **self.ascertainment_kwargs(),
         )
         self.assertTrue(identified["identified"])
+        self.assertGreaterEqual(identified["compositionContrast"], 0.05)
 
     def test_risk_multiplier_policies(self) -> None:
         none = risk_factor_multiplier_for_row(
@@ -1465,6 +1619,13 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
         self.assertEqual(reviewed["combinedMultiplier"], 3.0)
         self.assertTrue(any("diagnostic only" in item for item in legacy["warnings"]))
         self.assertAlmostEqual(legacy["combinedMultiplier"], 5.0 * 3.6 * 3.0)
+
+    def test_legacy_multiplier_policy_cannot_be_production_default(self) -> None:
+        with self.assertRaisesRegex(ValueError, "production/default"):
+            build_risk_factor_application_policy(
+                policy_id=RISK_POLICY_LEGACY_OR_AS_HAZARD_DIAGNOSTIC,
+                production_default=True,
+            )
 
     def test_large_joint_multipliers_generate_review_status(self) -> None:
         row = {
@@ -1521,6 +1682,7 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             ratio_source="unit test ratio",
             ratio_review_status="reviewed_test_fixture",
             ratio_provenance="synthetic fixture",
+            **self.ascertainment_kwargs(),
         )
 
         none, legacy = scenarios
@@ -1530,32 +1692,102 @@ class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
             none["caseConcentration"]["shareExpectedCasesTop1PercentByWeight"],
         )
 
-    def test_optional_survival_lowers_or_preserves_expected_cases(self) -> None:
+    def test_competing_mortality_constant_hazard_formula_is_correct(self) -> None:
+        h_tb = 0.02
+        h_death = 0.03
+        horizon = 10.0
+        result = competing_risk_progression_probability(
+            state=STATE_REMOTE_ONLY,
+            horizon_years=horizon,
+            early_hazard=0.2,
+            remote_hazard=h_tb,
+            competing_mortality_hazard=h_death,
+        )
+        expected = h_tb / (h_tb + h_death) * (1.0 - math.exp(-(h_tb + h_death) * horizon))
+
+        self.assertAlmostEqual(result["cumulativeIncidence"], expected, places=12)
+
+    def test_piecewise_competing_mortality_integrates_across_early_late_boundary(self) -> None:
+        result = competing_risk_progression_probability(
+            state=STATE_RECENT,
+            horizon_years=5.0,
+            early_hazard=0.1,
+            remote_hazard=0.01,
+            remaining_early_risk_years=2.0,
+            competing_mortality_hazard=0.03,
+        )
+        first = 0.1 / 0.13 * (1.0 - math.exp(-0.13 * 2.0))
+        second = math.exp(-0.13 * 2.0) * 0.01 / 0.04 * (1.0 - math.exp(-0.04 * 3.0))
+
+        self.assertAlmostEqual(result["cumulativeIncidence"], first + second, places=12)
+
+    def test_horizon_level_survival_multiplication_is_not_used(self) -> None:
+        h_tb = 0.02
+        h_death = 0.03
+        horizon = 10.0
+        result = competing_risk_progression_probability(
+            state=STATE_REMOTE_ONLY,
+            horizon_years=horizon,
+            early_hazard=0.2,
+            remote_hazard=h_tb,
+            competing_mortality_hazard=h_death,
+        )
+        horizon_product = (1.0 - math.exp(-h_tb * horizon)) * math.exp(-h_death * horizon)
+
+        self.assertNotAlmostEqual(result["cumulativeIncidence"], horizon_product, places=4)
+        with self.assertRaisesRegex(ValueError, "scalar horizon survival"):
+            expected_progression_events(
+                self.strata(),
+                horizon_years=20.0,
+                early_hazard=0.02,
+                remote_hazard=0.002,
+                competing_survival_probability=0.8,
+            )
+
+    def test_invalid_survival_functions_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "begin at one"):
+            competing_risk_progression_probability(
+                state=STATE_REMOTE_ONLY,
+                horizon_years=2.0,
+                early_hazard=0.1,
+                remote_hazard=0.01,
+                competing_survival_curve={0.0: 0.9, 2.0: 0.8},
+            )
+        with self.assertRaisesRegex(ValueError, "non-increasing"):
+            competing_risk_progression_probability(
+                state=STATE_REMOTE_ONLY,
+                horizon_years=2.0,
+                early_hazard=0.1,
+                remote_hazard=0.01,
+                competing_survival_curve={0.0: 1.0, 1.0: 0.8, 2.0: 0.9},
+            )
+
+    def test_optional_mortality_lowers_or_preserves_expected_cases(self) -> None:
         no_mortality = expected_progression_events(
             self.strata(),
             horizon_years=20.0,
             early_hazard=0.02,
             remote_hazard=0.002,
         )
-        with_survival = expected_progression_events(
+        with_mortality = expected_progression_events(
             self.strata(),
             horizon_years=20.0,
             early_hazard=0.02,
             remote_hazard=0.002,
-            competing_survival_probability=0.8,
+            competing_mortality_hazard=0.02,
         )
-        callable_survival = expected_progression_events(
+        curve_survival = expected_progression_events(
             self.strata(),
             horizon_years=20.0,
             early_hazard=0.02,
             remote_hazard=0.002,
-            competing_survival_probability=lambda horizon, row: 0.7,
+            competing_survival_curve={0.0: 1.0, 10.0: 0.9, 20.0: 0.8},
         )
 
         self.assertEqual(no_mortality["competingMortality"], "not_modelled")
         self.assertIn("not modelled", no_mortality["diagnosticMessages"][0])
-        self.assertLessEqual(with_survival["expectedCases"], no_mortality["expectedCases"])
-        self.assertLessEqual(callable_survival["expectedCases"], no_mortality["expectedCases"])
+        self.assertLessEqual(with_mortality["expectedCases"], no_mortality["expectedCases"])
+        self.assertLessEqual(curve_survival["expectedCases"], no_mortality["expectedCases"])
 
     def test_baseline_active_tb_is_excluded_from_expected_cases(self) -> None:
         result = expected_progression_events(
