@@ -276,6 +276,16 @@ Implemented 2D pieces:
 - the evidence table and candidate natural-history parameterisations were
   added to the scientific specification.
 
+Follow-up after internet restoration on 2026-10-08:
+
+- the focused evidence-review section was rechecked against live sources and
+  augmented with extracted notes on WHO TPT guidance, time-since-infection
+  decline, diabetes, smoking, alcohol, CKD/dialysis, chronic airway disease,
+  child close-exposure evidence and mortality table sources;
+- this follow-up changed documentation only and did not alter pure functions,
+  tests, runner, UI, ledger, economics, DALY, MATLAB, frozen-reference or
+  dynamic-model code.
+
 Milestone 2D retained the risk diagnostic that inherited OR-labelled factors
 can multiply to `2916`, and retained the synthetic example in which the
 highest 1% of population weight contributes about `0.832978` of expected

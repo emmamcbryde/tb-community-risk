@@ -911,6 +911,48 @@ Candidate sources reviewed or queued for production review include:
 - WHO Global Health Observatory life tables:
   https://www.who.int/data/gho/data/themes/mortality-and-global-health-estimates/ghe-life-expectancy-and-healthy-life-expectancy
 
+Live source verification was repeated on 2026-10-08 after network access was
+restored. Additional extracted review notes:
+
+- WHO 2024 TPT guidance states that roughly one fourth of the world population
+  is estimated to have been infected with TB bacilli, and about 5-10% of
+  infected people develop TB disease in their lifetime; it frames TPT around
+  groups at highest risk of progression rather than a single universal hazard.
+- The United States time-since-infection synthesis estimated that, for a newly
+  infected adult without other progression risk factors, progression rates
+  decline from about 38 to 0.38 per 1,000 person-years between the first and
+  25th year since infection, with 25-year cumulative risk about 7.9%. This
+  supports declining risk since infection and cautions against treating a
+  five-year window as biologically flat.
+- The late-reactivation systematic review found declining TB rates over time,
+  reaching approximately 200 cases per 100,000 person-years or less by the
+  fifth year in eligible untreated cohorts, with limited evidence beyond ten
+  years.
+- Jeon and Murray reported cohort-study RR 3.11 (95% CI 2.27-4.26) for
+  diabetes and active TB; this is a relative-risk estimate for disease, not an
+  acquisition parameter and not automatically a hazard multiplier.
+- Bates et al. reported smoking associations with TB infection, pulmonary
+  disease and mortality; summarized TB disease RRs were about 2.3-2.7 in the
+  JAMA Internal Medicine summary, reinforcing that smoking may mix acquisition
+  and progression pathways.
+- Lonnroth et al. and later alcohol meta-analyses support increased TB risk
+  for heavy alcohol use or alcohol use disorder, but exposure definitions vary.
+- CKD/dialysis review evidence identifies high TB incidence in CKD populations,
+  with pooled TB incidence about 3,718 per 100,000 and higher estimates for
+  hemodialysis and peritoneal dialysis groups; applicability depends on CKD
+  stage and care setting.
+- Chronic airway disease evidence shows COPD-associated incident TB hazard
+  ratios ranging from 1.44 to 3.14 across high-income cohort studies, with
+  substantial heterogeneity and limited high-burden-country evidence.
+- The child close-exposure individual-participant meta-analysis included
+  137,647 exposed children from 46 cohorts and supports age/contact-specific
+  review; it does not justify reusing a generic adult contact OR as a
+  progression hazard multiplier.
+- ABS 2021-2023 life tables are a suitable Australian all-cause mortality
+  source for future competing-risk inputs; WHO GHO life tables provide a
+  consistent cross-country alternative. No mortality table is adopted as a
+  default in Milestone 2D.
+
 ## Candidate natural-history parameterisations
 
 These are proposals for review, not implemented production defaults.
