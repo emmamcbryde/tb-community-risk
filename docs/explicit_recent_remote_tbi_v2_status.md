@@ -41,6 +41,16 @@ candidate natural-history parameterisations without wiring the pathway into
 runner, UI, population generation, interventions, event ledgers, economics,
 DALYs, MATLAB, frozen-reference loading or dynamic-transmission code.
 
+Milestone 3A purpose: implement the approved central time-since-infection
+progression curve and survivor-conditioned future-risk mathematics as isolated
+pure code. This retains five-year recent infection classification, uses no
+risk-factor progression multipliers in the central policy, keeps active-TB
+observations validation-only by default, supports reset and no-reset
+reinfection policies, and leaves competing mortality as an explicit external
+input. It still does not wire the pathway into runner, UI, population
+generation, interventions, event ledgers, economics, DALYs, MATLAB,
+frozen-reference loading or dynamic-transmission code.
+
 ## Implemented in Milestone 1
 
 New pure module:
@@ -314,6 +324,65 @@ Runner integration remains blocked pending explicit user decisions on:
 - competing-mortality source;
 - active-TB observation use.
 
+## Implemented in Milestone 3A
+
+New work remains isolated in:
+
+- `engine/apy/explicit_recent_remote_progression.py`
+- `tests/test_explicit_recent_remote_tbi.py`
+- `docs/explicit_recent_remote_tbi_milestone1_spec.md`
+- `docs/explicit_recent_remote_tbi_v2_status.md`
+
+Implemented 3A pieces:
+
+- versioned progression-curve contract
+  `explicit_recent_remote_tbi_progression_curve_v1`;
+- central curve identifier
+  `central_piecewise_time_since_infection_progression_v1`;
+- conservative and higher-progression sensitivity identifiers
+  `conservative_piecewise_time_since_infection_progression_v1` and
+  `higher_progression_piecewise_time_since_infection_progression_v1`;
+- deterministic canonical JSON serialization and SHA-256 hashing for curve
+  contracts;
+- cumulative-risk to cumulative-hazard conversion with
+  `H(t) = -log[1-F(t)]`;
+- strict validation of increasing time anchors, non-decreasing risks and
+  hazards, non-negative segment hazards and explicit post-final-anchor hazard;
+- central cumulative-risk anchors:
+  `0.038` at 1 year, `0.050` at 2 years, `0.066` at 5 years,
+  `0.072` at 10 years and `0.079` at 25 years;
+- transformed central cumulative-hazard anchors:
+  `0.0387408283`, `0.0512932944`, `0.0682788408`,
+  `0.0747235462` and `0.0822952427`;
+- derived central segment hazards:
+  `0.0387408283`, `0.0125524661`, `0.0056618488`,
+  `0.0012889411` and `0.0005047798` per year;
+- central post-final-anchor hazard `0.0005047798` per year, explicitly
+  extrapolated from the 10-25 year cumulative-hazard slope;
+- survivor-conditioned future risk:
+  `P(T <= t | T > s) = 1 - exp{-[H(s+t)-H(s)]}`;
+- segment exposure diagnostics and instantaneous segment-hazard lookup;
+- reset policy `recent_reinfection_resets_progression_clock_v1`;
+- no-reset sensitivity policy
+  `recent_reinfection_does_not_reset_progression_clock_v1`;
+- pure curve expected-event aggregation with
+  `riskFactorProgressionPolicy = none`;
+- regression coverage proving inherited risk-factor flags do not alter central
+  curve results;
+- validation-only comparison of eligible prospective active-TB observations
+  against a fixed curve, preserving source denominator, at-risk population,
+  observation horizon, ascertainment and optional likelihood;
+- curve competing-risk integration with a supplied external survival curve or
+  external constant death hazard, without horizon-level survival
+  multiplication;
+- worked central diagnostic table showing that a person infected 4.9 years
+  before baseline has 0.686% five-year survivor-conditioned future risk, not a
+  fresh 6.6% five-year risk.
+
+Milestone 3A did not approve risk-factor multipliers, did not fit the curve to
+active-TB observations, did not bundle mortality data, and did not touch the
+inherited MATLAB-v9 compatibility path.
+
 Milestone 2D retained the risk diagnostic that inherited OR-labelled factors
 can multiply to `2916`, and retained the synthetic example in which the
 highest 1% of population weight contributes about `0.832978` of expected
@@ -442,15 +511,22 @@ This also remains true after Milestone 2D. Denominator, ascertainment,
 competing-mortality, identifiability, evidence-review and risk-policy audit
 corrections are still pure explicit-pathway helpers and documentation only.
 
+This also remains true after Milestone 3A. Time-since-infection progression
+curves, conditional future-risk calculations, reinfection-clock policies,
+curve validation outputs and curve mortality integration remain isolated pure
+helpers and are not imported or consumed by the runner, UI, population
+generation, interventions, event ledger, economics, DALY, frozen-reference,
+MATLAB or dynamic-model code.
+
 No release branch or tag should be moved. No deployment should be updated.
 
-## Future Milestone 2E recommendation
+## Future runner-integration milestone recommendation
 
-Milestone 2E should record the user's approved choices from
-`docs/explicit_recent_remote_tbi_parameter_decision_dossier.md` and then begin
-runner integration only within those approved boundaries. Initial integration
-should remain behind explicit new-pathway metadata and cache keys. Event-ledger,
-economics and DALY integration should remain a later separate milestone unless
-explicitly scoped.
+The next milestone should begin runner integration behind explicit
+new-pathway metadata and cache keys, using the 3A central curve and
+validation-only active-TB policy exactly as approved. It should keep the
+inherited MATLAB-v9 compatibility pathway available and unchanged, and it
+should not proceed to event-ledger, economics or DALY integration unless those
+surfaces are explicitly scoped.
 
 The model remains for planning and sequencing, not for denying care.

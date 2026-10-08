@@ -45,6 +45,11 @@ from engine.apy.explicit_recent_remote_tbi import (
     validate_age_distribution,
 )
 from engine.apy.explicit_recent_remote_progression import (
+    CENTRAL_PROGRESSION_CUMULATIVE_RISKS,
+    CENTRAL_PROGRESSION_SOURCE_URL,
+    CURVE_CENTRAL_TIME_SINCE_INFECTION,
+    CURVE_CONSERVATIVE_TIME_SINCE_INFECTION,
+    CURVE_HIGHER_TIME_SINCE_INFECTION,
     OBSERVATION_MODEL_BINOMIAL,
     OBSERVATION_MODEL_POISSON,
     POLICY_BOTH_HAZARDS_SUPPLIED,
@@ -58,6 +63,9 @@ from engine.apy.explicit_recent_remote_progression import (
     POLICY_VALIDATION_ONLY,
     PROGRESSION_CONTRACT_VERSION,
     PROGRESSION_CALIBRATION_CONTRACT_VERSION,
+    PROGRESSION_CURVE_CONTRACT_VERSION,
+    REINFECTION_POLICY_NO_RESET_CLOCK,
+    REINFECTION_POLICY_RESET_CLOCK,
     RISK_POLICY_LEGACY_OR_AS_HAZARD_DIAGNOSTIC,
     RISK_POLICY_NONE,
     RISK_POLICY_REVIEWED_HAZARD_MULTIPLIERS,
@@ -72,12 +80,18 @@ from engine.apy.explicit_recent_remote_progression import (
     assess_progression_policy_identifiability,
     ascertainment_progression_scale_confounding_diagnostic,
     baseline_active_tb_state_sequence_specification,
+    build_central_time_since_infection_progression_curve,
+    build_conservative_time_since_infection_progression_curve,
+    build_higher_progression_time_since_infection_curve,
+    build_progression_curve_by_identifier,
     build_progression_calibration_policy,
     build_risk_factor_application_policy,
     classify_active_tb_observation_target,
+    competing_risk_progression_probability_for_curve,
     competing_risk_progression_probability,
     evaluate_external_hazard_policy,
     evaluate_validation_only_policy,
+    expected_progression_events_for_curve,
     expected_progression_events,
     expected_prospective_incident_cases_for_observation,
     fit_fixed_ratio_progression_scale,
@@ -85,6 +99,9 @@ from engine.apy.explicit_recent_remote_progression import (
     progression_calibration_policy_contract_options,
     progression_calibration_policy_hash,
     progression_calibration_policy_json,
+    progression_curve_availability,
+    progression_curve_hash,
+    progression_curve_json,
     progression_calibration_policy_options,
     progression_cumulative_hazard,
     progression_identifiability_assessment,
@@ -96,10 +113,22 @@ from engine.apy.explicit_recent_remote_progression import (
     risk_factor_multiplier_diagnostics,
     risk_factor_multiplier_for_row,
     remaining_early_risk_years,
+    resolve_reinfection_progression_clock,
     synthetic_natural_history_cost_invariance_example,
     target_progression_sensitivity_vector,
+    time_since_curve_conditional_future_progression_probability,
+    time_since_curve_cumulative_hazard,
+    time_since_curve_cumulative_progression_risk,
+    time_since_curve_incremental_cumulative_hazard,
+    time_since_curve_instantaneous_hazard,
+    time_since_curve_segment_exposure_times,
+    time_since_curve_validation_diagnostics,
+    time_since_curve_progression_probability_for_state,
+    validate_active_tb_observation_against_progression_curve,
+    validate_progression_curve_contract,
     worked_progression_calibration_examples,
     worked_progression_diagnostic_table,
+    worked_time_since_progression_diagnostic_table,
 )
 
 
@@ -1160,6 +1189,414 @@ class ExplicitRecentRemoteProgressionTests(unittest.TestCase):
             low_cost["expectedProgressionEvents"],
             high_cost["expectedProgressionEvents"],
             places=12,
+        )
+
+
+class ExplicitTimeSinceProgressionCurveTests(unittest.TestCase):
+    def valid_row(self, **overrides) -> dict:
+        row = {
+            "observationId": "curve-validation",
+            "startYear": 2026,
+            "endYear": 2026,
+            "observedActiveTBCaseCount": 3,
+            "populationDenominator": 1000,
+            "personYears": 1000,
+            "denominatorType": "census_population",
+            "populationScope": "whole_population",
+            "caseClassification": "incident_follow_up",
+            "observationWindowMeaning": "follow_up_incident",
+            "ascertainmentMethod": "combined",
+            "activeTBClassification": "all_active_tb",
+            "source": "unit test fixture",
+            "reviewStatus": "reviewed_test_fixture",
+            "notes": "curve validation fixture",
+            "uncertainty": {},
+        }
+        row.update(overrides)
+        return row
+
+    def ascertainment_kwargs(self, probability: float = 1.0) -> dict:
+        return {
+            "ascertainment_probability": probability,
+            "ascertainment_source": (
+                "unit test complete ascertainment assumption"
+                if probability == 1.0
+                else "unit test incomplete ascertainment assumption"
+            ),
+            "ascertainment_review_status": "reviewed_test_fixture",
+        }
+
+    def test_curve_contract_serializes_hashes_and_records_provenance(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+        payload = json.loads(progression_curve_json(curve))
+        shuffled = dict(reversed(list(payload.items())))
+
+        self.assertEqual(payload["contractVersion"], PROGRESSION_CURVE_CONTRACT_VERSION)
+        self.assertEqual(payload["curveIdentifier"], CURVE_CENTRAL_TIME_SINCE_INFECTION)
+        self.assertEqual(payload["riskFactorProgressionPolicy"], RISK_POLICY_NONE)
+        self.assertEqual(payload["reinfectionPolicy"], REINFECTION_POLICY_RESET_CLOCK)
+        self.assertEqual(payload["mortalityPolicy"], "not_modelled")
+        self.assertIn(CENTRAL_PROGRESSION_SOURCE_URL, payload["sources"][0]["url"])
+        self.assertFalse(payload["anchorProvenance"][0]["directlyObservedHazard"])
+        self.assertEqual(progression_curve_hash(payload), progression_curve_hash(shuffled))
+
+    def test_anchor_conversion_origin_monotonicity_and_segment_hazards(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+        diagnostics = time_since_curve_validation_diagnostics(curve)
+        hazards = curve["cumulativeHazardAnchors"]
+        segments = curve["segmentHazards"]
+
+        self.assertEqual(curve["timeAnchors"][0], 0.0)
+        self.assertEqual(curve["cumulativeRiskAnchors"][0], 0.0)
+        self.assertEqual(hazards[0], 0.0)
+        for risk, hazard in zip(curve["cumulativeRiskAnchors"], hazards):
+            self.assertAlmostEqual(hazard, -math.log1p(-risk), places=12)
+        self.assertEqual(
+            curve["cumulativeRiskAnchors"][1:],
+            list(CENTRAL_PROGRESSION_CUMULATIVE_RISKS),
+        )
+        self.assertTrue(diagnostics["validationDiagnostics"]["cumulativeHazardMonotonic"])
+        self.assertTrue(diagnostics["validationDiagnostics"]["segmentHazardsNonNegative"])
+        self.assertTrue(all(value >= 0.0 for value in segments))
+
+    def test_malformed_curve_anchors_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "strictly increasing"):
+            validate_progression_curve_contract(
+                {
+                    **build_central_time_since_infection_progression_curve(),
+                    "timeAnchors": [0.0, 1.0, 1.0],
+                    "cumulativeRiskAnchors": [0.0, 0.01, 0.02],
+                }
+            )
+        with self.assertRaisesRegex(ValueError, "non-decreasing"):
+            validate_progression_curve_contract(
+                {
+                    **build_central_time_since_infection_progression_curve(),
+                    "timeAnchors": [0.0, 1.0, 2.0],
+                    "cumulativeRiskAnchors": [0.0, 0.02, 0.01],
+                }
+            )
+
+    def test_exact_recovery_of_anchor_risks_and_piecewise_interpolation(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+
+        for time, risk in zip(curve["timeAnchors"], curve["cumulativeRiskAnchors"]):
+            self.assertAlmostEqual(
+                time_since_curve_cumulative_progression_risk(curve, time),
+                risk,
+                places=12,
+            )
+        h1 = curve["cumulativeHazardAnchors"][1]
+        slope_1_2 = curve["segmentHazards"][1]
+        self.assertAlmostEqual(
+            time_since_curve_cumulative_hazard(curve, 1.5),
+            h1 + slope_1_2 * 0.5,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            time_since_curve_instantaneous_hazard(curve, 1.5),
+            slope_1_2,
+            places=12,
+        )
+
+    def test_explicit_post_final_anchor_hazard_is_applied(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+        h10 = curve["cumulativeHazardAnchors"][-2]
+        h25 = curve["cumulativeHazardAnchors"][-1]
+        expected_post = (h25 - h10) / 15.0
+
+        self.assertAlmostEqual(curve["postFinalAnchorHazard"], expected_post, places=15)
+        self.assertAlmostEqual(
+            time_since_curve_cumulative_hazard(curve, 30.0),
+            h25 + expected_post * 5.0,
+            places=12,
+        )
+        self.assertGreater(
+            time_since_curve_conditional_future_progression_probability(
+                curve,
+                time_since_infection_at_baseline=25.0,
+                horizon_years=1.0,
+            ),
+            0.0,
+        )
+
+    def test_conditional_future_risk_uses_survivor_conditioning(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+        conditioned = time_since_curve_conditional_future_progression_probability(
+            curve,
+            time_since_infection_at_baseline=4.9,
+            horizon_years=5.0,
+        )
+        increment = time_since_curve_incremental_cumulative_hazard(
+            curve,
+            time_since_infection_at_baseline=4.9,
+            horizon_years=5.0,
+        )
+        unconditioned = time_since_curve_cumulative_progression_risk(curve, 9.9)
+
+        self.assertAlmostEqual(conditioned, 1.0 - math.exp(-increment), places=12)
+        self.assertLess(conditioned, unconditioned)
+        self.assertLess(
+            conditioned,
+            time_since_curve_conditional_future_progression_probability(
+                curve,
+                time_since_infection_at_baseline=0.0,
+                horizon_years=5.0,
+            ),
+        )
+
+    def test_conditional_risk_bounds_recent_and_remote_examples(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+        for time_since in (0.0, 0.5, 2.5, 4.9, 5.0, 10.0, 25.0, 50.0):
+            for horizon in (1.0, 2.0, 5.0, 10.0, 20.0):
+                probability = time_since_curve_conditional_future_progression_probability(
+                    curve,
+                    time_since_infection_at_baseline=time_since,
+                    horizon_years=horizon,
+                )
+                self.assertGreaterEqual(probability, 0.0)
+                self.assertLessEqual(probability, 1.0)
+        self.assertAlmostEqual(
+            time_since_curve_conditional_future_progression_probability(
+                curve,
+                time_since_infection_at_baseline=10.0,
+                horizon_years=15.0,
+            ),
+            1.0
+            - math.exp(
+                -(
+                    time_since_curve_cumulative_hazard(curve, 25.0)
+                    - time_since_curve_cumulative_hazard(curve, 10.0)
+                )
+            ),
+            places=12,
+        )
+
+    def test_segment_exposure_times_cross_anchor_boundaries(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+        segments = time_since_curve_segment_exposure_times(
+            curve,
+            time_since_infection_at_baseline=4.9,
+            horizon_years=1.0,
+        )
+
+        self.assertEqual(len(segments), 2)
+        self.assertAlmostEqual(segments[0]["exposureYears"], 0.1, places=12)
+        self.assertAlmostEqual(segments[1]["exposureYears"], 0.9, places=12)
+        self.assertAlmostEqual(
+            sum(segment["incrementalCumulativeHazard"] for segment in segments),
+            time_since_curve_incremental_cumulative_hazard(
+                curve,
+                time_since_infection_at_baseline=4.9,
+                horizon_years=1.0,
+            ),
+            places=12,
+        )
+
+    def test_reinfection_reset_and_no_reset_policies(self) -> None:
+        reset_curve = build_central_time_since_infection_progression_curve(
+            reinfection_policy=REINFECTION_POLICY_RESET_CLOCK
+        )
+        no_reset_curve = build_central_time_since_infection_progression_curve(
+            reinfection_policy=REINFECTION_POLICY_NO_RESET_CLOCK
+        )
+        row = {
+            "state": STATE_RECENT,
+            "timeSinceRecentInfectionYears": 0.5,
+            "timeSinceRemoteInfectionYears": 25.0,
+            "priorRemoteExposure": True,
+        }
+
+        reset = time_since_curve_progression_probability_for_state(
+            row,
+            reset_curve,
+            horizon_years=5.0,
+        )
+        no_reset = time_since_curve_progression_probability_for_state(
+            row,
+            no_reset_curve,
+            horizon_years=5.0,
+        )
+
+        self.assertEqual(reset["clockResolution"]["usedClock"], "recent_reset")
+        self.assertEqual(
+            no_reset["clockResolution"]["usedClock"],
+            "remote_no_reset_sensitivity",
+        )
+        self.assertTrue(reset["clockResolution"]["priorRemoteExposure"])
+        self.assertGreater(
+            reset["conditionalFutureProgressionProbability"],
+            no_reset["conditionalFutureProgressionProbability"],
+        )
+
+    def test_remote_clock_validation_and_prior_remote_auditability(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+        clock = resolve_reinfection_progression_clock(
+            state=STATE_REMOTE_ONLY,
+            time_since_remote_infection=5.0,
+            prior_remote_exposure=True,
+            recent_window_years=5.0,
+        )
+
+        self.assertEqual(clock["progressionClockYears"], 5.0)
+        self.assertTrue(clock["priorRemoteExposure"])
+        with self.assertRaisesRegex(ValueError, "at least recentWindowYears"):
+            time_since_curve_progression_probability_for_state(
+                {"state": STATE_REMOTE_ONLY, "timeSinceRemoteInfectionYears": 4.9},
+                curve,
+                horizon_years=1.0,
+            )
+
+    def test_central_risk_policy_ignores_inherited_or_multipliers(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+        plain = expected_progression_events_for_curve(
+            [
+                {
+                    "state": STATE_RECENT,
+                    "weight": 1.0,
+                    "timeSinceRecentInfectionYears": 0.0,
+                }
+            ],
+            curve,
+            horizon_years=5.0,
+        )
+        all_legacy_flags = expected_progression_events_for_curve(
+            [
+                {
+                    "state": STATE_RECENT,
+                    "weight": 1.0,
+                    "timeSinceRecentInfectionYears": 0.0,
+                    "MJ": True,
+                    "contact": True,
+                    "renal": True,
+                    "diabetes": True,
+                    "smoking": True,
+                    "cld": True,
+                    "alcohol": True,
+                }
+            ],
+            curve,
+            horizon_years=5.0,
+        )
+
+        self.assertEqual(curve["riskFactorProgressionPolicy"], RISK_POLICY_NONE)
+        self.assertAlmostEqual(
+            plain["expectedCases"],
+            all_legacy_flags["expectedCases"],
+            places=12,
+        )
+        self.assertEqual(all_legacy_flags["rows"][0]["riskFactorMultiplierApplied"], 1.0)
+
+    def test_sensitivity_curve_identifiers_and_unavailable_curve_diagnostics(self) -> None:
+        conservative = build_conservative_time_since_infection_progression_curve()
+        central = build_central_time_since_infection_progression_curve()
+        higher = build_higher_progression_time_since_infection_curve()
+
+        self.assertEqual(
+            {
+                conservative["curveIdentifier"],
+                central["curveIdentifier"],
+                higher["curveIdentifier"],
+            },
+            {
+                CURVE_CONSERVATIVE_TIME_SINCE_INFECTION,
+                CURVE_CENTRAL_TIME_SINCE_INFECTION,
+                CURVE_HIGHER_TIME_SINCE_INFECTION,
+            },
+        )
+        self.assertFalse(progression_curve_availability("undocumented_curve_v1")["available"])
+        with self.assertRaisesRegex(ValueError, "unavailable"):
+            build_progression_curve_by_identifier("undocumented_curve_v1")
+        with self.assertRaisesRegex(ValueError, "riskFactorProgressionPolicy"):
+            validate_progression_curve_contract(
+                {**central, "riskFactorProgressionPolicy": RISK_POLICY_LEGACY_OR_AS_HAZARD_DIAGNOSTIC}
+            )
+
+    def test_validation_denominator_recomputes_without_changing_curve(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+        base = validate_active_tb_observation_against_progression_curve(
+            self.valid_row(populationDenominator=1000, personYears=1000),
+            [
+                {
+                    "state": STATE_RECENT,
+                    "weight": 100.0,
+                    "timeSinceRecentInfectionYears": 0.0,
+                }
+            ],
+            curve,
+            model_baseline_year=2026,
+            observation_model_id=OBSERVATION_MODEL_POISSON,
+            **self.ascertainment_kwargs(),
+        )
+        changed = validate_active_tb_observation_against_progression_curve(
+            self.valid_row(populationDenominator=2000, personYears=2000),
+            [
+                {
+                    "state": STATE_RECENT,
+                    "weight": 200.0,
+                    "timeSinceRecentInfectionYears": 0.0,
+                }
+            ],
+            curve,
+            model_baseline_year=2026,
+            observation_model_id=OBSERVATION_MODEL_POISSON,
+            **self.ascertainment_kwargs(),
+        )
+
+        self.assertTrue(base["validationOnly"])
+        self.assertFalse(base["fittingPerformed"])
+        self.assertIsNotNone(base["likelihood"])
+        self.assertEqual(base["sourcePopulationDenominator"], 1000.0)
+        self.assertEqual(changed["sourcePopulationDenominator"], 2000.0)
+        self.assertAlmostEqual(
+            changed["expectedActiveTBCaseCount"],
+            2.0 * base["expectedActiveTBCaseCount"],
+            places=12,
+        )
+        self.assertEqual(progression_curve_hash(curve), progression_curve_hash(curve))
+
+    def test_competing_risk_integration_with_external_survival_curve(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+        tb_hazard = curve["postFinalAnchorHazard"]
+        death_hazard = 0.01
+        horizon = 10.0
+        expected = tb_hazard / (tb_hazard + death_hazard) * (
+            1.0 - math.exp(-(tb_hazard + death_hazard) * horizon)
+        )
+        result = competing_risk_progression_probability_for_curve(
+            curve,
+            time_since_infection_at_baseline=25.0,
+            horizon_years=horizon,
+            competing_survival_curve=lambda t: math.exp(-death_hazard * t),
+            integration_steps=4096,
+        )
+        no_mortality = competing_risk_progression_probability_for_curve(
+            curve,
+            time_since_infection_at_baseline=25.0,
+            horizon_years=horizon,
+        )
+
+        self.assertAlmostEqual(result["cumulativeIncidence"], expected, places=7)
+        self.assertLessEqual(
+            result["cumulativeIncidence"],
+            no_mortality["cumulativeIncidence"],
+        )
+        self.assertIn("not modelled", no_mortality["diagnosticMessages"][0])
+        self.assertNotEqual(result["integrationMethod"], "scalar_horizon_survival")
+
+    def test_worked_table_shows_unconditioned_bias(self) -> None:
+        rows = worked_time_since_progression_diagnostic_table()
+        row = next(
+            item
+            for item in rows
+            if item["timeSinceInfectionAtBaseline"] == 4.9
+            and item["horizonYears"] == 5.0
+        )
+
+        self.assertGreater(row["biasAvoidedByConditioning"], 0.0)
+        self.assertLess(
+            row["conditionalFutureProgressionProbability"],
+            row["incorrectUnconditionedProgressionProbability"],
         )
 
 

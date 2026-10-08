@@ -47,6 +47,12 @@ parameterisations, risk-factor policy recommendations, mortality-source
 recommendations and user decisions required before runner integration. That
 follow-up is documentation-only and does not approve production defaults.
 
+Milestone 3A implements the approved central time-since-infection progression
+curve and conditional future-risk mathematics as isolated pure code. It still
+does not connect the pathway to the runner, Streamlit UI, population
+generation, intervention logic, event ledger, economics, DALYs, MATLAB,
+frozen-reference loading or the dynamic-transmission model.
+
 ## Selected identifiers
 
 - Analysis basis: `explicit_recent_remote_tbi_foundation_v1`
@@ -60,6 +66,18 @@ follow-up is documentation-only and does not approve production defaults.
 - Progression contract: `explicit_recent_remote_tbi_progression_v1`
 - Progression-calibration policy contract:
   `explicit_recent_remote_tbi_progression_calibration_policy_v1`
+- Progression-curve contract:
+  `explicit_recent_remote_tbi_progression_curve_v1`
+- Central progression curve:
+  `central_piecewise_time_since_infection_progression_v1`
+- Conservative sensitivity curve:
+  `conservative_piecewise_time_since_infection_progression_v1`
+- Higher-progression sensitivity curve:
+  `higher_progression_piecewise_time_since_infection_progression_v1`
+- Working reinfection policy:
+  `recent_reinfection_resets_progression_clock_v1`
+- Reinfection sensitivity policy:
+  `recent_reinfection_does_not_reset_progression_clock_v1`
 - Recent hazard shape: `constant_recent_window_hazard_v1`
 - Remote hazard shape: `constant_remote_window_hazard_v1`
 
@@ -395,6 +413,161 @@ It does not generate stochastic active-TB times.
 
 The cumulative hazard is continuous at the end of remaining early-risk time,
 although the instantaneous hazard may change from `lambda_E` to `lambda_L`.
+
+## Milestone 3A time-since-infection progression curve
+
+Approved working decisions for Milestone 3A:
+
+- recent infection classification remains infection acquired within five
+  years;
+- central natural history uses a piecewise-declining time-since-infection
+  curve;
+- risk-factor progression multipliers are `none` for the central policy;
+- active-TB observations are validation-only by default;
+- recent reinfection resets the progression clock in the working central
+  assumption;
+- a no-reset reinfection sensitivity remains available in isolated
+  configuration;
+- competing mortality remains an explicit external input;
+- inherited MATLAB-v9 compatibility behavior remains untouched.
+
+The versioned progression-curve contract is
+`explicit_recent_remote_tbi_progression_curve_v1`. It records the curve
+identifier, time anchors, cumulative risk anchors, transformed cumulative
+hazard anchors, interpolation method, post-final-anchor extrapolation method,
+recent-window definition, reinfection policy, mortality policy, risk-factor
+policy, sources, review status, notes and a deterministic canonical JSON hash.
+
+The approved central curve is:
+
+```text
+central_piecewise_time_since_infection_progression_v1
+```
+
+The central cumulative-risk anchors are untreated cumulative risks from the
+evidence dossier's time-since-infection synthesis. They are model-derived
+cumulative risks, not directly observed instantaneous hazards:
+
+| years since infection | cumulative risk F(t) | cumulative hazard H(t) |
+| ---: | ---: | ---: |
+| 0 | 0.000 | 0.0000000000 |
+| 1 | 0.038 | 0.0387408283 |
+| 2 | 0.050 | 0.0512932944 |
+| 5 | 0.066 | 0.0682788408 |
+| 10 | 0.072 | 0.0747235462 |
+| 25 | 0.079 | 0.0822952427 |
+
+Transformation:
+
+```text
+H(t) = -log[1 - F(t)]
+```
+
+Between anchors, `H(t)` is piecewise linear in time. Segment hazards are the
+slopes of cumulative hazard and are transformed quantities, not directly
+observed hazards:
+
+| interval since infection | derived segment hazard per year |
+| --- | ---: |
+| 0-1 years | 0.0387408283 |
+| 1-2 years | 0.0125524661 |
+| 2-5 years | 0.0056618488 |
+| 5-10 years | 0.0012889411 |
+| 10-25 years | 0.0005047798 |
+
+The post-final-anchor hazard is explicit. For the central working curve it is
+derived from the cumulative-hazard slope between 10 and 25 years:
+
+```text
+postFinalAnchorHazard = 0.0005047798 per year
+```
+
+This is an extrapolation beyond the final anchor, not a directly observed
+lifetime hazard. Progression does not silently become zero after 25 years, and
+cumulative risk is not extrapolated linearly.
+
+For a person infected `s` years before baseline who is active-TB free at
+baseline, prospective risk over follow-up `t` is survivor-conditioned:
+
+```text
+P(T <= t | T > s) = 1 - exp{-[H(s+t) - H(s)]}
+```
+
+The implementation deliberately does not use `1 - exp[-H(s+t)]` as the
+prospective risk from baseline. Recent infections use sampled time since most
+recent infection; a person infected 4.9 years before baseline receives only
+the future risk from 4.9 years onward, not a fresh five-year high-risk period.
+Remote-only infections use their sampled remote infection clock with
+`s >= 5` and continue through the explicit post-final-anchor hazard where
+needed.
+
+Implemented central survivor-conditioned diagnostics:
+
+| infection acquired | 1y | 2y | 5y | 10y | 20y |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| at baseline | 3.800% | 5.000% | 6.600% | 7.200% | 7.667% |
+| 0.5 years ago | 2.532% | 3.416% | 4.835% | 5.409% | 5.885% |
+| 2.5 years ago | 0.565% | 1.126% | 1.723% | 2.162% | 2.655% |
+| 4.9 years ago | 0.172% | 0.301% | 0.686% | 0.944% | 1.443% |
+| 5 years ago | 0.129% | 0.257% | 0.642% | 0.893% | 1.392% |
+| 10 years ago | 0.050% | 0.101% | 0.252% | 0.504% | 1.004% |
+| 25 years ago | 0.050% | 0.101% | 0.252% | 0.504% | 1.004% |
+| 50 years ago | 0.050% | 0.101% | 0.252% | 0.504% | 1.004% |
+
+The corresponding incorrect unconditioned calculation for someone infected
+4.9 years before baseline would use cumulative risk at 9.9 years and gives
+7.188% over a five-year horizon, instead of the conditioned 0.686%. This is
+the bias avoided by survivor conditioning.
+
+Reinfection policies:
+
+- `recent_reinfection_resets_progression_clock_v1`: effective state is
+  `recent`, `priorRemoteExposure=true` is retained, and progression uses time
+  since recent reinfection. In the central worked example, recent reinfection
+  0.5 years ago gives 4.835% five-year future risk.
+- `recent_reinfection_does_not_reset_progression_clock_v1`: effective state
+  remains `recent` for prevalence accounting, `priorRemoteExposure=true` is
+  retained, and progression uses the older remote clock. In the example with
+  a 25-year remote clock, five-year future risk is 0.252%.
+
+The sensitivity does not average clocks or combine risks; a more sophisticated
+partial-immunity/reinfection model remains a future scientific decision.
+
+Conservative and higher-progression sensitivity curves are encoded only from
+parameterisations already documented in the evidence dossier:
+
+- `conservative_piecewise_time_since_infection_progression_v1`;
+- `higher_progression_piecewise_time_since_infection_progression_v1`.
+
+Unsupported or undocumented curve identifiers fail transparently with a reason
+stating that complete numerical anchors were not documented.
+
+The central curve records:
+
+```text
+riskFactorProgressionPolicy = none
+```
+
+No inherited disease ORs or legacy OR-as-hazard multipliers are applied by the
+central curve, even if a row contains all inherited risk-factor flags.
+
+For active-TB observations, Milestone 3A provides validation-only comparison
+against the fixed progression curve. Validation output preserves observed
+cases, source denominator, prospective at-risk population, observation
+horizon, ascertainment, expected cases, absolute and relative difference and
+an optional explicitly selected likelihood. Changing a source denominator
+triggers recomputation of validation output but does not alter progression
+anchors or the curve hash.
+
+Competing mortality for the time-since curve uses:
+
+```text
+F_TB(T) = integral_0^T S_TB(u | s) S_D(u) h_TB(s+u) du
+```
+
+where `S_TB(u | s) = exp{-[H(s+u)-H(s)]}`. When mortality is absent, output
+records `competingMortality = not_modelled`. No mortality data are bundled or
+invented.
 
 ## Progression-calibration policies
 

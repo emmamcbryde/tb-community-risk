@@ -17,6 +17,32 @@ PROGRESSION_CONTRACT_VERSION = "explicit_recent_remote_tbi_progression_v1"
 PROGRESSION_CALIBRATION_CONTRACT_VERSION = (
     "explicit_recent_remote_tbi_progression_calibration_policy_v1"
 )
+PROGRESSION_CURVE_CONTRACT_VERSION = (
+    "explicit_recent_remote_tbi_progression_curve_v1"
+)
+
+CURVE_CENTRAL_TIME_SINCE_INFECTION = (
+    "central_piecewise_time_since_infection_progression_v1"
+)
+CURVE_CONSERVATIVE_TIME_SINCE_INFECTION = (
+    "conservative_piecewise_time_since_infection_progression_v1"
+)
+CURVE_HIGHER_TIME_SINCE_INFECTION = (
+    "higher_progression_piecewise_time_since_infection_progression_v1"
+)
+
+INTERPOLATION_PIECEWISE_LINEAR_CUMULATIVE_HAZARD = (
+    "piecewise_linear_cumulative_hazard_v1"
+)
+POST_FINAL_ANCHOR_EXPLICIT_HAZARD = "explicit_post_final_anchor_hazard_v1"
+POST_FINAL_ANCHOR_FROM_LAST_SEGMENT = (
+    "post_final_anchor_hazard_from_10_to_25_year_slope_v1"
+)
+
+REINFECTION_POLICY_RESET_CLOCK = "recent_reinfection_resets_progression_clock_v1"
+REINFECTION_POLICY_NO_RESET_CLOCK = (
+    "recent_reinfection_does_not_reset_progression_clock_v1"
+)
 
 TARGET_BASELINE_PREVALENCE = "baseline_prevalence_target"
 TARGET_SCREEN_DETECTED = "screen_detected_disease_target"
@@ -64,6 +90,16 @@ PRACTICAL_IDENTIFIABILITY_COMPOSITION_CONTRAST_THRESHOLD = 0.05
 
 DEFAULT_REVIEW_WARNING_MULTIPLIER = 10.0
 DEFAULT_REVIEW_BLOCK_MULTIPLIER = 100.0
+
+DEFAULT_RECENT_WINDOW_YEARS = 5.0
+
+CENTRAL_PROGRESSION_ANCHOR_TIMES = (1.0, 2.0, 5.0, 10.0, 25.0)
+CENTRAL_PROGRESSION_CUMULATIVE_RISKS = (0.038, 0.050, 0.066, 0.072, 0.079)
+CENTRAL_PROGRESSION_SOURCE = (
+    "Time-since-infection natural-history synthesis for the United States; "
+    "model-derived untreated cumulative risks cited in the branch evidence dossier."
+)
+CENTRAL_PROGRESSION_SOURCE_URL = "https://pmc.ncbi.nlm.nih.gov/articles/PMC7707158/"
 
 LEGACY_PROGRESSION_RISK_FACTORS = (
     {
@@ -129,6 +165,993 @@ class ProgressionCalibrationError(ValueError):
     def __init__(self, message: str, diagnostics: Mapping[str, Any] | None = None) -> None:
         super().__init__(message)
         self.diagnostics = dict(diagnostics or {})
+
+
+def build_progression_curve_contract(
+    *,
+    curve_identifier: str,
+    time_anchors: Iterable[float],
+    cumulative_risk_anchors: Iterable[float],
+    interpolation_method: str = INTERPOLATION_PIECEWISE_LINEAR_CUMULATIVE_HAZARD,
+    post_final_anchor_hazard: float | None = None,
+    post_final_anchor_extrapolation_method: str = POST_FINAL_ANCHOR_EXPLICIT_HAZARD,
+    recent_window_years: float = DEFAULT_RECENT_WINDOW_YEARS,
+    reinfection_policy: str = REINFECTION_POLICY_RESET_CLOCK,
+    mortality_policy: str = COMPETING_MORTALITY_NOT_MODELLED,
+    risk_factor_progression_policy: str = RISK_POLICY_NONE,
+    sources: Iterable[Mapping[str, Any]] = (),
+    review_status: str = "",
+    notes: str = "",
+    anchor_provenance: Iterable[Mapping[str, Any]] = (),
+    version_identifier: str = PROGRESSION_CURVE_CONTRACT_VERSION,
+) -> dict[str, Any]:
+    source_times = tuple(
+        _finite_nonnegative_float(value, "time_anchors") for value in time_anchors
+    )
+    source_risks = tuple(
+        _probability_less_than_one(value, "cumulative_risk_anchors")
+        for value in cumulative_risk_anchors
+    )
+    times = (
+        (0.0,) + source_times
+        if not source_times or source_times[0] != 0.0
+        else source_times
+    )
+    risks = (
+        (0.0,) + source_risks
+        if not source_times or source_times[0] != 0.0
+        else source_risks
+    )
+    if len(times) != len(risks):
+        raise ValueError("time_anchors and cumulative_risk_anchors must have the same length.")
+    if len(times) < 2:
+        raise ValueError("At least one positive progression anchor is required.")
+    for previous, current in zip(times[:-1], times[1:]):
+        if current <= previous:
+            raise ValueError("time_anchors must be strictly increasing.")
+    for previous, current in zip(risks[:-1], risks[1:]):
+        if current < previous:
+            raise ValueError("cumulative_risk_anchors must be non-decreasing.")
+    hazards = tuple(-math.log1p(-risk) for risk in risks)
+    segment_hazards = tuple(
+        (right_hazard - left_hazard) / (right_time - left_time)
+        for left_time, right_time, left_hazard, right_hazard in zip(
+            times[:-1],
+            times[1:],
+            hazards[:-1],
+            hazards[1:],
+        )
+    )
+    if post_final_anchor_hazard is None:
+        if post_final_anchor_extrapolation_method != POST_FINAL_ANCHOR_FROM_LAST_SEGMENT:
+            raise ValueError("post_final_anchor_hazard must be supplied explicitly.")
+        post_final_anchor_hazard = segment_hazards[-1]
+    payload = {
+        "contractVersion": str(version_identifier),
+        "curveIdentifier": str(curve_identifier),
+        "timeAnchors": list(times),
+        "cumulativeRiskAnchors": list(risks),
+        "cumulativeHazardAnchors": list(hazards),
+        "segmentHazards": list(segment_hazards),
+        "interpolationMethod": str(interpolation_method),
+        "postFinalAnchorExtrapolationMethod": str(
+            post_final_anchor_extrapolation_method
+        ),
+        "postFinalAnchorHazard": post_final_anchor_hazard,
+        "recentWindowYears": recent_window_years,
+        "reinfectionPolicy": str(reinfection_policy),
+        "mortalityPolicy": str(mortality_policy),
+        "riskFactorProgressionPolicy": str(risk_factor_progression_policy),
+        "sources": [dict(source) for source in sources],
+        "anchorProvenance": [dict(item) for item in anchor_provenance],
+        "reviewStatus": str(review_status),
+        "notes": str(notes),
+        "versionIdentifier": str(version_identifier),
+        "transformation": (
+            "Cumulative risk anchors F(t) are converted to cumulative hazard "
+            "anchors with H(t)=-log(1-F(t)); segment hazards are slopes of "
+            "piecewise-linear cumulative hazard and are not directly observed hazards."
+        ),
+    }
+    return validate_progression_curve_contract(payload)
+
+
+def validate_progression_curve_contract(payload: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise ValueError("Progression curve contract must be a mapping.")
+    contract = str(payload.get("contractVersion", PROGRESSION_CURVE_CONTRACT_VERSION))
+    if contract != PROGRESSION_CURVE_CONTRACT_VERSION:
+        raise ValueError(
+            f"contractVersion must be {PROGRESSION_CURVE_CONTRACT_VERSION!r}."
+        )
+    curve_identifier = str(payload.get("curveIdentifier") or "")
+    if not curve_identifier:
+        raise ValueError("curveIdentifier must be supplied.")
+    interpolation = str(payload.get("interpolationMethod") or "")
+    if interpolation != INTERPOLATION_PIECEWISE_LINEAR_CUMULATIVE_HAZARD:
+        raise ValueError("Unsupported progression-curve interpolationMethod.")
+    post_method = str(payload.get("postFinalAnchorExtrapolationMethod") or "")
+    if post_method not in {
+        POST_FINAL_ANCHOR_EXPLICIT_HAZARD,
+        POST_FINAL_ANCHOR_FROM_LAST_SEGMENT,
+    }:
+        raise ValueError("Unsupported postFinalAnchorExtrapolationMethod.")
+    times = tuple(
+        _finite_nonnegative_float(value, "timeAnchors")
+        for value in payload.get("timeAnchors", ())
+    )
+    risks = tuple(
+        _probability_less_than_one(value, "cumulativeRiskAnchors")
+        for value in payload.get("cumulativeRiskAnchors", ())
+    )
+    if len(times) != len(risks):
+        raise ValueError("timeAnchors and cumulativeRiskAnchors must have equal length.")
+    if len(times) < 2:
+        raise ValueError("At least origin and one positive anchor are required.")
+    if times[0] != 0.0:
+        raise ValueError("Progression curve must include origin time 0.")
+    if risks[0] != 0.0:
+        raise ValueError("Progression curve origin cumulative risk must be 0.")
+    for previous, current in zip(times[:-1], times[1:]):
+        if current <= previous:
+            raise ValueError("timeAnchors must be strictly increasing.")
+    for previous, current in zip(risks[:-1], risks[1:]):
+        if current < previous:
+            raise ValueError("cumulativeRiskAnchors must be non-decreasing.")
+    hazards = tuple(-math.log1p(-risk) for risk in risks)
+    for previous, current in zip(hazards[:-1], hazards[1:]):
+        if current < previous - 1e-15:
+            raise ValueError("cumulativeHazardAnchors must be non-decreasing.")
+    segment_hazards = tuple(
+        (right_hazard - left_hazard) / (right_time - left_time)
+        for left_time, right_time, left_hazard, right_hazard in zip(
+            times[:-1],
+            times[1:],
+            hazards[:-1],
+            hazards[1:],
+        )
+    )
+    for value in segment_hazards:
+        if value < -1e-15:
+            raise ValueError("segment hazards must be non-negative.")
+    segment_hazards = tuple(max(0.0, value) for value in segment_hazards)
+    supplied_hazards = payload.get("cumulativeHazardAnchors")
+    if supplied_hazards not in (None, ""):
+        supplied = tuple(float(value) for value in supplied_hazards)
+        if len(supplied) != len(hazards):
+            raise ValueError("cumulativeHazardAnchors length does not match anchors.")
+        for expected, actual in zip(hazards, supplied):
+            if abs(expected - actual) > 1e-12:
+                raise ValueError("cumulativeHazardAnchors do not match transformed risks.")
+    supplied_segments = payload.get("segmentHazards")
+    if supplied_segments not in (None, ""):
+        supplied = tuple(float(value) for value in supplied_segments)
+        if len(supplied) != len(segment_hazards):
+            raise ValueError("segmentHazards length does not match anchor intervals.")
+        for expected, actual in zip(segment_hazards, supplied):
+            if abs(expected - actual) > 1e-12:
+                raise ValueError("segmentHazards do not match cumulative hazard slopes.")
+    post_hazard = _finite_nonnegative_float(
+        payload.get("postFinalAnchorHazard"),
+        "postFinalAnchorHazard",
+    )
+    recent_window = _positive_float(
+        payload.get("recentWindowYears", DEFAULT_RECENT_WINDOW_YEARS),
+        "recentWindowYears",
+    )
+    reinfection_policy = str(payload.get("reinfectionPolicy") or "")
+    if reinfection_policy not in {
+        REINFECTION_POLICY_RESET_CLOCK,
+        REINFECTION_POLICY_NO_RESET_CLOCK,
+    }:
+        raise ValueError("Unsupported reinfectionPolicy.")
+    mortality_policy = str(payload.get("mortalityPolicy") or COMPETING_MORTALITY_NOT_MODELLED)
+    if mortality_policy not in {
+        COMPETING_MORTALITY_NOT_MODELLED,
+        COMPETING_MORTALITY_CONSTANT_HAZARD,
+        COMPETING_MORTALITY_SURVIVAL_CURVE,
+    }:
+        raise ValueError("Unsupported mortalityPolicy.")
+    risk_policy = str(payload.get("riskFactorProgressionPolicy") or RISK_POLICY_NONE)
+    if risk_policy != RISK_POLICY_NONE:
+        raise ValueError(
+            "Milestone 3A progression curves only support riskFactorProgressionPolicy=none."
+        )
+    return {
+        "contractVersion": contract,
+        "curveIdentifier": curve_identifier,
+        "timeAnchors": list(times),
+        "cumulativeRiskAnchors": list(risks),
+        "cumulativeHazardAnchors": list(hazards),
+        "segmentHazards": list(segment_hazards),
+        "interpolationMethod": interpolation,
+        "postFinalAnchorExtrapolationMethod": post_method,
+        "postFinalAnchorHazard": post_hazard,
+        "recentWindowYears": recent_window,
+        "reinfectionPolicy": reinfection_policy,
+        "mortalityPolicy": mortality_policy,
+        "riskFactorProgressionPolicy": risk_policy,
+        "sources": [dict(source) for source in payload.get("sources", ())],
+        "anchorProvenance": [
+            dict(item) for item in payload.get("anchorProvenance", ())
+        ],
+        "reviewStatus": str(payload.get("reviewStatus") or ""),
+        "notes": str(payload.get("notes") or ""),
+        "versionIdentifier": str(
+            payload.get("versionIdentifier", PROGRESSION_CURVE_CONTRACT_VERSION)
+        ),
+        "transformation": str(payload.get("transformation") or ""),
+        "validationDiagnostics": {
+            "originIsZero": times[0] == 0.0 and risks[0] == 0.0 and hazards[0] == 0.0,
+            "cumulativeHazardMonotonic": all(
+                right >= left for left, right in zip(hazards[:-1], hazards[1:])
+            ),
+            "segmentHazardsNonNegative": all(value >= 0.0 for value in segment_hazards),
+            "postFinalAnchorHazardExplicit": True,
+        },
+    }
+
+
+def progression_curve_json(curve: Mapping[str, Any]) -> str:
+    return _canonical_json(validate_progression_curve_contract(curve))
+
+
+def progression_curve_hash(curve: Mapping[str, Any]) -> str:
+    return hashlib.sha256(progression_curve_json(curve).encode("utf-8")).hexdigest()
+
+
+def build_central_time_since_infection_progression_curve(
+    *,
+    reinfection_policy: str = REINFECTION_POLICY_RESET_CLOCK,
+    mortality_policy: str = COMPETING_MORTALITY_NOT_MODELLED,
+) -> dict[str, Any]:
+    hazards = tuple(-math.log1p(-risk) for risk in CENTRAL_PROGRESSION_CUMULATIVE_RISKS)
+    post_final = (hazards[-1] - hazards[-2]) / (
+        CENTRAL_PROGRESSION_ANCHOR_TIMES[-1]
+        - CENTRAL_PROGRESSION_ANCHOR_TIMES[-2]
+    )
+    return build_progression_curve_contract(
+        curve_identifier=CURVE_CENTRAL_TIME_SINCE_INFECTION,
+        time_anchors=CENTRAL_PROGRESSION_ANCHOR_TIMES,
+        cumulative_risk_anchors=CENTRAL_PROGRESSION_CUMULATIVE_RISKS,
+        post_final_anchor_hazard=post_final,
+        post_final_anchor_extrapolation_method=POST_FINAL_ANCHOR_FROM_LAST_SEGMENT,
+        recent_window_years=DEFAULT_RECENT_WINDOW_YEARS,
+        reinfection_policy=reinfection_policy,
+        mortality_policy=mortality_policy,
+        risk_factor_progression_policy=RISK_POLICY_NONE,
+        sources=(
+            {
+                "citation": CENTRAL_PROGRESSION_SOURCE,
+                "url": CENTRAL_PROGRESSION_SOURCE_URL,
+                "accessDate": "2026-10-08",
+                "measure": "model-derived untreated cumulative progression risk",
+                "role": "central cumulative-risk anchors",
+            },
+        ),
+        review_status="approved_working_choice_subject_to_evidence_limitations",
+        notes=(
+            "Central Milestone 3A working curve. Segment hazards are transformed "
+            "from cumulative risk anchors; post-25-year hazard is extrapolated "
+            "from the 10-25 year cumulative-hazard slope."
+        ),
+        anchor_provenance=_central_anchor_provenance(),
+    )
+
+
+def build_conservative_time_since_infection_progression_curve() -> dict[str, Any]:
+    early = 0.0034
+    late = 0.00038
+    times = (1.0, 2.0, 5.0, 10.0, 25.0)
+    hazards = tuple(early * min(time, 5.0) + late * max(0.0, time - 5.0) for time in times)
+    risks = tuple(1.0 - math.exp(-hazard) for hazard in hazards)
+    return build_progression_curve_contract(
+        curve_identifier=CURVE_CONSERVATIVE_TIME_SINCE_INFECTION,
+        time_anchors=times,
+        cumulative_risk_anchors=risks,
+        post_final_anchor_hazard=late,
+        recent_window_years=DEFAULT_RECENT_WINDOW_YEARS,
+        reinfection_policy=REINFECTION_POLICY_RESET_CLOCK,
+        mortality_policy=COMPETING_MORTALITY_NOT_MODELLED,
+        risk_factor_progression_policy=RISK_POLICY_NONE,
+        sources=(
+            {
+                "citation": "Explicit recent/remote TBI parameter decision dossier",
+                "url": "docs/explicit_recent_remote_tbi_parameter_decision_dossier.md",
+                "accessDate": "2026-10-08",
+                "measure": "documented sensitivity segment hazards",
+                "role": "conservative sensitivity curve",
+            },
+        ),
+        review_status="sensitivity_only",
+        notes=(
+            "Conservative sensitivity encoded only from documented dossier "
+            "segment hazards: 0.0034/year through five years and 0.00038/year after."
+        ),
+        anchor_provenance=(
+            {
+                "timeYears": time,
+                "cumulativeRisk": risk,
+                "source": "derived from documented conservative segment hazards",
+                "transformation": "F(t)=1-exp[-H(t)]",
+                "directlyObservedHazard": False,
+            }
+            for time, risk in zip(times, risks)
+        ),
+    )
+
+
+def build_higher_progression_time_since_infection_curve() -> dict[str, Any]:
+    first_year = 0.060
+    five_year_hazard = -math.log1p(-0.145)
+    years_one_to_five = (five_year_hazard - first_year) / 4.0
+    late = 0.002
+    times = (1.0, 2.0, 5.0, 10.0, 25.0)
+    hazards = []
+    for time in times:
+        if time <= 1.0:
+            hazard = first_year * time
+        elif time <= 5.0:
+            hazard = first_year + years_one_to_five * (time - 1.0)
+        else:
+            hazard = five_year_hazard + late * (time - 5.0)
+        hazards.append(hazard)
+    risks = tuple(1.0 - math.exp(-hazard) for hazard in hazards)
+    return build_progression_curve_contract(
+        curve_identifier=CURVE_HIGHER_TIME_SINCE_INFECTION,
+        time_anchors=times,
+        cumulative_risk_anchors=risks,
+        post_final_anchor_hazard=late,
+        recent_window_years=DEFAULT_RECENT_WINDOW_YEARS,
+        reinfection_policy=REINFECTION_POLICY_RESET_CLOCK,
+        mortality_policy=COMPETING_MORTALITY_NOT_MODELLED,
+        risk_factor_progression_policy=RISK_POLICY_NONE,
+        sources=(
+            {
+                "citation": "Explicit recent/remote TBI parameter decision dossier; Trauer five-year sensitivity anchor",
+                "url": "docs/explicit_recent_remote_tbi_parameter_decision_dossier.md",
+                "accessDate": "2026-10-08",
+                "measure": "documented sensitivity segment hazards and five-year cumulative risk",
+                "role": "higher-progression sensitivity curve",
+            },
+        ),
+        review_status="sensitivity_only",
+        notes=(
+            "Higher-progression sensitivity encoded from documented dossier "
+            "values: 0.060/year in year 0-1, 14.5% cumulative risk by year "
+            "5, and 0.002/year after year 5."
+        ),
+        anchor_provenance=(
+            {
+                "timeYears": time,
+                "cumulativeRisk": risk,
+                "source": "derived from documented higher-progression sensitivity values",
+                "transformation": "F(t)=1-exp[-H(t)]",
+                "directlyObservedHazard": False,
+            }
+            for time, risk in zip(times, risks)
+        ),
+    )
+
+
+def build_progression_curve_by_identifier(curve_identifier: str) -> dict[str, Any]:
+    identifier = str(curve_identifier)
+    if identifier == CURVE_CENTRAL_TIME_SINCE_INFECTION:
+        return build_central_time_since_infection_progression_curve()
+    if identifier == CURVE_CONSERVATIVE_TIME_SINCE_INFECTION:
+        return build_conservative_time_since_infection_progression_curve()
+    if identifier == CURVE_HIGHER_TIME_SINCE_INFECTION:
+        return build_higher_progression_time_since_infection_curve()
+    raise ValueError(
+        f"Progression curve {identifier!r} is unavailable because complete numerical anchors were not documented."
+    )
+
+
+def progression_curve_availability(curve_identifier: str) -> dict[str, Any]:
+    try:
+        curve = build_progression_curve_by_identifier(curve_identifier)
+    except ValueError as exc:
+        return {
+            "curveIdentifier": str(curve_identifier),
+            "available": False,
+            "reason": str(exc),
+        }
+    return {
+        "curveIdentifier": curve["curveIdentifier"],
+        "available": True,
+        "reason": "Complete numerical anchors are available from the evidence dossier.",
+    }
+
+
+def time_since_curve_cumulative_hazard(
+    curve: Mapping[str, Any],
+    time_since_infection_years: float,
+) -> float:
+    validated = validate_progression_curve_contract(curve)
+    time_since = _finite_nonnegative_float(
+        time_since_infection_years,
+        "time_since_infection_years",
+    )
+    times = tuple(float(value) for value in validated["timeAnchors"])
+    hazards = tuple(float(value) for value in validated["cumulativeHazardAnchors"])
+    segment_hazards = tuple(float(value) for value in validated["segmentHazards"])
+    if time_since == 0.0:
+        return 0.0
+    for idx, right_time in enumerate(times[1:], start=1):
+        left_time = times[idx - 1]
+        if time_since <= right_time:
+            return hazards[idx - 1] + segment_hazards[idx - 1] * (
+                time_since - left_time
+            )
+    return hazards[-1] + float(validated["postFinalAnchorHazard"]) * (
+        time_since - times[-1]
+    )
+
+
+def time_since_curve_cumulative_progression_risk(
+    curve: Mapping[str, Any],
+    time_since_infection_years: float,
+) -> float:
+    hazard = time_since_curve_cumulative_hazard(curve, time_since_infection_years)
+    return 1.0 - math.exp(-hazard)
+
+
+def time_since_curve_incremental_cumulative_hazard(
+    curve: Mapping[str, Any],
+    *,
+    time_since_infection_at_baseline: float,
+    horizon_years: float,
+) -> float:
+    time_since = _finite_nonnegative_float(
+        time_since_infection_at_baseline,
+        "time_since_infection_at_baseline",
+    )
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    if horizon == 0.0:
+        return 0.0
+    start = time_since_curve_cumulative_hazard(curve, time_since)
+    end = time_since_curve_cumulative_hazard(curve, time_since + horizon)
+    return max(0.0, end - start)
+
+
+def time_since_curve_conditional_future_progression_probability(
+    curve: Mapping[str, Any],
+    *,
+    time_since_infection_at_baseline: float,
+    horizon_years: float,
+) -> float:
+    increment = time_since_curve_incremental_cumulative_hazard(
+        curve,
+        time_since_infection_at_baseline=time_since_infection_at_baseline,
+        horizon_years=horizon_years,
+    )
+    return 1.0 - math.exp(-increment)
+
+
+def time_since_curve_instantaneous_hazard(
+    curve: Mapping[str, Any],
+    time_since_infection_years: float,
+) -> float:
+    validated = validate_progression_curve_contract(curve)
+    time_since = _finite_nonnegative_float(
+        time_since_infection_years,
+        "time_since_infection_years",
+    )
+    times = tuple(float(value) for value in validated["timeAnchors"])
+    segment_hazards = tuple(float(value) for value in validated["segmentHazards"])
+    for idx, right_time in enumerate(times[1:], start=1):
+        left_time = times[idx - 1]
+        if left_time <= time_since < right_time:
+            return segment_hazards[idx - 1]
+    return float(validated["postFinalAnchorHazard"])
+
+
+def time_since_curve_segment_exposure_times(
+    curve: Mapping[str, Any],
+    *,
+    time_since_infection_at_baseline: float,
+    horizon_years: float,
+) -> tuple[dict[str, Any], ...]:
+    validated = validate_progression_curve_contract(curve)
+    start = _finite_nonnegative_float(
+        time_since_infection_at_baseline,
+        "time_since_infection_at_baseline",
+    )
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    end = start + horizon
+    if horizon == 0.0:
+        return ()
+    breakpoints = {start, end}
+    for anchor in validated["timeAnchors"]:
+        anchor_float = float(anchor)
+        if start < anchor_float < end:
+            breakpoints.add(anchor_float)
+    points = sorted(breakpoints)
+    rows = []
+    for left, right in zip(points[:-1], points[1:]):
+        if right <= left:
+            continue
+        rows.append(
+            {
+                "segmentStartSinceInfectionYears": left,
+                "segmentEndSinceInfectionYears": right,
+                "followUpStartYears": left - start,
+                "followUpEndYears": right - start,
+                "exposureYears": right - left,
+                "segmentHazard": time_since_curve_instantaneous_hazard(curve, left),
+                "incrementalCumulativeHazard": time_since_curve_cumulative_hazard(curve, right)
+                - time_since_curve_cumulative_hazard(curve, left),
+            }
+        )
+    return tuple(rows)
+
+
+def time_since_curve_validation_diagnostics(curve: Mapping[str, Any]) -> dict[str, Any]:
+    validated = validate_progression_curve_contract(curve)
+    return {
+        "contractVersion": PROGRESSION_CURVE_CONTRACT_VERSION,
+        "curveIdentifier": validated["curveIdentifier"],
+        "validationDiagnostics": dict(validated["validationDiagnostics"]),
+        "timeAnchors": list(validated["timeAnchors"]),
+        "cumulativeRiskAnchors": list(validated["cumulativeRiskAnchors"]),
+        "cumulativeHazardAnchors": list(validated["cumulativeHazardAnchors"]),
+        "segmentHazards": list(validated["segmentHazards"]),
+        "postFinalAnchorHazard": validated["postFinalAnchorHazard"],
+        "diagnosticMessages": [
+            "Segment hazards are transformed slopes of cumulative hazard, not directly observed hazards.",
+            "Post-final-anchor hazard is an explicit extrapolation parameter.",
+        ],
+    }
+
+
+def resolve_reinfection_progression_clock(
+    *,
+    state: str,
+    time_since_recent_infection: float | None = None,
+    time_since_remote_infection: float | None = None,
+    prior_remote_exposure: bool = False,
+    reinfection_policy: str = REINFECTION_POLICY_RESET_CLOCK,
+    recent_window_years: float = DEFAULT_RECENT_WINDOW_YEARS,
+) -> dict[str, Any]:
+    state_key = _state_key(state)
+    policy = str(reinfection_policy)
+    if policy not in {REINFECTION_POLICY_RESET_CLOCK, REINFECTION_POLICY_NO_RESET_CLOCK}:
+        raise ValueError("Unsupported reinfection_policy.")
+    window = _positive_float(recent_window_years, "recent_window_years")
+    if state_key == STATE_UNINFECTED:
+        return {
+            "state": state_key,
+            "progressionClockYears": None,
+            "usedClock": "none",
+            "priorRemoteExposure": bool(prior_remote_exposure),
+            "reinfectionPolicy": policy,
+        }
+    if state_key == STATE_REMOTE_ONLY:
+        if time_since_remote_infection is None:
+            raise ValueError("remote_only state requires time_since_remote_infection.")
+        remote_time = _finite_nonnegative_float(
+            time_since_remote_infection,
+            "time_since_remote_infection",
+        )
+        if remote_time < window:
+            raise ValueError("remote_only progression clock must be at least recentWindowYears.")
+        return {
+            "state": state_key,
+            "progressionClockYears": remote_time,
+            "usedClock": "remote",
+            "priorRemoteExposure": True,
+            "reinfectionPolicy": policy,
+        }
+    if time_since_recent_infection is None:
+        raise ValueError("recent state requires time_since_recent_infection.")
+    recent_time = _finite_nonnegative_float(
+        time_since_recent_infection,
+        "time_since_recent_infection",
+    )
+    if recent_time > window + 1e-12:
+        raise ValueError("recent progression clock cannot exceed recentWindowYears.")
+    if bool(prior_remote_exposure) and policy == REINFECTION_POLICY_NO_RESET_CLOCK:
+        if time_since_remote_infection is None:
+            raise ValueError(
+                "No-reset reinfection policy requires time_since_remote_infection."
+            )
+        remote_time = _finite_nonnegative_float(
+            time_since_remote_infection,
+            "time_since_remote_infection",
+        )
+        if remote_time < window:
+            raise ValueError("remote reinfection clock must be at least recentWindowYears.")
+        return {
+            "state": state_key,
+            "progressionClockYears": remote_time,
+            "usedClock": "remote_no_reset_sensitivity",
+            "priorRemoteExposure": True,
+            "timeSinceRecentInfectionYears": recent_time,
+            "timeSinceRemoteInfectionYears": remote_time,
+            "reinfectionPolicy": policy,
+        }
+    return {
+        "state": state_key,
+        "progressionClockYears": recent_time,
+        "usedClock": "recent_reset" if prior_remote_exposure else "recent",
+        "priorRemoteExposure": bool(prior_remote_exposure),
+        "timeSinceRecentInfectionYears": recent_time,
+        "timeSinceRemoteInfectionYears": None
+        if time_since_remote_infection is None
+        else _finite_nonnegative_float(
+            time_since_remote_infection,
+            "time_since_remote_infection",
+        ),
+        "reinfectionPolicy": policy,
+    }
+
+
+def time_since_curve_progression_probability_for_state(
+    row: Mapping[str, Any],
+    curve: Mapping[str, Any],
+    *,
+    horizon_years: float,
+) -> dict[str, Any]:
+    validated = validate_progression_curve_contract(curve)
+    state = _state_key(str(row.get("state", STATE_UNINFECTED)))
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    if state == STATE_UNINFECTED:
+        return {
+            "state": state,
+            "timeSinceInfectionAtBaseline": None,
+            "incrementalCumulativeHazard": 0.0,
+            "conditionalFutureProgressionProbability": 0.0,
+            "riskFactorMultiplierApplied": 1.0,
+            "riskFactorProgressionPolicy": validated["riskFactorProgressionPolicy"],
+        }
+    clock = _progression_clock_from_row(row, validated)
+    probability = time_since_curve_conditional_future_progression_probability(
+        validated,
+        time_since_infection_at_baseline=clock["progressionClockYears"],
+        horizon_years=horizon,
+    )
+    increment = time_since_curve_incremental_cumulative_hazard(
+        validated,
+        time_since_infection_at_baseline=clock["progressionClockYears"],
+        horizon_years=horizon,
+    )
+    return {
+        "state": state,
+        "timeSinceInfectionAtBaseline": clock["progressionClockYears"],
+        "incrementalCumulativeHazard": increment,
+        "conditionalFutureProgressionProbability": probability,
+        "riskFactorMultiplierApplied": 1.0,
+        "riskFactorProgressionPolicy": validated["riskFactorProgressionPolicy"],
+        "clockResolution": clock,
+    }
+
+
+def competing_risk_progression_probability_for_curve(
+    curve: Mapping[str, Any],
+    *,
+    time_since_infection_at_baseline: float,
+    horizon_years: float,
+    competing_survival_curve: Any = None,
+    competing_mortality_hazard: Any = None,
+    integration_tolerance: float = DEFAULT_INTEGRATION_TOLERANCE,
+    integration_steps: int = DEFAULT_NUMERICAL_INTEGRATION_STEPS,
+) -> dict[str, Any]:
+    validated = validate_progression_curve_contract(curve)
+    time_since = _finite_nonnegative_float(
+        time_since_infection_at_baseline,
+        "time_since_infection_at_baseline",
+    )
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    tolerance = _positive_float(integration_tolerance, "integration_tolerance")
+    if competing_survival_curve is not None and competing_mortality_hazard is not None:
+        raise ValueError(
+            "Provide either competing_survival_curve or competing_mortality_hazard, not both."
+        )
+    if competing_survival_curve is None and competing_mortality_hazard is None:
+        probability = time_since_curve_conditional_future_progression_probability(
+            validated,
+            time_since_infection_at_baseline=time_since,
+            horizon_years=horizon,
+        )
+        return {
+            "cumulativeIncidence": probability,
+            "competingMortality": COMPETING_MORTALITY_NOT_MODELLED,
+            "integrationMethod": "closed_form_no_competing_mortality",
+            "integrationTolerance": tolerance,
+            "diagnosticMessages": [
+                "Competing mortality is not modelled; long-horizon expected cases may be overstated."
+            ],
+        }
+    if competing_mortality_hazard is not None:
+        death_hazard = _finite_nonnegative_float(
+            competing_mortality_hazard,
+            "competing_mortality_hazard",
+        )
+        probability = _analytic_curve_competing_incidence(
+            validated,
+            time_since_infection_at_baseline=time_since,
+            horizon_years=horizon,
+            death_hazard=death_hazard,
+        )
+        return {
+            "cumulativeIncidence": probability,
+            "competingMortality": COMPETING_MORTALITY_CONSTANT_HAZARD,
+            "competingMortalityHazard": death_hazard,
+            "integrationMethod": INTEGRATION_ANALYTIC_PIECEWISE_CONSTANT,
+            "integrationTolerance": tolerance,
+            "diagnosticMessages": [
+                "Competing mortality was integrated with the time-since-infection TB hazard."
+            ],
+        }
+    survival = _validate_survival_curve(
+        competing_survival_curve,
+        horizon_years=horizon,
+        integration_steps=integration_steps,
+    )
+    probability = _numerical_curve_competing_incidence_with_survival_curve(
+        validated,
+        time_since_infection_at_baseline=time_since,
+        horizon_years=horizon,
+        survival_at=survival,
+        integration_steps=integration_steps,
+    )
+    return {
+        "cumulativeIncidence": probability,
+        "competingMortality": COMPETING_MORTALITY_SURVIVAL_CURVE,
+        "integrationMethod": INTEGRATION_NUMERICAL_TRAPEZOID,
+        "integrationTolerance": tolerance,
+        "integrationSteps": int(integration_steps),
+        "diagnosticMessages": [
+            "Competing mortality was integrated from an externally supplied survival curve; no horizon-level multiplication was used."
+        ],
+    }
+
+
+def expected_progression_events_for_curve(
+    strata: Iterable[Mapping[str, Any]],
+    curve: Mapping[str, Any],
+    *,
+    horizon_years: float,
+    default_ascertainment_probability: float = 1.0,
+    competing_survival_curve: Any = None,
+    competing_mortality_hazard: Any = None,
+    integration_steps: int = DEFAULT_NUMERICAL_INTEGRATION_STEPS,
+    exclude_baseline_active_tb: bool = True,
+) -> dict[str, Any]:
+    validated = validate_progression_curve_contract(curve)
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    q_default = _probability(
+        default_ascertainment_probability,
+        "default_ascertainment_probability",
+    )
+    rows = []
+    total = 0.0
+    total_weight = 0.0
+    included_weight = 0.0
+    excluded_baseline = 0.0
+    for idx, row in enumerate(strata):
+        weight = _row_weight(row, idx)
+        total_weight += weight
+        raw_state = str(row.get("state", STATE_UNINFECTED))
+        if exclude_baseline_active_tb and (
+            raw_state == STATE_BASELINE_ACTIVE_TB
+            or bool(row.get("baselineActiveTB", False))
+        ):
+            excluded_baseline += weight
+            continue
+        state = _state_key(raw_state)
+        ascertainment = _probability(
+            row.get("ascertainmentProbability", q_default),
+            f"strata[{idx}].ascertainmentProbability",
+        )
+        if state == STATE_UNINFECTED:
+            probability = 0.0
+            clock = None
+            mortality = {
+                "competingMortality": COMPETING_MORTALITY_NOT_MODELLED,
+                "integrationMethod": "no_tb_risk_uninfected",
+            }
+        else:
+            clock = _progression_clock_from_row(row, validated)
+            mortality = competing_risk_progression_probability_for_curve(
+                validated,
+                time_since_infection_at_baseline=clock["progressionClockYears"],
+                horizon_years=horizon,
+                competing_survival_curve=competing_survival_curve,
+                competing_mortality_hazard=competing_mortality_hazard,
+                integration_steps=integration_steps,
+            )
+            probability = mortality["cumulativeIncidence"]
+        expected = weight * probability * ascertainment
+        included_weight += weight
+        total += expected
+        rows.append(
+            {
+                "index": idx,
+                "state": state,
+                "weight": weight,
+                "timeSinceInfectionAtBaseline": None
+                if clock is None
+                else clock["progressionClockYears"],
+                "priorRemoteExposure": bool(row.get("priorRemoteExposure", False)),
+                "ascertainmentProbability": ascertainment,
+                "conditionalFutureProgressionProbability": probability,
+                "expectedCases": expected,
+                "riskFactorMultiplierApplied": 1.0,
+                "riskFactorProgressionPolicy": validated["riskFactorProgressionPolicy"],
+                "competingMortality": mortality["competingMortality"],
+                "integrationMethod": mortality["integrationMethod"],
+                "clockResolution": clock,
+            }
+        )
+    return {
+        "contractVersion": PROGRESSION_CONTRACT_VERSION,
+        "progressionCurveContractVersion": PROGRESSION_CURVE_CONTRACT_VERSION,
+        "curveIdentifier": validated["curveIdentifier"],
+        "horizonYears": horizon,
+        "expectedCases": total,
+        "totalWeight": total_weight,
+        "includedWeight": included_weight,
+        "prospectiveAtRiskPopulation": included_weight,
+        "tbiEligiblePopulation": included_weight,
+        "baselineActiveTBCount": excluded_baseline,
+        "excludedBaselineActiveTBWeight": excluded_baseline,
+        "competingMortality": (
+            COMPETING_MORTALITY_NOT_MODELLED
+            if competing_survival_curve is None and competing_mortality_hazard is None
+            else (
+                COMPETING_MORTALITY_SURVIVAL_CURVE
+                if competing_survival_curve is not None
+                else COMPETING_MORTALITY_CONSTANT_HAZARD
+            )
+        ),
+        "riskFactorProgressionPolicy": validated["riskFactorProgressionPolicy"],
+        "diagnosticMessages": [
+            "Risk-factor progression policy is none; inherited OR multipliers are not applied.",
+            "Active-TB observations are validation-only under the Milestone 3A central policy.",
+        ],
+        "rows": rows,
+    }
+
+
+def validate_active_tb_observation_against_progression_curve(
+    row: Mapping[str, Any],
+    strata: Iterable[Mapping[str, Any]],
+    curve: Mapping[str, Any],
+    *,
+    model_baseline_year: int,
+    ascertainment_probability: float | None = None,
+    ascertainment_source: str = "",
+    ascertainment_review_status: str = "",
+    observation_model_id: str | None = None,
+    competing_survival_curve: Any = None,
+    competing_mortality_hazard: Any = None,
+) -> dict[str, Any]:
+    validated_curve = validate_progression_curve_contract(curve)
+    strata_tuple = tuple(strata)
+    eligibility = assess_observation_prospective_calibration_eligibility(
+        row,
+        model_baseline_year=model_baseline_year,
+        strata=strata_tuple,
+        ascertainment_probability=ascertainment_probability,
+        ascertainment_source=ascertainment_source,
+        ascertainment_review_status=ascertainment_review_status,
+    )
+    if not eligibility["eligible"]:
+        return {
+            "contractVersion": PROGRESSION_CONTRACT_VERSION,
+            "progressionCurveContractVersion": PROGRESSION_CURVE_CONTRACT_VERSION,
+            "curveIdentifier": validated_curve["curveIdentifier"],
+            "validationOnly": True,
+            "eligibleForProspectiveValidation": False,
+            "eligibility": eligibility,
+            "diagnosticMessages": [
+                "Observation is not eligible for prospective incident validation against the curve."
+            ],
+        }
+    q = _strict_positive_probability(
+        ascertainment_probability,
+        "ascertainment_probability",
+    )
+    observed = eligibility["observation"]
+    horizon = eligibility["horizonYears"]
+    expected = expected_progression_events_for_curve(
+        strata_tuple,
+        validated_curve,
+        horizon_years=horizon,
+        default_ascertainment_probability=q,
+        competing_survival_curve=competing_survival_curve,
+        competing_mortality_hazard=competing_mortality_hazard,
+    )
+    observed_cases = float(observed["observedActiveTBCaseCount"])
+    expected_cases = float(expected["expectedCases"])
+    absolute_difference = expected_cases - observed_cases
+    relative_difference = (
+        math.inf
+        if observed_cases == 0.0 and expected_cases > 0.0
+        else (0.0 if observed_cases == 0.0 else absolute_difference / observed_cases)
+    )
+    likelihood = None
+    if observation_model_id is not None:
+        likelihood = active_tb_observation_log_likelihood(
+            observed_cases=observed_cases,
+            expected_cases=expected_cases,
+            denominator=float(observed["populationDenominator"]),
+            observation_model_id=observation_model_id,
+        )
+    denominators = eligibility["denominatorSummary"]
+    return {
+        "contractVersion": PROGRESSION_CONTRACT_VERSION,
+        "progressionCurveContractVersion": PROGRESSION_CURVE_CONTRACT_VERSION,
+        "curveIdentifier": validated_curve["curveIdentifier"],
+        "validationOnly": True,
+        "fittingPerformed": False,
+        "eligibleForProspectiveValidation": True,
+        "observationId": observed["observationId"],
+        "observationStartYear": observed["startYear"],
+        "observationEndYear": observed["endYear"],
+        "observationHorizonYears": horizon,
+        "observedActiveTBCaseCount": observed_cases,
+        "sourcePopulationDenominator": denominators["sourcePopulationDenominator"],
+        "populationDenominator": observed["populationDenominator"],
+        "prospectiveAtRiskPopulation": denominators["prospectiveAtRiskPopulation"],
+        "tbiEligiblePopulation": denominators["tbiEligiblePopulation"],
+        "baselineActiveTBCount": denominators["baselineActiveTBCount"],
+        "personTimeAtRisk": denominators["personTimeAtRisk"],
+        "ascertainmentProbability": q,
+        "ascertainmentSource": str(ascertainment_source),
+        "ascertainmentReviewStatus": str(ascertainment_review_status),
+        "expectedActiveTBCaseCount": expected_cases,
+        "absoluteDifferenceExpectedMinusObserved": absolute_difference,
+        "relativeDifferenceExpectedMinusObserved": relative_difference,
+        "likelihood": likelihood,
+        "expectedProgression": expected,
+        "eligibility": eligibility,
+        "diagnosticMessages": [
+            "Validation-only comparison; active-TB observations do not fit or alter the progression curve."
+        ],
+    }
+
+
+def worked_time_since_progression_diagnostic_table(
+    curve: Mapping[str, Any] | None = None,
+    *,
+    horizons: Iterable[float] = (1.0, 2.0, 5.0, 10.0, 20.0),
+    infection_times: Iterable[float] = (0.0, 0.5, 2.5, 4.9, 5.0, 10.0, 25.0, 50.0),
+) -> tuple[dict[str, Any], ...]:
+    validated = (
+        build_central_time_since_infection_progression_curve()
+        if curve is None
+        else validate_progression_curve_contract(curve)
+    )
+    rows = []
+    for time_since in infection_times:
+        for horizon in horizons:
+            conditioned = time_since_curve_conditional_future_progression_probability(
+                validated,
+                time_since_infection_at_baseline=float(time_since),
+                horizon_years=float(horizon),
+            )
+            unconditioned = time_since_curve_cumulative_progression_risk(
+                validated,
+                float(time_since) + float(horizon),
+            )
+            rows.append(
+                {
+                    "curveIdentifier": validated["curveIdentifier"],
+                    "timeSinceInfectionAtBaseline": float(time_since),
+                    "horizonYears": float(horizon),
+                    "conditionalFutureProgressionProbability": conditioned,
+                    "incorrectUnconditionedProgressionProbability": unconditioned,
+                    "biasAvoidedByConditioning": unconditioned - conditioned,
+                    "incrementalCumulativeHazard": time_since_curve_incremental_cumulative_hazard(
+                        validated,
+                        time_since_infection_at_baseline=float(time_since),
+                        horizon_years=float(horizon),
+                    ),
+                }
+            )
+    return tuple(rows)
 
 
 def build_progression_calibration_policy(
@@ -2212,6 +3235,195 @@ def ascertainment_progression_scale_confounding_diagnostic(
     }
 
 
+def _central_anchor_provenance() -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "timeYears": time,
+            "cumulativeRisk": risk,
+            "source": CENTRAL_PROGRESSION_SOURCE,
+            "url": CENTRAL_PROGRESSION_SOURCE_URL,
+            "measure": "model-derived untreated cumulative progression risk",
+            "transformation": "H(t)=-log(1-F(t))",
+            "directlyObservedHazard": False,
+            "limitations": (
+                "Cumulative risk anchor from evidence synthesis; transformed "
+                "segment hazards are not directly observed hazards."
+            ),
+        }
+        for time, risk in zip(
+            CENTRAL_PROGRESSION_ANCHOR_TIMES,
+            CENTRAL_PROGRESSION_CUMULATIVE_RISKS,
+        )
+    )
+
+
+def _progression_clock_from_row(
+    row: Mapping[str, Any],
+    curve: Mapping[str, Any],
+) -> dict[str, Any]:
+    state = _state_key(str(row.get("state", STATE_UNINFECTED)))
+    if state == STATE_UNINFECTED:
+        return resolve_reinfection_progression_clock(
+            state=state,
+            prior_remote_exposure=bool(row.get("priorRemoteExposure", False)),
+            reinfection_policy=str(curve["reinfectionPolicy"]),
+            recent_window_years=float(curve["recentWindowYears"]),
+        )
+    if "progressionClockYears" in row:
+        clock = _finite_nonnegative_float(
+            row["progressionClockYears"],
+            "progressionClockYears",
+        )
+        if state == STATE_REMOTE_ONLY and clock < float(curve["recentWindowYears"]):
+            raise ValueError("remote_only progressionClockYears must be at least recentWindowYears.")
+        if state == STATE_RECENT and clock > float(curve["recentWindowYears"]) + 1e-12:
+            raise ValueError("recent progressionClockYears cannot exceed recentWindowYears.")
+        return {
+            "state": state,
+            "progressionClockYears": clock,
+            "usedClock": "explicit_progression_clock",
+            "priorRemoteExposure": bool(row.get("priorRemoteExposure", False)),
+            "reinfectionPolicy": str(curve["reinfectionPolicy"]),
+        }
+    recent_time = row.get(
+        "timeSinceRecentInfectionYears",
+        row.get("timeSinceMostRecentInfection", row.get("timeSinceInfectionYears")),
+    )
+    remote_time = row.get(
+        "timeSinceRemoteInfectionYears",
+        row.get("timeSinceRemoteInfection"),
+    )
+    if state == STATE_REMOTE_ONLY and remote_time is None:
+        remote_time = row.get("timeSinceInfectionYears")
+    return resolve_reinfection_progression_clock(
+        state=state,
+        time_since_recent_infection=None if recent_time is None else float(recent_time),
+        time_since_remote_infection=None if remote_time is None else float(remote_time),
+        prior_remote_exposure=bool(row.get("priorRemoteExposure", False)),
+        reinfection_policy=str(curve["reinfectionPolicy"]),
+        recent_window_years=float(curve["recentWindowYears"]),
+    )
+
+
+def _analytic_curve_competing_incidence(
+    curve: Mapping[str, Any],
+    *,
+    time_since_infection_at_baseline: float,
+    horizon_years: float,
+    death_hazard: float,
+) -> float:
+    start = _finite_nonnegative_float(
+        time_since_infection_at_baseline,
+        "time_since_infection_at_baseline",
+    )
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    death = _finite_nonnegative_float(death_hazard, "death_hazard")
+    if horizon == 0.0:
+        return 0.0
+    probability = 0.0
+    baseline_hazard = time_since_curve_cumulative_hazard(curve, start)
+    for segment in time_since_curve_segment_exposure_times(
+        curve,
+        time_since_infection_at_baseline=start,
+        horizon_years=horizon,
+    ):
+        left_follow = float(segment["followUpStartYears"])
+        duration = float(segment["exposureYears"])
+        tb_hazard = float(segment["segmentHazard"])
+        if duration <= 0.0 or tb_hazard <= 0.0:
+            continue
+        cumulative_tb_to_left = (
+            time_since_curve_cumulative_hazard(
+                curve,
+                float(segment["segmentStartSinceInfectionYears"]),
+            )
+            - baseline_hazard
+        )
+        total_hazard = tb_hazard + death
+        survival_to_left = math.exp(-(cumulative_tb_to_left + death * left_follow))
+        probability += (
+            survival_to_left
+            * tb_hazard
+            * (-math.expm1(-total_hazard * duration))
+            / total_hazard
+        )
+    return min(max(probability, 0.0), 1.0)
+
+
+def _numerical_curve_competing_incidence_with_survival_curve(
+    curve: Mapping[str, Any],
+    *,
+    time_since_infection_at_baseline: float,
+    horizon_years: float,
+    survival_at,
+    integration_steps: int,
+) -> float:
+    start = _finite_nonnegative_float(
+        time_since_infection_at_baseline,
+        "time_since_infection_at_baseline",
+    )
+    horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
+    if horizon == 0.0:
+        return 0.0
+    steps = int(integration_steps)
+    if steps < 16:
+        raise ValueError("integration_steps must be at least 16.")
+    breakpoints = {0.0, horizon}
+    for anchor in validate_progression_curve_contract(curve)["timeAnchors"]:
+        follow_time = float(anchor) - start
+        if 0.0 < follow_time < horizon:
+            breakpoints.add(follow_time)
+    probability = 0.0
+    for left, right in zip(sorted(breakpoints)[:-1], sorted(breakpoints)[1:]):
+        width = right - left
+        if width <= 0.0:
+            continue
+        local_steps = max(16, int(math.ceil(steps * width / horizon)))
+        dt = width / local_steps
+        previous = _curve_competing_integrand(
+            curve,
+            time_since_infection_at_baseline=start,
+            follow_up_time=left,
+            death_survival=survival_at(left),
+        )
+        segment = 0.0
+        for step in range(1, local_steps + 1):
+            follow_time = left + step * dt
+            current = _curve_competing_integrand(
+                curve,
+                time_since_infection_at_baseline=start,
+                follow_up_time=follow_time,
+                death_survival=survival_at(follow_time),
+            )
+            segment += 0.5 * (previous + current) * dt
+            previous = current
+        probability += segment
+    return min(max(probability, 0.0), 1.0)
+
+
+def _curve_competing_integrand(
+    curve: Mapping[str, Any],
+    *,
+    time_since_infection_at_baseline: float,
+    follow_up_time: float,
+    death_survival: float,
+) -> float:
+    start = _finite_nonnegative_float(
+        time_since_infection_at_baseline,
+        "time_since_infection_at_baseline",
+    )
+    follow = _finite_nonnegative_float(follow_up_time, "follow_up_time")
+    death_survival_value = _probability(death_survival, "death_survival")
+    incremental_hazard = time_since_curve_incremental_cumulative_hazard(
+        curve,
+        time_since_infection_at_baseline=start,
+        horizon_years=follow,
+    )
+    tb_survival = math.exp(-incremental_hazard)
+    tb_hazard = time_since_curve_instantaneous_hazard(curve, start + follow)
+    return tb_survival * death_survival_value * tb_hazard
+
+
 def _validate_ascertainment_assumption(
     ascertainment_probability: float | None,
     *,
@@ -2900,6 +4112,13 @@ def _probability(value: Any, label: str) -> float:
     number = float(value)
     if not math.isfinite(number) or number < 0.0 or number > 1.0:
         raise ValueError(f"{label} must be a finite probability in [0,1].")
+    return number
+
+
+def _probability_less_than_one(value: Any, label: str) -> float:
+    number = _probability(value, label)
+    if number >= 1.0:
+        raise ValueError(f"{label} must be in [0,1).")
     return number
 
 
