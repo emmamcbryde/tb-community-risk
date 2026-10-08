@@ -286,6 +286,34 @@ Follow-up after internet restoration on 2026-10-08:
   tests, runner, UI, ledger, economics, DALY, MATLAB, frozen-reference or
   dynamic-model code.
 
+Decision-support follow-up after Milestone 2D:
+
+- `docs/explicit_recent_remote_tbi_parameter_decision_dossier.md` converts the
+  evidence review into a numerical parameter decision dossier for natural
+  history, calibration policy, risk-factor policy, reinfection, age effects,
+  competing mortality and active-TB observation use;
+- the dossier recommends retaining the five-year recent-infection
+  classification with two-year and continuous-decline sensitivity analyses,
+  using externally supplied hazards plus validation-only active-TB comparisons
+  for initial production integration, and using `none` as the central
+  risk-factor multiplier policy;
+- the dossier also records candidate conservative, central and
+  higher-progression parameterisations and the decisions requiring user
+  approval before runner integration;
+- this follow-up is documentation-only and does not approve any production
+  defaults, alter code or connect the pathway to the runner.
+
+Runner integration remains blocked pending explicit user decisions on:
+
+- natural-history shape and whether a two-phase approximation is acceptable;
+- recent-window classification and sensitivity analyses;
+- progression-calibration policy and target eligibility;
+- ascertainment assumptions;
+- risk-factor multiplier policy;
+- reinfection reset handling;
+- competing-mortality source;
+- active-TB observation use.
+
 Milestone 2D retained the risk diagnostic that inherited OR-labelled factors
 can multiply to `2916`, and retained the synthetic example in which the
 highest 1% of population weight contributes about `0.832978` of expected
@@ -418,13 +446,11 @@ No release branch or tag should be moved. No deployment should be updated.
 
 ## Future Milestone 2E recommendation
 
-Milestone 2E should make the scientific policy decision needed before runner
-integration: externally supplied hazards, fixed-ratio one-parameter fitting,
-or validation-only for initial use. It should also choose reviewed
-ascertainment assumptions, competing-mortality source handling and whether the
-two-phase constant-hazard approximation is adequate. Only after those
-decisions should the branch begin runner integration behind explicit
-new-pathway metadata and cache keys. Event-ledger, economics and DALY
-integration should remain a later separate milestone unless explicitly scoped.
+Milestone 2E should record the user's approved choices from
+`docs/explicit_recent_remote_tbi_parameter_decision_dossier.md` and then begin
+runner integration only within those approved boundaries. Initial integration
+should remain behind explicit new-pathway metadata and cache keys. Event-ledger,
+economics and DALY integration should remain a later separate milestone unless
+explicitly scoped.
 
 The model remains for planning and sequencing, not for denying care.

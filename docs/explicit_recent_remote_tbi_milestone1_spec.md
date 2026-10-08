@@ -40,6 +40,13 @@ pure code only and still does not connect the pathway to the runner,
 Streamlit UI, population generation, interventions, event ledger, economics,
 DALYs, MATLAB, frozen-reference loading or the dynamic-transmission model.
 
+The decision-support follow-up after Milestone 2D is documented in
+`docs/explicit_recent_remote_tbi_parameter_decision_dossier.md`. It converts
+the evidence review into candidate numerical natural-history
+parameterisations, risk-factor policy recommendations, mortality-source
+recommendations and user decisions required before runner integration. That
+follow-up is documentation-only and does not approve production defaults.
+
 ## Selected identifiers
 
 - Analysis basis: `explicit_recent_remote_tbi_foundation_v1`
