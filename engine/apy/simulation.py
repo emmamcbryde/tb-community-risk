@@ -20,6 +20,11 @@ from engine.apy.cohort import (
 )
 from engine.apy.config import normalise_config
 from engine.apy.eligibility import resolve_eligibility, screening_coverage_of_population
+from engine.apy.explicit_recent_remote_runner import (
+    apply_explicit_recent_remote_population_assignment,
+    is_explicit_recent_remote_calibration,
+    is_explicit_recent_remote_pathway_selected,
+)
 from engine.apy.ltbi_state import require_numeric_ltbi_state_assumptions
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from engine.apy.infection_history import (
@@ -207,7 +212,15 @@ def simulate_one_cohort(
         calibration["ageInfGamma"],
         rng,
     )
-    if calibration.get("infectionHistory"):
+    if is_explicit_recent_remote_calibration(calibration):
+        population, recent_at_baseline, remote_at_baseline, t_recent_to_remote, t_active = (
+            apply_explicit_recent_remote_population_assignment(
+                population,
+                calibration,
+                rng,
+            )
+        )
+    elif calibration.get("infectionHistory"):
         population["pInfection"] = prevalent_infection_probabilities(
             population["ageYears"],
             pars,
@@ -228,29 +241,30 @@ def simulate_one_cohort(
     if calibration.get("zeroInfectionPrevalence"):
         population["pInfection"] = np.zeros(n, dtype=float)
         population["infected"] = np.zeros(n, dtype=bool)
-    population = add_targeting_scores(
-        population,
-        calibration["lambdaEarly"],
-        calibration["lambdaLate"],
-        opts["screenWindow"],
-        opts["followHorizon"],
-        opts["earlyProgressionPeriodYears"],
-        population.get("pRecentGivenInfected", opts["baselineRecentLTBIProportion"]),
-        opts["recentToRemoteTransitionRatePerYear"],
-    )
-    recent_at_baseline, remote_at_baseline, t_recent_to_remote, t_active = (
-        _draw_ltbi_state_history(
-            population["infected"],
-            population["diseaseMultiplier"],
+    if not is_explicit_recent_remote_calibration(calibration):
+        population = add_targeting_scores(
+            population,
             calibration["lambdaEarly"],
             calibration["lambdaLate"],
+            opts["screenWindow"],
+            opts["followHorizon"],
+            opts["earlyProgressionPeriodYears"],
             population.get("pRecentGivenInfected", opts["baselineRecentLTBIProportion"]),
             opts["recentToRemoteTransitionRatePerYear"],
-            opts["screenWindow"],
-            opts.get("naturalHistorySemantics"),
-            rng,
         )
-    )
+        recent_at_baseline, remote_at_baseline, t_recent_to_remote, t_active = (
+            _draw_ltbi_state_history(
+                population["infected"],
+                population["diseaseMultiplier"],
+                calibration["lambdaEarly"],
+                calibration["lambdaLate"],
+                population.get("pRecentGivenInfected", opts["baselineRecentLTBIProportion"]),
+                opts["recentToRemoteTransitionRatePerYear"],
+                opts["screenWindow"],
+                opts.get("naturalHistorySemantics"),
+                rng,
+            )
+        )
     population["recentLTBIAtBaseline"] = recent_at_baseline
     population["remoteLTBIAtBaseline"] = remote_at_baseline
     population["tRecentToRemote"] = t_recent_to_remote
@@ -686,8 +700,11 @@ def _simulation_options(config: dict[str, Any]) -> dict[str, Any]:
     eligibility = resolve_eligibility(cfg)
     ltbi_state = resolve_ltbi_state_assumptions(cfg)
     baseline_recent = ltbi_state["baselineRecentLTBIProportion"]
+    explicit_pathway = is_explicit_recent_remote_pathway_selected(cfg)
     if baseline_recent is None:
-        if (
+        if explicit_pathway:
+            baseline_recent = 0.0
+        elif (
             (cfg.get("ltbiStateAssumptions") or {}).get("baselineRecentLTBIDerivationMethod")
             == "infection_history_trajectory"
         ):

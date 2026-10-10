@@ -105,6 +105,11 @@ def is_frozen_sa_health_reference_eligible(config: dict[str, Any] | None) -> boo
     """Return True when config exactly matches the frozen 2,000-run report scenario."""
     if not isinstance(config, dict):
         return False
+    if str(config.get("analysisPathway") or "") == "explicit_recent_remote_tbi_v2":
+        return False
+    explicit_config = config.get("explicitRecentRemoteTBI")
+    if isinstance(explicit_config, dict) and bool(explicit_config.get("enabled", False)):
+        return False
     try:
         candidate = _normalised_reference_config(config)
         frozen = _normalised_reference_config(frozen_reference_config())

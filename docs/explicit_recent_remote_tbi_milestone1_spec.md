@@ -1164,6 +1164,77 @@ detections change, calibration must rerun. The original source numerator,
 denominator and observation period remain visible; the model does not overwrite
 the observed denominator with a derived at-risk count.
 
+## Milestone 3B isolated runner integration
+
+Milestone 3B adds a guarded agent-based runner pathway with identifier
+`explicit_recent_remote_tbi_v2`. Activation requires both:
+
+- top-level `analysisPathway = explicit_recent_remote_tbi_v2`;
+- nested `explicitRecentRemoteTBI.enabled = true` and
+  `explicitRecentRemoteTBI.pathwayIdentifier =
+  explicit_recent_remote_tbi_v2`.
+
+The runner contract version is
+`explicit_recent_remote_tbi_runner_config_v1`. It records the mutually
+exclusive recent and remote-only targets, recent-window duration, remote
+history cap, `age85PlusMax`, calibrated recent and remote hazards,
+progression-curve identifier and hash, progression anchors, post-final-anchor
+rule, reinfection policy, risk-factor progression policy, mortality policy,
+active-TB observation policy, stochastic seed/repetition provenance and source
+or review status for the new scientific inputs. Canonical serialization and
+SHA-256 hashing are deterministic.
+
+The explicit runner pathway does not reuse `baselineRecentLTBIProportion`,
+`continuous_markov_recent_remote`, MATLAB-v9 compatibility identifiers or the
+retired Rising/Steady/Falling infection-history pathway. Unknown, missing or
+inconsistent pathway provenance fails before calibration. Frozen SA Health
+reference eligibility explicitly rejects `explicit_recent_remote_tbi_v2`.
+
+For each stochastic replicate, the inherited cohort machinery still draws age,
+sex, BCG and risk-factor flags. The explicit pathway then replaces inherited
+infection assignment with the calibrated mutually exclusive states:
+
+- `recent`;
+- `remote_only`;
+- `uninfected`.
+
+Prior remote exposure remains auditable through `priorRemoteExposure` and
+`priorRemotePlusRecent`; it is not counted as remote-only when the effective
+state is recent. Central 3B progression uses
+`central_piecewise_time_since_infection_progression_v1` and
+`riskFactorProgressionPolicy = none`, so inherited disease ORs are not applied
+to active-TB progression. The example cohort records disease multipliers as
+one under this explicit central pathway.
+
+Untreated active-TB times are sampled by inverse cumulative hazard from the
+approved time-since-infection curve. For infection age `s` at baseline and a
+uniform draw `u`, the sampled prospective event time `t` solves:
+
+```text
+H(s + t) - H(s) = -log(1 - u)
+```
+
+This is equivalent to survivor-conditioned future progression:
+
+```text
+P(T <= t | T > s) = 1 - exp[-(H(s+t)-H(s))]
+```
+
+The post-25-year hazard remains the explicit extrapolation from the 10-25 year
+cumulative-hazard slope. Progression is not set to zero after 25 years.
+
+The reset policy `recent_reinfection_resets_progression_clock_v1` uses the
+recent infection clock when both remote and recent infection occurred. The
+no-reset sensitivity identifier remains available in isolated configuration;
+when selected, the runner samples and uses a remote clock for
+prior-remote-plus-recent people. This sensitivity remains scientifically
+uncertain and is not averaged with the reset clock.
+
+Active-TB observations remain validation-only in 3B. Changing a source
+denominator can change validation output because population-at-risk and
+expected cases are recomputed, but it does not refit or mutate the externally
+supplied progression curve.
+
 ## Architecture audit
 
 Existing recent/remote and early/late implementations:
@@ -1217,14 +1288,17 @@ Population generation:
 - `engine/apy/cohort.py::draw_base_population` draws age, sex, BCG and risk
   factors, then uses the inherited infection probability and disease
   multiplier functions.
-- New pure calibration and assignment functions accept explicit ages and
-  weights. They are not consumed by inherited population generation yet.
+- In Milestone 3B, the explicit runner still uses this inherited demographic
+  and risk-factor population draw, then replaces inherited infection-state
+  assignment with explicit recent/remote/uninfected states. This guarded
+  branch is selected only by `analysisPathway = explicit_recent_remote_tbi_v2`.
 
 Event ledger and economics:
 
 - `engine/apy/event_ledger.py`, `engine/apy/event_ledger_economics.py`,
-  `engine/apy/frozen_reference.py`, `engine/apy/economics.py` and DALY-related
-  code are unchanged.
+  `engine/apy/economics.py` and DALY-related code are unchanged.
+- `engine/apy/frozen_reference.py` has only a guard that rejects explicit
+  recent/remote configs from the frozen SA Health fast path.
 - Frozen reference loaders and recalculation logic remain tied to the SA Health
   compatibility identifiers.
 
@@ -1235,20 +1309,21 @@ Dynamic model:
 
 ## Planned integration
 
-Milestones 1, 2A, 2B and 2C have added explicit calibration, isolated
-assignment helpers, pure prospective progression mathematics and policy-level
-progression-calibration diagnostics. Future integration must still decide how
-to connect these pieces to the APY runner while preserving the frozen SA
-Health compatibility workflow. That work should include cache-key updates,
-metadata propagation, baseline active-TB sequencing and migration tests before
-any event-ledger, economics or DALY integration.
+Milestone 3B connects the explicit pathway to the stochastic APY runner behind
+explicit provenance, cache keys and metadata. Future integration must still
+decide whether to add deterministic expected-value support, formal baseline
+active-TB sequencing, event-ledger metadata, economics or DALY handling for
+the explicit pathway. None of those surfaces should be changed without a
+separate scoped milestone.
 
 ## Limitations and unanswered decisions
 
-- Progression hazards are calibrated only in the isolated diagnostic Policy B
-  fixed-ratio scale helper; no production policy is wired into the runner.
-- The runner is not yet able to distinguish first infection, most recent
-  infection and recent reinfection reset mechanisms.
+- Progression hazards are not calibrated from active-TB observations in the
+  runner; the approved time-since-infection curve is supplied by contract.
+- The stochastic runner uses the most recent infection clock under the central
+  reset policy and can use the remote clock for the no-reset sensitivity, but
+  it does not implement a mechanistic partial-immunity or multiple-infection
+  model.
 - Recent reinfection resetting the higher-risk clock is a modelling assumption
   requiring scientific review.
 - No risk-factor acquisition effects are included beyond age/time alive.

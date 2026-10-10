@@ -14,6 +14,11 @@ from engine.apy.calibration import (
 )
 from engine.apy.config import normalise_config
 from engine.apy.data import load_parameters_from_config
+from engine.apy.explicit_recent_remote_runner import (
+    build_explicit_recent_remote_runner_calibration,
+    is_explicit_recent_remote_pathway_selected,
+    validate_explicit_recent_remote_pathway_selection,
+)
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from engine.apy.timing import resolve_time_settings
 
@@ -66,6 +71,11 @@ def build_reference_calibration_artifact(config: dict[str, Any]) -> dict[str, An
 
 def resolve_calibration_for_config(config: dict[str, Any]) -> dict[str, Any]:
     cfg = normalise_config(config)
+    explicit_runner_config = validate_explicit_recent_remote_pathway_selection(cfg)
+    if is_explicit_recent_remote_pathway_selected(cfg):
+        if explicit_runner_config is None:
+            raise ValueError("Explicit recent/remote pathway selection is incomplete.")
+        return build_explicit_recent_remote_runner_calibration(cfg)
     policy = str(cfg.get("calibrationPolicy") or "full_reference_calibration")
     if policy not in CALIBRATION_POLICIES:
         raise ValueError(f"Unknown calibrationPolicy: {policy}")

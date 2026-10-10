@@ -51,6 +51,17 @@ input. It still does not wire the pathway into runner, UI, population
 generation, interventions, event ledgers, economics, DALYs, MATLAB,
 frozen-reference loading or dynamic-transmission code.
 
+Milestone 3B purpose: add a guarded, isolated agent-based runner integration
+for the explicit recent/remote pathway. The pathway is activated only by
+`analysisPathway = explicit_recent_remote_tbi_v2` plus an enabled
+`explicitRecentRemoteTBI` runner contract. It calibrates recent and
+remote-only infection hazards from mutually exclusive total-population
+targets, assigns baseline states in the stochastic cohort, and samples
+untreated active-TB times from the approved survivor-conditioned
+time-since-infection curve. It does not add Streamlit controls, report-facing
+outputs, event-ledger economics, DALYs, MATLAB changes, dynamic-model changes
+or active-TB progression calibration.
+
 ## Implemented in Milestone 1
 
 New pure module:
@@ -469,64 +480,71 @@ Competing mortality is not present in the inherited no-transmission
 progression path. This likely overstates 20-year prospective progression in
 older groups; future integration should allow an explicit survival function.
 
-## Not done in Milestones 1, 2A, 2B, 2C and 2D
+## Milestone 3B runner integration status
 
-Do not assume the new module is wired into the model. It is intentionally not
-connected to:
+Milestone 3B intentionally changes the boundary for `run_replicates` only.
+The new integration files are:
 
-- Streamlit UI;
-- `run_expected_value`;
-- `run_replicates`;
-- population generation;
-- event ledger generation;
-- health economics;
-- DALYs;
-- MATLAB;
-- dynamic transmission model;
-- frozen reference loaders.
+- `engine/apy/explicit_recent_remote_runner.py`;
+- guarded imports in `engine/apy/calibration_policy.py`;
+- guarded imports and metadata/cache-key additions in `engine/apy/runner.py`;
+- guarded stochastic state and active-time assignment in
+  `engine/apy/simulation.py`;
+- an explicit rejection guard in `engine/apy/frozen_reference.py`.
 
-This remains true after Milestone 2A. The new assignments are not consumed by:
+Activation rules:
 
-- `engine/apy/runner.py`;
-- `engine/apy/simulation.py`;
-- `engine/apy/expected_value.py`;
-- event-ledger generation;
-- health economics;
-- DALYs;
-- Streamlit pages;
-- frozen-reference loading;
-- MATLAB;
-- `engine/dynamic/*`.
+- top-level `analysisPathway` must be
+  `explicit_recent_remote_tbi_v2`;
+- nested `explicitRecentRemoteTBI.enabled` must be true;
+- nested `pathwayIdentifier` must also be
+  `explicit_recent_remote_tbi_v2`;
+- inconsistent or unknown pathway provenance fails before calibration;
+- the presence of the new fields without positive pathway selection does not
+  silently activate the pathway;
+- the frozen SA Health reference loader rejects explicit-pathway configs.
 
-This also remains true after Milestone 2B. The new progression module is not
-imported or consumed by runner, UI, event-ledger, economics, DALY,
-frozen-reference, MATLAB or dynamic-model code.
+Runner behaviour:
 
-This also remains true after Milestone 2C. The policy/fitting helpers are
-pure diagnostics and are not imported or consumed by runner, UI, population
-generation, intervention, event-ledger, economics, DALY, frozen-reference,
-MATLAB or dynamic-model code.
+- baseline demographic and risk-factor population generation still uses the
+  inherited `draw_base_population` machinery for age, sex, BCG and risk
+  factors;
+- explicit-pathway calibration then replaces inherited infection prevalence
+  assignment with mutually exclusive `recent`, `remote_only` and `uninfected`
+  states from calibrated recent and remote hazards;
+- prior remote exposure is retained for recent reinfection audit fields;
+- central progression uses
+  `central_piecewise_time_since_infection_progression_v1`;
+- untreated active-TB times are sampled by inverse cumulative hazard from
+  `H(s+t)-H(s)`, so future risk is survivor-conditioned on being disease-free
+  at baseline;
+- central risk-factor progression policy is `none`, and inherited disease ORs
+  are not applied to explicit active-TB progression;
+- active-TB observations remain validation-only and do not fit the curve;
+- competing mortality remains `not_modelled` unless a later milestone supplies
+  a reviewed mortality interface to the runner.
 
-This also remains true after Milestone 2D. Denominator, ascertainment,
-competing-mortality, identifiability, evidence-review and risk-policy audit
-corrections are still pure explicit-pathway helpers and documentation only.
+Still not done after Milestone 3B:
 
-This also remains true after Milestone 3A. Time-since-infection progression
-curves, conditional future-risk calculations, reinfection-clock policies,
-curve validation outputs and curve mortality integration remain isolated pure
-helpers and are not imported or consumed by the runner, UI, population
-generation, interventions, event ledger, economics, DALY, frozen-reference,
-MATLAB or dynamic-model code.
+- no Streamlit controls or report-facing outputs expose the pathway;
+- `run_expected_value` is not integrated;
+- no event-ledger economic interpretation is added for explicit-pathway
+  outputs;
+- no health economics or DALY code consumes explicit assignments;
+- no MATLAB code is changed;
+- no dynamic-transmission model code is changed;
+- no frozen SA Health artifacts are regenerated;
+- no release branch or tag is moved.
 
 No release branch or tag should be moved. No deployment should be updated.
 
 ## Future runner-integration milestone recommendation
 
-The next milestone should begin runner integration behind explicit
-new-pathway metadata and cache keys, using the 3A central curve and
-validation-only active-TB policy exactly as approved. It should keep the
-inherited MATLAB-v9 compatibility pathway available and unchanged, and it
-should not proceed to event-ledger, economics or DALY integration unless those
-surfaces are explicitly scoped.
+The next milestone should review the 3B runner outputs, then decide whether
+to add deterministic expected-value integration, formal baseline active-TB
+sequencing, and carefully scoped event-ledger metadata for the explicit
+pathway. It should keep the inherited MATLAB-v9 compatibility pathway
+available and unchanged, and it should not proceed to economics or DALY
+integration unless those surfaces are explicitly scoped.
 
 The model remains for planning and sequencing, not for denying care.

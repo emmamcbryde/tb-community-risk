@@ -130,6 +130,18 @@ from engine.apy.explicit_recent_remote_progression import (
     worked_progression_diagnostic_table,
     worked_time_since_progression_diagnostic_table,
 )
+from engine.apy.explicit_recent_remote_runner import (
+    ACTIVE_TB_OBSERVATION_POLICY_VALIDATION_ONLY,
+    EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
+    EXPLICIT_RECENT_REMOTE_RUNNER_CONTRACT_VERSION,
+    explicit_recent_remote_analysis_config,
+    explicit_recent_remote_runner_config_hash,
+    explicit_recent_remote_runner_config_json,
+    sample_future_active_tb_time_from_curve,
+)
+from engine.apy.calibration_policy import resolve_calibration_for_config
+from engine.apy.frozen_reference import is_frozen_sa_health_reference_eligible
+from engine.apy.runner import run_replicates
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -1600,6 +1612,143 @@ class ExplicitTimeSinceProgressionCurveTests(unittest.TestCase):
         )
 
 
+class ExplicitRecentRemoteRunnerIntegrationTests(unittest.TestCase):
+    def test_runner_config_serializes_and_hashes_deterministically(self) -> None:
+        config = _explicit_runner_test_config(N=40, nReps=1, seed=101)
+        runner_config = config["explicitRecentRemoteTBI"]
+        payload = json.loads(explicit_recent_remote_runner_config_json(runner_config))
+        shuffled = {key: payload[key] for key in sorted(payload.keys(), reverse=True)}
+
+        self.assertEqual(
+            payload["contractVersion"],
+            EXPLICIT_RECENT_REMOTE_RUNNER_CONTRACT_VERSION,
+        )
+        self.assertEqual(payload["pathwayIdentifier"], EXPLICIT_RECENT_REMOTE_PATHWAY_ID)
+        self.assertEqual(
+            payload["progressionCurveIdentifier"],
+            CURVE_CENTRAL_TIME_SINCE_INFECTION,
+        )
+        self.assertEqual(
+            payload["activeTBObservationPolicy"],
+            ACTIVE_TB_OBSERVATION_POLICY_VALIDATION_ONLY,
+        )
+        self.assertEqual(
+            payload["progressionTimeSamplingMethod"],
+            "inverse_survivor_conditioned_time_since_infection_cumulative_hazard_v1",
+        )
+        self.assertEqual(
+            explicit_recent_remote_runner_config_hash(payload),
+            explicit_recent_remote_runner_config_hash(shuffled),
+        )
+
+    def test_explicit_pathway_requires_positive_selection(self) -> None:
+        config = _explicit_runner_test_config(N=20, nReps=1, seed=102)
+        config.pop("analysisPathway")
+
+        with self.assertRaisesRegex(ValueError, "requires analysisPathway"):
+            resolve_calibration_for_config(config)
+
+    def test_unknown_analysis_pathway_fails_safely(self) -> None:
+        config = _explicit_runner_test_config(N=20, nReps=1, seed=103)
+        config["analysisPathway"] = "continuous_markov_recent_remote"
+
+        with self.assertRaisesRegex(ValueError, "Unknown analysisPathway"):
+            resolve_calibration_for_config(config)
+
+    def test_explicit_runner_calibrates_recent_and_remote_targets(self) -> None:
+        config = _explicit_runner_test_config(N=80, nReps=1, seed=104)
+        calibration = resolve_calibration_for_config(config)
+        explicit = calibration["explicitRecentRemoteCalibration"]
+
+        self.assertEqual(calibration["analysisPathway"], EXPLICIT_RECENT_REMOTE_PATHWAY_ID)
+        self.assertEqual(
+            calibration["progressionCurve"]["curveIdentifier"],
+            CURVE_CENTRAL_TIME_SINCE_INFECTION,
+        )
+        self.assertAlmostEqual(explicit["achievedRecentPrevalence"], 0.02, places=10)
+        self.assertAlmostEqual(
+            explicit["achievedRemoteOnlyPrevalence"],
+            0.08,
+            places=10,
+        )
+        self.assertEqual(calibration["targetActiveAtCalibrationHorizon"], None)
+        self.assertEqual(
+            calibration["progressionCurve"]["postFinalAnchorExtrapolationMethod"],
+            "post_final_anchor_hazard_from_10_to_25_year_slope_v1",
+        )
+
+    def test_explicit_runner_smoke_pathway_is_reproducible(self) -> None:
+        config = _explicit_runner_test_config(N=160, nReps=2, seed=105)
+        first = run_replicates(config, keep_example_cohort=True)
+        second = run_replicates(config, keep_example_cohort=True)
+
+        self.assertTrue(first["raw"].equals(second["raw"]))
+        self.assertEqual(
+            first["strategy"]["analysisPathway"],
+            EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
+        )
+        first_cohort = first["exampleCohort"]
+        self.assertTrue(
+            (
+                first_cohort["recentLTBIAtBaseline"]
+                & first_cohort["remoteLTBIAtBaseline"]
+            ).sum()
+            == 0
+        )
+        self.assertTrue((first_cohort["diseaseMultiplier"] == 1.0).all())
+
+    def test_explicit_runner_ignores_inherited_disease_or_multipliers(self) -> None:
+        config = _explicit_runner_test_config(N=100, nReps=1, seed=106)
+        config["diseaseOR"] = {
+            "MJ": 99.0,
+            "contact": 99.0,
+            "renal": 99.0,
+            "diabetes": 99.0,
+            "smoking": 99.0,
+            "cld": 99.0,
+            "alcohol": 99.0,
+        }
+        result = run_replicates(config, keep_example_cohort=True)
+
+        self.assertEqual(
+            result["calibration"]["progressionCurve"]["riskFactorProgressionPolicy"],
+            RISK_POLICY_NONE,
+        )
+        self.assertTrue((result["exampleCohort"]["diseaseMultiplier"] == 1.0).all())
+
+    def test_active_time_sampler_inverts_survivor_conditioned_curve(self) -> None:
+        curve = build_central_time_since_infection_progression_curve()
+        q = 0.37
+        sampled = sample_future_active_tb_time_from_curve(
+            curve,
+            time_since_infection_at_baseline=4.9,
+            rng=_FixedRandom(q),
+        )
+        achieved = time_since_curve_conditional_future_progression_probability(
+            curve,
+            time_since_infection_at_baseline=4.9,
+            horizon_years=sampled,
+        )
+
+        self.assertAlmostEqual(achieved, q, places=11)
+        self.assertGreater(sampled, 0.0)
+
+    def test_explicit_runner_uses_no_global_numpy_rng_state(self) -> None:
+        config = _explicit_runner_test_config(N=80, nReps=1, seed=107)
+        np.random.seed(20261010)
+        expected = np.random.random()
+        np.random.seed(20261010)
+        run_replicates(config, keep_example_cohort=False)
+        observed = np.random.random()
+
+        self.assertEqual(observed, expected)
+
+    def test_frozen_reference_loader_rejects_explicit_pathway(self) -> None:
+        config = _explicit_runner_test_config(N=40, nReps=1, seed=108)
+
+        self.assertFalse(is_frozen_sa_health_reference_eligible(config))
+
+
 class ExplicitProgressionCalibrationPolicyTests(unittest.TestCase):
     def valid_row(self, **overrides) -> dict:
         row = {
@@ -2369,15 +2518,12 @@ class ScopeProtectionTests(unittest.TestCase):
         self.assertNotIn("Recently infected within 5 years", combined)
         self.assertNotIn("Remote infection only", combined)
 
-    def test_no_runner_ledger_economics_daly_or_frozen_loader_consumes_new_assignments(self) -> None:
+    def test_no_streamlit_ledger_economics_daly_matlab_or_dynamic_model_consumes_new_pathway(self) -> None:
         protected_files = [
-            REPO_ROOT / "engine" / "apy" / "runner.py",
-            REPO_ROOT / "engine" / "apy" / "simulation.py",
             REPO_ROOT / "engine" / "apy" / "expected_value.py",
             REPO_ROOT / "engine" / "apy" / "event_ledger.py",
             REPO_ROOT / "engine" / "apy" / "event_ledger_economics.py",
             REPO_ROOT / "engine" / "apy" / "economics.py",
-            REPO_ROOT / "engine" / "apy" / "frozen_reference.py",
         ]
         protected_files.extend((REPO_ROOT / "engine" / "dynamic").rglob("*.py"))
         combined = "\n".join(
@@ -2404,6 +2550,33 @@ class ScopeProtectionTests(unittest.TestCase):
         self.assertNotIn("continuous_markov_recent_remote", new_module)
         self.assertNotIn("engine.apy.infection_history", new_module)
         self.assertNotIn("engine.apy.ltbi_state", new_module)
+
+
+class _FixedRandom:
+    def __init__(self, value: float) -> None:
+        self.value = float(value)
+
+    def random(self) -> float:
+        return self.value
+
+
+def _explicit_runner_test_config(**overrides) -> dict:
+    base = {
+        "N": 120,
+        "nReps": 1,
+        "seed": 42,
+        "screeningStrategy": "random",
+    }
+    base.update(overrides)
+    return explicit_recent_remote_analysis_config(
+        recent_tbi_target=0.02,
+        remote_only_tbi_target=0.08,
+        target_source="unit test mutually exclusive recent/remote targets",
+        target_reference_year=2026,
+        review_status="unit_test_reviewed",
+        notes="Milestone 3B runner-integration test fixture.",
+        **base,
+    )
 
 
 if __name__ == "__main__":

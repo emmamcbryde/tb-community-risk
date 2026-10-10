@@ -17,6 +17,12 @@ from engine.apy.event_ledger import (
     metadata_from_config as event_metadata_from_config,
     zero_comparator_wide,
 )
+from engine.apy.explicit_recent_remote_runner import (
+    EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
+    explicit_recent_remote_runner_config_hash,
+    is_explicit_recent_remote_pathway_selected,
+    validate_explicit_recent_remote_pathway_selection,
+)
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
 from engine.apy.scenario import DEFAULT_COMPARATOR, DEFAULT_INTERVENTION
 from engine.apy.regimen import (
@@ -180,7 +186,7 @@ def build_strategy_metadata(config: dict[str, Any], reg: dict[str, Any]) -> dict
         if isinstance(config.get("ltbiStateAssumptions"), dict)
         else None
     )
-    return {
+    metadata = {
         "testType": str(config["testType"]).upper(),
         "screeningStrategy": str(config["screeningStrategy"]).lower(),
         "regimen": reg["label"],
@@ -225,6 +231,40 @@ def build_strategy_metadata(config: dict[str, Any], reg: dict[str, Any]) -> dict
             "baselineRecentLTBIDerivationMethod"
         ),
     }
+    if is_explicit_recent_remote_pathway_selected(config):
+        explicit_config = validate_explicit_recent_remote_pathway_selection(config)
+        if explicit_config is None:
+            raise ValueError("Explicit recent/remote pathway metadata is incomplete.")
+        metadata.update(
+            {
+                "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
+                "explicitRecentRemoteRunnerContractVersion": explicit_config[
+                    "contractVersion"
+                ],
+                "explicitRecentRemoteRunnerConfigHash": explicit_recent_remote_runner_config_hash(
+                    explicit_config
+                ),
+                "explicitRecentRemoteProgressionCurveIdentifier": explicit_config[
+                    "progressionCurveIdentifier"
+                ],
+                "explicitRecentRemoteProgressionCurveHash": explicit_config[
+                    "progressionCurveHash"
+                ],
+                "explicitRecentRemoteReinfectionPolicy": explicit_config[
+                    "reinfectionPolicy"
+                ],
+                "explicitRecentRemoteRiskFactorProgressionPolicy": explicit_config[
+                    "riskFactorProgressionPolicy"
+                ],
+                "explicitRecentRemoteMortalityPolicy": explicit_config[
+                    "mortalityPolicy"
+                ],
+                "explicitRecentRemoteActiveTBObservationPolicy": explicit_config[
+                    "activeTBObservationPolicy"
+                ],
+            }
+        )
+    return metadata
 
 
 def _append_agent_based_ledger_rows(
@@ -363,5 +403,7 @@ def _calibration_key_payload(config: dict[str, Any]) -> dict[str, Any]:
         "referenceCalibrationArtifact",
         "naturalHistorySemantics",
         "analysisBasis",
+        "analysisPathway",
+        "explicitRecentRemoteTBI",
     ]
     return {field: config.get(field) for field in fields}
