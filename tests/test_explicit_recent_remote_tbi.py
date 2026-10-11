@@ -132,12 +132,17 @@ from engine.apy.explicit_recent_remote_progression import (
 )
 from engine.apy.explicit_recent_remote_runner import (
     ACTIVE_TB_OBSERVATION_POLICY_VALIDATION_ONLY,
+    BASELINE_ACTIVE_TB_ASSIGNMENT_POLICY,
     EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
     EXPLICIT_RECENT_REMOTE_RUNNER_CONTRACT_VERSION,
+    deterministic_explicit_recent_remote_expectations,
     explicit_recent_remote_analysis_config,
+    explicit_recent_remote_event_ledger_unavailable,
     explicit_recent_remote_runner_config_hash,
     explicit_recent_remote_runner_config_json,
+    reconcile_deterministic_stochastic_explicit_runner,
     sample_future_active_tb_time_from_curve,
+    stochastic_explicit_recent_remote_natural_history,
 )
 from engine.apy.calibration_policy import resolve_calibration_for_config
 from engine.apy.frozen_reference import is_frozen_sa_health_reference_eligible
@@ -1633,12 +1638,33 @@ class ExplicitRecentRemoteRunnerIntegrationTests(unittest.TestCase):
             ACTIVE_TB_OBSERVATION_POLICY_VALIDATION_ONLY,
         )
         self.assertEqual(
+            payload["baselineActiveTBAssignmentPolicy"],
+            BASELINE_ACTIVE_TB_ASSIGNMENT_POLICY,
+        )
+        self.assertEqual(
             payload["progressionTimeSamplingMethod"],
             "inverse_survivor_conditioned_time_since_infection_cumulative_hazard_v1",
         )
         self.assertEqual(
             explicit_recent_remote_runner_config_hash(payload),
             explicit_recent_remote_runner_config_hash(shuffled),
+        )
+
+    def test_no_reset_identifier_uses_remote_clock_contract(self) -> None:
+        self.assertEqual(
+            REINFECTION_POLICY_NO_RESET_CLOCK,
+            "recent_reinfection_does_not_reset_remote_clock_v1",
+        )
+        config = _explicit_runner_test_config(
+            N=40,
+            nReps=1,
+            seed=1011,
+            reinfection_policy=REINFECTION_POLICY_NO_RESET_CLOCK,
+        )
+
+        self.assertEqual(
+            config["explicitRecentRemoteTBI"]["reinfectionPolicy"],
+            REINFECTION_POLICY_NO_RESET_CLOCK,
         )
 
     def test_explicit_pathway_requires_positive_selection(self) -> None:
@@ -1677,6 +1703,39 @@ class ExplicitRecentRemoteRunnerIntegrationTests(unittest.TestCase):
             "post_final_anchor_hazard_from_10_to_25_year_slope_v1",
         )
 
+    def test_baseline_active_tb_is_excluded_before_tbi_assignment(self) -> None:
+        config = _explicit_runner_test_config(
+            N=800,
+            nReps=1,
+            seed=1041,
+            baselineActiveTBProportion=0.20,
+            baselineActiveTBSource="unit test baseline active TB fixture",
+            baselineActiveTBReviewStatus="unit_test_reviewed",
+        )
+        calibration = resolve_calibration_for_config(config)
+        explicit = calibration["explicitRecentRemoteCalibration"]
+
+        self.assertAlmostEqual(
+            explicit["achievedRecentPrevalenceTotalPopulation"],
+            0.02,
+            places=10,
+        )
+        self.assertAlmostEqual(
+            explicit["achievedRemoteOnlyPrevalenceTotalPopulation"],
+            0.08,
+            places=10,
+        )
+        result = run_replicates(config, keep_example_cohort=True)
+        cohort = result["exampleCohort"]
+        baseline = cohort["baselineActiveTBAtBaseline"]
+
+        self.assertGreater(int(baseline.sum()), 0)
+        self.assertFalse(cohort.loc[baseline, "infected"].any())
+        self.assertFalse(cohort.loc[baseline, "recentLTBIAtBaseline"].any())
+        self.assertFalse(cohort.loc[baseline, "remoteLTBIAtBaseline"].any())
+        self.assertFalse(cohort.loc[baseline, "eligibleTPT"].any())
+        self.assertFalse(cohort.loc[baseline, "tbiEligibleAtBaseline"].any())
+
     def test_explicit_runner_smoke_pathway_is_reproducible(self) -> None:
         config = _explicit_runner_test_config(N=160, nReps=2, seed=105)
         first = run_replicates(config, keep_example_cohort=True)
@@ -1696,6 +1755,7 @@ class ExplicitRecentRemoteRunnerIntegrationTests(unittest.TestCase):
             == 0
         )
         self.assertTrue((first_cohort["diseaseMultiplier"] == 1.0).all())
+        self.assertFalse(first["eventLedger"]["available"])
 
     def test_explicit_runner_ignores_inherited_disease_or_multipliers(self) -> None:
         config = _explicit_runner_test_config(N=100, nReps=1, seed=106)
@@ -1742,6 +1802,230 @@ class ExplicitRecentRemoteRunnerIntegrationTests(unittest.TestCase):
         observed = np.random.random()
 
         self.assertEqual(observed, expected)
+
+    def test_event_ledger_is_unavailable_for_explicit_pathway(self) -> None:
+        config = _explicit_runner_test_config(N=60, nReps=1, seed=1071)
+        result = run_replicates(config, keep_example_cohort=False)
+        direct = explicit_recent_remote_event_ledger_unavailable(
+            config["explicitRecentRemoteTBI"]
+        )
+
+        self.assertFalse(result["eventLedger"]["available"])
+        self.assertEqual(result["eventLedger"]["replicateTotals"], [])
+        self.assertEqual(result["eventLedger"]["annualEvents"], [])
+        self.assertEqual(
+            result["eventLedger"]["source"],
+            direct["source"],
+        )
+
+    def test_deterministic_expectations_integrate_over_infection_time(self) -> None:
+        config = _explicit_runner_test_config(N=80, nReps=1, seed=1072)
+        calibration = resolve_calibration_for_config(config)
+        deterministic = deterministic_explicit_recent_remote_expectations(
+            calibration,
+            horizons_years=(5.0,),
+            population_size=1.0,
+            quadrature_points=64,
+        )
+        curve = calibration["progressionCurve"]
+        pars = calibration["parameters"]
+        ages = np.asarray(pars["exactAgeValues"], dtype=float)
+        weights = np.asarray(pars["exactAgeProb"], dtype=float)
+        weights = weights / weights.sum()
+        explicit = calibration["explicitRecentRemoteCalibration"]
+        probs = mutually_exclusive_state_probabilities(
+            ages,
+            explicit["fittedRecentHazard"],
+            explicit["fittedRemoteHazard"],
+        )
+        durations = exposure_durations_for_ages(ages)
+        naive = 0.0
+        for idx, age in enumerate(ages):
+            recent_duration = float(durations.recent_years[idx])
+            remote_duration = float(durations.remote_years[idx])
+            recent_mean = (
+                expected_time_since_most_recent_event(
+                    window_start_years_before_baseline=0.0,
+                    window_duration_years=recent_duration,
+                    hazard_per_year=explicit["fittedRecentHazard"],
+                )
+                if recent_duration > 0.0 and explicit["fittedRecentHazard"] > 0.0
+                else 0.0
+            )
+            remote_mean = (
+                expected_time_since_most_recent_event(
+                    window_start_years_before_baseline=5.0,
+                    window_duration_years=remote_duration,
+                    hazard_per_year=explicit["fittedRemoteHazard"],
+                )
+                if remote_duration > 0.0 and explicit["fittedRemoteHazard"] > 0.0
+                else 0.0
+            )
+            naive += weights[idx] * (
+                float(probs["recent"][idx])
+                * time_since_curve_conditional_future_progression_probability(
+                    curve,
+                    time_since_infection_at_baseline=recent_mean,
+                    horizon_years=5.0,
+                )
+                + float(probs["remote_only"][idx])
+                * time_since_curve_conditional_future_progression_probability(
+                    curve,
+                    time_since_infection_at_baseline=remote_mean,
+                    horizon_years=5.0,
+                )
+            )
+
+        self.assertFalse(deterministic["usesMeanTimeSinceInfection"])
+        self.assertNotAlmostEqual(
+            deterministic["incidentActiveTBByHorizon"]["5"][
+                "incidentActiveTBProportion"
+            ],
+            naive,
+            places=8,
+        )
+
+    def test_stochastic_natural_history_requires_seed_or_rng(self) -> None:
+        calibration = resolve_calibration_for_config(
+            _explicit_runner_test_config(N=40, nReps=1, seed=1073)
+        )
+
+        with self.assertRaisesRegex(ValueError, "seed or explicit rng"):
+            stochastic_explicit_recent_remote_natural_history(
+                calibration,
+                population_size=100,
+            )
+
+    def test_stochastic_natural_history_seed_reproducibility(self) -> None:
+        calibration = resolve_calibration_for_config(
+            _explicit_runner_test_config(N=40, nReps=1, seed=1074)
+        )
+        first = stochastic_explicit_recent_remote_natural_history(
+            calibration,
+            population_size=500,
+            seed=123,
+        )
+        second = stochastic_explicit_recent_remote_natural_history(
+            calibration,
+            population_size=500,
+            seed=123,
+        )
+        third = stochastic_explicit_recent_remote_natural_history(
+            calibration,
+            population_size=500,
+            seed=124,
+        )
+
+        self.assertEqual(first, second)
+        self.assertNotEqual(first["stateCounts"], third["stateCounts"])
+
+    def test_reset_and_no_reset_runner_expectations_are_distinct(self) -> None:
+        reset_config = _explicit_runner_test_config(
+            N=80,
+            nReps=1,
+            seed=1075,
+            recent_tbi_target=0.20,
+            remote_only_tbi_target=0.30,
+            reinfection_policy=REINFECTION_POLICY_RESET_CLOCK,
+        )
+        no_reset_config = _explicit_runner_test_config(
+            N=80,
+            nReps=1,
+            seed=1075,
+            recent_tbi_target=0.20,
+            remote_only_tbi_target=0.30,
+            reinfection_policy=REINFECTION_POLICY_NO_RESET_CLOCK,
+        )
+        reset = deterministic_explicit_recent_remote_expectations(
+            resolve_calibration_for_config(reset_config),
+            horizons_years=(20.0,),
+        )
+        no_reset = deterministic_explicit_recent_remote_expectations(
+            resolve_calibration_for_config(no_reset_config),
+            horizons_years=(20.0,),
+        )
+
+        self.assertNotAlmostEqual(
+            reset["incidentActiveTBByHorizon"]["20"]["incidentActiveTBProportion"],
+            no_reset["incidentActiveTBByHorizon"]["20"]["incidentActiveTBProportion"],
+            places=5,
+        )
+
+    def test_deterministic_competing_mortality_lowers_incident_tb(self) -> None:
+        calibration = resolve_calibration_for_config(
+            _explicit_runner_test_config(N=40, nReps=1, seed=1076)
+        )
+        no_mortality = deterministic_explicit_recent_remote_expectations(
+            calibration,
+            horizons_years=(20.0,),
+        )
+        with_mortality = deterministic_explicit_recent_remote_expectations(
+            calibration,
+            horizons_years=(20.0,),
+            competing_mortality_hazard=0.03,
+        )
+
+        self.assertLessEqual(
+            with_mortality["incidentActiveTBByHorizon"]["20"][
+                "incidentActiveTBProportion"
+            ],
+            no_mortality["incidentActiveTBByHorizon"]["20"][
+                "incidentActiveTBProportion"
+            ],
+        )
+
+    def test_mortality_none_uses_no_stochastic_mortality_draws(self) -> None:
+        calibration = resolve_calibration_for_config(
+            _explicit_runner_test_config(N=40, nReps=1, seed=1077)
+        )
+        summary = stochastic_explicit_recent_remote_natural_history(
+            calibration,
+            population_size=200,
+            seed=1077,
+        )
+
+        self.assertFalse(summary["mortalityDrawsUsed"])
+
+    def test_deterministic_and_stochastic_reconcile_with_declared_tolerances(self) -> None:
+        calibration = resolve_calibration_for_config(
+            _explicit_runner_test_config(N=40, nReps=1, seed=1078)
+        )
+        reconciliation = reconcile_deterministic_stochastic_explicit_runner(
+            calibration,
+            population_size=20000,
+            seed=1078,
+            horizons_years=(1.0, 5.0, 10.0, 20.0),
+        )
+
+        self.assertTrue(reconciliation["allWithinTolerance"], reconciliation["rows"])
+
+    def test_material_scientific_settings_change_runner_hash(self) -> None:
+        base = _explicit_runner_test_config(N=40, nReps=1, seed=1079)
+        baseline_active = _explicit_runner_test_config(
+            N=40,
+            nReps=1,
+            seed=1079,
+            baselineActiveTBProportion=0.05,
+        )
+        no_reset = _explicit_runner_test_config(
+            N=40,
+            nReps=1,
+            seed=1079,
+            reinfection_policy=REINFECTION_POLICY_NO_RESET_CLOCK,
+        )
+
+        self.assertNotEqual(
+            explicit_recent_remote_runner_config_hash(base["explicitRecentRemoteTBI"]),
+            explicit_recent_remote_runner_config_hash(
+                baseline_active["explicitRecentRemoteTBI"]
+            ),
+        )
+        self.assertNotEqual(
+            explicit_recent_remote_runner_config_hash(base["explicitRecentRemoteTBI"]),
+            explicit_recent_remote_runner_config_hash(
+                no_reset["explicitRecentRemoteTBI"]
+            ),
+        )
 
     def test_frozen_reference_loader_rejects_explicit_pathway(self) -> None:
         config = _explicit_runner_test_config(N=40, nReps=1, seed=108)
@@ -2568,9 +2852,11 @@ def _explicit_runner_test_config(**overrides) -> dict:
         "screeningStrategy": "random",
     }
     base.update(overrides)
+    recent_tbi_target = base.pop("recent_tbi_target", 0.02)
+    remote_only_tbi_target = base.pop("remote_only_tbi_target", 0.08)
     return explicit_recent_remote_analysis_config(
-        recent_tbi_target=0.02,
-        remote_only_tbi_target=0.08,
+        recent_tbi_target=recent_tbi_target,
+        remote_only_tbi_target=remote_only_tbi_target,
         target_source="unit test mutually exclusive recent/remote targets",
         target_reference_year=2026,
         review_status="unit_test_reviewed",

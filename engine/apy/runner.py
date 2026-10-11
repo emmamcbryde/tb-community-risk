@@ -19,6 +19,7 @@ from engine.apy.event_ledger import (
 )
 from engine.apy.explicit_recent_remote_runner import (
     EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
+    explicit_recent_remote_event_ledger_unavailable,
     explicit_recent_remote_runner_config_hash,
     is_explicit_recent_remote_pathway_selected,
     validate_explicit_recent_remote_pathway_selection,
@@ -63,6 +64,12 @@ def run_replicates(
     if int(cfg["nReps"]) <= 0:
         raise ValueError("nReps must be > 0.")
 
+    explicit_pathway = is_explicit_recent_remote_pathway_selected(cfg)
+    explicit_config = (
+        validate_explicit_recent_remote_pathway_selection(cfg)
+        if explicit_pathway
+        else None
+    )
     calibration_with_parameters = _cached_calibration_from_config(cfg)
     pars = calibration_with_parameters["parameters"]
     calibration = {
@@ -93,14 +100,15 @@ def run_replicates(
         row.update(out["raw"])
         row["baselineFingerprint"] = out["eventLedgerData"].get("baselineFingerprint")
         raw_rows.append(row)
-        _append_agent_based_ledger_rows(
-            event_total_rows,
-            annual_frames,
-            cfg,
-            idx,
-            int(replicate_seed),
-            out["eventLedgerData"],
-        )
+        if not explicit_pathway:
+            _append_agent_based_ledger_rows(
+                event_total_rows,
+                annual_frames,
+                cfg,
+                idx,
+                int(replicate_seed),
+                out["eventLedgerData"],
+            )
         if idx == 1:
             example_cohort = out["cohort"]
         _notify_progress(
@@ -116,16 +124,19 @@ def run_replicates(
     _notify_progress(progress_callback, {"stage": "summarising", "totalReplicates": int(cfg["nReps"])})
     raw = pd.DataFrame(raw_rows)
     annual = pd.concat(annual_frames, ignore_index=True) if annual_frames else pd.DataFrame()
-    event_ledger = make_event_ledger_bundle(
-        metadata=event_metadata_from_config(
-            cfg,
-            model_type="agent_based",
-            backend=BACKEND,
-            model_version=MODEL_VERSION,
-        ),
-        replicate_totals_wide=pd.DataFrame(event_total_rows),
-        annual_events=annual,
-    )
+    if explicit_pathway:
+        event_ledger = explicit_recent_remote_event_ledger_unavailable(explicit_config)
+    else:
+        event_ledger = make_event_ledger_bundle(
+            metadata=event_metadata_from_config(
+                cfg,
+                model_type="agent_based",
+                backend=BACKEND,
+                model_version=MODEL_VERSION,
+            ),
+            replicate_totals_wide=pd.DataFrame(event_total_rows),
+            annual_events=annual,
+        )
     summary = summarise_numeric_rows(raw)
     _notify_progress(progress_callback, {"stage": "finalising", "totalReplicates": int(cfg["nReps"])})
     return {

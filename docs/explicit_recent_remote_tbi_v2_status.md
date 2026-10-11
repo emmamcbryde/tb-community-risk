@@ -59,8 +59,8 @@ remote-only infection hazards from mutually exclusive total-population
 targets, assigns baseline states in the stochastic cohort, and samples
 untreated active-TB times from the approved survivor-conditioned
 time-since-infection curve. It does not add Streamlit controls, report-facing
-outputs, event-ledger economics, DALYs, MATLAB changes, dynamic-model changes
-or active-TB progression calibration.
+outputs, event-ledger rows, event-ledger economics, DALYs, MATLAB changes,
+dynamic-model changes or active-TB progression calibration.
 
 ## Implemented in Milestone 1
 
@@ -375,7 +375,7 @@ Implemented 3A pieces:
 - segment exposure diagnostics and instantaneous segment-hazard lookup;
 - reset policy `recent_reinfection_resets_progression_clock_v1`;
 - no-reset sensitivity policy
-  `recent_reinfection_does_not_reset_progression_clock_v1`;
+  `recent_reinfection_does_not_reset_remote_clock_v1`;
 - pure curve expected-event aggregation with
   `riskFactorProgressionPolicy = none`;
 - regression coverage proving inherited risk-factor flags do not alter central
@@ -512,24 +512,36 @@ Runner behaviour:
 - explicit-pathway calibration then replaces inherited infection prevalence
   assignment with mutually exclusive `recent`, `remote_only` and `uninfected`
   states from calibrated recent and remote hazards;
+- baseline/prevalent active TB is sequenced first when configured, reported
+  separately, and excluded from TBI states and the latent-treatment cascade;
 - prior remote exposure is retained for recent reinfection audit fields;
 - central progression uses
   `central_piecewise_time_since_infection_progression_v1`;
 - untreated active-TB times are sampled by inverse cumulative hazard from
   `H(s+t)-H(s)`, so future risk is survivor-conditioned on being disease-free
   at baseline;
+- isolated deterministic review helpers integrate over exact age and
+  conditional infection time with Gauss-Legendre quadrature rather than using
+  mean time since infection;
+- isolated stochastic natural-history helpers require an explicit seed or RNG
+  and reconcile to deterministic expectations within predeclared Monte Carlo
+  tolerances in the focused tests;
 - central risk-factor progression policy is `none`, and inherited disease ORs
   are not applied to explicit active-TB progression;
 - active-TB observations remain validation-only and do not fit the curve;
 - competing mortality remains `not_modelled` unless a later milestone supplies
   a reviewed mortality interface to the runner.
+- explicit-pathway `run_replicates` returns a structured
+  `explicit_recent_remote_tbi_v2_event_ledger_out_of_scope_milestone_3b`
+  marker rather than a costable event-ledger bundle.
 
 Still not done after Milestone 3B:
 
 - no Streamlit controls or report-facing outputs expose the pathway;
-- `run_expected_value` is not integrated;
-- no event-ledger economic interpretation is added for explicit-pathway
-  outputs;
+- `run_expected_value` and report-facing expected-value outputs are not
+  integrated;
+- no event-ledger rows, event-ledger economic interpretation or DALY outputs
+  are added for explicit-pathway outputs;
 - no health economics or DALY code consumes explicit assignments;
 - no MATLAB code is changed;
 - no dynamic-transmission model code is changed;
@@ -540,11 +552,11 @@ No release branch or tag should be moved. No deployment should be updated.
 
 ## Future runner-integration milestone recommendation
 
-The next milestone should review the 3B runner outputs, then decide whether
-to add deterministic expected-value integration, formal baseline active-TB
-sequencing, and carefully scoped event-ledger metadata for the explicit
-pathway. It should keep the inherited MATLAB-v9 compatibility pathway
-available and unchanged, and it should not proceed to economics or DALY
-integration unless those surfaces are explicitly scoped.
+The next milestone should review the 3B runner outputs and decide whether
+the isolated epidemiological intervention semantics are acceptable for
+user-facing integration. After that, a separate scoped milestone can add
+Streamlit controls and report-facing expected-value outputs, and only later
+should event-ledger rows, economics or DALYs be connected. The inherited
+MATLAB-v9 compatibility pathway must remain available and unchanged.
 
 The model remains for planning and sequencing, not for denying care.

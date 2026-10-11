@@ -53,6 +53,12 @@ does not connect the pathway to the runner, Streamlit UI, population
 generation, intervention logic, event ledger, economics, DALYs, MATLAB,
 frozen-reference loading or the dynamic-transmission model.
 
+Milestone 3B adds guarded, isolated epidemiological runner integration behind
+`analysisPathway = explicit_recent_remote_tbi_v2`. It keeps Streamlit
+controls, report-facing outputs, event-ledger rows, event-ledger economics,
+DALYs, MATLAB, frozen-reference loading and the dynamic-transmission model out
+of scope.
+
 ## Selected identifiers
 
 - Analysis basis: `explicit_recent_remote_tbi_foundation_v1`
@@ -77,7 +83,7 @@ frozen-reference loading or the dynamic-transmission model.
 - Working reinfection policy:
   `recent_reinfection_resets_progression_clock_v1`
 - Reinfection sensitivity policy:
-  `recent_reinfection_does_not_reset_progression_clock_v1`
+  `recent_reinfection_does_not_reset_remote_clock_v1`
 - Recent hazard shape: `constant_recent_window_hazard_v1`
 - Remote hazard shape: `constant_remote_window_hazard_v1`
 
@@ -525,7 +531,7 @@ Reinfection policies:
   `recent`, `priorRemoteExposure=true` is retained, and progression uses time
   since recent reinfection. In the central worked example, recent reinfection
   0.5 years ago gives 4.835% five-year future risk.
-- `recent_reinfection_does_not_reset_progression_clock_v1`: effective state
+- `recent_reinfection_does_not_reset_remote_clock_v1`: effective state
   remains `recent` for prevalence accounting, `priorRemoteExposure=true` is
   retained, and progression uses the older remote clock. In the example with
   a 25-year remote clock, five-year future risk is 0.252%.
@@ -1180,9 +1186,9 @@ exclusive recent and remote-only targets, recent-window duration, remote
 history cap, `age85PlusMax`, calibrated recent and remote hazards,
 progression-curve identifier and hash, progression anchors, post-final-anchor
 rule, reinfection policy, risk-factor progression policy, mortality policy,
-active-TB observation policy, stochastic seed/repetition provenance and source
-or review status for the new scientific inputs. Canonical serialization and
-SHA-256 hashing are deterministic.
+baseline active-TB assignment policy, active-TB observation policy, stochastic
+seed/repetition provenance and source or review status for the new scientific
+inputs. Canonical serialization and SHA-256 hashing are deterministic.
 
 The explicit runner pathway does not reuse `baselineRecentLTBIProportion`,
 `continuous_markov_recent_remote`, MATLAB-v9 compatibility identifiers or the
@@ -1191,9 +1197,12 @@ inconsistent pathway provenance fails before calibration. Frozen SA Health
 reference eligibility explicitly rejects `explicit_recent_remote_tbi_v2`.
 
 For each stochastic replicate, the inherited cohort machinery still draws age,
-sex, BCG and risk-factor flags. The explicit pathway then replaces inherited
-infection assignment with the calibrated mutually exclusive states:
+sex, BCG and risk-factor flags. The explicit pathway then sequences baseline
+active TB before TBI assignment, excludes baseline active TB from TBI states
+and the latent-treatment cascade, and replaces inherited infection assignment
+with calibrated mutually exclusive states:
 
+- `baseline_prevalent_active_tb`;
 - `recent`;
 - `remote_only`;
 - `uninfected`.
@@ -1204,7 +1213,17 @@ state is recent. Central 3B progression uses
 `central_piecewise_time_since_infection_progression_v1` and
 `riskFactorProgressionPolicy = none`, so inherited disease ORs are not applied
 to active-TB progression. The example cohort records disease multipliers as
-one under this explicit central pathway.
+one under this explicit central pathway. Exact-age support from
+`load_parameters_from_config` is used; no age-band midpoint approximation is
+introduced.
+
+Deterministic review helpers in `engine/apy/explicit_recent_remote_runner.py`
+integrate over exact age and over the conditional infection-time distribution
+using Gauss-Legendre quadrature
+(`gauss_legendre_quadrature_over_conditional_infection_time_v1`). They do not
+replace infection time with its mean before applying the nonlinear progression
+curve. The helper records `usesMeanTimeSinceInfection = false` and the
+quadrature point count.
 
 Untreated active-TB times are sampled by inverse cumulative hazard from the
 approved time-since-infection curve. For infection age `s` at baseline and a
@@ -1225,15 +1244,37 @@ cumulative-hazard slope. Progression is not set to zero after 25 years.
 
 The reset policy `recent_reinfection_resets_progression_clock_v1` uses the
 recent infection clock when both remote and recent infection occurred. The
-no-reset sensitivity identifier remains available in isolated configuration;
-when selected, the runner samples and uses a remote clock for
-prior-remote-plus-recent people. This sensitivity remains scientifically
-uncertain and is not averaged with the reset clock.
+no-reset sensitivity identifier
+`recent_reinfection_does_not_reset_remote_clock_v1` remains available in
+isolated configuration; when selected, the runner samples and uses a remote
+clock for prior-remote-plus-recent people. This sensitivity remains
+scientifically uncertain and is not averaged with the reset clock.
+
+Competing mortality remains absent from the default runner configuration
+(`not_modelled`). Isolated deterministic and stochastic natural-history
+helpers accept an external survival curve or death hazard and apply mortality
+as a competing event or competing-risk integral. No life table or mortality
+data are invented or bundled.
 
 Active-TB observations remain validation-only in 3B. Changing a source
 denominator can change validation output because population-at-risk and
 expected cases are recomputed, but it does not refit or mutate the externally
 supplied progression curve.
+
+The main runner deliberately returns
+`explicit_recent_remote_tbi_v2_event_ledger_out_of_scope_milestone_3b` for
+explicit-pathway runs. The generic event-ledger bundle, event-ledger economics
+and DALY calculations do not consume explicit-pathway outputs in this
+milestone.
+
+Intervention audit: the inherited epidemiological cascade screens according
+to the existing screening strategy, applies the existing test sensitivity and
+specificity, treatment initiation, completion, adverse-event and efficacy
+semantics, and evaluates protection against future untreated active-TB times.
+In the explicit pathway, baseline active TB is excluded before this latent-TB
+cascade and risk-factor progression multipliers are fixed to one. The mapping
+is retained only as an isolated epidemiological review path; no costing,
+DALY, event-ledger or report interpretation is added.
 
 ## Architecture audit
 
@@ -1297,6 +1338,8 @@ Event ledger and economics:
 
 - `engine/apy/event_ledger.py`, `engine/apy/event_ledger_economics.py`,
   `engine/apy/economics.py` and DALY-related code are unchanged.
+- Explicit-pathway `run_replicates` returns a structured unavailable
+  event-ledger marker rather than a costable event-ledger bundle.
 - `engine/apy/frozen_reference.py` has only a guard that rejects explicit
   recent/remote configs from the frozen SA Health fast path.
 - Frozen reference loaders and recalculation logic remain tied to the SA Health
@@ -1310,11 +1353,11 @@ Dynamic model:
 ## Planned integration
 
 Milestone 3B connects the explicit pathway to the stochastic APY runner behind
-explicit provenance, cache keys and metadata. Future integration must still
-decide whether to add deterministic expected-value support, formal baseline
-active-TB sequencing, event-ledger metadata, economics or DALY handling for
-the explicit pathway. None of those surfaces should be changed without a
-separate scoped milestone.
+explicit provenance, cache keys and metadata, and adds isolated deterministic
+review helpers. Future integration must still decide whether to expose the
+pathway, connect report-facing expected-value results, generate event-ledger
+rows, or add economics or DALY handling for the explicit pathway. None of
+those surfaces should be changed without a separate scoped milestone.
 
 ## Limitations and unanswered decisions
 

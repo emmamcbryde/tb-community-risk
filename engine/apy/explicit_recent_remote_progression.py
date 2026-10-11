@@ -40,9 +40,16 @@ POST_FINAL_ANCHOR_FROM_LAST_SEGMENT = (
 )
 
 REINFECTION_POLICY_RESET_CLOCK = "recent_reinfection_resets_progression_clock_v1"
-REINFECTION_POLICY_NO_RESET_CLOCK = (
+REINFECTION_POLICY_NO_RESET_CLOCK_LEGACY = (
     "recent_reinfection_does_not_reset_progression_clock_v1"
 )
+REINFECTION_POLICY_NO_RESET_CLOCK = (
+    "recent_reinfection_does_not_reset_remote_clock_v1"
+)
+REINFECTION_POLICY_NO_RESET_CLOCK_ALIASES = {
+    REINFECTION_POLICY_NO_RESET_CLOCK,
+    REINFECTION_POLICY_NO_RESET_CLOCK_LEGACY,
+}
 
 TARGET_BASELINE_PREVALENCE = "baseline_prevalence_target"
 TARGET_SCREEN_DETECTED = "screen_detected_disease_target"
@@ -339,7 +346,9 @@ def validate_progression_curve_contract(payload: Mapping[str, Any]) -> dict[str,
         payload.get("recentWindowYears", DEFAULT_RECENT_WINDOW_YEARS),
         "recentWindowYears",
     )
-    reinfection_policy = str(payload.get("reinfectionPolicy") or "")
+    reinfection_policy = _normalise_reinfection_policy(
+        payload.get("reinfectionPolicy") or ""
+    )
     if reinfection_policy not in {
         REINFECTION_POLICY_RESET_CLOCK,
         REINFECTION_POLICY_NO_RESET_CLOCK,
@@ -714,7 +723,7 @@ def resolve_reinfection_progression_clock(
     recent_window_years: float = DEFAULT_RECENT_WINDOW_YEARS,
 ) -> dict[str, Any]:
     state_key = _state_key(state)
-    policy = str(reinfection_policy)
+    policy = _normalise_reinfection_policy(reinfection_policy)
     if policy not in {REINFECTION_POLICY_RESET_CLOCK, REINFECTION_POLICY_NO_RESET_CLOCK}:
         raise ValueError("Unsupported reinfection_policy.")
     window = _positive_float(recent_window_years, "recent_window_years")
@@ -4092,6 +4101,13 @@ def _state_key(state: str) -> str:
     if state_key not in {STATE_RECENT, STATE_REMOTE_ONLY, STATE_UNINFECTED}:
         raise ValueError("state must be one of recent, remote_only or uninfected.")
     return state_key
+
+
+def _normalise_reinfection_policy(policy: Any) -> str:
+    policy_key = str(policy)
+    if policy_key == REINFECTION_POLICY_NO_RESET_CLOCK_LEGACY:
+        return REINFECTION_POLICY_NO_RESET_CLOCK
+    return policy_key
 
 
 def _finite_nonnegative_float(value: Any, label: str) -> float:
