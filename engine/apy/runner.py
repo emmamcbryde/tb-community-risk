@@ -22,6 +22,7 @@ from engine.apy.explicit_recent_remote_runner import (
     explicit_recent_remote_event_ledger_unavailable,
     explicit_recent_remote_runner_config_hash,
     is_explicit_recent_remote_pathway_selected,
+    summarise_explicit_epidemiology_replicates,
     validate_explicit_recent_remote_pathway_selection,
 )
 from engine.apy.ltbi_state import resolve_ltbi_state_assumptions
@@ -84,6 +85,7 @@ def run_replicates(
     raw_rows = []
     event_total_rows = []
     annual_frames = []
+    explicit_epidemiology_replicates = []
     example_cohort = None
     _notify_progress(progress_callback, {"stage": "initialising", "totalReplicates": int(cfg["nReps"])})
     for idx, replicate_seed in enumerate(replicate_seeds, start=1):
@@ -109,6 +111,11 @@ def run_replicates(
                 int(replicate_seed),
                 out["eventLedgerData"],
             )
+        elif out.get("explicitEpidemiologyData"):
+            summary_item = deepcopy(out["explicitEpidemiologyData"])
+            summary_item["replicateId"] = idx
+            summary_item["replicateSeed"] = int(replicate_seed)
+            explicit_epidemiology_replicates.append(summary_item)
         if idx == 1:
             example_cohort = out["cohort"]
         _notify_progress(
@@ -139,7 +146,7 @@ def run_replicates(
         )
     summary = summarise_numeric_rows(raw)
     _notify_progress(progress_callback, {"stage": "finalising", "totalReplicates": int(cfg["nReps"])})
-    return {
+    result = {
         "raw": raw,
         "summary": summary,
         "eventLedger": event_ledger,
@@ -154,6 +161,12 @@ def run_replicates(
         "modelVersion": MODEL_VERSION,
         "backend": BACKEND,
     }
+    if explicit_pathway:
+        result["explicitEpidemiology"] = summarise_explicit_epidemiology_replicates(
+            explicit_epidemiology_replicates,
+            explicit_config,
+        )
+    return result
 
 
 def run_scenario(
@@ -272,6 +285,18 @@ def build_strategy_metadata(config: dict[str, Any], reg: dict[str, Any]) -> dict
                 ],
                 "explicitRecentRemoteActiveTBObservationPolicy": explicit_config[
                     "activeTBObservationPolicy"
+                ],
+                "explicitRecentRemoteTptEffectPolicyIdentifier": explicit_config[
+                    "tptEffectPolicyIdentifier"
+                ],
+                "explicitRecentRemoteTptEffectPolicyHash": explicit_config[
+                    "tptEffectPolicyHash"
+                ],
+                "explicitRecentRemoteCommonRandomNumberContractIdentifier": explicit_config[
+                    "commonRandomNumberContractIdentifier"
+                ],
+                "explicitRecentRemoteCommonRandomNumberContractHash": explicit_config[
+                    "commonRandomNumberContractHash"
                 ],
             }
         )

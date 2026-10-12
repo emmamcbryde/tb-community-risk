@@ -59,6 +59,14 @@ controls, report-facing outputs, event-ledger rows, event-ledger economics,
 DALYs, MATLAB, frozen-reference loading and the dynamic-transmission model out
 of scope.
 
+Milestone 3C hardens shared-runner dispatch and adds isolated non-economic
+epidemiological comparator/intervention outputs for the explicit pathway. It
+records inherited screening and TPT timing semantics in a versioned policy
+contract, keeps active-TB observations validation-only, returns a deliberately
+non-costable event-ledger marker, and still does not add Streamlit controls,
+report outputs, event-ledger costing, economics, DALYs, MATLAB or dynamic
+model changes.
+
 ## Selected identifiers
 
 - Analysis basis: `explicit_recent_remote_tbi_foundation_v1`
@@ -1256,16 +1264,17 @@ helpers accept an external survival curve or death hazard and apply mortality
 as a competing event or competing-risk integral. No life table or mortality
 data are invented or bundled.
 
-Active-TB observations remain validation-only in 3B. Changing a source
+Active-TB observations remain validation-only in 3B and 3C. Changing a source
 denominator can change validation output because population-at-risk and
 expected cases are recomputed, but it does not refit or mutate the externally
 supplied progression curve.
 
 The main runner deliberately returns
-`explicit_recent_remote_tbi_v2_event_ledger_out_of_scope_milestone_3b` for
-explicit-pathway runs. The generic event-ledger bundle, event-ledger economics
-and DALY calculations do not consume explicit-pathway outputs in this
-milestone.
+an unavailable event-ledger marker for explicit-pathway runs. Milestone 3C
+updates that marker to
+`explicit_recent_remote_tbi_v2_event_ledger_out_of_scope_milestone_3c` and
+sets `validation.isValid = false`, so generic event-ledger economics and DALY
+calculations cannot consume explicit-pathway outputs.
 
 Intervention audit: the inherited epidemiological cascade screens according
 to the existing screening strategy, applies the existing test sensitivity and
@@ -1275,6 +1284,107 @@ In the explicit pathway, baseline active TB is excluded before this latent-TB
 cascade and risk-factor progression multipliers are fixed to one. The mapping
 is retained only as an isolated epidemiological review path; no costing,
 DALY, event-ledger or report interpretation is added.
+
+## Milestone 3C runner hardening and intervention-output contract
+
+Milestone 3C keeps the explicit pathway behind a positive identifier match:
+`analysisPathway = explicit_recent_remote_tbi_v2`. Missing or disabled
+explicit fields do not activate the pathway; unknown identifiers fail before
+calibration. The retired `continuous_markov_recent_remote` pathway remains
+unavailable, and the frozen SA Health reference loader remains ineligible for
+explicit-pathway configurations.
+
+The explicit runner contract records:
+
+- `tptEffectPolicyIdentifier =
+  effective_tpt_prevents_future_progression_v1`;
+- `commonRandomNumberContractIdentifier =
+  paired_baseline_untreated_progression_shared_v1`;
+- deterministic hashes for both contracts;
+- the existing progression curve, reinfection, mortality, risk-factor and
+  active-TB observation policies.
+
+The TPT-effect policy is interpreted as follows:
+
+- TPT does not change whether historical infection occurred;
+- effective TPT does not rewrite calibrated recent or remote-only prevalence;
+- an effectively treated infected person remains historically classified as
+  recent or remote-only for audit;
+- protection begins at the inherited treatment stop/effective time
+  `screenTime + regimenMonths/12 * doseFractionTaken`;
+- successful full or partial TPT prevents only active TB whose untreated event
+  time occurs after that effective time;
+- active TB occurring before screening or before effective treatment is not
+  prevented retrospectively;
+- incomplete or ineffective treatment leaves the untreated
+  survivor-conditioned progression curve unchanged;
+- uninfected false positives can be counted as screened, test-positive,
+  treated and completed, but receive no epidemiological TB-prevention benefit;
+- baseline active TB is not eligible for ordinary latent-TB TPT.
+
+The common-random-number contract pairs comparator and intervention on
+baseline demographics, baseline active-TB status, recent/remote/uninfected
+state, infection clocks, untreated active-TB progression potential and
+mortality history when mortality is supplied. Screening, test outcomes, TPT
+initiation, discontinuation/completion and TPT efficacy are
+intervention-specific draws.
+
+The stochastic explicit runner returns a top-level `explicitEpidemiology`
+object only for the explicit pathway. It contains non-economic comparator and
+intervention summaries for:
+
+- population;
+- baseline active TB;
+- recent TBI;
+- remote-only TBI;
+- uninfected;
+- prior remote plus recent reinfection;
+- screened;
+- test-positive, true-positive and false-positive results;
+- active TB detected during work-up;
+- TPT starts, completions and effective TPT;
+- incident active TB before screening;
+- incident active TB after screening but before effective TPT;
+- subsequent incident active TB;
+- total active TB over follow-up;
+- direct active TB cases averted among the modelled population.
+
+Where the stochastic cohort carries the fields, summaries are stratified by
+age group and effective infection state. These outputs are not event ledgers
+and are not costable.
+
+The explicit pathway event-ledger object remains deliberately unavailable:
+
+```text
+source = explicit_recent_remote_tbi_v2_event_ledger_out_of_scope_milestone_3c
+available = false
+validation.isValid = false
+```
+
+This fail-closed marker is intended to make event-ledger economics reject
+explicit-pathway outputs until a later milestone designs a real event ledger.
+
+The deterministic intervention helper
+`deterministic_explicit_recent_remote_intervention_expectations` integrates
+over exact age, infection state, conditional infection time and screening time
+using Gauss-Legendre quadrature:
+
+```text
+gauss_legendre_infection_and_screening_time_quadrature_v1
+```
+
+It does not use a mean time-since-infection shortcut and applies the same
+future-only effective-TPT interpretation described above. Competing mortality
+remains `not_modelled` unless an external survival curve or death hazard is
+supplied to the isolated helper.
+
+Deterministic-stochastic reconciliation now reports multiple-seed Monte Carlo
+standard errors and standardised differences. The declared acceptance rule is
+that the absolute difference must be within
+`max(absolute_floor, z_score * MCSE)`. Reconciliation diagnostics cover state
+prevalence, prior-remote-plus-recent counts and incident active TB horizons;
+stochastic natural-history diagnostics also expose age-specific state and
+incident-TB rows.
 
 ## Architecture audit
 

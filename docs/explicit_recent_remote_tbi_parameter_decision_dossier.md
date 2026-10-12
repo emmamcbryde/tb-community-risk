@@ -338,4 +338,15 @@ is a new observation row rather than a rewrite of the old row.
    progression parameters.
    Sensitivity: yes.
 
-Until these decisions are approved, runner integration remains blocked.
+Milestone 3C implementation note: an isolated, non-report-facing runner path
+now exists for scientific review. The central runner contract uses the
+approved piecewise time-since-infection curve, `riskFactorProgressionPolicy =
+none`, validation-only active-TB observations, and the working TPT-effect
+policy `effective_tpt_prevents_future_progression_v1`. That TPT policy
+prevents only future active-TB progression after the inherited treatment
+stop/effective time and does not rewrite historical recent/remote infection
+state.
+
+The decisions above still block user-facing Streamlit integration,
+production-default approval, event-ledger costing, economics and DALY
+interpretation for the explicit pathway.

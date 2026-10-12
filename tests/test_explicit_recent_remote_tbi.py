@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 import subprocess
 import unittest
+from copy import deepcopy
 
 import numpy as np
 
@@ -133,19 +134,34 @@ from engine.apy.explicit_recent_remote_progression import (
 from engine.apy.explicit_recent_remote_runner import (
     ACTIVE_TB_OBSERVATION_POLICY_VALIDATION_ONLY,
     BASELINE_ACTIVE_TB_ASSIGNMENT_POLICY,
+    COMMON_RANDOM_NUMBER_PAIRED_BASELINE,
+    DETERMINISTIC_INTERVENTION_INTEGRATION_METHOD,
+    EPIDEMIOLOGICAL_INTERVENTION_OUTPUT_CONTRACT_VERSION,
     EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
     EXPLICIT_RECENT_REMOTE_RUNNER_CONTRACT_VERSION,
+    TPT_EFFECT_POLICY_PREVENTS_FUTURE_PROGRESSION,
+    deterministic_explicit_recent_remote_intervention_expectations,
     deterministic_explicit_recent_remote_expectations,
     explicit_recent_remote_analysis_config,
     explicit_recent_remote_event_ledger_unavailable,
     explicit_recent_remote_runner_config_hash,
     explicit_recent_remote_runner_config_json,
+    is_explicit_recent_remote_pathway_selected,
     reconcile_deterministic_stochastic_explicit_runner,
     sample_future_active_tb_time_from_curve,
     stochastic_explicit_recent_remote_natural_history,
+    validate_explicit_recent_remote_pathway_selection,
 )
 from engine.apy.calibration_policy import resolve_calibration_for_config
+from engine.apy.config import normalise_config
+from engine.apy.event_ledger_economics import run_event_ledger_health_economics
 from engine.apy.frozen_reference import is_frozen_sa_health_reference_eligible
+from engine.apy.ltbi_state import enable_development_compatibility_mode
+from engine.apy.regimen import (
+    apply_regimen_overrides,
+    default_regimen_library,
+    get_regimen_from_library,
+)
 from engine.apy.runner import run_replicates
 
 
@@ -1638,6 +1654,14 @@ class ExplicitRecentRemoteRunnerIntegrationTests(unittest.TestCase):
             ACTIVE_TB_OBSERVATION_POLICY_VALIDATION_ONLY,
         )
         self.assertEqual(
+            payload["tptEffectPolicyIdentifier"],
+            TPT_EFFECT_POLICY_PREVENTS_FUTURE_PROGRESSION,
+        )
+        self.assertEqual(
+            payload["commonRandomNumberContractIdentifier"],
+            COMMON_RANDOM_NUMBER_PAIRED_BASELINE,
+        )
+        self.assertEqual(
             payload["baselineActiveTBAssignmentPolicy"],
             BASELINE_ACTIVE_TB_ASSIGNMENT_POLICY,
         )
@@ -1648,6 +1672,24 @@ class ExplicitRecentRemoteRunnerIntegrationTests(unittest.TestCase):
         self.assertEqual(
             explicit_recent_remote_runner_config_hash(payload),
             explicit_recent_remote_runner_config_hash(shuffled),
+        )
+
+    def test_existing_configurations_do_not_enter_explicit_pathway(self) -> None:
+        base = {
+            "N": 80,
+            "nReps": 1,
+            "seed": 7701,
+            "screeningStrategy": "random",
+        }
+        base = enable_development_compatibility_mode(base)
+        disabled = deepcopy(base)
+        disabled["explicitRecentRemoteTBI"] = {"enabled": False}
+
+        self.assertFalse(is_explicit_recent_remote_pathway_selected(base))
+        self.assertFalse(is_explicit_recent_remote_pathway_selected(disabled))
+        self.assertIsNone(validate_explicit_recent_remote_pathway_selection(base))
+        self.assertIsNone(
+            validate_explicit_recent_remote_pathway_selection(disabled)
         )
 
     def test_no_reset_identifier_uses_remote_clock_contract(self) -> None:
@@ -1756,6 +1798,23 @@ class ExplicitRecentRemoteRunnerIntegrationTests(unittest.TestCase):
         )
         self.assertTrue((first_cohort["diseaseMultiplier"] == 1.0).all())
         self.assertFalse(first["eventLedger"]["available"])
+        self.assertTrue(first["explicitEpidemiology"]["available"])
+        self.assertEqual(
+            first["explicitEpidemiology"]["contractVersion"],
+            EPIDEMIOLOGICAL_INTERVENTION_OUTPUT_CONTRACT_VERSION,
+        )
+        self.assertNotIn("economics", first["explicitEpidemiology"])
+        self.assertNotIn("dalyResults", first["explicitEpidemiology"])
+        self.assertNotIn("qalyResults", first["explicitEpidemiology"])
+
+    def test_explicit_event_ledger_is_not_costable(self) -> None:
+        config = _explicit_runner_test_config(N=60, nReps=1, seed=1051)
+        result = run_replicates(config, keep_example_cohort=False)
+
+        self.assertFalse(result["eventLedger"]["available"])
+        self.assertFalse(result["eventLedger"]["validation"]["isValid"])
+        with self.assertRaisesRegex(ValueError, "valid APY event ledger"):
+            run_event_ledger_health_economics(result, {})
 
     def test_explicit_runner_ignores_inherited_disease_or_multipliers(self) -> None:
         config = _explicit_runner_test_config(N=100, nReps=1, seed=106)
@@ -1986,18 +2045,171 @@ class ExplicitRecentRemoteRunnerIntegrationTests(unittest.TestCase):
 
         self.assertFalse(summary["mortalityDrawsUsed"])
 
-    def test_deterministic_and_stochastic_reconcile_with_declared_tolerances(self) -> None:
+    def test_mortality_enabled_reconciliation_uses_competing_mortality_draws(self) -> None:
+        calibration = resolve_calibration_for_config(
+            _explicit_runner_test_config(N=40, nReps=1, seed=10771)
+        )
+        reconciliation = reconcile_deterministic_stochastic_explicit_runner(
+            calibration,
+            population_size=3000,
+            seeds=(10771, 10772),
+            horizons_years=(5.0, 20.0),
+            competing_mortality_hazard=0.02,
+            absolute_floor=0.02,
+        )
+
+        self.assertTrue(reconciliation["allWithinTolerance"], reconciliation["rows"])
+        self.assertTrue(
+            all(run["mortalityDrawsUsed"] for run in reconciliation["stochasticRuns"])
+        )
+        self.assertEqual(
+            reconciliation["deterministic"]["mortalityPolicy"],
+            "external_constant_mortality_hazard",
+        )
+        self.assertTrue(
+            reconciliation["deterministic"]["ageSpecificIncidentActiveTBByHorizon"]
+        )
+        self.assertTrue(
+            reconciliation["stochastic"]["ageSpecificIncidentActiveTBByHorizon"]
+        )
+
+    def test_deterministic_and_stochastic_reconcile_with_declared_mcse_tolerances(self) -> None:
         calibration = resolve_calibration_for_config(
             _explicit_runner_test_config(N=40, nReps=1, seed=1078)
         )
         reconciliation = reconcile_deterministic_stochastic_explicit_runner(
             calibration,
-            population_size=20000,
-            seed=1078,
-            horizons_years=(1.0, 5.0, 10.0, 20.0),
+            population_size=6000,
+            seeds=(1078, 1079, 1080),
+            horizons_years=(1.0, 2.0, 5.0, 10.0, 20.0),
         )
 
         self.assertTrue(reconciliation["allWithinTolerance"], reconciliation["rows"])
+        self.assertEqual(reconciliation["stochasticRunCount"], 3)
+        self.assertIn("Monte Carlo standard error", reconciliation["acceptanceRule"])
+        self.assertTrue(
+            all("standardizedDifference" in row for row in reconciliation["rows"])
+        )
+        self.assertIn(
+            "state:priorRemotePlusRecent",
+            {row["quantity"] for row in reconciliation["rows"]},
+        )
+
+    def test_deterministic_intervention_applies_effective_tpt_to_future_progression_only(self) -> None:
+        config = _explicit_runner_test_config(
+            N=400,
+            nReps=1,
+            seed=10801,
+            recent_tbi_target=0.35,
+            remote_only_tbi_target=0.35,
+            screenCoverage=1.0,
+            testSensitivity=1.0,
+            testSpecificity=1.0,
+            pStartTPT=1.0,
+            regimenPComplete=1.0,
+            regimenADRstop=0.0,
+            regimenEffFull=1.0,
+        )
+        cfg, calibration, regimen = _normalised_config_calibration_and_regimen(config)
+
+        expected = deterministic_explicit_recent_remote_intervention_expectations(
+            calibration,
+            config=cfg,
+            regimen=regimen,
+            horizons_years=(1.0, 20.0),
+            infection_quadrature_points=12,
+            screen_quadrature_points=8,
+        )
+        h20 = expected["byHorizon"]["20"]
+
+        self.assertEqual(
+            expected["integrationMethod"],
+            DETERMINISTIC_INTERVENTION_INTEGRATION_METHOD,
+        )
+        self.assertFalse(expected["usesMeanTimeSinceInfection"])
+        self.assertGreater(h20["directActiveTBCasesAvertedProportion"], 0.0)
+        self.assertLess(
+            h20["interventionActiveTBProportion"],
+            h20["comparatorActiveTBProportion"],
+        )
+        self.assertGreaterEqual(
+            h20["incidentActiveTBBeforeScreeningProportion"],
+            0.0,
+        )
+
+    def test_stochastic_effective_tpt_retains_history_and_cannot_prevent_prior_tb(self) -> None:
+        config = _explicit_runner_test_config(
+            N=2500,
+            nReps=1,
+            seed=10802,
+            recent_tbi_target=0.35,
+            remote_only_tbi_target=0.35,
+            screenCoverage=1.0,
+            testSensitivity=1.0,
+            testSpecificity=1.0,
+            pStartTPT=1.0,
+            regimenPComplete=1.0,
+            regimenADRstop=0.0,
+            regimenEffFull=1.0,
+        )
+        result = run_replicates(config, keep_example_cohort=True)
+        cohort = result["exampleCohort"]
+        prevented = cohort["preventedActiveTB"]
+
+        self.assertGreater(int(prevented.sum()), 0)
+        self.assertTrue(
+            (
+                cohort.loc[prevented, "recentLTBIAtBaseline"]
+                | cohort.loc[prevented, "remoteLTBIAtBaseline"]
+            ).all()
+        )
+        self.assertTrue(
+            (
+                cohort.loc[prevented, "tActiveUntreated"]
+                > cohort.loc[prevented, "treatmentStopTime"]
+            ).all()
+        )
+
+    def test_uninfected_false_positives_receive_no_epidemiological_benefit(self) -> None:
+        config = _explicit_runner_test_config(
+            N=200,
+            nReps=1,
+            seed=10803,
+            recent_tbi_target=0.0,
+            remote_only_tbi_target=0.0,
+            screenCoverage=1.0,
+            testSensitivity=1.0,
+            testSpecificity=0.0,
+            pStartTPT=1.0,
+        )
+        result = run_replicates(config, keep_example_cohort=True)
+        intervention = result["explicitEpidemiology"]["replicates"][0]["intervention"]
+
+        self.assertEqual(intervention["falsePositive"], 200)
+        self.assertEqual(intervention["tptStarts"], 200)
+        self.assertEqual(
+            intervention["directActiveTBCasesAvertedAmongModelledPopulation"],
+            0,
+        )
+        self.assertEqual(
+            intervention["uninfectedFalsePositiveEpidemiologicalBenefit"],
+            0,
+        )
+
+    def test_economic_inputs_do_not_change_explicit_epidemiological_outputs(self) -> None:
+        config = _explicit_runner_test_config(N=160, nReps=2, seed=10804)
+        edited = deepcopy(config)
+        edited["costs"] = {"test": {"IGRA": 9999.0}}
+        edited["dalyAssumptions"] = {"activeTBDisabilityWeight": 0.9}
+
+        base = run_replicates(config, keep_example_cohort=False)
+        changed = run_replicates(edited, keep_example_cohort=False)
+
+        self.assertTrue(base["raw"].equals(changed["raw"]))
+        self.assertEqual(
+            base["explicitEpidemiology"]["metricSummary"],
+            changed["explicitEpidemiology"]["metricSummary"],
+        )
 
     def test_material_scientific_settings_change_runner_hash(self) -> None:
         base = _explicit_runner_test_config(N=40, nReps=1, seed=1079)
@@ -2860,9 +3072,20 @@ def _explicit_runner_test_config(**overrides) -> dict:
         target_source="unit test mutually exclusive recent/remote targets",
         target_reference_year=2026,
         review_status="unit_test_reviewed",
-        notes="Milestone 3B runner-integration test fixture.",
+        notes="Milestone 3C runner-hardening test fixture.",
         **base,
     )
+
+
+def _normalised_config_calibration_and_regimen(config: dict) -> tuple[dict, dict, dict]:
+    cfg = normalise_config(config)
+    calibration = resolve_calibration_for_config(cfg)
+    library = default_regimen_library(
+        cfg.get("partialShortCourseMode") or "threshold80"
+    )
+    regimen = get_regimen_from_library(cfg["regimen"], library)
+    regimen = apply_regimen_overrides(regimen, cfg)
+    return cfg, calibration, regimen
 
 
 if __name__ == "__main__":

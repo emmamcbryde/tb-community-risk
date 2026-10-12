@@ -62,6 +62,14 @@ time-since-infection curve. It does not add Streamlit controls, report-facing
 outputs, event-ledger rows, event-ledger economics, DALYs, MATLAB changes,
 dynamic-model changes or active-TB progression calibration.
 
+Milestone 3C purpose: harden the shared runner dispatch and add isolated
+non-economic epidemiological intervention outputs for the explicit pathway.
+This milestone records the inherited screening/TPT semantics in a versioned
+policy contract, uses paired baseline untreated natural histories for
+comparator/intervention comparisons, strengthens deterministic-stochastic
+reconciliation diagnostics, and keeps event ledgers, economics, DALYs,
+Streamlit controls, reports, MATLAB and the dynamic model out of scope.
+
 ## Implemented in Milestone 1
 
 New pure module:
@@ -532,8 +540,9 @@ Runner behaviour:
 - competing mortality remains `not_modelled` unless a later milestone supplies
   a reviewed mortality interface to the runner.
 - explicit-pathway `run_replicates` returns a structured
-  `explicit_recent_remote_tbi_v2_event_ledger_out_of_scope_milestone_3b`
-  marker rather than a costable event-ledger bundle.
+  unavailable event-ledger marker, updated in Milestone 3C to
+  `explicit_recent_remote_tbi_v2_event_ledger_out_of_scope_milestone_3c`,
+  rather than a costable event-ledger bundle.
 
 Still not done after Milestone 3B:
 
@@ -550,13 +559,134 @@ Still not done after Milestone 3B:
 
 No release branch or tag should be moved. No deployment should be updated.
 
-## Future runner-integration milestone recommendation
+## Superseded 3B runner-integration recommendation
 
-The next milestone should review the 3B runner outputs and decide whether
-the isolated epidemiological intervention semantics are acceptable for
-user-facing integration. After that, a separate scoped milestone can add
-Streamlit controls and report-facing expected-value outputs, and only later
-should event-ledger rows, economics or DALYs be connected. The inherited
-MATLAB-v9 compatibility pathway must remain available and unchanged.
+Milestone 3C supersedes the original 3B next-step recommendation by adding the
+isolated epidemiological intervention-output contract and the shared-runner
+hardening described below. Streamlit controls, report-facing outputs,
+event-ledger rows, economics and DALYs still require separate scoped
+milestones.
 
 The model remains for planning and sequencing, not for denying care.
+
+## Implemented in Milestone 3C
+
+Milestone 3C retains the explicit pathway identifier
+`explicit_recent_remote_tbi_v2` and central natural-history identifier
+`central_piecewise_time_since_infection_progression_v1`. The shared runner
+dispatch remains fail-closed:
+
+- configurations without `analysisPathway = explicit_recent_remote_tbi_v2`
+  remain on the inherited path;
+- `explicitRecentRemoteTBI.enabled = true` without the explicit pathway
+  identifier raises an error;
+- unknown pathway identifiers, including `continuous_markov_recent_remote`,
+  are rejected;
+- the frozen SA Health reference eligibility guard continues to reject the
+  explicit pathway;
+- explicit and compatibility results carry distinct metadata and cache-key
+  inputs.
+
+The explicit runner contract now also records:
+
+- `tptEffectPolicyIdentifier =
+  effective_tpt_prevents_future_progression_v1`;
+- `commonRandomNumberContractIdentifier =
+  paired_baseline_untreated_progression_shared_v1`;
+- deterministic hashes for both contracts.
+
+Inherited intervention semantics audit:
+
+- screening selection uses the inherited strategy and coverage;
+- screening time is sampled uniformly over the configured screening window;
+- test sensitivity applies to infected screened people, including those
+  already active at screening;
+- test specificity applies to uninfected screened people;
+- baseline active TB is excluded before ordinary latent-TB TPT eligibility;
+- active TB present before or at screening enters work-up/exclusion and does
+  not receive ordinary latent-TB TPT;
+- treatment starts at screening time in the inherited stochastic engine;
+- treatment stop/effective time is `screenTime + regimenMonths/12 *
+  doseFractionTaken`;
+- a successful full or partial TPT efficacy draw prevents only active TB whose
+  untreated event time is after the treatment stop/effective time;
+- incomplete or ineffective treatment retains the untreated
+  survivor-conditioned progression clock;
+- uninfected false positives can contribute to screening, test-positive,
+  treatment-start and completion counts, but receive no epidemiological TB
+  prevention benefit;
+- historical recent/remote infection state is retained after effective TPT.
+
+The selected explicit TPT-effect policy is
+`effective_tpt_prevents_future_progression_v1`. It does not sterilise or
+rewrite historical infection prevalence, does not grant retrospective
+protection from baseline, and does not apply any inherited OR-labelled
+progression multipliers. This is a runner-integration working policy, not a
+new scientific proof of TPT mechanism.
+
+The common-random-number contract shares baseline demographics, baseline
+active-TB assignment, recent/remote/uninfected assignment, infection clocks,
+untreated active-TB progression potential and mortality histories when
+supplied. Intervention-specific draws include screening, testing, treatment
+initiation, discontinuation/completion and TPT efficacy.
+
+New non-economic explicit runner output:
+
+- top-level `explicitEpidemiology` is returned only for the explicit pathway;
+- comparator and intervention summaries include population, baseline active
+  TB, recent TBI, remote-only TBI, uninfected, prior-remote-plus-recent,
+  screened, test-positive, true-positive, false-positive, TPT starts,
+  completions, effective TPT, work-up active TB, timing categories for active
+  TB and direct active TB cases averted;
+- outputs are stratified by age group and effective state where available;
+- the case-averted definition is "direct active TB cases averted among the
+  modelled population";
+- no costs, DALYs, QALYs or event-ledger rows are generated.
+
+Event-ledger protection:
+
+- explicit-pathway `eventLedger.available` remains false;
+- the unavailable ledger marker is
+  `explicit_recent_remote_tbi_v2_event_ledger_out_of_scope_milestone_3c`;
+- its validation status is false, so event-ledger economics rejects it as not
+  authoritative.
+
+Deterministic intervention helper:
+
+- `deterministic_explicit_recent_remote_intervention_expectations` integrates
+  over exact age, infection state, conditional infection time and screening
+  time with Gauss-Legendre quadrature;
+- it records
+  `gauss_legendre_infection_and_screening_time_quadrature_v1`;
+- it does not replace nonlinear timing distributions with a single mean;
+- it applies effective TPT only to future progression after the treatment
+  stop/effective time;
+- mortality remains `not_modelled` unless an external survival curve or death
+  hazard is supplied to the isolated helper.
+
+Reconciliation hardening:
+
+- the deterministic-stochastic reconciliation helper now supports multiple
+  prespecified seeds and reports Monte Carlo standard error, standardised
+  difference, the acceptance rule and pass/fail for each metric;
+- reconciliation rows include baseline active TB, recent, remote-only,
+  uninfected, prior-remote-plus-recent and incident TB horizons;
+- stochastic natural-history helpers now expose age-specific state and
+  age-specific incident-TB diagnostic rows.
+
+Still out of scope after Milestone 3C:
+
+- Streamlit controls and report-facing outputs;
+- event-ledger generation for the explicit pathway;
+- health economics, DALYs or QALYs for the explicit pathway;
+- MATLAB changes;
+- dynamic-transmission model changes;
+- frozen artifact regeneration or release-pointer changes.
+
+## Next milestone recommendation
+
+The next milestone should review the explicit epidemiological intervention
+outputs and, if accepted, add a separate non-report-facing expected-value
+runner/API layer or a guarded Streamlit preview for scientific review. Event
+ledger costing, health economics and DALYs should remain a later milestone
+after the epidemiological output contract is reviewed.

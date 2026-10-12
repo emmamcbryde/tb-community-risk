@@ -22,6 +22,7 @@ from engine.apy.config import normalise_config
 from engine.apy.eligibility import resolve_eligibility, screening_coverage_of_population
 from engine.apy.explicit_recent_remote_runner import (
     apply_explicit_recent_remote_population_assignment,
+    build_explicit_epidemiology_replicate_summary,
     is_explicit_recent_remote_calibration,
     is_explicit_recent_remote_pathway_selected,
 )
@@ -478,10 +479,10 @@ def simulate_one_cohort(
     if is_explicit_recent_remote_calibration(calibration):
         event_ledger_data = {
             "available": False,
-            "source": "explicit_recent_remote_tbi_v2_event_ledger_out_of_scope_milestone_3b",
+            "source": "explicit_recent_remote_tbi_v2_event_ledger_out_of_scope_milestone_3c",
             "baselineFingerprint": _baseline_fingerprint(population, t_active),
             "diagnosticMessages": [
-                "Event-ledger generation is intentionally out of scope for the explicit recent/remote pathway in Milestone 3B."
+                "Event-ledger generation is intentionally out of scope for the explicit recent/remote pathway in Milestone 3C."
             ],
         }
     else:
@@ -582,7 +583,33 @@ def simulate_one_cohort(
             prevented_active_tb_full,
             prevented_active_tb_partial,
         )
-    return {"raw": raw, "cohort": cohort, "eventLedgerData": event_ledger_data}
+    explicit_epidemiology_data = None
+    if is_explicit_recent_remote_calibration(calibration):
+        explicit_epidemiology_data = build_explicit_epidemiology_replicate_summary(
+            population=population,
+            arrays={
+                "t_active": t_active,
+                "screened": screened,
+                "screen_time": screen_time,
+                "test_positive": test_positive,
+                "true_positive_latent": true_positive_latent,
+                "false_positive_test": false_positive_test,
+                "test_positive_active": test_positive_active,
+                "active_at_screen": active_at_screen,
+                "started_tpt": started_tpt,
+                "completed_tpt": completed_tpt,
+                "protected_full": protected_full,
+                "protected_partial": protected_partial,
+                "prevented_active_tb": prevented_active_tb,
+                "course_stop_time": course_stop_time,
+            },
+            follow_horizon_years=opts["followHorizon"],
+            runner_config=calibration["explicitRecentRemoteRunnerConfig"],
+        )
+    result = {"raw": raw, "cohort": cohort, "eventLedgerData": event_ledger_data}
+    if explicit_epidemiology_data is not None:
+        result["explicitEpidemiologyData"] = explicit_epidemiology_data
+    return result
 
 
 def simulate_one_cohort_from_config(
