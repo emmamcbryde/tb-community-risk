@@ -74,6 +74,12 @@ DETERMINISTIC_INFECTION_TIME_INTEGRATION_METHOD = (
 STOCHASTIC_NATURAL_HISTORY_METHOD = (
     "isolated_explicit_recent_remote_natural_history_stochastic_v1"
 )
+STOCHASTIC_INTERVENTION_METHOD = (
+    "isolated_explicit_recent_remote_intervention_stochastic_v1"
+)
+INTERVENTION_RECONCILIATION_METHOD = (
+    "explicit_recent_remote_intervention_reconciliation_with_mcse_v1"
+)
 TPT_EFFECT_POLICY_CONTRACT_VERSION = "explicit_recent_remote_tpt_effect_policy_v1"
 TPT_EFFECT_POLICY_PREVENTS_FUTURE_PROGRESSION = (
     "effective_tpt_prevents_future_progression_v1"
@@ -980,6 +986,7 @@ def build_explicit_epidemiology_replicate_summary(
     base_counts = {
         "population": int(n),
         "baselineActiveTB": int(baseline_active.sum()),
+        "eligiblePopulation": int((~baseline_active).sum()),
         "recentTBI": int(recent.sum()),
         "remoteOnlyTBI": int(remote.sum()),
         "uninfected": int(uninfected.sum()),
@@ -1235,7 +1242,11 @@ def deterministic_explicit_recent_remote_intervention_expectations(
     totals_by_horizon: dict[str, dict[str, Any]] = {}
     for horizon in horizons:
         comparator_active = 0.0
+        comparator_recent = 0.0
+        comparator_remote = 0.0
         prevented = 0.0
+        prevented_recent = 0.0
+        prevented_remote = 0.0
         active_before_screen = 0.0
         active_after_screen_before_effective = 0.0
         subsequent_active = 0.0
@@ -1244,12 +1255,14 @@ def deterministic_explicit_recent_remote_intervention_expectations(
         for idx, age in enumerate(ages):
             state_components = (
                 (
+                    STATE_RECENT,
                     float(p_recent[idx]),
                     0.0,
                     float(durations.recent_years[idx]),
                     recent_hazard,
                 ),
                 (
+                    STATE_REMOTE_ONLY,
                     float(p_remote[idx]),
                     recent_window,
                     float(durations.remote_years[idx]),
@@ -1257,7 +1270,7 @@ def deterministic_explicit_recent_remote_intervention_expectations(
                 ),
             )
             age_weight = at_risk_fraction * float(weights[idx])
-            for state_probability, window_start, duration, hazard in state_components:
+            for state_name, state_probability, window_start, duration, hazard in state_components:
                 if state_probability <= 0.0:
                     continue
                 moments = _infected_intervention_moments(
@@ -1277,14 +1290,22 @@ def deterministic_explicit_recent_remote_intervention_expectations(
                     integration_steps=integration_steps,
                 )
                 scale = age_weight * state_probability
-                comparator_active += scale * moments["activeByHorizon"]
-                prevented += (
+                comparator_component = scale * moments["activeByHorizon"]
+                prevented_component = (
                     scale
                     * screen_coverage
                     * test_sensitivity
                     * p_start
                     * moments["preventedByEffectiveTPT"]
                 )
+                comparator_active += comparator_component
+                prevented += prevented_component
+                if state_name == STATE_RECENT:
+                    comparator_recent += comparator_component
+                    prevented_recent += prevented_component
+                else:
+                    comparator_remote += comparator_component
+                    prevented_remote += prevented_component
                 active_before_screen += (
                     scale * screen_coverage * moments["activeBeforeScreening"]
                 )
@@ -1326,6 +1347,10 @@ def deterministic_explicit_recent_remote_intervention_expectations(
             "comparatorActiveTBProportion": comparator_active,
             "interventionActiveTBProportion": intervention_active,
             "directActiveTBCasesAvertedProportion": prevented,
+            "recentComparatorActiveTBProportion": comparator_recent,
+            "remoteOnlyComparatorActiveTBProportion": comparator_remote,
+            "recentDirectActiveTBCasesAvertedProportion": prevented_recent,
+            "remoteOnlyDirectActiveTBCasesAvertedProportion": prevented_remote,
             "screenedProportion": at_risk_fraction * screen_coverage,
             "testPositiveProportion": true_positive_latent
             + active_detected_workup
@@ -1383,6 +1408,321 @@ def deterministic_explicit_recent_remote_intervention_expectations(
             "Uninfected false positives receive no epidemiological TB-prevention benefit.",
             "No event-ledger costing, economics, DALYs or report-facing outputs are produced.",
         ],
+    }
+
+
+def stochastic_explicit_recent_remote_intervention_summary(
+    calibration: Mapping[str, Any],
+    *,
+    config: Mapping[str, Any],
+    regimen: Mapping[str, Any],
+    population_size: int | None = None,
+    seed: int | None = None,
+    rng: Any = None,
+    follow_horizon_years: float | None = None,
+    competing_mortality_hazard: Any = None,
+    competing_survival_curve: Any = None,
+) -> dict[str, Any]:
+    """Isolated stochastic intervention summary used for 3D reconciliation tests."""
+    if rng is None and seed is None:
+        raise ValueError("A seed or explicit rng is required.")
+    if rng is not None and seed is not None:
+        raise ValueError("Provide either seed or rng, not both.")
+    if competing_mortality_hazard is not None and competing_survival_curve is not None:
+        raise ValueError(
+            "Provide either competing_mortality_hazard or competing_survival_curve, not both."
+        )
+    if not is_explicit_recent_remote_calibration(calibration):
+        raise ValueError(
+            "stochastic intervention summaries require explicit recent/remote calibration."
+        )
+    generator = rng if rng is not None else np.random.default_rng(int(seed))
+    n = _positive_int(
+        population_size if population_size is not None else config.get("N", 0),
+        "population_size",
+    )
+    horizon = _finite_nonnegative_float(
+        follow_horizon_years
+        if follow_horizon_years is not None
+        else config.get("followHorizon", config.get("followUpHorizonYears", 20.0)),
+        "follow_horizon_years",
+    )
+    pars = calibration["parameters"]
+    age_values = np.asarray(pars["exactAgeValues"], dtype=float)
+    age_prob = np.asarray(pars["exactAgeProb"], dtype=float)
+    age_prob = age_prob / age_prob.sum()
+    ages = generator.choice(age_values, size=n, p=age_prob)
+    risk_prev = config.get("riskPrev") if isinstance(config.get("riskPrev"), Mapping) else {}
+    bcg_probability = _probability(risk_prev.get("BCG", 0.0), "riskPrev.BCG")
+    population = {
+        "ageYears": ages,
+        "ageGroup": np.asarray([_age_group_label(float(age)) for age in ages], dtype=object),
+        "BCG": generator.random(n) < bcg_probability if bcg_probability > 0.0 else np.zeros(n, dtype=bool),
+    }
+    population, recent, remote, _transition_time, active_time = apply_explicit_recent_remote_population_assignment(
+        population,
+        calibration,
+        generator,
+    )
+    population["recentLTBIAtBaseline"] = recent
+    population["remoteLTBIAtBaseline"] = remote
+    baseline_active = np.asarray(population["baselineActiveTBAtBaseline"], dtype=bool)
+    infected = np.asarray(population["infected"], dtype=bool)
+    death_time = np.full(n, np.inf, dtype=float)
+    if competing_mortality_hazard is not None:
+        death_time = _draw_death_times_from_hazard(
+            competing_mortality_hazard,
+            ages,
+            generator,
+            horizon,
+        )
+    elif competing_survival_curve is not None:
+        death_time = _draw_death_times_from_survival_curve(
+            competing_survival_curve,
+            ages,
+            generator,
+            horizon,
+        )
+    observed_active_time = np.where(active_time < death_time, active_time, np.inf)
+    screen_coverage = _probability(config.get("screenCoverage", 0.0), "screenCoverage")
+    screen_window = _positive_float(
+        config.get("screeningWindowYears", config.get("screenWindow", 0.0)),
+        "screeningWindowYears",
+    )
+    screened = (
+        (~baseline_active)
+        & (generator.random(n) < screen_coverage)
+    )
+    screen_time = np.full(n, np.inf, dtype=float)
+    if screened.any():
+        screen_time[screened] = generator.random(int(screened.sum())) * screen_window
+    screened = screened & (screen_time < death_time)
+    screen_time[~screened] = np.inf
+    active_at_screen = screened & infected & (observed_active_time <= screen_time)
+    latent_at_screen = screened & infected & (observed_active_time > screen_time)
+    sensitivity = _deterministic_test_sensitivity(config)
+    specificity = _deterministic_test_specificity(config)
+    test_positive = np.zeros(n, dtype=bool)
+    inf_screened = screened & infected
+    uninf_screened = screened & ~infected
+    if inf_screened.any():
+        test_positive[inf_screened] = (
+            generator.random(int(inf_screened.sum())) < sensitivity
+        )
+    if uninf_screened.any():
+        test_positive[uninf_screened] = (
+            generator.random(int(uninf_screened.sum())) < (1.0 - specificity)
+        )
+    true_positive_latent = latent_at_screen & test_positive
+    false_positive_test = uninf_screened & test_positive
+    test_positive_active = active_at_screen & test_positive
+    p_start = _probability(_default_value(config.get("pStartTPT"), 0.85), "pStartTPT")
+    eligible_tpt = screened & test_positive & ~active_at_screen & ~baseline_active
+    started_tpt = eligible_tpt & (generator.random(n) < p_start)
+    completed_tpt = np.zeros(n, dtype=bool)
+    stopped_other = np.zeros(n, dtype=bool)
+    adr_stop = np.zeros(n, dtype=bool)
+    course_stop_time = np.full(n, np.inf, dtype=float)
+    full_eff_assigned = np.zeros(n, dtype=float)
+    partial_eff_assigned = np.zeros(n, dtype=float)
+    treat_idx = np.flatnonzero(started_tpt)
+    if len(treat_idx) > 0:
+        p_adr = _probability(regimen.get("pADRstop", 0.0), "regimen.pADRstop")
+        p_complete = _probability(regimen.get("pComplete", 0.0), "regimen.pComplete")
+        adr_draw = generator.random(len(treat_idx)) < p_adr
+        adr_stop[treat_idx[adr_draw]] = True
+        remain_idx = treat_idx[~adr_draw]
+        p_complete_given_no_adr = 0.0
+        if (1.0 - p_adr) > 0.0:
+            p_complete_given_no_adr = min(max(p_complete / (1.0 - p_adr), 0.0), 1.0)
+        if len(remain_idx) > 0:
+            comp_draw = generator.random(len(remain_idx)) < p_complete_given_no_adr
+            completed_tpt[remain_idx[comp_draw]] = True
+            stopped_other[remain_idx[~comp_draw]] = True
+        dose_fraction = np.zeros(n, dtype=float)
+        dose_fraction[completed_tpt] = 1.0
+        dose_fraction[adr_stop] = _probability(
+            _default_value(config.get("partialDoseFractionADR"), 0.30),
+            "partialDoseFractionADR",
+        )
+        dose_fraction[stopped_other] = _probability(
+            _default_value(config.get("partialDoseFractionOther"), 0.60),
+            "partialDoseFractionOther",
+        )
+        course_stop_time[started_tpt] = (
+            screen_time[started_tpt]
+            + float(regimen.get("months", 0.0)) * dose_fraction[started_tpt] / 12.0
+        )
+        full_eff_assigned[completed_tpt] = _probability(
+            regimen.get("effFull", 0.0),
+            "regimen.effFull",
+        )
+        incomplete = started_tpt & ~completed_tpt
+        if incomplete.any():
+            partial_eff_assigned[incomplete] = regimen_partial_efficacy(
+                regimen,
+                dose_fraction[incomplete].tolist(),
+            )
+    comparator_case = infected & (observed_active_time <= horizon)
+    eligible_for_future_tpt_protection = (
+        infected
+        & (course_stop_time < death_time)
+        & (observed_active_time > course_stop_time)
+    )
+    protected_full = (
+        completed_tpt
+        & eligible_for_future_tpt_protection
+        & (generator.random(n) < full_eff_assigned)
+    )
+    protected_partial = (
+        (started_tpt & ~completed_tpt)
+        & eligible_for_future_tpt_protection
+        & (generator.random(n) < partial_eff_assigned)
+    )
+    prevented_active_tb = (protected_full | protected_partial) & comparator_case
+    return build_explicit_epidemiology_replicate_summary(
+        population=population,
+        arrays={
+            "t_active": observed_active_time,
+            "screened": screened,
+            "screen_time": screen_time,
+            "test_positive": test_positive,
+            "true_positive_latent": true_positive_latent,
+            "false_positive_test": false_positive_test,
+            "test_positive_active": test_positive_active,
+            "active_at_screen": active_at_screen,
+            "started_tpt": started_tpt,
+            "completed_tpt": completed_tpt,
+            "protected_full": protected_full,
+            "protected_partial": protected_partial,
+            "prevented_active_tb": prevented_active_tb,
+            "course_stop_time": course_stop_time,
+        },
+        follow_horizon_years=horizon,
+        runner_config=calibration["explicitRecentRemoteRunnerConfig"],
+        replicate_seed=None if seed is None else int(seed),
+    )
+
+
+def reconcile_deterministic_stochastic_explicit_intervention(
+    calibration: Mapping[str, Any],
+    *,
+    config: Mapping[str, Any],
+    regimen: Mapping[str, Any],
+    population_size: int = 50000,
+    seeds: tuple[int, ...] = (20261013, 20261014, 20261015),
+    horizon_years: float | None = None,
+    z_score: float = 4.0,
+    absolute_floor_count: float = 6.0,
+    competing_mortality_hazard: Any = None,
+    competing_survival_curve: Any = None,
+) -> dict[str, Any]:
+    seed_values = tuple(int(value) for value in seeds)
+    if not seed_values:
+        raise ValueError("At least one stochastic seed is required.")
+    horizon = _finite_nonnegative_float(
+        horizon_years
+        if horizon_years is not None
+        else config.get("followHorizon", config.get("followUpHorizonYears", 20.0)),
+        "horizon_years",
+    )
+    deterministic = deterministic_explicit_recent_remote_intervention_expectations(
+        calibration,
+        config=config,
+        regimen=regimen,
+        horizons_years=(horizon,),
+        competing_mortality_hazard=competing_mortality_hazard,
+        competing_survival_curve=competing_survival_curve,
+    )
+    stochastic_runs = [
+        stochastic_explicit_recent_remote_intervention_summary(
+            calibration,
+            config=config,
+            regimen=regimen,
+            population_size=population_size,
+            seed=seed_value,
+            follow_horizon_years=horizon,
+            competing_mortality_hazard=competing_mortality_hazard,
+            competing_survival_curve=competing_survival_curve,
+        )
+        for seed_value in seed_values
+    ]
+    horizon_key = f"{horizon:g}"
+    det_horizon = deterministic["byHorizon"][horizon_key]
+    n = float(population_size)
+    deterministic_counts = {
+        "eligiblePopulation": n * (
+            1.0 - float(deterministic["stateProportions"][STATE_BASELINE_ACTIVE_TB])
+        ),
+        "screened": n * det_horizon["screenedProportion"],
+        "truePositiveLatent": n * det_horizon["truePositiveLatentProportion"],
+        "falsePositive": n * det_horizon["falsePositiveProportion"],
+        "activeTBDetectedDuringWorkup": n
+        * det_horizon["activeTBDetectedDuringWorkupProportion"],
+        "tptStarts": n * det_horizon["tptStartsProportion"],
+        "tptCompletions": n * det_horizon["tptCompletionsProportion"],
+        "effectiveTPT": n * det_horizon["effectiveTPTProportion"],
+        "comparatorActiveTB": n * det_horizon["comparatorActiveTBProportion"],
+        "interventionActiveTB": n * det_horizon["interventionActiveTBProportion"],
+        "directActiveTBCasesAverted": n
+        * det_horizon["directActiveTBCasesAvertedProportion"],
+        "incidentActiveTBBeforeScreening": n
+        * det_horizon["incidentActiveTBBeforeScreeningProportion"],
+        "incidentActiveTBAfterScreenBeforeEffectiveTPT": n
+        * det_horizon["incidentActiveTBAfterScreenBeforeEffectiveTPTProportion"],
+        "subsequentIncidentActiveTB": n
+        * det_horizon["subsequentIncidentActiveTBProportion"],
+        "recentDirectActiveTBCasesAverted": n
+        * det_horizon["recentDirectActiveTBCasesAvertedProportion"],
+        "remoteOnlyDirectActiveTBCasesAverted": n
+        * det_horizon["remoteOnlyDirectActiveTBCasesAvertedProportion"],
+    }
+    rows = []
+    for metric, expected in deterministic_counts.items():
+        values = np.asarray(
+            [_stochastic_intervention_metric(run, metric) for run in stochastic_runs],
+            dtype=float,
+        )
+        observed = float(np.mean(values))
+        mcse = _monte_carlo_standard_error_counts(values, expected, n)
+        tolerance = max(float(absolute_floor_count), float(z_score) * mcse)
+        standardized = 0.0 if mcse <= 0.0 else (observed - expected) / mcse
+        rows.append(
+            {
+                "metric": metric,
+                "deterministicExpectedCount": float(expected),
+                "stochasticMeanCount": observed,
+                "monteCarloStandardErrorCount": mcse,
+                "standardizedDifference": standardized,
+                "absoluteDifference": abs(observed - expected),
+                "tolerance": tolerance,
+                "acceptanceZScore": float(z_score),
+                "withinTolerance": abs(observed - expected) <= tolerance,
+            }
+        )
+    return {
+        "method": INTERVENTION_RECONCILIATION_METHOD,
+        "populationSize": int(population_size),
+        "horizonYears": horizon,
+        "seeds": list(seed_values),
+        "stochasticRunCount": len(stochastic_runs),
+        "acceptanceRule": (
+            "pass when absolute count difference is within "
+            "max(absolute_floor_count, z_score * Monte Carlo standard error)"
+        ),
+        "competingMortality": (
+            COMPETING_MORTALITY_CONSTANT_HAZARD
+            if competing_mortality_hazard is not None
+            else (
+                "external_survival_curve"
+                if competing_survival_curve is not None
+                else COMPETING_MORTALITY_NOT_MODELLED
+            )
+        ),
+        "deterministic": deterministic,
+        "stochasticRuns": stochastic_runs,
+        "rows": rows,
+        "allWithinTolerance": all(row["withinTolerance"] for row in rows),
     }
 
 
@@ -1886,6 +2226,69 @@ def _annual_counts_from_times(times: np.ndarray, horizon: float) -> list[dict[st
             }
         )
     return rows
+
+
+def _age_group_label(age: float) -> str:
+    edges = (
+        (0.0, 5.0, "0-4"),
+        (5.0, 15.0, "5-14"),
+        (15.0, 25.0, "15-24"),
+        (25.0, 35.0, "25-34"),
+        (35.0, 45.0, "35-44"),
+        (45.0, 55.0, "45-54"),
+        (55.0, 65.0, "55-64"),
+        (65.0, 75.0, "65-74"),
+        (75.0, 85.0, "75-84"),
+    )
+    for lower, upper, label in edges:
+        if lower <= age < upper:
+            return label
+    return "85+"
+
+
+def _stochastic_intervention_metric(summary: Mapping[str, Any], metric: str) -> float:
+    if metric == "comparatorActiveTB":
+        return float(summary["comparator"]["totalActiveTBOverFollowUp"])
+    if metric == "interventionActiveTB":
+        return float(summary["intervention"]["totalActiveTBOverFollowUp"])
+    if metric == "directActiveTBCasesAverted":
+        return float(
+            summary["intervention"][
+                "directActiveTBCasesAvertedAmongModelledPopulation"
+            ]
+        )
+    if metric == "recentDirectActiveTBCasesAverted":
+        return _group_metric(summary.get("byEffectiveState") or [], STATE_RECENT)
+    if metric == "remoteOnlyDirectActiveTBCasesAverted":
+        return _group_metric(summary.get("byEffectiveState") or [], STATE_REMOTE_ONLY)
+    if metric in summary.get("intervention", {}):
+        return float(summary["intervention"][metric])
+    if metric in summary.get("comparator", {}):
+        return float(summary["comparator"][metric])
+    raise KeyError(f"Unknown stochastic intervention metric: {metric}")
+
+
+def _group_metric(rows: list[Mapping[str, Any]], group: str) -> float:
+    for row in rows:
+        if str(row.get("group")) == group:
+            return float(row.get("directActiveTBCasesAverted", 0.0))
+    return 0.0
+
+
+def _monte_carlo_standard_error_counts(
+    observed_counts: np.ndarray,
+    expected_count: float,
+    population_size: float,
+) -> float:
+    if population_size <= 0.0:
+        return 0.0
+    observed_proportions = np.asarray(observed_counts, dtype=float) / population_size
+    expected_proportion = float(expected_count) / population_size
+    return population_size * _monte_carlo_standard_error(
+        observed_proportions,
+        expected_proportion,
+        population_size,
+    )
 
 
 def _explicit_counts_by_group(

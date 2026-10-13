@@ -67,6 +67,13 @@ non-costable event-ledger marker, and still does not add Streamlit controls,
 report outputs, event-ledger costing, economics, DALYs, MATLAB or dynamic
 model changes.
 
+Milestone 3D validates the explicit intervention outputs and adds the first
+separate Streamlit development workflow for explicit recent/remote TBI
+epidemiology. The workflow is rooted at `explicit_tbi_app.py`; it is not
+imported by `streamlit_app.py` and is not part of the frozen application
+navigation. It still does not add a costable event ledger, economics, DALYs,
+QALYs, deployment, merge or tag.
+
 ## Selected identifiers
 
 - Analysis basis: `explicit_recent_remote_tbi_foundation_v1`
@@ -1386,6 +1393,121 @@ prevalence, prior-remote-plus-recent counts and incident active TB horizons;
 stochastic natural-history diagnostics also expose age-specific state and
 incident-TB rows.
 
+## Milestone 3D Streamlit epidemiology workflow
+
+Milestone 3D adds a new isolated Streamlit entry point:
+
+```text
+explicit_tbi_app.py
+```
+
+The frozen application entry point remains:
+
+```text
+streamlit_app.py
+```
+
+The frozen entry point explicitly navigates only to the existing `pages/*`
+workflow. It does not import or link to the new explicit TBI workflow.
+
+The new workflow uses four compact pages:
+
+1. Set up
+2. Run analysis
+3. Results
+4. Evidence and technical information
+
+Ordinary workflow pages intentionally omit health-economic pages, ICERs,
+DALYs, QALYs, report-reference comparisons and retired infection-history
+controls. The workflow is labelled as a development/research version.
+
+Set up inputs:
+
+- total modelled population;
+- analysis horizon;
+- baseline/prevalent active TB, sequenced before TBI states;
+- `Recently infected within the past 5 years`;
+- `Remote infection only -- infected 5 or more years ago and not reinfected
+  within the past 5 years`;
+- screening coverage and screening period;
+- test and regimen choices;
+- TPT initiation, completion and full-course efficacy;
+- deterministic preview versus stochastic analysis;
+- optional active-TB observations for validation only.
+
+The recent and remote-only inputs are displayed as percentages but stored as
+precise proportions. Edited values are marked `User-defined`. They are
+mutually exclusive total-population proportions and are not labelled as early
+or late progression states.
+
+Validation:
+
+- each prevalence input must be within `[0,1]`;
+- baseline active TB plus recent TBI plus remote-only TBI must not exceed one;
+- calibration infeasibility is blocked before analysis;
+- active-TB observation counts, denominators, durations and ascertainment
+  probabilities are validated;
+- no invalid value is clipped, rescaled or renormalised.
+
+Run Analysis:
+
+- deterministic mode runs one expected-value calculation and hides stochastic
+  repetitions and seed;
+- stochastic mode exposes repetitions and seed and labels simulation
+  intervals as simulation intervals;
+- invalid inputs produce one actionable error and no partial results.
+
+Results:
+
+- lead metrics are population, screened, recent TBI, remote-only TBI,
+  baseline active TB, TPT starts, completions, comparator active TB,
+  intervention active TB and direct active TB cases averted among the
+  modelled population;
+- deterministic rows show expected values with `N/A` simulation intervals;
+- stochastic rows show means and 95% simulation intervals;
+- detail expanders show recent-versus-remote outcomes, age groups, timing
+  relative to screening and effective TPT, active-TB validation and derived
+  calibration hazards;
+- downloads are limited to configuration JSON, epidemiological results CSV,
+  active-TB validation CSV and provenance/limitations text.
+
+Active-TB observations:
+
+- are optional and validation-only;
+- preserve numerator, source denominator, observation window, classification,
+  ascertainment, source and review status;
+- changing a validation denominator changes validation diagnostics only and
+  does not change recent/remote hazards, baseline states, comparator TB,
+  intervention TB or cases averted.
+
+State safety:
+
+- material epidemiological edits invalidate results;
+- validation-only observation edits do not invalidate health outcomes;
+- incompatible MATLAB-v9, frozen-reference or retired-pathway results are not
+  accepted by the new workflow.
+
+Milestone 3D intervention reconciliation:
+
+- adds `stochastic_explicit_recent_remote_intervention_summary` for isolated
+  stochastic intervention-output checks, including optional external
+  competing mortality;
+- adds `reconcile_deterministic_stochastic_explicit_intervention`, comparing
+  deterministic expected counts with stochastic means using prespecified
+  Monte Carlo acceptance rules;
+- reconciliation covers eligible population, screened, true positives, false
+  positives, active TB detected during work-up, TPT starts, completions,
+  effective TPT, comparator TB, intervention TB, direct cases averted, timing
+  categories and recent/remote cases averted.
+
+During Milestone 3D testing, two isolated-helper defects were corrected:
+
+- conventional recent/remote audit fields were attached before building
+  stochastic intervention summaries;
+- `effectiveTPT` was restored to the inherited semantics: effective treatment
+  among infected people whose untreated active-TB time is after treatment
+  effective time. The horizon-limited quantity remains cases averted.
+
 ## Architecture audit
 
 Existing recent/remote and early/late implementations:
@@ -1462,12 +1584,14 @@ Dynamic model:
 
 ## Planned integration
 
-Milestone 3B connects the explicit pathway to the stochastic APY runner behind
-explicit provenance, cache keys and metadata, and adds isolated deterministic
-review helpers. Future integration must still decide whether to expose the
-pathway, connect report-facing expected-value results, generate event-ledger
-rows, or add economics or DALY handling for the explicit pathway. None of
-those surfaces should be changed without a separate scoped milestone.
+Milestones 3B and 3C connect the explicit pathway to the stochastic APY
+runner behind explicit provenance, cache keys and metadata, then add isolated
+non-economic intervention outputs. Milestone 3D adds a separate development
+Streamlit workflow only. Future integration must still decide whether to keep
+that workflow separate, broaden it, connect report-facing expected-value
+results, generate event-ledger rows, or add economics or DALY handling for
+the explicit pathway. None of those surfaces should be changed without a
+separate scoped milestone.
 
 ## Limitations and unanswered decisions
 

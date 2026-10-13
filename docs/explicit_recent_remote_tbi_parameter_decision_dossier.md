@@ -347,6 +347,15 @@ prevents only future active-TB progression after the inherited treatment
 stop/effective time and does not rewrite historical recent/remote infection
 state.
 
-The decisions above still block user-facing Streamlit integration,
-production-default approval, event-ledger costing, economics and DALY
-interpretation for the explicit pathway.
+Milestone 3D implementation note: a separate development Streamlit entry
+point, `explicit_tbi_app.py`, now exists for review of epidemiological
+outputs only. It is not imported by the frozen application entry point and
+does not include report-reference comparisons, a costable event ledger,
+economics, DALYs, QALYs or ICERs. Active-TB observations remain
+validation-only; changing their denominator updates validation diagnostics
+without changing the fixed progression curve, recent/remote hazards,
+baseline states or projected direct cases averted.
+
+The decisions above still block production-default approval, frozen workflow
+integration, event-ledger costing, economics and DALY interpretation for the
+explicit pathway.

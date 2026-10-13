@@ -70,6 +70,13 @@ comparator/intervention comparisons, strengthens deterministic-stochastic
 reconciliation diagnostics, and keeps event ledgers, economics, DALYs,
 Streamlit controls, reports, MATLAB and the dynamic model out of scope.
 
+Milestone 3D purpose: validate explicit intervention outputs and add the
+first isolated Streamlit workflow for explicit recent/remote TBI
+epidemiology. The new workflow is a separate development entry point
+(`explicit_tbi_app.py`) and is not imported by the frozen Streamlit
+application. It adds no costable event ledger, economics, DALYs, QALYs,
+deployment, merge or tag.
+
 ## Implemented in Milestone 1
 
 New pure module:
@@ -683,10 +690,101 @@ Still out of scope after Milestone 3C:
 - dynamic-transmission model changes;
 - frozen artifact regeneration or release-pointer changes.
 
+## Implemented in Milestone 3D
+
+Milestone 3D adds a standalone development workflow:
+
+- entry point: `explicit_tbi_app.py`;
+- support module: `app/explicit_tbi_workflow.py`;
+- tests: `tests/test_explicit_tbi_streamlit_app.py`.
+
+The frozen application entry point remains `streamlit_app.py`. Its navigation
+still lists only the existing frozen workflow pages under `pages/`; it does
+not import, link to or navigate to `explicit_tbi_app.py`.
+
+The new workflow pages are:
+
+1. `Set up`;
+2. `Run analysis`;
+3. `Results`;
+4. `Evidence and technical information`.
+
+The workflow is labelled as a development/research version and uses only
+`analysisPathway = explicit_recent_remote_tbi_v2`. It rejects incompatible
+result objects and does not consume MATLAB-v9 compatibility, frozen-reference
+or retired `continuous_markov_recent_remote` results.
+
+Set up controls:
+
+- total modelled population;
+- analysis horizon;
+- baseline active TB as a state separate from TBI;
+- editable recent and remote-only mutually exclusive total-population TBI
+  targets;
+- screening coverage and screening period;
+- test, regimen, TPT initiation, completion and efficacy;
+- deterministic preview versus stochastic analysis, with repetitions and seed
+  shown only for stochastic mode;
+- optional active-TB observation fields for validation only.
+
+Validation behavior:
+
+- recent, remote-only and baseline active-TB proportions must be within
+  `[0,1]`;
+- their sum must not exceed the total population;
+- infeasible recent/remote calibration is blocked before analysis;
+- observed active-TB denominators, counts, durations and ascertainment
+  probabilities are validated;
+- active-TB observations do not recalibrate infection hazards or progression
+  anchors.
+
+State and stale-result behavior:
+
+- material epidemiological edits invalidate completed results;
+- active-TB observation edits update validation displays only and do not change
+  fitted recent/remote hazards, baseline states, comparator TB, intervention
+  TB or cases averted;
+- `Restore working defaults` is the single reset action and clears stale
+  results.
+
+Milestone 3D also closes the intervention-output reconciliation gap:
+
+- `stochastic_explicit_recent_remote_intervention_summary` provides an
+  isolated stochastic intervention summary for reconciliation, including
+  optional external competing mortality;
+- `reconcile_deterministic_stochastic_explicit_intervention` compares
+  deterministic expectations with stochastic means using prespecified
+  Monte Carlo standard errors or empirical simulation uncertainty;
+- reconciliation rows cover eligible population, screened, true positives,
+  false positives, active TB detected during work-up, TPT starts,
+  completions, effective TPT, comparator TB, intervention TB, direct cases
+  averted, timing categories and recent/remote cases averted.
+
+Defects found while closing 3D:
+
+- the first isolated stochastic intervention helper omitted the conventional
+  `recentLTBIAtBaseline` and `remoteLTBIAtBaseline` audit fields before
+  building summaries; this was corrected;
+- the first helper incorrectly limited `effectiveTPT` to people who would
+  develop TB by the analysis horizon. It now matches the inherited semantics:
+  effective TPT is counted among infected people whose untreated progression
+  time is after the treatment effective time, while cases averted remain
+  horizon-limited.
+
+Still out of scope after Milestone 3D:
+
+- exposing the pathway through the frozen Streamlit application;
+- event-ledger generation or costing for the explicit pathway;
+- economics, DALYs, QALYs or ICERs;
+- MATLAB changes;
+- dynamic-transmission model changes;
+- frozen artifact regeneration or release-pointer changes;
+- deployment, merge or tag.
+
 ## Next milestone recommendation
 
-The next milestone should review the explicit epidemiological intervention
-outputs and, if accepted, add a separate non-report-facing expected-value
-runner/API layer or a guarded Streamlit preview for scientific review. Event
-ledger costing, health economics and DALYs should remain a later milestone
-after the epidemiological output contract is reviewed.
+The next milestone should review the explicit development workflow and decide
+whether to keep it as a separate research app, broaden rendered validation,
+or start a carefully guarded report-facing integration plan. Event-ledger
+costing, health economics and DALYs should remain later milestones after the
+epidemiological workflow is reviewed.
