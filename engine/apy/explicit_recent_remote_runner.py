@@ -80,6 +80,11 @@ STOCHASTIC_INTERVENTION_METHOD = (
 INTERVENTION_RECONCILIATION_METHOD = (
     "explicit_recent_remote_intervention_reconciliation_with_mcse_v1"
 )
+SCREENING_COVERAGE_POLICY_IDENTIFIER = "programme_coverage_at_least_once_v1"
+SCREENING_COVERAGE_DEFINITION = (
+    "The proportion of the eligible population screened at least once over "
+    "the complete screening programme window."
+)
 TPT_EFFECT_POLICY_CONTRACT_VERSION = "explicit_recent_remote_tpt_effect_policy_v1"
 TPT_EFFECT_POLICY_PREVENTS_FUTURE_PROGRESSION = (
     "effective_tpt_prevents_future_progression_v1"
@@ -203,6 +208,8 @@ def build_explicit_recent_remote_runner_config(
         "commonRandomNumberContractIdentifier": common_random_number_contract[
             "contractIdentifier"
         ],
+        "screeningCoveragePolicyIdentifier": SCREENING_COVERAGE_POLICY_IDENTIFIER,
+        "screeningCoverageDefinition": SCREENING_COVERAGE_DEFINITION,
         "activeTBObservationPolicy": active_tb_observation_policy,
         "stochasticSeed": None if stochastic_seed is None else int(stochastic_seed),
         "repetitions": None if repetitions is None else int(repetitions),
@@ -973,6 +980,14 @@ def build_explicit_epidemiology_replicate_summary(
     protected_any = protected_full | protected_partial
     intervention_active = active_by_horizon & ~prevented_active_tb
     before_screening = active_at_screen & active_by_horizon
+    latent_at_screen = screened & infected & ~active_at_screen
+    infected_screened = screened & infected
+    uninfected_screened = screened & ~infected & ~baseline_active
+    false_negative_latent = latent_at_screen & ~test_positive
+    true_negative = uninfected_screened & ~test_positive
+    tpt_eligible_after_assessment = true_positive_latent | false_positive_test
+    true_positive_tpt_starts = started_tpt & true_positive_latent
+    false_positive_tpt_starts = started_tpt & false_positive_test
     after_screen_before_effective_tpt = (
         started_tpt
         & infected
@@ -1001,11 +1016,22 @@ def build_explicit_epidemiology_replicate_summary(
     intervention = {
         **base_counts,
         "screened": int(screened.sum()),
+        "notScreened": int((~baseline_active).sum() - screened.sum()),
+        "infectedScreened": int(infected_screened.sum()),
+        "latentInfectedScreened": int(latent_at_screen.sum()),
+        "falseNegativeLatent": int(false_negative_latent.sum()),
+        "uninfectedScreened": int(uninfected_screened.sum()),
+        "trueNegative": int(true_negative.sum()),
         "testPositive": int((screened & test_positive).sum()),
         "truePositiveLatent": int(true_positive_latent.sum()),
         "falsePositive": int(false_positive_test.sum()),
         "activeTBDetectedDuringWorkup": int(test_positive_active.sum()),
+        "tptEligibleAfterTestingAndAssessment": int(
+            tpt_eligible_after_assessment.sum()
+        ),
         "tptStarts": int(started_tpt.sum()),
+        "truePositiveTPTStarts": int(true_positive_tpt_starts.sum()),
+        "falsePositiveTPTStarts": int(false_positive_tpt_starts.sum()),
         "tptCompletions": int(completed_tpt.sum()),
         "effectiveTPT": int(protected_any.sum()),
         "effectiveTPTFull": int(protected_full.sum()),
@@ -1029,7 +1055,7 @@ def build_explicit_epidemiology_replicate_summary(
             horizon,
         ),
     }
-    return {
+    summary = {
         "contractVersion": EPIDEMIOLOGICAL_INTERVENTION_OUTPUT_CONTRACT_VERSION,
         "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
         "replicateId": replicate_id,
@@ -1069,6 +1095,10 @@ def build_explicit_epidemiology_replicate_summary(
             "No event-ledger costing, economics or DALYs are generated from this summary.",
         ],
     }
+    summary["accountingValidation"] = validate_stochastic_intervention_accounting(
+        summary
+    )
+    return summary
 
 
 def summarise_explicit_epidemiology_replicates(
@@ -1125,6 +1155,373 @@ def summarise_explicit_epidemiology_replicates(
             "This is a non-economic epidemiological summary; it is not an event ledger and is not costable.",
         ],
     }
+
+
+def validate_stochastic_intervention_accounting(
+    summary: Mapping[str, Any],
+    *,
+    tolerance: float = 1e-9,
+) -> dict[str, Any]:
+    comparator = summary.get("comparator") or {}
+    intervention = summary.get("intervention") or {}
+    by_effective_state = summary.get("byEffectiveState") or []
+    counts = {
+        "population": comparator.get("population", intervention.get("population", 0)),
+        "baselineActiveTB": comparator.get(
+            "baselineActiveTB",
+            intervention.get("baselineActiveTB", 0),
+        ),
+        "eligiblePopulation": comparator.get(
+            "eligiblePopulation",
+            intervention.get("eligiblePopulation", 0),
+        ),
+        "recentTBI": comparator.get("recentTBI", intervention.get("recentTBI", 0)),
+        "remoteOnlyTBI": comparator.get(
+            "remoteOnlyTBI",
+            intervention.get("remoteOnlyTBI", 0),
+        ),
+        "uninfected": comparator.get("uninfected", intervention.get("uninfected", 0)),
+        "priorRemotePlusRecent": comparator.get(
+            "priorRemotePlusRecent",
+            intervention.get("priorRemotePlusRecent", 0),
+        ),
+        "screened": intervention.get("screened", 0),
+        "notScreened": intervention.get("notScreened", 0),
+        "infectedScreened": intervention.get("infectedScreened", 0),
+        "latentInfectedScreened": intervention.get("latentInfectedScreened", 0),
+        "falseNegativeLatent": intervention.get("falseNegativeLatent", 0),
+        "uninfectedScreened": intervention.get("uninfectedScreened", 0),
+        "trueNegative": intervention.get("trueNegative", 0),
+        "truePositiveLatent": intervention.get("truePositiveLatent", 0),
+        "falsePositive": intervention.get("falsePositive", 0),
+        "tptEligibleAfterTestingAndAssessment": intervention.get(
+            "tptEligibleAfterTestingAndAssessment",
+            0,
+        ),
+        "tptStarts": intervention.get("tptStarts", 0),
+        "truePositiveTPTStarts": intervention.get("truePositiveTPTStarts", 0),
+        "falsePositiveTPTStarts": intervention.get("falsePositiveTPTStarts", 0),
+        "tptCompletions": intervention.get("tptCompletions", 0),
+        "effectiveTPT": intervention.get("effectiveTPT", 0),
+        "comparatorActiveTB": comparator.get("totalActiveTBOverFollowUp", 0),
+        "interventionActiveTB": intervention.get("totalActiveTBOverFollowUp", 0),
+        "directActiveTBCasesAverted": intervention.get(
+            "directActiveTBCasesAvertedAmongModelledPopulation",
+            0,
+        ),
+        "recentDirectActiveTBCasesAverted": _group_metric(
+            by_effective_state,
+            STATE_RECENT,
+        ),
+        "remoteOnlyDirectActiveTBCasesAverted": _group_metric(
+            by_effective_state,
+            STATE_REMOTE_ONLY,
+        ),
+        "incidentActiveTBBeforeScreening": intervention.get(
+            "incidentActiveTBBeforeScreening",
+            0,
+        ),
+        "incidentActiveTBAfterScreenBeforeEffectiveTPT": intervention.get(
+            "incidentActiveTBAfterScreenBeforeEffectiveTPT",
+            0,
+        ),
+        "subsequentIncidentActiveTB": intervention.get("subsequentIncidentActiveTB", 0),
+    }
+    errors: list[str] = []
+    _append_counting_identity_errors(
+        errors,
+        counts=counts,
+        by_effective_state=by_effective_state,
+        tolerance=tolerance,
+    )
+    return {
+        "isValid": not errors,
+        "errors": errors,
+        "tolerance": float(tolerance),
+    }
+
+
+def validate_deterministic_intervention_accounting(
+    deterministic: Mapping[str, Any],
+    *,
+    tolerance: float = 1e-9,
+) -> dict[str, Any]:
+    state = deterministic.get("stateProportions") or {}
+    by_horizon = deterministic.get("byHorizon") or {}
+    errors: list[str] = []
+    state_total = (
+        float(state.get(STATE_BASELINE_ACTIVE_TB, 0.0))
+        + float(state.get(STATE_RECENT, 0.0))
+        + float(state.get(STATE_REMOTE_ONLY, 0.0))
+        + float(state.get(STATE_UNINFECTED, 0.0))
+    )
+    _check_close(errors, state_total, 1.0, tolerance, "baseline state proportions")
+    for horizon_key, horizon in by_horizon.items():
+        prefix = f"horizon {horizon_key}: "
+        counts = {
+            "population": 1.0,
+            "baselineActiveTB": float(state.get(STATE_BASELINE_ACTIVE_TB, 0.0)),
+            "eligiblePopulation": 1.0
+            - float(state.get(STATE_BASELINE_ACTIVE_TB, 0.0)),
+            "recentTBI": float(state.get(STATE_RECENT, 0.0)),
+            "remoteOnlyTBI": float(state.get(STATE_REMOTE_ONLY, 0.0)),
+            "uninfected": float(state.get(STATE_UNINFECTED, 0.0)),
+            "priorRemotePlusRecent": float(state.get("priorRemotePlusRecent", 0.0)),
+            "screened": float(horizon.get("screenedProportion", 0.0)),
+            "notScreened": float(horizon.get("notScreenedProportion", 0.0)),
+            "infectedScreened": float(horizon.get("infectedScreenedProportion", 0.0)),
+            "latentInfectedScreened": float(
+                horizon.get("latentInfectedScreenedProportion", 0.0)
+            ),
+            "falseNegativeLatent": float(
+                horizon.get("falseNegativeLatentProportion", 0.0)
+            ),
+            "uninfectedScreened": float(
+                horizon.get("uninfectedScreenedProportion", 0.0)
+            ),
+            "trueNegative": float(horizon.get("trueNegativeProportion", 0.0)),
+            "truePositiveLatent": float(
+                horizon.get("truePositiveLatentProportion", 0.0)
+            ),
+            "falsePositive": float(horizon.get("falsePositiveProportion", 0.0)),
+            "tptEligibleAfterTestingAndAssessment": float(
+                horizon.get("tptEligibleAfterTestingAndAssessmentProportion", 0.0)
+            ),
+            "tptStarts": float(horizon.get("tptStartsProportion", 0.0)),
+            "truePositiveTPTStarts": float(
+                horizon.get("truePositiveTPTStartsProportion", 0.0)
+            ),
+            "falsePositiveTPTStarts": float(
+                horizon.get("falsePositiveTPTStartsProportion", 0.0)
+            ),
+            "tptCompletions": float(horizon.get("tptCompletionsProportion", 0.0)),
+            "effectiveTPT": float(horizon.get("effectiveTPTProportion", 0.0)),
+            "comparatorActiveTB": float(
+                horizon.get("comparatorActiveTBProportion", 0.0)
+            ),
+            "interventionActiveTB": float(
+                horizon.get("interventionActiveTBProportion", 0.0)
+            ),
+            "directActiveTBCasesAverted": float(
+                horizon.get("directActiveTBCasesAvertedProportion", 0.0)
+            ),
+            "recentDirectActiveTBCasesAverted": float(
+                horizon.get("recentDirectActiveTBCasesAvertedProportion", 0.0)
+            ),
+            "remoteOnlyDirectActiveTBCasesAverted": float(
+                horizon.get("remoteOnlyDirectActiveTBCasesAvertedProportion", 0.0)
+            ),
+            "incidentActiveTBBeforeScreening": float(
+                horizon.get("incidentActiveTBBeforeScreeningProportion", 0.0)
+            ),
+            "incidentActiveTBAfterScreenBeforeEffectiveTPT": float(
+                horizon.get(
+                    "incidentActiveTBAfterScreenBeforeEffectiveTPTProportion",
+                    0.0,
+                )
+            ),
+            "subsequentIncidentActiveTB": float(
+                horizon.get("subsequentIncidentActiveTBProportion", 0.0)
+            ),
+        }
+        horizon_errors: list[str] = []
+        _append_counting_identity_errors(
+            horizon_errors,
+            counts=counts,
+            by_effective_state=None,
+            tolerance=tolerance,
+        )
+        errors.extend(prefix + error for error in horizon_errors)
+    return {
+        "isValid": not errors,
+        "errors": errors,
+        "tolerance": float(tolerance),
+    }
+
+
+def _append_counting_identity_errors(
+    errors: list[str],
+    *,
+    counts: Mapping[str, Any],
+    by_effective_state: list[Mapping[str, Any]] | None,
+    tolerance: float,
+) -> None:
+    population = float(counts.get("population", 0.0))
+    baseline = float(counts.get("baselineActiveTB", 0.0))
+    recent = float(counts.get("recentTBI", 0.0))
+    remote = float(counts.get("remoteOnlyTBI", 0.0))
+    uninfected = float(counts.get("uninfected", 0.0))
+    eligible = float(counts.get("eligiblePopulation", population - baseline))
+    screened = float(counts.get("screened", 0.0))
+    not_screened = float(counts.get("notScreened", eligible - screened))
+    true_positive = float(counts.get("truePositiveLatent", 0.0))
+    false_negative = float(counts.get("falseNegativeLatent", 0.0))
+    latent_screened = float(counts.get("latentInfectedScreened", 0.0))
+    false_positive = float(counts.get("falsePositive", 0.0))
+    true_negative = float(counts.get("trueNegative", 0.0))
+    uninfected_screened = float(counts.get("uninfectedScreened", 0.0))
+    tpt_eligible = float(
+        counts.get(
+            "tptEligibleAfterTestingAndAssessment",
+            true_positive + false_positive,
+        )
+    )
+    tpt_starts = float(counts.get("tptStarts", 0.0))
+    tpt_completions = float(counts.get("tptCompletions", 0.0))
+    effective_tpt = float(counts.get("effectiveTPT", 0.0))
+    true_positive_tpt_starts = float(
+        counts.get("truePositiveTPTStarts", tpt_starts)
+    )
+    comparator_tb = float(counts.get("comparatorActiveTB", 0.0))
+    intervention_tb = float(counts.get("interventionActiveTB", 0.0))
+    averted = float(counts.get("directActiveTBCasesAverted", 0.0))
+    recent_averted = float(counts.get("recentDirectActiveTBCasesAverted", 0.0))
+    remote_averted = float(counts.get("remoteOnlyDirectActiveTBCasesAverted", 0.0))
+    before_screen = float(counts.get("incidentActiveTBBeforeScreening", 0.0))
+    before_effective = float(
+        counts.get("incidentActiveTBAfterScreenBeforeEffectiveTPT", 0.0)
+    )
+    subsequent = float(counts.get("subsequentIncidentActiveTB", 0.0))
+
+    _check_close(
+        errors,
+        baseline + recent + remote + uninfected,
+        population,
+        tolerance,
+        "baseline active TB + recent + remote-only + uninfected",
+    )
+    _check_close(
+        errors,
+        population - baseline,
+        eligible,
+        tolerance,
+        "eligible population after baseline active TB exclusion",
+    )
+    _check_close(
+        errors,
+        screened + not_screened,
+        eligible,
+        tolerance,
+        "screened + not screened",
+    )
+    _check_close(
+        errors,
+        true_positive + false_negative,
+        latent_screened,
+        tolerance,
+        "true-positive latent + false-negative latent",
+    )
+    _check_close(
+        errors,
+        false_positive + true_negative,
+        uninfected_screened,
+        tolerance,
+        "false-positive + true-negative",
+    )
+    _check_close(
+        errors,
+        true_positive + false_positive,
+        tpt_eligible,
+        tolerance,
+        "TPT-eligible after testing and clinical assessment",
+    )
+    _check_close(
+        errors,
+        comparator_tb - intervention_tb,
+        averted,
+        tolerance,
+        "cases averted",
+    )
+    _check_close(
+        errors,
+        before_screen + before_effective + subsequent,
+        intervention_tb,
+        tolerance,
+        "timing-specific active TB components",
+    )
+    _check_close(
+        errors,
+        recent_averted + remote_averted,
+        averted,
+        tolerance,
+        "recent plus remote-only cases averted",
+    )
+    if by_effective_state is not None:
+        grouped_averted = sum(
+            float(row.get("directActiveTBCasesAverted", 0.0))
+            for row in by_effective_state
+        )
+        _check_close(
+            errors,
+            grouped_averted,
+            averted,
+            tolerance,
+            "effective-state cases averted",
+        )
+    _check_less_equal(errors, screened, eligible, tolerance, "screened")
+    _check_less_equal(
+        errors,
+        true_positive,
+        latent_screened,
+        tolerance,
+        "true-positive latent",
+    )
+    _check_less_equal(
+        errors,
+        tpt_starts,
+        tpt_eligible,
+        tolerance,
+        "TPT starts",
+    )
+    _check_less_equal(
+        errors,
+        tpt_completions,
+        tpt_starts,
+        tolerance,
+        "TPT completions",
+    )
+    _check_less_equal(
+        errors,
+        effective_tpt,
+        true_positive_tpt_starts,
+        tolerance,
+        "effective TPT",
+    )
+    _check_less_equal(
+        errors,
+        averted,
+        comparator_tb,
+        tolerance,
+        "cases averted",
+    )
+    if intervention_tb < -tolerance:
+        errors.append("intervention active TB cannot be negative.")
+
+
+def _check_close(
+    errors: list[str],
+    observed: float,
+    expected: float,
+    tolerance: float,
+    label: str,
+) -> None:
+    if abs(float(observed) - float(expected)) > float(tolerance):
+        errors.append(
+            f"{label} identity failed: observed {observed:.12g}, expected {expected:.12g}."
+        )
+
+
+def _check_less_equal(
+    errors: list[str],
+    observed: float,
+    upper: float,
+    tolerance: float,
+    label: str,
+) -> None:
+    if float(observed) - float(upper) > float(tolerance):
+        errors.append(
+            f"{label} exceeded its bound: observed {observed:.12g}, upper {upper:.12g}."
+        )
 
 
 def deterministic_explicit_recent_remote_intervention_expectations(
@@ -1251,6 +1648,8 @@ def deterministic_explicit_recent_remote_intervention_expectations(
         active_after_screen_before_effective = 0.0
         subsequent_active = 0.0
         true_positive_latent = 0.0
+        latent_infected_screened = 0.0
+        infected_screened = 0.0
         active_detected_workup = 0.0
         for idx, age in enumerate(ages):
             state_components = (
@@ -1309,6 +1708,17 @@ def deterministic_explicit_recent_remote_intervention_expectations(
                 active_before_screen += (
                     scale * screen_coverage * moments["activeBeforeScreening"]
                 )
+                latent_infected_screened += (
+                    scale * screen_coverage * moments["latentAtScreen"]
+                )
+                infected_screened += (
+                    scale
+                    * screen_coverage
+                    * (
+                        moments["latentAtScreen"]
+                        + moments["activeBeforeScreening"]
+                    )
+                )
                 active_after_screen_before_effective += (
                     scale
                     * screen_coverage
@@ -1336,8 +1746,15 @@ def deterministic_explicit_recent_remote_intervention_expectations(
             - active_after_screen_before_effective,
         )
         uninfected_prop = at_risk_fraction * float(np.sum(weights * p_uninfected))
+        screened_prop = at_risk_fraction * screen_coverage
+        uninfected_screened = uninfected_prop * screen_coverage
+        false_negative_latent = latent_infected_screened * (1.0 - test_sensitivity)
         false_positive = uninfected_prop * screen_coverage * false_positive_rate
+        true_negative = uninfected_screened * (1.0 - false_positive_rate)
+        tpt_eligible = true_positive_latent + false_positive
         tpt_starts = p_start * (true_positive_latent + false_positive)
+        true_positive_tpt_starts = p_start * true_positive_latent
+        false_positive_tpt_starts = p_start * false_positive
         tpt_completions = p_complete * tpt_starts
         effective_tpt = p_start * true_positive_latent * sum(
             path["probability"] * path["efficacy"] for path in treatment_paths
@@ -1351,14 +1768,23 @@ def deterministic_explicit_recent_remote_intervention_expectations(
             "remoteOnlyComparatorActiveTBProportion": comparator_remote,
             "recentDirectActiveTBCasesAvertedProportion": prevented_recent,
             "remoteOnlyDirectActiveTBCasesAvertedProportion": prevented_remote,
-            "screenedProportion": at_risk_fraction * screen_coverage,
+            "screenedProportion": screened_prop,
+            "notScreenedProportion": at_risk_fraction - screened_prop,
+            "infectedScreenedProportion": infected_screened,
+            "latentInfectedScreenedProportion": latent_infected_screened,
+            "falseNegativeLatentProportion": false_negative_latent,
+            "uninfectedScreenedProportion": uninfected_screened,
+            "trueNegativeProportion": true_negative,
             "testPositiveProportion": true_positive_latent
             + active_detected_workup
             + false_positive,
             "truePositiveLatentProportion": true_positive_latent,
             "falsePositiveProportion": false_positive,
             "activeTBDetectedDuringWorkupProportion": active_detected_workup,
+            "tptEligibleAfterTestingAndAssessmentProportion": tpt_eligible,
             "tptStartsProportion": tpt_starts,
+            "truePositiveTPTStartsProportion": true_positive_tpt_starts,
+            "falsePositiveTPTStartsProportion": false_positive_tpt_starts,
             "tptCompletionsProportion": tpt_completions,
             "effectiveTPTProportion": effective_tpt,
             "incidentActiveTBBeforeScreeningProportion": active_before_screen,
@@ -1367,7 +1793,7 @@ def deterministic_explicit_recent_remote_intervention_expectations(
             ),
             "subsequentIncidentActiveTBProportion": subsequent_active,
         }
-    return {
+    result = {
         "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
         "method": "deterministic_epidemiological_intervention_expected_value",
         "integrationMethod": DETERMINISTIC_INTERVENTION_INTEGRATION_METHOD,
@@ -1409,6 +1835,10 @@ def deterministic_explicit_recent_remote_intervention_expectations(
             "No event-ledger costing, economics, DALYs or report-facing outputs are produced.",
         ],
     }
+    result["accountingValidation"] = validate_deterministic_intervention_accounting(
+        result
+    )
+    return result
 
 
 def stochastic_explicit_recent_remote_intervention_summary(
@@ -1453,7 +1883,10 @@ def stochastic_explicit_recent_remote_intervention_summary(
     age_prob = age_prob / age_prob.sum()
     ages = generator.choice(age_values, size=n, p=age_prob)
     risk_prev = config.get("riskPrev") if isinstance(config.get("riskPrev"), Mapping) else {}
-    bcg_probability = _probability(risk_prev.get("BCG", 0.0), "riskPrev.BCG")
+    bcg_probability = _probability(
+        _default_value(risk_prev.get("BCG", 0.0), 0.0),
+        "riskPrev.BCG",
+    )
     population = {
         "ageYears": ages,
         "ageGroup": np.asarray([_age_group_label(float(age)) for age in ages], dtype=object),
@@ -1616,6 +2049,9 @@ def reconcile_deterministic_stochastic_explicit_intervention(
     absolute_floor_count: float = 6.0,
     competing_mortality_hazard: Any = None,
     competing_survival_curve: Any = None,
+    infection_quadrature_points: int = 32,
+    screen_quadrature_points: int = 24,
+    integration_steps: int = 512,
 ) -> dict[str, Any]:
     seed_values = tuple(int(value) for value in seeds)
     if not seed_values:
@@ -1633,6 +2069,9 @@ def reconcile_deterministic_stochastic_explicit_intervention(
         horizons_years=(horizon,),
         competing_mortality_hazard=competing_mortality_hazard,
         competing_survival_curve=competing_survival_curve,
+        infection_quadrature_points=infection_quadrature_points,
+        screen_quadrature_points=screen_quadrature_points,
+        integration_steps=integration_steps,
     )
     stochastic_runs = [
         stochastic_explicit_recent_remote_intervention_summary(
@@ -1651,15 +2090,36 @@ def reconcile_deterministic_stochastic_explicit_intervention(
     det_horizon = deterministic["byHorizon"][horizon_key]
     n = float(population_size)
     deterministic_counts = {
+        "baselineActiveTB": n
+        * float(deterministic["stateProportions"][STATE_BASELINE_ACTIVE_TB]),
+        "recentTBI": n * float(deterministic["stateProportions"][STATE_RECENT]),
+        "remoteOnlyTBI": n
+        * float(deterministic["stateProportions"][STATE_REMOTE_ONLY]),
+        "uninfected": n * float(deterministic["stateProportions"][STATE_UNINFECTED]),
+        "priorRemotePlusRecent": n
+        * float(deterministic["stateProportions"]["priorRemotePlusRecent"]),
         "eligiblePopulation": n * (
             1.0 - float(deterministic["stateProportions"][STATE_BASELINE_ACTIVE_TB])
         ),
         "screened": n * det_horizon["screenedProportion"],
+        "notScreened": n * det_horizon["notScreenedProportion"],
+        "infectedScreened": n * det_horizon["infectedScreenedProportion"],
+        "latentInfectedScreened": n
+        * det_horizon["latentInfectedScreenedProportion"],
         "truePositiveLatent": n * det_horizon["truePositiveLatentProportion"],
+        "falseNegativeLatent": n * det_horizon["falseNegativeLatentProportion"],
+        "uninfectedScreened": n * det_horizon["uninfectedScreenedProportion"],
         "falsePositive": n * det_horizon["falsePositiveProportion"],
+        "trueNegative": n * det_horizon["trueNegativeProportion"],
         "activeTBDetectedDuringWorkup": n
         * det_horizon["activeTBDetectedDuringWorkupProportion"],
+        "tptEligibleAfterTestingAndAssessment": n
+        * det_horizon["tptEligibleAfterTestingAndAssessmentProportion"],
         "tptStarts": n * det_horizon["tptStartsProportion"],
+        "truePositiveTPTStarts": n
+        * det_horizon["truePositiveTPTStartsProportion"],
+        "falsePositiveTPTStarts": n
+        * det_horizon["falsePositiveTPTStartsProportion"],
         "tptCompletions": n * det_horizon["tptCompletionsProportion"],
         "effectiveTPT": n * det_horizon["effectiveTPTProportion"],
         "comparatorActiveTB": n * det_horizon["comparatorActiveTBProportion"],
@@ -1684,6 +2144,9 @@ def reconcile_deterministic_stochastic_explicit_intervention(
             dtype=float,
         )
         observed = float(np.mean(values))
+        stochastic_sd = (
+            float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
+        )
         mcse = _monte_carlo_standard_error_counts(values, expected, n)
         tolerance = max(float(absolute_floor_count), float(z_score) * mcse)
         standardized = 0.0 if mcse <= 0.0 else (observed - expected) / mcse
@@ -1692,9 +2155,14 @@ def reconcile_deterministic_stochastic_explicit_intervention(
                 "metric": metric,
                 "deterministicExpectedCount": float(expected),
                 "stochasticMeanCount": observed,
+                "stochasticStandardDeviationCount": stochastic_sd,
                 "monteCarloStandardErrorCount": mcse,
                 "standardizedDifference": standardized,
                 "absoluteDifference": abs(observed - expected),
+                "minimumStochasticCount": float(np.min(values)),
+                "medianStochasticCount": float(np.median(values)),
+                "maximumStochasticCount": float(np.max(values)),
+                "zeroEventSimulationProportion": float(np.mean(values == 0.0)),
                 "tolerance": tolerance,
                 "acceptanceZScore": float(z_score),
                 "withinTolerance": abs(observed - expected) <= tolerance,

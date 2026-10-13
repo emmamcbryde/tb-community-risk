@@ -23,9 +23,13 @@ from app.explicit_tbi_workflow import (
 from engine.apy.calibration_policy import resolve_calibration_for_config
 from engine.apy.explicit_recent_remote_runner import (
     EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
+    SCREENING_COVERAGE_DEFINITION,
     TPT_EFFECT_POLICY_PREVENTS_FUTURE_PROGRESSION,
+    deterministic_explicit_recent_remote_intervention_expectations,
     explicit_recent_remote_event_ledger_unavailable,
     reconcile_deterministic_stochastic_explicit_intervention,
+    validate_deterministic_intervention_accounting,
+    validate_stochastic_intervention_accounting,
 )
 from engine.apy.regimen import (
     apply_regimen_overrides,
@@ -41,7 +45,18 @@ APP_RESULT_KEY = "explicit_tbi_results"
 
 
 class ExplicitTBIInterventionReconciliationTests(unittest.TestCase):
+    def _working_default_calibration_config_regimen(self, **overrides):
+        state = default_workflow_state()
+        state.update(overrides)
+        config = build_explicit_workflow_config(state)
+        calibration = resolve_calibration_for_config(config)
+        library = default_regimen_library(config.get("partialShortCourseMode") or "threshold80")
+        regimen = get_regimen_from_library(config["regimen"], library)
+        regimen = apply_regimen_overrides(regimen, config)
+        return state, config, calibration, regimen
+
     def _calibration_config_regimen(self, **overrides):
+        """High-prevalence stress scenario used for intervention diagnostics."""
         state = default_workflow_state()
         state.update(
             {
@@ -65,6 +80,166 @@ class ExplicitTBIInterventionReconciliationTests(unittest.TestCase):
         regimen = apply_regimen_overrides(regimen, config)
         return state, config, calibration, regimen
 
+    def test_programme_coverage_is_at_least_once_not_annual(self) -> None:
+        for window in (1.0, 2.0):
+            state, config, calibration, regimen = self._working_default_calibration_config_regimen(
+                screeningWindowYears=window,
+                population=1500,
+            )
+            deterministic = deterministic_explicit_recent_remote_intervention_expectations(
+                calibration,
+                config=config,
+                regimen=regimen,
+                horizons_years=(20.0,),
+                infection_quadrature_points=4,
+                screen_quadrature_points=4,
+            )
+            horizon = deterministic["byHorizon"]["20"]
+            self.assertEqual(
+                config["screeningCoverageDefinition"],
+                SCREENING_COVERAGE_DEFINITION,
+            )
+            self.assertAlmostEqual(horizon["screenedProportion"], 0.30, places=12)
+            self.assertAlmostEqual(
+                1500.0 * horizon["screenedProportion"],
+                450.0,
+                places=9,
+            )
+            self.assertAlmostEqual(
+                horizon["screenedProportion"] + horizon["notScreenedProportion"],
+                1.0,
+                places=12,
+            )
+
+        for coverage, expected in ((0.0, 0.0), (1.0, 1500.0)):
+            _state, config, calibration, regimen = self._working_default_calibration_config_regimen(
+                screeningCoverage=coverage,
+                population=1500,
+            )
+            deterministic = deterministic_explicit_recent_remote_intervention_expectations(
+                calibration,
+                config=config,
+                regimen=regimen,
+                horizons_years=(20.0,),
+                infection_quadrature_points=4,
+                screen_quadrature_points=4,
+            )
+            self.assertAlmostEqual(
+                1500.0 * deterministic["byHorizon"]["20"]["screenedProportion"],
+                expected,
+                places=9,
+            )
+
+    def test_working_default_bounds_accounting_and_test_arithmetic(self) -> None:
+        state, config, calibration, regimen = self._working_default_calibration_config_regimen()
+        deterministic = deterministic_explicit_recent_remote_intervention_expectations(
+            calibration,
+            config=config,
+            regimen=regimen,
+            horizons_years=(20.0,),
+            infection_quadrature_points=8,
+            screen_quadrature_points=8,
+        )
+        horizon = deterministic["byHorizon"]["20"]
+        population = float(state["population"])
+
+        self.assertTrue(
+            validate_deterministic_intervention_accounting(deterministic)["isValid"],
+            deterministic["accountingValidation"],
+        )
+        self.assertAlmostEqual(population * deterministic["stateProportions"]["recent"], 30.0, places=6)
+        self.assertAlmostEqual(population * deterministic["stateProportions"]["remote_only"], 120.0, places=6)
+        self.assertAlmostEqual(
+            population
+            * (
+                deterministic["stateProportions"]["recent"]
+                + deterministic["stateProportions"]["remote_only"]
+            ),
+            150.0,
+            places=6,
+        )
+        self.assertAlmostEqual(population * horizon["screenedProportion"], 450.0, places=9)
+        self.assertLessEqual(population * horizon["truePositiveLatentProportion"], 150.0)
+        self.assertLessEqual(
+            horizon["truePositiveLatentProportion"],
+            horizon["latentInfectedScreenedProportion"],
+        )
+        self.assertLessEqual(
+            horizon["tptStartsProportion"],
+            horizon["tptEligibleAfterTestingAndAssessmentProportion"],
+        )
+        self.assertLessEqual(
+            horizon["effectiveTPTProportion"],
+            horizon["truePositiveTPTStartsProportion"],
+        )
+
+        sensitivity = float(config["testSensitivity"])
+        specificity = float(config["testSpecificity"])
+        self.assertAlmostEqual(
+            horizon["truePositiveLatentProportion"],
+            horizon["latentInfectedScreenedProportion"] * sensitivity,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            horizon["falseNegativeLatentProportion"],
+            horizon["latentInfectedScreenedProportion"] * (1.0 - sensitivity),
+            places=12,
+        )
+        self.assertAlmostEqual(
+            horizon["falsePositiveProportion"],
+            horizon["uninfectedScreenedProportion"] * (1.0 - specificity),
+            places=12,
+        )
+        self.assertAlmostEqual(
+            horizon["trueNegativeProportion"],
+            horizon["uninfectedScreenedProportion"] * specificity,
+            places=12,
+        )
+
+    def test_working_defaults_multiseed_reconciliation(self) -> None:
+        _state, config, calibration, regimen = self._working_default_calibration_config_regimen()
+        seeds = tuple(range(6100, 6200))
+        reconciliation = reconcile_deterministic_stochastic_explicit_intervention(
+            calibration,
+            config=config,
+            regimen=regimen,
+            population_size=1500,
+            seeds=seeds,
+            horizon_years=20.0,
+            absolute_floor_count=6.0,
+            infection_quadrature_points=8,
+            screen_quadrature_points=8,
+        )
+
+        required = {
+            "recentTBI",
+            "remoteOnlyTBI",
+            "uninfected",
+            "screened",
+            "truePositiveLatent",
+            "falsePositive",
+            "tptStarts",
+            "tptCompletions",
+            "effectiveTPT",
+            "comparatorActiveTB",
+            "interventionActiveTB",
+            "directActiveTBCasesAverted",
+        }
+        self.assertEqual(reconciliation["stochasticRunCount"], 100)
+        self.assertTrue(required.issubset({row["metric"] for row in reconciliation["rows"]}))
+        self.assertTrue(reconciliation["allWithinTolerance"], reconciliation["rows"])
+        screened_row = next(
+            row for row in reconciliation["rows"] if row["metric"] == "screened"
+        )
+        self.assertAlmostEqual(
+            screened_row["deterministicExpectedCount"],
+            450.0,
+            places=9,
+        )
+        for row in reconciliation["rows"]:
+            self.assertIn("stochasticStandardDeviationCount", row)
+            self.assertIn("zeroEventSimulationProportion", row)
+
     def test_intervention_reconciliation_covers_key_outputs(self) -> None:
         _state, config, calibration, regimen = self._calibration_config_regimen()
         reconciliation = reconcile_deterministic_stochastic_explicit_intervention(
@@ -75,14 +250,25 @@ class ExplicitTBIInterventionReconciliationTests(unittest.TestCase):
             seeds=(3101, 3102),
             horizon_years=20.0,
             absolute_floor_count=45.0,
+            infection_quadrature_points=8,
+            screen_quadrature_points=8,
         )
 
         required = {
+            "baselineActiveTB",
+            "recentTBI",
+            "remoteOnlyTBI",
+            "uninfected",
             "eligiblePopulation",
             "screened",
+            "notScreened",
+            "latentInfectedScreened",
             "truePositiveLatent",
+            "falseNegativeLatent",
             "falsePositive",
+            "trueNegative",
             "activeTBDetectedDuringWorkup",
+            "tptEligibleAfterTestingAndAssessment",
             "tptStarts",
             "tptCompletions",
             "effectiveTPT",
@@ -108,8 +294,15 @@ class ExplicitTBIInterventionReconciliationTests(unittest.TestCase):
         ]
         for overrides in scenarios:
             state, config, calibration, regimen = self._calibration_config_regimen(**overrides)
-            result = run_explicit_workflow_analysis(state)
-            row = result["deterministicResult"]["byHorizon"]["20"]
+            deterministic = deterministic_explicit_recent_remote_intervention_expectations(
+                calibration,
+                config=config,
+                regimen=regimen,
+                horizons_years=(20.0,),
+                infection_quadrature_points=8,
+                screen_quadrature_points=8,
+            )
+            row = deterministic["byHorizon"]["20"]
             self.assertLessEqual(
                 row["directActiveTBCasesAvertedProportion"],
                 row["comparatorActiveTBProportion"],
@@ -149,6 +342,8 @@ class ExplicitTBIInterventionReconciliationTests(unittest.TestCase):
             horizon_years=20.0,
             competing_mortality_hazard=0.02,
             absolute_floor_count=45.0,
+            infection_quadrature_points=8,
+            screen_quadrature_points=8,
         )
         self.assertTrue(mortality["allWithinTolerance"], mortality["rows"])
 
@@ -182,6 +377,10 @@ class ExplicitTBIInterventionReconciliationTests(unittest.TestCase):
         self.assertEqual(
             replicate["intervention"]["uninfectedFalsePositiveEpidemiologicalBenefit"],
             0,
+        )
+        self.assertTrue(
+            validate_stochastic_intervention_accounting(replicate)["isValid"],
+            replicate["accountingValidation"],
         )
         self.assertIn("share baseline states", replicate["diagnosticMessages"][0])
 
@@ -436,4 +635,3 @@ def _rendered_text(app: AppTest) -> str:
 
 if __name__ == "__main__":
     unittest.main()
-

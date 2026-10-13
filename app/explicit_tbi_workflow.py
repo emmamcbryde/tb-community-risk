@@ -21,6 +21,8 @@ from engine.apy.explicit_recent_remote_progression import (
 from engine.apy.explicit_recent_remote_runner import (
     ACTIVE_TB_OBSERVATION_POLICY_VALIDATION_ONLY,
     EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
+    SCREENING_COVERAGE_DEFINITION,
+    SCREENING_COVERAGE_POLICY_IDENTIFIER,
     TPT_EFFECT_POLICY_PREVENTS_FUTURE_PROGRESSION,
     deterministic_explicit_recent_remote_intervention_expectations,
     deterministic_explicit_recent_remote_expectations,
@@ -43,6 +45,8 @@ WORKFLOW_PAGES = (
     "Results",
     "Evidence and technical information",
 )
+DETERMINISTIC_PREVIEW_INFECTION_QUADRATURE_POINTS = 16
+DETERMINISTIC_PREVIEW_SCREEN_QUADRATURE_POINTS = 12
 
 
 def default_workflow_state() -> dict[str, Any]:
@@ -159,6 +163,8 @@ def build_explicit_workflow_config(state: Mapping[str, Any]) -> dict[str, Any]:
     cfg["analysisMethod"] = (
         "agent_based" if state.get("analysisMethod") == STOCHASTIC_LABEL else "expected_value"
     )
+    cfg["screeningCoveragePolicyIdentifier"] = SCREENING_COVERAGE_POLICY_IDENTIFIER
+    cfg["screeningCoverageDefinition"] = SCREENING_COVERAGE_DEFINITION
     return cfg
 
 
@@ -270,9 +276,15 @@ def run_explicit_workflow_analysis(state: Mapping[str, Any]) -> dict[str, Any]:
             config=normalise_config(config),
             regimen=regimen,
             horizons_years=(horizon,),
-            infection_quadrature_points=32,
-            screen_quadrature_points=24,
+            infection_quadrature_points=DETERMINISTIC_PREVIEW_INFECTION_QUADRATURE_POINTS,
+            screen_quadrature_points=DETERMINISTIC_PREVIEW_SCREEN_QUADRATURE_POINTS,
         )
+        validation = deterministic.get("accountingValidation") or {}
+        if not validation.get("isValid", False):
+            raise ValueError(
+                "Explicit deterministic accounting failed: "
+                + "; ".join(validation.get("errors") or [])
+            )
         summary_rows = _summary_rows_from_deterministic(
             deterministic,
             horizon_key=f"{horizon:g}",
@@ -282,6 +294,28 @@ def run_explicit_workflow_analysis(state: Mapping[str, Any]) -> dict[str, Any]:
             "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
             "mode": "deterministic",
             "deterministicResult": deterministic,
+            "accountingValidation": validation,
+        }
+    if raw_result.get("mode") == "stochastic":
+        replicate_validations = [
+            replicate.get("accountingValidation") or {}
+            for replicate in raw_result["runnerResult"]["explicitEpidemiology"][
+                "replicates"
+            ]
+        ]
+        failed = [
+            validation
+            for validation in replicate_validations
+            if not validation.get("isValid", False)
+        ]
+        if failed:
+            raise ValueError(
+                "Explicit stochastic accounting failed: "
+                + "; ".join(failed[0].get("errors") or [])
+            )
+        raw_result["accountingValidation"] = {
+            "isValid": True,
+            "replicateCount": len(replicate_validations),
         }
     natural_history = deterministic_explicit_recent_remote_expectations(
         calibration,
@@ -471,6 +505,9 @@ def provenance_text(result: Mapping[str, Any]) -> str:
             f"TPT effect policy: {cfg['tptEffectPolicyIdentifier']}",
             f"Risk-factor progression policy: {cfg['riskFactorProgressionPolicy']}",
             f"Active-TB observation policy: {cfg['activeTBObservationPolicy']}",
+            f"Screening coverage policy: {cfg['screeningCoveragePolicyIdentifier']}",
+            f"Screening coverage definition: {cfg['screeningCoverageDefinition']}",
+            f"Analysis method: {result['mode']}",
             "Limitation: direct active TB cases averted among the modelled population only.",
         ]
     )
@@ -575,4 +612,3 @@ def _age_group_sort_key(label: str) -> int:
         "85+": 9,
     }
     return order.get(label, 999)
-

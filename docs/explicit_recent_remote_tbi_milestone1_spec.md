@@ -1500,6 +1500,74 @@ Milestone 3D intervention reconciliation:
   effective TPT, comparator TB, intervention TB, direct cases averted, timing
   categories and recent/remote cases averted.
 
+## Milestone 3E validation clarifications
+
+The explicit Streamlit workflow uses programme-level screening coverage:
+
+```text
+The proportion of the eligible population screened at least once over the
+complete screening programme window.
+```
+
+Coverage is not multiplied by the number of years in the screening programme.
+For example, a closed population of `1500` with no baseline active TB and
+`30%` screening coverage has `450` expected screened people under both a
+one-year and a two-year programme window, before any explicitly modelled
+competing event can occur before screening. Repeat screening would require a
+separate policy that distinguishes people screened from screening encounters;
+that policy is not implemented in this workflow.
+
+The ordinary working defaults for the isolated app are:
+
+- population `1500`;
+- recent TBI target `2%`;
+- remote-only TBI target `8%`;
+- baseline active TB `0%`;
+- screening coverage `30%`;
+- IGRA and 3HP;
+- 20-year horizon;
+- reset reinfection policy;
+- no competing mortality.
+
+For these defaults the fitted infection hazards are approximately:
+
+- recent exposure hazard `0.0043192969` per year;
+- remote exposure hazard `0.0037553587` per year.
+
+The calibrated age-weighted targets recover recent prevalence
+`0.0200000000` and remote-only prevalence `0.0800000000` within numerical
+tolerance. Age-specific tables are derived model outputs, not directly
+observed age-specific prevalence data.
+
+The high-screened reconciliation table reported after Milestone 3D used an
+undisclosed stress-test configuration rather than these working defaults:
+population `1200`, recent target `20%`, remote-only target `30%`, coverage
+`60%`, sensitivity `100%`, specificity `98%`, treatment initiation `100%`,
+completion `90%`, adverse-event stop `0%` and efficacy `90%`. It is now
+labelled as a stress-test scenario in branch status, and regression tests
+cover the working-default bounds directly.
+
+Accounting identities are now explicit validation checks. Results fail before
+display if any of the following are violated:
+
+- baseline active TB + recent + remote-only + uninfected = population;
+- screened + not screened = eligible population after baseline active-TB
+  exclusion;
+- true-positive latent + false-negative latent = latent infected people
+  screened;
+- false-positive + true-negative = uninfected people screened;
+- TPT starts, completions and effective TPT respect their upstream bounds;
+- cases averted = comparator TB - intervention TB;
+- timing-specific TB components reconcile to intervention TB;
+- recent plus remote-only cases averted reconcile to total cases averted.
+
+For usability, the Streamlit deterministic preview uses `16` infection-time
+and `12` screening-time quadrature points. The pure runner helper remains
+configurable and can be rerun with tighter settings such as `32 x 24`; on the
+working defaults this tighter diagnostic changed the reviewed headline
+epidemiological counts by less than `0.001` people in a population of `1500`
+while taking substantially longer.
+
 During Milestone 3D testing, two isolated-helper defects were corrected:
 
 - conventional recent/remote audit fields were attached before building

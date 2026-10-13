@@ -219,6 +219,10 @@ def _setup_page() -> None:
                 key=_widget_key("screening_period"),
             )
         )
+        st.caption(
+            "Coverage means the proportion of eligible people screened at least "
+            "once over the complete screening programme window."
+        )
     with int_cols[1]:
         state["testType"] = st.selectbox(
             "Test",

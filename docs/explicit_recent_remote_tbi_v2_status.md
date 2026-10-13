@@ -781,6 +781,82 @@ Still out of scope after Milestone 3D:
 - frozen artifact regeneration or release-pointer changes;
 - deployment, merge or tag.
 
+## Milestone 3E scientific validation and usability review
+
+Milestone 3E resolves a reporting inconsistency from the Milestone 3D
+summary. The reconciliation table with population `1200`, screened about
+`720` and true-positive latent tests about `358` was not generated from the
+ordinary working defaults. It was a high-prevalence intervention stress-test
+configuration:
+
+- population `1200`;
+- recent TBI target `20%`;
+- remote-only TBI target `30%`;
+- screening coverage `60%`;
+- IGRA sensitivity `100%`;
+- IGRA specificity `98%`;
+- treatment initiation `100%`;
+- completion `90%`;
+- adverse-event stop `0%`;
+- full-course efficacy `90%`.
+
+The ordinary working defaults remain population `1500`, recent TBI `2%`,
+remote-only TBI `8%`, baseline active TB `0%`, screening coverage `30%`,
+IGRA, 3HP, 20-year horizon, reset reinfection policy, no competing mortality
+and the current cascade defaults. Under those defaults the deterministic
+expected screened count is `450`, because screening coverage is programme
+coverage, not annual coverage.
+
+Authoritative coverage meaning:
+
+```text
+The proportion of the eligible population screened at least once over the
+complete screening programme window.
+```
+
+There is no accidental repeat screening policy in the explicit workflow. A
+one-year and two-year screening programme with `30%` coverage both screen
+`30%` of the eligible population in expectation unless an explicitly modelled
+competing event prevents screening before the sampled screening time.
+
+Milestone 3E hardens accounting validation:
+
+- stochastic summaries now report `notScreened`, infected and uninfected
+  screened counts, latent false negatives, true negatives, TPT eligibility
+  after testing/clinical assessment, and true-positive versus false-positive
+  TPT starts;
+- deterministic intervention expectations expose the same accounting
+  proportions;
+- deterministic and stochastic accounting validators check baseline-state
+  totals, screened plus not-screened totals, test-result identities, TPT
+  bounds, cases-averted identities, timing-component reconciliation and
+  recent-plus-remote cases-averted reconciliation;
+- the Streamlit workflow raises an error rather than displaying results if
+  those identities fail.
+
+The workflow configuration and provenance downloads now record:
+
+- `screeningCoveragePolicyIdentifier =
+  programme_coverage_at_least_once_v1`;
+- the coverage definition above;
+- pathway, runner contract, infection targets, fitted hazards, progression
+  curve, reinfection policy, intervention policy, population, horizon,
+  analysis method, repetitions and seed through the existing configuration
+  JSON.
+
+Performance review found that the pure deterministic helper remains
+configurable, but the Streamlit "Quick deterministic preview" now uses
+`16` infection-time and `12` screening-time Gauss-Legendre points. Against
+the higher `32 x 24` diagnostic on the working defaults, the largest
+difference across screened, true-positive latent, comparator TB, intervention
+TB and direct cases averted was about `0.00025` people in a population of
+`1500`, while runtime fell from about `65` seconds to about `17` seconds on
+the review machine. Publication-quality deterministic checks can still call
+the pure helper with tighter quadrature.
+
+Milestone 3E does not add economics, DALYs, QALYs, ICERs, a costable event
+ledger, MATLAB changes, dynamic-model changes, deployment, merge or tag.
+
 ## Next milestone recommendation
 
 The next milestone should review the explicit development workflow and decide
