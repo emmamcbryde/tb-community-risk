@@ -10,6 +10,24 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+# An explicit-app session has no validated costable ledger. Stop before legacy
+# defaults or frozen economics can be loaded into that session. Clean SA Health
+# sessions take the existing path unchanged.
+_session_bundle = st.session_state.get("results_bundle")
+_explicit_bundle = isinstance(_session_bundle, dict) and (
+    _session_bundle.get("analysisPathway") == "explicit_recent_remote_tbi_v2"
+    or (_session_bundle.get("metadata") or {}).get("analysisPathway") == "explicit_recent_remote_tbi_v2"
+)
+if _explicit_bundle or any(
+    key.startswith("explicit_tbi_ui_v1:")
+    or key in ("explicit_tbi_results", "explicit_tbi_workflow_state")
+    for key in st.session_state
+):
+    for key in ("results_bundle", "economics_results", "economic_scenario_comparison", "decision_scenario_comparison", "health_econ_workspace"):
+        st.session_state.pop(key, None)
+    st.error("Explicit-TBI results have no validated costable event ledger. Economic analysis is unavailable for this session. Open the isolated explicit-TBI application.")
+    st.stop()
+
 from app.display import (
     arrow_safe_dataframe,
     economics_assumptions_json,

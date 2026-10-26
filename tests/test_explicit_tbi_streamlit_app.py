@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import subprocess
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import pandas as pd
 from streamlit.testing.v1 import AppTest
+from app.explicit_tbi_session import STATE_KEY, RESULT_KEY, SCHEMA_KEY, SCHEMA
 
 from app.explicit_tbi_workflow import (
     DETERMINISTIC_LABEL,
@@ -40,8 +42,8 @@ from engine.apy.regimen import (
 
 ROOT = Path(__file__).resolve().parents[1]
 FROZEN_COMMIT = "03cc16e4a52a55e10019dab16bd4f599571c4b90"
-APP_STATE_KEY = "explicit_tbi_workflow_state"
-APP_RESULT_KEY = "explicit_tbi_results"
+APP_STATE_KEY = STATE_KEY
+APP_RESULT_KEY = RESULT_KEY
 
 
 class ExplicitTBIInterventionReconciliationTests(unittest.TestCase):
@@ -407,7 +409,7 @@ class ExplicitTBIWorkflowTests(unittest.TestCase):
 
         self.assertNotIn("explicit_tbi_app.py", text)
         self.assertNotIn("Explicit recent/remote TBI development workflow", text)
-        self.assertNotIn("continuous_markov_recent_remote", (ROOT / "explicit_tbi_app.py").read_text(encoding="utf-8"))
+        self.assertNotIn("continuous_markov_recent_remote", (ROOT / "explicit_tbi_ui/app.py").read_text(encoding="utf-8"))
 
     def test_percent_roundtrip_invalid_sums_and_user_defined_sources(self) -> None:
         value = 2.345678
@@ -506,9 +508,10 @@ class ExplicitTBIWorkflowTests(unittest.TestCase):
 
 class ExplicitTBIStreamlitRenderedTests(unittest.TestCase):
     def _app(self, state: dict | None = None) -> AppTest:
-        app = AppTest.from_file(str(ROOT / "explicit_tbi_app.py"), default_timeout=180)
+        app = AppTest.from_file(str(ROOT / "explicit_tbi_ui/app.py"), default_timeout=180)
         if state is not None:
             app.session_state[APP_STATE_KEY] = state
+            app.session_state[SCHEMA_KEY] = SCHEMA
         return app
 
     def test_rendered_setup_inputs_and_guardrails(self) -> None:
@@ -525,7 +528,7 @@ class ExplicitTBIStreamlitRenderedTests(unittest.TestCase):
             labels,
         )
         text = _rendered_text(app)
-        self.assertIn("development workflow", text)
+        self.assertIn("TB screening and preventive treatment model", text)
         self.assertNotIn("Health Economics", text)
         self.assertNotIn("ICER", text)
         self.assertNotIn("Rising", text)
@@ -561,7 +564,12 @@ class ExplicitTBIStreamlitRenderedTests(unittest.TestCase):
 
         self.assertNotIn("Repetitions", [item.label for item in app.number_input])
         next(button for button in app.button if button.label == "Continue to Run analysis").click().run(timeout=180)
-        next(button for button in app.button if button.label == "Run explicit TBI analysis").click().run(timeout=180)
+        with patch(
+            "app.explicit_tbi_workflow.deterministic_explicit_recent_remote_intervention_expectations",
+            wraps=deterministic_explicit_recent_remote_intervention_expectations,
+        ) as deterministic_dispatch:
+            next(button for button in app.button if button.label == "Run explicit TBI analysis").click().run(timeout=180)
+        self.assertEqual(deterministic_dispatch.call_count, 1)
         self.assertFalse(app.exception)
         self.assertIn(APP_RESULT_KEY, app.session_state)
         result = app.session_state[APP_RESULT_KEY]
@@ -604,7 +612,7 @@ class ExplicitTBIStreamlitRenderedTests(unittest.TestCase):
         next(
             item
             for item in app.number_input
-            if item.label == "Screening coverage"
+            if item.label == "Screening coverage (%)"
         ).set_value(40.0).run(timeout=180)
         next(
             radio for radio in app.radio if radio.label == "Workflow"

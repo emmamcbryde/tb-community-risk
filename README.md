@@ -10,6 +10,16 @@ streamlit run streamlit_app.py
 
 The model is intended to support public health planning and sequencing. It is not a diagnostic tool, a clinical decision rule, or a tool for denying screening or treatment to any individual.
 
+The explicit recent/remote TBI research application has a separate entry point:
+
+```powershell
+python -m streamlit run explicit_tbi_ui\app.py
+```
+
+It provides Set up, Run analysis, Results, and Evidence and technical information.
+See [the explicit application instructions](explicit_tbi_ui/README.md). The former
+root-level `explicit_tbi_app.py` has been removed to prevent legacy page discovery.
+
 ---
 
 ## What is included

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from datetime import datetime, timezone
 import json
+from time import perf_counter, process_time
 from typing import Any, Mapping
 
 import numpy as np
@@ -28,6 +28,7 @@ from engine.apy.explicit_recent_remote_runner import (
     deterministic_explicit_recent_remote_expectations,
     explicit_recent_remote_analysis_config,
     explicit_recent_remote_runner_config_hash,
+    explicit_recent_remote_event_ledger_unavailable,
 )
 from engine.apy.regimen import (
     apply_regimen_overrides,
@@ -174,7 +175,7 @@ def build_regimen_for_state(state: Mapping[str, Any], config: Mapping[str, Any])
     return apply_regimen_overrides(regimen, dict(config))
 
 
-def validate_workflow_state(state: Mapping[str, Any]) -> list[str]:
+def validate_workflow_state(state: Mapping[str, Any], *, check_calibration: bool = True) -> list[str]:
     checks = [
         ("total modelled population", float(state.get("population", 0.0)), 1.0, None),
         ("baseline active TB", float(state.get("baselineActiveTBProportion", -1.0)), 0.0, 1.0),
@@ -215,6 +216,8 @@ def validate_workflow_state(state: Mapping[str, Any]) -> list[str]:
         q = float(state.get("activeTBAscertainmentProbability", 0.0))
         if q <= 0.0 or q > 1.0:
             return ["Ascertainment probability must be in (0, 1]."]
+    if not check_calibration:
+        return []
     try:
         cfg = build_explicit_workflow_config(state)
         resolve_calibration_for_config(cfg)
@@ -253,17 +256,22 @@ def health_signature(state: Mapping[str, Any]) -> str:
 
 
 def run_explicit_workflow_analysis(state: Mapping[str, Any]) -> dict[str, Any]:
-    errors = validate_workflow_state(state)
+    clock_start = perf_counter()
+    cpu_start = process_time()
+    errors = validate_workflow_state(state, check_calibration=False)
     if errors:
         raise ValueError(errors[0])
-    started = datetime.now(timezone.utc)
+    validation_finished = perf_counter()
     config = build_explicit_workflow_config(state)
     calibration = resolve_calibration_for_config(config)
+    calibration_finished = perf_counter()
     regimen = build_regimen_for_state(state, normalise_config(config))
     horizon = float(state["analysisHorizonYears"])
     population = int(state["population"])
+    analysis_started = perf_counter()
     if state.get("analysisMethod") == STOCHASTIC_LABEL:
         runner_result = run_replicates(config=config, keep_example_cohort=False)
+        analysis_finished = perf_counter()
         summary_rows = _summary_rows_from_stochastic(runner_result)
         raw_result = {
             "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
@@ -279,6 +287,7 @@ def run_explicit_workflow_analysis(state: Mapping[str, Any]) -> dict[str, Any]:
             infection_quadrature_points=DETERMINISTIC_PREVIEW_INFECTION_QUADRATURE_POINTS,
             screen_quadrature_points=DETERMINISTIC_PREVIEW_SCREEN_QUADRATURE_POINTS,
         )
+        analysis_finished = perf_counter()
         validation = deterministic.get("accountingValidation") or {}
         if not validation.get("isValid", False):
             raise ValueError(
@@ -326,22 +335,34 @@ def run_explicit_workflow_analysis(state: Mapping[str, Any]) -> dict[str, Any]:
         calibration,
         horizon_years=horizon,
         population_size=float(population),
+        natural_history=natural_history,
     )
+    active_tb_validation = active_tb_validation_for_state(state, natural_history)
+    ledger_marker = explicit_recent_remote_event_ledger_unavailable(config["explicitRecentRemoteTBI"])
+    config_hash = explicit_recent_remote_runner_config_hash(config["explicitRecentRemoteTBI"])
     finished = datetime.now(timezone.utc)
     return {
         **raw_result,
         "createdAt": finished.isoformat(),
-        "elapsedSeconds": (finished - started).total_seconds(),
+        "elapsedSeconds": perf_counter() - clock_start,
+        "timings": {
+            "processCpuSeconds": process_time() - cpu_start,
+            "inputValidationSeconds": validation_finished - clock_start,
+            "calibrationSeconds": calibration_finished - validation_finished,
+            "analysisPreparationSeconds": analysis_started - calibration_finished,
+            "deterministicQuadratureSeconds": analysis_finished - analysis_started if state.get("analysisMethod") != STOCHASTIC_LABEL else 0.0,
+            "stochasticSimulationSeconds": analysis_finished - analysis_started if state.get("analysisMethod") == STOCHASTIC_LABEL else 0.0,
+            "resultConstructionSeconds": perf_counter() - analysis_finished,
+        },
         "healthSignature": health_signature(state),
         "config": config,
-        "configHash": explicit_recent_remote_runner_config_hash(
-            config["explicitRecentRemoteTBI"]
-        ),
+        "configHash": config_hash,
+        "eventLedger": ledger_marker,
         "calibration": calibration,
         "summaryRows": summary_rows,
         "ageRows": age_rows,
         "stateProportions": natural_history["stateProportions"],
-        "activeTBValidation": active_tb_validation_for_state(state, natural_history),
+        "activeTBValidation": active_tb_validation,
         "limitations": [
             "Direct active TB cases averted among the modelled population only.",
             "Active-TB observations are validation-only and do not recalibrate the progression curve.",
@@ -410,12 +431,14 @@ def age_specific_prevalence_table(
     *,
     horizon_years: float,
     population_size: float,
+    natural_history: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    natural_history = deterministic_explicit_recent_remote_expectations(
-        calibration,
-        horizons_years=(float(horizon_years),),
-        population_size=float(population_size),
-    )
+    if natural_history is None:
+        natural_history = deterministic_explicit_recent_remote_expectations(
+            calibration,
+            horizons_years=(float(horizon_years),),
+            population_size=float(population_size),
+        )
     age_rows = natural_history["ageSpecificStateDistributions"]
     incident_rows = [
         row
@@ -518,7 +541,44 @@ def discard_incompatible_result(result: Any) -> Any:
         return None
     if result.get("analysisPathway") != EXPLICIT_RECENT_REMOTE_PATHWAY_ID:
         return None
+    if result.get("mode") not in ("deterministic", "stochastic"):
+        return None
+    config = result.get("config") or {}
+    if not isinstance(config, Mapping):
+        return None
+    if config.get("analysisPathway") != EXPLICIT_RECENT_REMOTE_PATHWAY_ID:
+        return None
+    pathway = config.get("explicitRecentRemoteTBI") or {}
+    if not isinstance(pathway, Mapping):
+        return None
+    if pathway.get("pathwayIdentifier") != EXPLICIT_RECENT_REMOTE_PATHWAY_ID:
+        return None
+    if not all(key in result for key in ("healthSignature", "summaryRows", "ageRows", "calibration", "configHash")):
+        return None
+    if not isinstance(result.get("summaryRows"), list) or not isinstance(result.get("ageRows"), list):
+        return None
+    if not isinstance(result.get("calibration"), Mapping):
+        return None
+    payload_key = "deterministicResult" if result["mode"] == "deterministic" else "runnerResult"
+    if not isinstance(result.get(payload_key), Mapping):
+        return None
+    if any(key in result for key in ("economics", "economics_results", "economicsResults", "dynamicResults", "decisionAnalysis")):
+        return None
+    ledger = result.get("eventLedger")
+    if not isinstance(ledger, Mapping) or ledger.get("available") is not False:
+        return None
     return result
+
+
+def technical_results_json(result: Mapping[str, Any]) -> str:
+    """Full-precision machine-readable provenance, independent of display formatting."""
+    def encode(value):
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, np.generic):
+            return value.item()
+        raise TypeError(f"Unsupported provenance value: {type(value).__name__}")
+    return json.dumps(result, indent=2, sort_keys=True, default=encode)
 
 
 def _summary_rows_from_deterministic(

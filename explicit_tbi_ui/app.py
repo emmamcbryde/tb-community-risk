@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import re
 import sys
+from time import perf_counter
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 
-REPO_ROOT = Path(__file__).resolve().parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) in sys.path:
+    sys.path.remove(str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT))
 
 from app.import_bootstrap import ensure_repo_root
 
@@ -22,7 +25,6 @@ from app.explicit_tbi_workflow import (
     STOCHASTIC_LABEL,
     TPT_EFFECT_POLICY_PREVENTS_FUTURE_PROGRESSION,
     WORKFLOW_PAGES,
-    active_tb_validation_for_state,
     build_explicit_workflow_config,
     default_workflow_state,
     discard_incompatible_result,
@@ -35,32 +37,31 @@ from app.explicit_tbi_workflow import (
     source_for_value,
     validate_workflow_state,
     validation_to_csv,
+    technical_results_json,
 )
 
 
-STATE_KEY = "explicit_tbi_workflow_state"
-RESULT_KEY = "explicit_tbi_results"
-STALE_KEY = "explicit_tbi_results_stale"
-PAGE_KEY = "explicit_tbi_page"
-WIDGET_VERSION_KEY = "explicit_tbi_widget_version"
+from app.explicit_tbi_formatting import (
+    display_table, format_number, format_percent, percentage_input_format,
+)
+from app.explicit_tbi_session import (
+    STATE_KEY, RESULT_KEY, STALE_KEY, PAGE_KEY, WIDGET_VERSION_KEY,
+    DISPATCH_COUNT_KEY, RENDER_TIMING_KEY, INPUT_ERRORS_KEY, POPULATION_DRAFT_KEY,
+    WIDGET_PREFIX, initialize_explicit_session,
+)
+
+RENDER_STARTED = perf_counter()
 
 
 st.set_page_config(
-    page_title="Explicit recent/remote TBI development workflow",
+    page_title="TB screening and preventive treatment model",
     layout="wide",
 )
 
 
 def _init_state() -> None:
-    st.session_state[STATE_KEY] = dict(
-        st.session_state.get(STATE_KEY) or default_workflow_state()
-    )
-    st.session_state[RESULT_KEY] = discard_incompatible_result(
-        st.session_state.get(RESULT_KEY)
-    )
-    st.session_state.setdefault(STALE_KEY, False)
-    st.session_state.setdefault(PAGE_KEY, "Set up")
-    st.session_state.setdefault(WIDGET_VERSION_KEY, 0)
+    if initialize_explicit_session(st.session_state):
+        st.caption("Incompatible previous session state was discarded. Set up a new explicit-TBI analysis.")
     result = st.session_state.get(RESULT_KEY)
     if isinstance(result, dict):
         st.session_state[STALE_KEY] = (
@@ -73,6 +74,8 @@ def _restore_defaults() -> None:
     st.session_state[RESULT_KEY] = None
     st.session_state[STALE_KEY] = False
     st.session_state[PAGE_KEY] = "Set up"
+    st.session_state[INPUT_ERRORS_KEY] = {}
+    st.session_state.pop(POPULATION_DRAFT_KEY, None)
     st.session_state[WIDGET_VERSION_KEY] = int(
         st.session_state.get(WIDGET_VERSION_KEY, 0)
     ) + 1
@@ -87,26 +90,49 @@ def _state() -> dict[str, Any]:
 
 
 def _widget_key(name: str) -> str:
-    return f"explicit_tbi_{st.session_state[WIDGET_VERSION_KEY]}_{name}"
+    return f"{WIDGET_PREFIX}{st.session_state[WIDGET_VERSION_KEY]}:{name}"
 
 
-def _percent_input(label: str, key: str, help_text: str) -> None:
+def _commit_percent(key: str, widget_key: str) -> None:
+    _state()[key] = percent_to_proportion(st.session_state[widget_key])
+    st.session_state[STALE_KEY] = True
+
+
+def _commit_population(widget_key: str) -> None:
+    text = st.session_state[widget_key].strip()
+    st.session_state[POPULATION_DRAFT_KEY] = text
+    errors = st.session_state[INPUT_ERRORS_KEY]
+    if not re.fullmatch(r"(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)", text):
+        errors["population"] = "Enter a whole number of people, for example 1,500."
+        return
+    population = int(text.replace(",", ""))
+    if not 1 <= population <= 1_000_000:
+        errors["population"] = "Total modelled population must be between 1 and 1,000,000 people."
+        return
+    errors.pop("population", None)
+    _state()["population"] = population
+    st.session_state[POPULATION_DRAFT_KEY] = format_number(population, decimals=0)
+    st.session_state[widget_key] = st.session_state[POPULATION_DRAFT_KEY]
+    st.session_state[STALE_KEY] = True
+
+
+def _percent_input(label: str, key: str, help_text: str = "", *, baseline: bool = False, source: bool = False, minimum: float = 0.0) -> None:
     state = _state()
-    value = st.number_input(
+    widget_key = _widget_key(key)
+    st.number_input(
         label,
-        min_value=0.0,
+        min_value=minimum,
         max_value=100.0,
         value=proportion_to_percent(float(state[key])),
         step=0.1,
-        format="%.6f",
+        format=percentage_input_format(state[key], baseline=baseline),
         help=help_text,
-        key=_widget_key(key),
+        key=widget_key,
+        on_change=_commit_percent,
+        args=(key, widget_key),
     )
-    state[key] = percent_to_proportion(value)
-    st.caption(
-        f"Value used by model: {state[key]:.8f}; unit: proportion of total modelled population; "
-        f"source: {source_for_value(state, key)}"
-    )
+    if source:
+        st.caption(f"Source: {source_for_value(state, key)}")
 
 
 def _setup_page() -> None:
@@ -115,15 +141,13 @@ def _setup_page() -> None:
     st.subheader("Population")
     cols = st.columns(3)
     with cols[0]:
-        state["population"] = int(
-            st.number_input(
-                "Total modelled population",
-                min_value=1,
-                max_value=1_000_000,
-                value=int(state["population"]),
-                step=100,
-                key=_widget_key("population"),
-            )
+        population_key = _widget_key("population")
+        st.text_input(
+            "Total modelled population (people)",
+            value=st.session_state.get(POPULATION_DRAFT_KEY, format_number(state["population"], decimals=0)),
+            key=population_key,
+            on_change=_commit_population,
+            args=(population_key,),
         )
     with cols[1]:
         state["analysisHorizonYears"] = float(
@@ -133,40 +157,34 @@ def _setup_page() -> None:
                 max_value=100.0,
                 value=float(state["analysisHorizonYears"]),
                 step=1.0,
+                format="%g",
                 key=_widget_key("analysis_horizon"),
             )
         )
-        st.caption("Unit: years")
+        st.caption("Unit: years; fractional years are supported")
     with cols[2]:
-        baseline_pct = st.number_input(
-            "Baseline active TB",
-            min_value=0.0,
-            max_value=100.0,
-            value=proportion_to_percent(float(state["baselineActiveTBProportion"])),
-            step=0.01,
-            format="%.6f",
-            help="Prevalent active TB at baseline is sequenced before TBI states.",
-            key=_widget_key("baseline_active_tb"),
-        )
-        state["baselineActiveTBProportion"] = percent_to_proportion(baseline_pct)
-        st.caption(
-            f"Value used by model: {state['baselineActiveTBProportion']:.8f}; "
-            f"source: {source_for_value(state, 'baselineActiveTBProportion')}"
+        _percent_input(
+            "Baseline active TB (% of total population)", "baselineActiveTBProportion",
+            "Prevalent active TB at baseline is sequenced before TBI states.",
+            baseline=True, source=True,
         )
 
-    st.subheader("Baseline TBI history")
+    st.subheader("Input known TBI prevalence")
+    st.caption("Unit: % of total population. Both inputs are percentages of the total modelled population.")
     tbi_cols = st.columns(2)
     with tbi_cols[0]:
         _percent_input(
             "Recently infected within the past 5 years",
             "recentTBITarget",
             "At least one TB infection acquired in the five years immediately before baseline.",
+            source=True,
         )
     with tbi_cols[1]:
         _percent_input(
             "Remote infection only — infected 5 or more years ago and not reinfected within the past 5 years",
             "remoteOnlyTBITarget",
             "At least one infection more than five years before baseline and no infection in the most recent five years.",
+            source=True,
         )
     implied_uninfected = max(
         0.0,
@@ -175,7 +193,7 @@ def _setup_page() -> None:
         - float(state["recentTBITarget"])
         - float(state["remoteOnlyTBITarget"]),
     )
-    st.metric("Implied uninfected prevalence", f"{100 * implied_uninfected:.3f}%")
+    st.metric("Implied uninfected prevalence", format_percent(implied_uninfected))
 
     with st.expander("Effective age distribution", expanded=False):
         try:
@@ -191,7 +209,8 @@ def _setup_page() -> None:
                     "Population share": params["exactAgeProb"],
                 }
             )
-            st.dataframe(table, hide_index=True, use_container_width=True)
+            table = table.rename(columns={"Population share": "Population share (% of total population)"})
+            st.dataframe(display_table(table, percentage_columns=["Population share (% of total population)"]), hide_index=True, use_container_width=True)
             st.caption("The open-ended 85+ source category uses the explicit age85PlusMax provenance from the runner contract.")
         except Exception as exc:
             st.warning(f"Age distribution cannot be displayed yet: {exc}")
@@ -199,23 +218,15 @@ def _setup_page() -> None:
     st.subheader("Intervention")
     int_cols = st.columns(3)
     with int_cols[0]:
-        state["screeningCoverage"] = percent_to_proportion(
-            st.number_input(
-                "Screening coverage",
-                min_value=0.0,
-                max_value=100.0,
-                value=proportion_to_percent(float(state["screeningCoverage"])),
-                step=5.0,
-                key=_widget_key("screening_coverage"),
-            )
-        )
+        _percent_input("Screening coverage (%)", "screeningCoverage")
         state["screeningWindowYears"] = float(
             st.number_input(
-                "Screening period",
+                "Screening period (years)",
                 min_value=0.01,
                 max_value=20.0,
                 value=float(state["screeningWindowYears"]),
                 step=0.5,
+                format="%g",
                 key=_widget_key("screening_period"),
             )
         )
@@ -230,26 +241,8 @@ def _setup_page() -> None:
             index=["IGRA", "TST"].index(str(state["testType"])),
             key=_widget_key("test_type"),
         )
-        state["testSensitivity"] = percent_to_proportion(
-            st.number_input(
-                "Test sensitivity",
-                min_value=0.0,
-                max_value=100.0,
-                value=proportion_to_percent(float(state["testSensitivity"])),
-                step=1.0,
-                key=_widget_key("test_sensitivity"),
-            )
-        )
-        state["testSpecificity"] = percent_to_proportion(
-            st.number_input(
-                "Test specificity",
-                min_value=0.0,
-                max_value=100.0,
-                value=proportion_to_percent(float(state["testSpecificity"])),
-                step=1.0,
-                key=_widget_key("test_specificity"),
-            )
-        )
+        _percent_input("Test sensitivity (%)", "testSensitivity")
+        _percent_input("Test specificity (%)", "testSpecificity")
     with int_cols[2]:
         regimens = ["3HP", "4R", "3HR", "6H", "9H"]
         state["regimen"] = st.selectbox(
@@ -258,36 +251,9 @@ def _setup_page() -> None:
             index=regimens.index(str(state["regimen"])),
             key=_widget_key("regimen"),
         )
-        state["pStartTPT"] = percent_to_proportion(
-            st.number_input(
-                "Treatment initiation",
-                min_value=0.0,
-                max_value=100.0,
-                value=proportion_to_percent(float(state["pStartTPT"])),
-                step=5.0,
-                key=_widget_key("p_start_tpt"),
-            )
-        )
-        state["regimenPComplete"] = percent_to_proportion(
-            st.number_input(
-                "Treatment completion",
-                min_value=0.0,
-                max_value=100.0,
-                value=proportion_to_percent(float(state["regimenPComplete"])),
-                step=5.0,
-                key=_widget_key("regimen_complete"),
-            )
-        )
-        state["regimenEffFull"] = percent_to_proportion(
-            st.number_input(
-                "TPT efficacy after completion",
-                min_value=0.0,
-                max_value=100.0,
-                value=proportion_to_percent(float(state["regimenEffFull"])),
-                step=5.0,
-                key=_widget_key("regimen_eff_full"),
-            )
-        )
+        _percent_input("Treatment initiation (%)", "pStartTPT")
+        _percent_input("Treatment completion (%)", "regimenPComplete")
+        _percent_input("TPT efficacy after completion (%)", "regimenEffFull")
 
     st.subheader("Analysis controls")
     state["analysisMethod"] = st.radio(
@@ -338,28 +304,29 @@ def _setup_page() -> None:
                 state["activeTBObservedCases"] = float(
                     st.number_input(
                         "Observed active-TB cases",
-                        min_value=0.0,
-                        value=float(state["activeTBObservedCases"]),
-                        step=1.0,
+                        min_value=0,
+                        value=int(state["activeTBObservedCases"]),
+                        step=1,
                         key=_widget_key("active_tb_observed_cases"),
                     )
                 )
                 state["activeTBDenominator"] = float(
                     st.number_input(
                         "Observation denominator",
-                        min_value=1.0,
-                        value=float(state["activeTBDenominator"]),
-                        step=100.0,
+                        min_value=1,
+                        value=int(state["activeTBDenominator"]),
+                        step=100,
                         key=_widget_key("active_tb_denominator"),
                     )
                 )
             with obs_cols[1]:
                 state["activeTBObservationDurationYears"] = float(
                     st.number_input(
-                        "Observation duration",
+                        "Observation duration (years)",
                         min_value=0.01,
                         value=float(state["activeTBObservationDurationYears"]),
                         step=0.5,
+                        format="%g",
                         key=_widget_key("active_tb_duration"),
                     )
                 )
@@ -384,25 +351,14 @@ def _setup_page() -> None:
                     value=str(state["activeTBAscertainment"]),
                     key=_widget_key("active_tb_ascertainment"),
                 )
-                state["activeTBAscertainmentProbability"] = percent_to_proportion(
-                    st.number_input(
-                        "Ascertainment probability",
-                        min_value=0.000001,
-                        max_value=100.0,
-                        value=proportion_to_percent(
-                            float(state["activeTBAscertainmentProbability"])
-                        ),
-                        step=1.0,
-                        key=_widget_key("active_tb_ascertainment_probability"),
-                    )
-                )
+                _percent_input("Ascertainment probability (%)", "activeTBAscertainmentProbability", minimum=0.000001)
                 state["activeTBObservationSource"] = st.text_input(
                     "Observation source",
                     value=str(state["activeTBObservationSource"]),
                     key=_widget_key("active_tb_source"),
                 )
 
-    errors = validate_workflow_state(state)
+    errors = list(st.session_state[INPUT_ERRORS_KEY].values()) or validate_workflow_state(state)
     if errors:
         st.error(errors[0])
     else:
@@ -425,7 +381,7 @@ def _setup_page() -> None:
 
 def _run_page() -> None:
     state = _state()
-    errors = validate_workflow_state(state)
+    errors = list(st.session_state[INPUT_ERRORS_KEY].values()) or validate_workflow_state(state, check_calibration=False)
     st.subheader("Pre-run summary")
     implied_uninfected = (
         1.0
@@ -434,20 +390,20 @@ def _run_page() -> None:
         - float(state["remoteOnlyTBITarget"])
     )
     rows = [
-        ("Population", f"{int(state['population']):,}"),
-        ("Recent TBI target", f"{100 * state['recentTBITarget']:.3f}%"),
-        ("Remote-only TBI target", f"{100 * state['remoteOnlyTBITarget']:.3f}%"),
-        ("Implied uninfected", f"{100 * implied_uninfected:.3f}%"),
-        ("Baseline active TB", f"{100 * state['baselineActiveTBProportion']:.3f}%"),
+        ("Population", format_number(state['population'], decimals=0)),
+        ("Recent TBI target (% of total population)", format_percent(state['recentTBITarget'])),
+        ("Remote-only TBI target (% of total population)", format_percent(state['remoteOnlyTBITarget'])),
+        ("Implied uninfected (% of total population)", format_percent(implied_uninfected)),
+        ("Baseline active TB (% of total population)", format_percent(state['baselineActiveTBProportion'], decimals=2, trim=True)),
         ("Test and regimen", f"{state['testType']} / {state['regimen']}"),
-        ("Coverage", f"{100 * state['screeningCoverage']:.1f}%"),
-        ("Horizon", f"{state['analysisHorizonYears']:g} years"),
+        ("Coverage", format_percent(state['screeningCoverage'])),
+        ("Horizon", f"{format_number(state['analysisHorizonYears'])} years"),
         ("Analysis method", state["analysisMethod"]),
     ]
     if state["analysisMethod"] == STOCHASTIC_LABEL:
         rows.extend(
             [
-                ("Repetitions", f"{int(state['stochasticRepetitions']):,}"),
+                ("Repetitions", format_number(state['stochasticRepetitions'], decimals=0)),
                 ("Random seed", str(int(state["seed"]))),
             ]
         )
@@ -457,17 +413,23 @@ def _run_page() -> None:
         st.button("Return to Set up", on_click=_set_page, args=("Set up",), use_container_width=True)
         return
     if st.button("Run explicit TBI analysis", type="primary", use_container_width=True):
+        st.session_state[DISPATCH_COUNT_KEY] += 1
+        analysis_started = perf_counter()
         with st.spinner("Running isolated explicit recent/remote epidemiology analysis..."):
-            result = run_explicit_workflow_analysis(state)
+            try:
+                result = run_explicit_workflow_analysis(state)
+            except ValueError as exc:
+                st.error(str(exc))
+                return
+        result["timings"]["streamlitDispatchSeconds"] = perf_counter() - analysis_started
         st.session_state[RESULT_KEY] = result
         st.session_state[STALE_KEY] = False
-        st.success(f"Analysis completed in {result['elapsedSeconds']:.2f} seconds.")
+        st.success(f"Analysis completed in {format_number(result['elapsedSeconds'])} seconds.")
     if st.session_state.get(RESULT_KEY):
         st.button("Open Results", on_click=_set_page, args=("Results",), type="primary", use_container_width=True)
 
 
 def _results_page() -> None:
-    state = _state()
     result = discard_incompatible_result(st.session_state.get(RESULT_KEY))
     if not result:
         st.info("Run the analysis to create explicit epidemiological results.")
@@ -475,12 +437,17 @@ def _results_page() -> None:
         return
     if st.session_state.get(STALE_KEY):
         st.warning("These results are stale because epidemiological inputs changed after the last run.")
-    st.subheader("Decision-facing epidemiological results")
-    st.dataframe(pd.DataFrame(result["summaryRows"]), hide_index=True, use_container_width=True)
+    # Describe the stored run, even if the current inputs have since been edited.
+    config = result["config"]
+    population = int(config["N"])
+    horizon = float(config["followUpHorizonYears"])
+    st.subheader("Epidemiological results")
+    st.caption("Counts are people or direct active TB cases over the analysis horizon. Values are approximate when fractional.")
+    st.dataframe(display_table(result["summaryRows"]), hide_index=True, use_container_width=True)
     if result["mode"] == "deterministic":
         st.caption("Simulation intervals do not apply to a single deterministic expected-value calculation.")
     else:
-        st.caption(f"Simulation intervals use {int(state['stochasticRepetitions']):,} simulated populations.")
+        st.caption(f"Simulation intervals use {format_number(config['nReps'], decimals=0)} simulated populations; Mean and low/high 95% simulation intervals are shown.")
     summary = pd.DataFrame(result["summaryRows"])
     averted = float(
         summary.loc[
@@ -488,27 +455,29 @@ def _results_page() -> None:
             summary.columns[1],
         ].iloc[0]
     )
-    per_1000 = 1000.0 * averted / float(state["population"])
-    st.info(f"Direct active TB cases averted among the modelled population: {averted:.2f}, or {per_1000:.2f} per 1,000 people modelled.")
+    per_1000 = 1000.0 * averted / population
+    qualifier = "expected" if result["mode"] == "deterministic" else "mean"
+    st.info(f"Approximately {format_number(averted)} {qualifier} direct active TB cases averted among the modelled population, or {format_number(per_1000)} per 1,000 people modelled.")
 
     with st.expander("Outcomes by recent versus remote-only infection", expanded=False):
         if result["mode"] == "stochastic":
             rows = result["runnerResult"]["explicitEpidemiology"]["replicates"][0]["byEffectiveState"]
-            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+            st.caption("First simulated population: individual counts of people or active TB cases.")
+            st.dataframe(display_table(rows), hide_index=True, use_container_width=True)
         else:
-            det = result["deterministicResult"]["byHorizon"][f"{state['analysisHorizonYears']:g}"]
+            det = result["deterministicResult"]["byHorizon"][f"{horizon:g}"]
             st.dataframe(
-                pd.DataFrame(
+                display_table(
                     [
                         {
                             "State": "recent",
-                            "Comparator active TB": det["recentComparatorActiveTBProportion"] * state["population"],
-                            "Direct cases averted": det["recentDirectActiveTBCasesAvertedProportion"] * state["population"],
+                            "Comparator active TB (expected cases)": det["recentComparatorActiveTBProportion"] * population,
+                            "Direct cases averted (expected cases)": det["recentDirectActiveTBCasesAvertedProportion"] * population,
                         },
                         {
                             "State": "remote_only",
-                            "Comparator active TB": det["remoteOnlyComparatorActiveTBProportion"] * state["population"],
-                            "Direct cases averted": det["remoteOnlyDirectActiveTBCasesAvertedProportion"] * state["population"],
+                            "Comparator active TB (expected cases)": det["remoteOnlyComparatorActiveTBProportion"] * population,
+                            "Direct cases averted (expected cases)": det["remoteOnlyDirectActiveTBCasesAvertedProportion"] * population,
                         },
                     ]
                 ),
@@ -516,46 +485,50 @@ def _results_page() -> None:
                 use_container_width=True,
             )
     with st.expander("Outcomes by age", expanded=False):
-        st.dataframe(pd.DataFrame(result["ageRows"]), hide_index=True, use_container_width=True)
+        ages = pd.DataFrame(result["ageRows"])
+        percent_columns = [column for column in ages if column != "Age group"]
+        ages = display_table(ages, percentage_columns=percent_columns)
+        ages = ages.rename(columns={column: column + " (%)" for column in percent_columns})
+        st.caption(f"Within-age-group percentages; population share is % of total population. Active-TB risk is over {format_number(horizon)} years.")
+        st.dataframe(ages, hide_index=True, use_container_width=True)
     with st.expander("Timing relative to screening and effective TPT", expanded=False):
         if result["mode"] == "deterministic":
-            det = result["deterministicResult"]["byHorizon"][f"{state['analysisHorizonYears']:g}"]
+            det = result["deterministicResult"]["byHorizon"][f"{horizon:g}"]
             timing = {
-                "TB before screening": det["incidentActiveTBBeforeScreeningProportion"] * state["population"],
-                "TB after screening but before effective TPT": det["incidentActiveTBAfterScreenBeforeEffectiveTPTProportion"] * state["population"],
-                "Subsequent incident TB": det["subsequentIncidentActiveTBProportion"] * state["population"],
+                "TB before screening": det["incidentActiveTBBeforeScreeningProportion"] * population,
+                "TB after screening but before effective TPT": det["incidentActiveTBAfterScreenBeforeEffectiveTPTProportion"] * population,
+                "Subsequent incident TB": det["subsequentIncidentActiveTBProportion"] * population,
             }
         else:
+            st.caption("First simulated population: individual active TB case counts.")
             intervention = result["runnerResult"]["explicitEpidemiology"]["replicates"][0]["intervention"]
             timing = {
                 "TB before screening": intervention["incidentActiveTBBeforeScreening"],
                 "TB after screening but before effective TPT": intervention["incidentActiveTBAfterScreenBeforeEffectiveTPT"],
                 "Subsequent incident TB": intervention["subsequentIncidentActiveTB"],
             }
-        st.dataframe(pd.DataFrame(timing.items(), columns=["Timing", "Count"]), hide_index=True, use_container_width=True)
+        timing_table = pd.DataFrame(timing.items(), columns=["Timing", "Expected cases" if result["mode"] == "deterministic" else "Cases in first simulated population"])
+        st.dataframe(display_table(timing_table), hide_index=True, use_container_width=True)
     with st.expander("Observed-versus-expected active-TB validation", expanded=False):
-        validation = active_tb_validation_for_state(state)
+        validation = result.get("activeTBValidation")
         if not validation:
             st.info("No active-TB observation supplied.")
         else:
             st.write(validation["message"])
-            st.dataframe(pd.DataFrame([validation]), hide_index=True, use_container_width=True)
-
-    with st.expander("Calibration and age-specific display", expanded=False):
-        calibration = result["calibration"]["explicitRecentRemoteCalibration"]
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {"Derived quantity": "Fitted recent exposure hazard", "Value": calibration["fittedRecentHazard"]},
-                    {"Derived quantity": "Fitted remote exposure hazard", "Value": calibration["fittedRemoteHazard"]},
-                    {"Derived quantity": "Achieved recent prevalence", "Value": calibration["achievedRecentPrevalenceTotalPopulation"]},
-                    {"Derived quantity": "Achieved remote-only prevalence", "Value": calibration["achievedRemoteOnlyPrevalenceTotalPopulation"]},
-                ]
-            ),
-            hide_index=True,
-            use_container_width=True,
-        )
+            validation_rows = [{
+                "Observed cases": validation["observedCases"],
+                "Expected cases": validation["expectedCases"],
+                "Source population (people)": validation["sourcePopulationDenominator"],
+                "Observation duration (years)": validation["observationDurationYears"],
+                "Observed (% of source population)": validation["observedRate"],
+                "Expected (% of source population)": validation["expectedRate"],
+                "Difference (cases)": validation["absoluteDifference"],
+                "Observed / expected": validation["ratioObservedToExpected"] if validation["ratioObservedToExpected"] is not None else "N/A",
+            }]
+            st.dataframe(display_table(validation_rows, percentage_columns=["Observed (% of source population)", "Expected (% of source population)"]), hide_index=True, use_container_width=True)
     with st.expander("Downloads", expanded=False):
+        st.caption("Machine-readable downloads retain full precision.")
+        st.download_button("Download full technical results JSON", data=technical_results_json(result), file_name="explicit_tbi_full_results.json", mime="application/json")
         st.download_button(
             "Download configuration JSON",
             data=json.dumps(result["config"], indent=2, sort_keys=True),
@@ -570,7 +543,7 @@ def _results_page() -> None:
         )
         st.download_button(
             "Download active-TB validation CSV",
-            data=validation_to_csv(active_tb_validation_for_state(state)),
+            data=validation_to_csv(result.get("activeTBValidation")),
             file_name="explicit_tbi_active_tb_validation.csv",
             mime="text/csv",
         )
@@ -612,12 +585,21 @@ def _evidence_page() -> None:
         f"Pathway: {EXPLICIT_RECENT_REMOTE_PATHWAY_ID}; TPT policy: "
         f"{TPT_EFFECT_POLICY_PREVENTS_FUTURE_PROGRESSION}."
     )
+    result = discard_incompatible_result(st.session_state.get(RESULT_KEY))
+    if result:
+        st.subheader("Technical diagnostics")
+        st.caption("Fitted hazards are annual exposure hazards per person-year. Technical values retain full precision.")
+        calibration = result["calibration"]["explicitRecentRemoteCalibration"]
+        st.json(calibration)
+        st.caption(f"Configuration hash: {result['configHash']}")
+        st.json({"analysisTimingsSeconds": result.get("timings"), "previousScriptRenderSeconds": st.session_state.get(RENDER_TIMING_KEY), "analysisDispatchCount": st.session_state[DISPATCH_COUNT_KEY]})
+        st.json(result["eventLedger"])
 
 
 _init_state()
 
-st.title("Explicit recent/remote TBI development workflow")
-st.caption("Development and research workflow for isolated epidemiological review.")
+st.title("TB screening and preventive treatment model")
+st.caption("Development status: explicit-TBI epidemiology for planning and sequencing; this model is not for denying care.")
 
 page = st.sidebar.radio(
     "Workflow",
@@ -634,3 +616,5 @@ elif page == "Results":
     _results_page()
 else:
     _evidence_page()
+
+st.session_state[RENDER_TIMING_KEY] = perf_counter() - RENDER_STARTED

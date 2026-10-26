@@ -69,7 +69,7 @@ model changes.
 
 Milestone 3D validates the explicit intervention outputs and adds the first
 separate Streamlit development workflow for explicit recent/remote TBI
-epidemiology. The workflow is rooted at `explicit_tbi_app.py`; it is not
+epidemiology. The workflow is rooted at `explicit_tbi_ui/app.py` after Milestone 3F isolation; it is not
 imported by `streamlit_app.py` and is not part of the frozen application
 navigation. It still does not add a costable event ledger, economics, DALYs,
 QALYs, deployment, merge or tag.
@@ -1398,7 +1398,7 @@ incident-TB rows.
 Milestone 3D adds a new isolated Streamlit entry point:
 
 ```text
-explicit_tbi_app.py
+explicit_tbi_ui/app.py
 ```
 
 The frozen application entry point remains:

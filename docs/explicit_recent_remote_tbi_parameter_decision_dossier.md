@@ -348,7 +348,7 @@ stop/effective time and does not rewrite historical recent/remote infection
 state.
 
 Milestone 3D implementation note: a separate development Streamlit entry
-point, `explicit_tbi_app.py`, now exists for review of epidemiological
+point, `explicit_tbi_ui/app.py` (isolated in Milestone 3F), now exists for review of epidemiological
 outputs only. It is not imported by the frozen application entry point and
 does not include report-reference comparisons, a costable event ledger,
 economics, DALYs, QALYs or ICERs. Active-TB observations remain

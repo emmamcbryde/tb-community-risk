@@ -73,7 +73,7 @@ Streamlit controls, reports, MATLAB and the dynamic model out of scope.
 Milestone 3D purpose: validate explicit intervention outputs and add the
 first isolated Streamlit workflow for explicit recent/remote TBI
 epidemiology. The new workflow is a separate development entry point
-(`explicit_tbi_app.py`) and is not imported by the frozen Streamlit
+(`explicit_tbi_ui/app.py`, isolated in Milestone 3F) and is not imported by the frozen Streamlit
 application. It adds no costable event ledger, economics, DALYs, QALYs,
 deployment, merge or tag.
 
@@ -694,13 +694,13 @@ Still out of scope after Milestone 3C:
 
 Milestone 3D adds a standalone development workflow:
 
-- entry point: `explicit_tbi_app.py`;
+- entry point: originally `explicit_tbi_app.py`; moved to `explicit_tbi_ui/app.py` in Milestone 3F;
 - support module: `app/explicit_tbi_workflow.py`;
 - tests: `tests/test_explicit_tbi_streamlit_app.py`.
 
 The frozen application entry point remains `streamlit_app.py`. Its navigation
 still lists only the existing frozen workflow pages under `pages/`; it does
-not import, link to or navigate to `explicit_tbi_app.py`.
+not import, link to or navigate to the explicit application.
 
 The new workflow pages are:
 
@@ -856,6 +856,253 @@ the pure helper with tighter quadrature.
 
 Milestone 3E does not add economics, DALYs, QALYs, ICERs, a costable event
 ledger, MATLAB changes, dynamic-model changes, deployment, merge or tag.
+
+## Milestone 3F isolated UI and presentation
+
+Starting audit: repository root `tb-community-risk-tbi-calibration`, branch
+`feature/explicit-recent-remote-tbi-v2`, HEAD
+`4142c23a5f37e0bf9480c84f0858548002df161d`, upstream
+`origin/feature/explicit-recent-remote-tbi-v2`, clean working tree and no
+ahead/behind commits. Python was `3.12.4`; installed Streamlit was `1.32.0`,
+while `requirements.txt` pins `1.39.0`. Streamlit 1.39 was installed only into
+the ignored `abm/output/milestone3f/streamlit139` validation directory. The
+user's installed environment and repository-wide Streamlit configuration were
+not changed.
+
+### Reproduced navigation leak and root cause
+
+The original command was actually started:
+
+```powershell
+python -m streamlit run explicit_tbi_app.py
+```
+
+The live server's rendered messages combined the explicit opening content and
+four-option workflow radio with a registry of 12 automatically discovered
+pages. This included Scenario, Economics, Decision Analysis, Dynamic Model,
+Compare, Dynamic ABM Compare and Technical Settings. Evidence was saved in
+`abm/output/milestone3f/navigation-leak.json`.
+
+The root entry point was adjacent to the legacy `pages/` directory. Streamlit
+1.32's actual `source_util.get_pages()` scans
+`Path(main_script_path).parent / "pages"`. A custom sidebar radio does not
+replace that registry. The explicit entry did not call `st.navigation`, and
+1.32 does not provide that API. The separate frozen entry point's call to
+`st.navigation` is not executed when starting the explicit entry point.
+
+This is ordinary legacy multipage discovery caused by the entry point's
+location. It is not duplicate execution from a collision between two
+`st.navigation` calls. Streamlit's [pages directory documentation](https://docs.streamlit.io/develop/concepts/multipage-apps/pages-directory)
+describes automatic discovery beside the entry point. Its
+[`st.navigation` documentation](https://docs.streamlit.io/develop/api-reference/navigation/st.navigation)
+states that calling that API switches away from directory discovery. The
+structural fix does not rely on that newer API or on hiding the sidebar.
+
+### Final entry point and navigation
+
+The former root file was moved to `explicit_tbi_ui/app.py`; the root file no
+longer exists. The single supported explicit-app command is:
+
+```powershell
+python -m streamlit run explicit_tbi_ui\app.py
+```
+
+The isolated directory has no `pages/` subdirectory. Its server registry
+contains only the isolated entry script, with exactly four internal workflow
+views rendered in the sidebar:
+
+1. Set up
+2. Run analysis
+3. Results
+4. Evidence and technical information
+
+The legacy `pages/` directory was neither renamed nor moved. A live direct
+request for the Economics route produces `page_not_found`; no legacy page
+script is registered by the isolated app. There is no separate Scenario view.
+
+### Session boundary and deliberate non-costability
+
+`app/explicit_tbi_session.py` owns versioned `explicit_tbi_ui_v1:` state and
+widget keys. It rejects unmarked/incompatible namespaces, malformed result
+provenance, non-finite input state, retired explicit-app keys and foreign
+session state. A contaminated session opens a clean Set up workflow with no
+old results or economics. Ordinary reruns and navigation retain valid explicit
+inputs and results; material input edits mark a stored run stale.
+
+`pages/4_Economics.py` adds an early guard only for an explicit session or an
+explicit result put directly into the legacy results slot. It clears stale
+legacy result/economics slots and stops before loading defaults, frozen
+economics, backend calculations or economics displays. Clean frozen sessions
+follow the existing code path. Tests exercise both namespace contamination and
+direct legacy-slot contamination.
+
+Every explicit workflow result carries the existing unavailable, invalid and
+non-costable event-ledger marker. No costable ledger, economics, DALYs, QALYs
+or ICER calculation was added.
+
+### Presentation and precision
+
+The title is now `TB screening and preventive treatment model`. A small caption
+states development status and the planning/sequencing boundary. The first view
+is Set up with `Input known TBI prevalence` and the requested recent and
+remote-only labels. Both inputs visibly use `% of total population`.
+
+`app/explicit_tbi_formatting.py` centralises display-only formatting:
+
+- prevalence, coverage and cascade probabilities: one decimal percentage;
+- baseline active TB: one decimal, allowing a meaningful second decimal;
+- counts: thousands separators; whole people and individual simulated counts
+  remain integers;
+- expected values, stochastic means and simulation bounds: at most two decimal
+  places, dropping unnecessary zero decimals;
+- fractional years remain deliberately supported;
+- fitted hazards, residuals, long hashes and diagnostic precision appear only
+  under Evidence and technical information or technical downloads.
+
+| Previous presentation | Ordinary presentation after 3F |
+| --- | --- |
+| Recent input `2.000000`, model caption `0.02000000` | `2.0%` with population unit |
+| Remote-only input `8.000000`, model caption `0.08000000` | `8.0%` with population unit |
+| Baseline active TB `0.000000` | `0.0%` |
+| Expected screened `450.000000` | `450` |
+| Comparator TB `2.218736` | `2.22` expected cases |
+| Direct cases averted `0.277932` | Approximately `0.28` expected direct active TB cases averted |
+
+Percentage callbacks write to model proportions only when the user edits a
+widget. Display rounding never feeds back into configuration, health
+signatures, hashes, calibration or calculations. Tests retain custom
+full-precision proportions across reruns and navigation. All ordinary tables
+are formatted copies; JSON/CSV downloads retain numeric full precision. The
+full technical JSON includes configuration, results, calibration, marker and
+timings. Validation CSV exports the stored run's validation payload.
+
+Deterministic summaries use Expected value and N/A simulation intervals.
+Stochastic summaries use Mean, low/high 95% simulation intervals and the
+number of simulated populations from the stored run. Individual replicate
+tables are explicitly identified. Stored population/horizon values describe
+stale results rather than incorrectly using newly edited inputs.
+
+The unused future currency formatter rounds to whole AUD with thousands
+separators, consistent negatives and ties away from zero: `AUD 95,052`,
+`-AUD 92,370`, `AUD 0`. The same presentation contract can later format an
+authorised arithmetic ICER per DALY. No economic output is connected to it.
+
+### Runtime investigation
+
+The live audit `scripts/validate_explicit_tbi_ui.py` starts a fresh localhost
+server, captures real rendered messages, dispatches two deterministic clicks
+with unchanged defaults, captures stage timings and verifies the dispatch
+counter advances exactly once for each click. Result-only navigation and
+reruns do not dispatch analysis. AppTest additionally spies on the real
+deterministic quadrature helper to verify a single call from a real click.
+
+The first installed-version audit (Streamlit 1.32.0) measured:
+
+| Measurement (seconds) | Cold click | Warm unchanged click |
+| --- | ---: | ---: |
+| Click through complete server rerun | 36.09 | 41.30 |
+| Calibration | 0.03 | 0.06 |
+| Deterministic intervention quadrature | 32.41 | 37.12 |
+| Result construction, including baseline/age summaries | 3.52 | 3.96 |
+| Dispatch wrapper | 35.96 | 41.16 |
+| Rerun/serialization/transport above dispatch | 0.13 | 0.15 |
+| Results-only rerun | 0.73 | 0.29 |
+
+Cold initial entry import/render took 4.23 seconds. The quadrature settings
+remain exactly 16 infection-time by 12 screening-time points; the engine and
+existing accuracy contract are unchanged. A previously repeated baseline
+natural-history calculation is now reused for age summaries, without changing
+its values. Calibration is resolved once inside the analysis dispatch rather
+than once in validation and again for the same analysis.
+
+Quadrature dominates these measurements. Directory discovery registers pages;
+it does not execute every page or repeat the deterministic calculation.
+Duplicate analysis, navigation dispatches, large calibration costs and a
+53-second cold import are excluded by the measured counters/timings. A warm
+explicit rerun recomputes on a fresh click; it is not a result-cache hit. The
+earlier approximately 17-20-second benchmark and the user's approximately
+53-second observation have no matched CPU/load trace, so their exact difference
+cannot honestly be assigned to hardware alone. The measured variation is in
+the numerical computation, not a second analysis or leaked economics.
+
+The final audit, after regression-test processes had finished, used the pinned
+Streamlit 1.39.0 in a fresh server:
+
+| Measurement (seconds) | Cold click | Warm unchanged click |
+| --- | ---: | ---: |
+| Click through complete server rerun | 22.17 | 26.50 |
+| Process CPU time inside analysis | 20.81 | 24.86 |
+| Calibration | 0.02 | 0.02 |
+| Deterministic intervention quadrature | 20.30 | 24.95 |
+| Result construction | 1.77 | 1.45 |
+| Dispatch wrapper | 22.09 | 26.43 |
+| Rerun/serialization/transport above dispatch | 0.08 | 0.07 |
+| Results-only rerun | 0.42 | 0.18 |
+
+Initial cold entry import/render took 2.51 seconds. The counter was 1 after the
+cold click and 2 after the warm click. All four result tables were rendered;
+the Economics route was rejected. The earlier 1.32 audit took place during
+active verification work, so these are not controlled measurements of a
+Streamlit-version effect. The difference is consistent with numerical workload
+and execution-environment variation; it does not prove a specific hardware
+cause. Full evidence is in `isolated-1.39.0-audit.json` in the milestone output
+directory.
+
+### Rendered validation and frozen boundary
+
+AppTest covers four-only navigation, absence of Scenario/economics/dynamic/
+comparison routes, the opening labels/units, baseline precision, all ordinary
+result tables, stochastic summaries, invalid totals, single dispatch, reruns,
+state contamination and direct legacy economics rejection. Machine-readable
+exports and future currency formatting have separate precision tests.
+
+No interactive Chrome or in-app browser surface was available in this session.
+The real server audit therefore complements AppTest with rendered protobuf
+elements and Arrow tables, not HTTP 200 or source inspection. Streamlit 1.39
+AppTest returns an empty tree for the existing frozen `st.navigation` router;
+the frozen-router test uses the live server instead of accepting that empty
+tree as verification.
+
+The frozen live server renders its original nine labels: Set up, Run Analysis,
+Results, Health Economics, Explore Decisions, Evidence & Assumptions,
+Technical settings, Dynamic transmission model and Model comparison. Its
+Results view renders populated frozen tables. The frozen-reference loader
+suite checks the existing 2,000 paired replicates and pinned headline outputs.
+
+Final checks against the finished source:
+
+| Check | Outcome | Test runtime |
+| --- | --- | ---: |
+| Installed Streamlit 1.32 isolation/formatting AppTest suite | 19 passed; 1 frozen-router version skip | 48.91 seconds |
+| Pinned Streamlit 1.39 complete explicit workflow, isolation and frozen-reference suite | 41 passed | 466.19 seconds |
+| Fresh 1.39 live isolated server and two real deterministic clicks | Passed; one dispatch per click | 22.17 / 26.50 second clicks |
+| Live frozen 1.39 navigation and populated Results | Passed; original nine entries | Initial render 3.95 seconds; Results 9.35 seconds |
+| Python compile and Git whitespace checks | Passed | Lightweight |
+
+The complete supported-version command was
+`python scripts/validate_explicit_tbi_ui.py --streamlit-target abm/output/milestone3f/streamlit139 --apptest`.
+The installed-version command was
+`python -m pytest tests/test_explicit_tbi_ui_isolation.py -q`.
+Warnings were existing dependency deprecations. The version skip is exercised
+successfully by the supported-version live frozen-router test. Population input
+also explicitly renders `1,500`, accepts comma-grouped whole counts and rejects
+fractional people; invalid drafts remain blocked across navigation.
+
+`streamlit_app.py`, repository Streamlit configuration, MATLAB, the dynamic
+model, all engine formulas, scientific defaults, progression curve, TPT policy,
+frozen report artifacts, reference data and MATLAB reference artifacts remain
+unchanged from the milestone starting commit. Local and remote release branch
+and peeled tag remain at `03cc16e4a52a55e10019dab16bd4f599571c4b90`;
+the annotated tag object remains `e99d36725dfc3ff40edc0ed68127e0b6cd927da5`.
+No deployment, merge or tag operation was performed.
+
+Changed files: the relocated `explicit_tbi_ui/app.py`, its README,
+`app/explicit_tbi_workflow.py`, `app/explicit_tbi_session.py`,
+`app/explicit_tbi_formatting.py`, the explicit-only guard in
+`pages/4_Economics.py`, `scripts/validate_explicit_tbi_ui.py`,
+`tests/test_explicit_tbi_streamlit_app.py`,
+`tests/test_explicit_tbi_ui_isolation.py`, root README and the three existing
+explicit-pathway specification/status/evidence documents.
 
 ## Next milestone recommendation
 
