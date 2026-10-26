@@ -38,11 +38,17 @@ from app.explicit_tbi_workflow import (
     validate_workflow_state,
     validation_to_csv,
     technical_results_json,
+    PROGRESSION_RISK_LABELS,
+    progression_risk_for_state,
+    validate_projection_accounting,
 )
+from engine.apy.population_tbi_progression_risk import ADJUSTMENT_FIELD
 
 
 from app.explicit_tbi_formatting import (
     display_table, format_number, format_percent, percentage_input_format,
+    format_reconciled_components,
+    format_multiplier,
 )
 from app.explicit_tbi_session import (
     STATE_KEY, RESULT_KEY, STALE_KEY, PAGE_KEY, WIDGET_VERSION_KEY,
@@ -83,6 +89,11 @@ def _restore_defaults() -> None:
 
 def _set_page(page: str) -> None:
     st.session_state[PAGE_KEY] = page
+    st.session_state[_widget_key("workflow_navigation")] = page
+
+
+def _navigate_from_widget(widget_key: str) -> None:
+    st.session_state[PAGE_KEY] = st.session_state[widget_key]
 
 
 def _state() -> dict[str, Any]:
@@ -133,6 +144,36 @@ def _percent_input(label: str, key: str, help_text: str = "", *, baseline: bool 
     )
     if source:
         st.caption(f"Source: {source_for_value(state, key)}")
+
+
+def _commit_progression_risk_mode(widget_key: str) -> None:
+    label = st.session_state[widget_key]
+    _state()["progressionRiskMode"] = next(mode for mode, choice in PROGRESSION_RISK_LABELS.items() if choice == label)
+    st.session_state[STALE_KEY] = True
+
+
+def _commit_custom_multiplier(widget_key: str) -> None:
+    _state()["customProgressionRiskMultiplier"] = st.session_state[widget_key]
+    st.session_state[STALE_KEY] = True
+
+
+def _progression_risk_control() -> None:
+    state = _state()
+    st.subheader("Progression risk among people with TBI")
+    st.write("The modelled population may have a higher risk of progression to active TB than an otherwise comparable population with TBI. This adjustment multiplies the progression hazard; it does not change the entered TBI prevalence.")
+    mode_key = _widget_key("progression_risk_mode")
+    choices = list(PROGRESSION_RISK_LABELS.values())
+    st.session_state[mode_key] = PROGRESSION_RISK_LABELS[state["progressionRiskMode"]]
+    st.radio("Progression-risk scenario", choices,
+             key=mode_key, on_change=_commit_progression_risk_mode, args=(mode_key,))
+    if state["progressionRiskMode"] == "custom":
+        custom_key = _widget_key("custom_progression_multiplier")
+        st.number_input("Custom progression-hazard multiplier (×)",
+                        value=float(state["customProgressionRiskMultiplier"]), step=0.1,
+                        format="%g", key=custom_key,
+                        on_change=_commit_custom_multiplier, args=(custom_key,))
+    if state["progressionRiskMode"] != "standard":
+        st.warning("This is a scenario assumption, not a calibrated or independently estimated relative risk.")
 
 
 def _setup_page() -> None:
@@ -194,6 +235,7 @@ def _setup_page() -> None:
         - float(state["remoteOnlyTBITarget"]),
     )
     st.metric("Implied uninfected prevalence", format_percent(implied_uninfected))
+    _progression_risk_control()
 
     with st.expander("Effective age distribution", expanded=False):
         try:
@@ -400,6 +442,11 @@ def _run_page() -> None:
         ("Horizon", f"{format_number(state['analysisHorizonYears'])} years"),
         ("Analysis method", state["analysisMethod"]),
     ]
+    try:
+        risk = progression_risk_for_state(state)
+        rows.append(("Progression risk", f"{PROGRESSION_RISK_LABELS[risk['mode']]} ({format_multiplier(risk['multiplier'])} hazard)"))
+    except ValueError:
+        pass  # The validation error below blocks dispatch without clipping.
     if state["analysisMethod"] == STOCHASTIC_LABEL:
         rows.extend(
             [
@@ -441,18 +488,55 @@ def _results_page() -> None:
     config = result["config"]
     population = int(config["N"])
     horizon = float(config["followUpHorizonYears"])
+    try:
+        checked = validate_projection_accounting(config, result["analyticalProjection"], result["comparatorDecomposition"])
+        if not checked["isValid"]:
+            st.error("Result accounting failed. Run the analysis again: " + "; ".join(checked["errors"]))
+            return
+    except (KeyError, TypeError, ValueError) as exc:
+        st.error(f"Result accounting cannot be verified. Run the analysis again: {exc}")
+        return
     st.subheader("Epidemiological results")
+    risk = result[ADJUSTMENT_FIELD]
+    st.caption(f"Progression risk: {PROGRESSION_RISK_LABELS[risk['mode']]}; resolved hazard multiplier {format_multiplier(risk['multiplier'])}.")
+    st.info("No future infections or endogenous transmission are modelled.")
+    st.metric(f"Expected future active TB cases over {format_number(horizon)} years among the baseline population",
+              format_number(result["comparatorDecomposition"][-1]["expectedComparatorActiveTBCases"]))
+    if risk["mode"] != "standard":
+        st.caption("The progression-risk adjustment is a provisional scenario assumption, not a calibrated or independently estimated relative risk.")
     st.caption("Counts are people or direct active TB cases over the analysis horizon. Values are approximate when fractional.")
     st.dataframe(display_table(result["summaryRows"]), hide_index=True, use_container_width=True)
     if result["mode"] == "deterministic":
         st.caption("Simulation intervals do not apply to a single deterministic expected-value calculation.")
     else:
         st.caption(f"Simulation intervals use {format_number(config['nReps'], decimals=0)} simulated populations; Mean and low/high 95% simulation intervals are shown.")
+    st.subheader("Where expected comparator cases come from")
+    st.caption("Analytical expected values for the completed configuration. Baseline active TB is separate and excluded from future incident cases. Values are approximate; totals use full precision.")
+    if result["mode"] == "stochastic":
+        st.caption("This analytical decomposition and sensitivity comparison are not additional stochastic simulations. Simulation means above may differ.")
+    decomposition = result["comparatorDecomposition"]
+    rounded = format_reconciled_components([decomposition[i]["expectedComparatorActiveTBCases"] for i in (0, 1, 2)], decomposition[-1]["expectedComparatorActiveTBCases"])
+    display_rows = []
+    for index, row in enumerate(decomposition):
+        display_rows.append({
+            "Baseline group": row["baselineGroup"],
+            "Number of people": format_number(row["numberOfPeople"]),
+            f"Average {format_number(horizon)}-year progression probability": "Not applicable" if index == 3 else ("—" if index == 4 else format_percent(row["averageProgressionProbability"])),
+            "Expected comparator active-TB cases": "Excluded from incident projection" if index == 3 else (format_number(row["expectedComparatorActiveTBCases"]) if index == 4 else rounded[index]),
+        })
+    st.dataframe(pd.DataFrame(display_rows), hide_index=True, use_container_width=True)
+    st.subheader("Progression-risk sensitivity comparison")
+    st.caption("Analytical expected values: the same population, TBI prevalence, age distribution and intervention. Only the progression-risk adjustment differs.")
+    sensitivity = display_table(result["progressionRiskSensitivity"]["rows"])
+    sensitivity["Mode"] = [PROGRESSION_RISK_LABELS[row["Mode"]].split(" — ")[0] for row in result["progressionRiskSensitivity"]["rows"]]
+    sensitivity["Multiplier"] = [format_multiplier(row['Multiplier']) for row in result["progressionRiskSensitivity"]["rows"]]
+    st.dataframe(sensitivity, hide_index=True, use_container_width=True)
     summary = pd.DataFrame(result["summaryRows"])
+    value_column = "Expected value" if result["mode"] == "deterministic" else "Mean"
     averted = float(
         summary.loc[
             summary["Metric"] == "Direct active TB cases averted among the modelled population",
-            summary.columns[1],
+            value_column,
         ].iloc[0]
     )
     per_1000 = 1000.0 * averted / population
@@ -594,6 +678,7 @@ def _evidence_page() -> None:
         st.caption(f"Configuration hash: {result['configHash']}")
         st.json({"analysisTimingsSeconds": result.get("timings"), "previousScriptRenderSeconds": st.session_state.get(RENDER_TIMING_KEY), "analysisDispatchCount": st.session_state[DISPATCH_COUNT_KEY]})
         st.json(result["eventLedger"])
+        st.json(result[ADJUSTMENT_FIELD])
 
 
 _init_state()
@@ -601,12 +686,16 @@ _init_state()
 st.title("TB screening and preventive treatment model")
 st.caption("Development status: explicit-TBI epidemiology for planning and sequencing; this model is not for denying care.")
 
-page = st.sidebar.radio(
+navigation_key = _widget_key("workflow_navigation")
+st.session_state[navigation_key] = st.session_state[PAGE_KEY]
+st.sidebar.radio(
     "Workflow",
     WORKFLOW_PAGES,
-    index=WORKFLOW_PAGES.index(st.session_state[PAGE_KEY]),
-    key=PAGE_KEY,
+    key=navigation_key,
+    on_change=_navigate_from_widget,
+    args=(navigation_key,),
 )
+page = st.session_state[PAGE_KEY]
 
 if page == "Set up":
     _setup_page()

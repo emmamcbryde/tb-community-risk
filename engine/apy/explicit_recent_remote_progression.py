@@ -5,6 +5,8 @@ import json
 import math
 from typing import Any, Iterable, Mapping
 
+from engine.apy.population_tbi_progression_risk import positive_multiplier
+
 from engine.apy.explicit_recent_remote_tbi import (
     STATE_RECENT,
     STATE_REMOTE_ONLY,
@@ -628,13 +630,15 @@ def time_since_curve_conditional_future_progression_probability(
     *,
     time_since_infection_at_baseline: float,
     horizon_years: float,
+    progression_hazard_multiplier: float = 1.0,
 ) -> float:
+    multiplier = positive_multiplier(progression_hazard_multiplier)
     increment = time_since_curve_incremental_cumulative_hazard(
         curve,
         time_since_infection_at_baseline=time_since_infection_at_baseline,
         horizon_years=horizon_years,
     )
-    return 1.0 - math.exp(-increment)
+    return 1.0 - math.exp(-multiplier * increment)
 
 
 def time_since_curve_instantaneous_hazard(
@@ -844,7 +848,9 @@ def competing_risk_progression_probability_for_curve(
     competing_mortality_hazard: Any = None,
     integration_tolerance: float = DEFAULT_INTEGRATION_TOLERANCE,
     integration_steps: int = DEFAULT_NUMERICAL_INTEGRATION_STEPS,
+    progression_hazard_multiplier: float = 1.0,
 ) -> dict[str, Any]:
+    multiplier = positive_multiplier(progression_hazard_multiplier)
     validated = validate_progression_curve_contract(curve)
     time_since = _finite_nonnegative_float(
         time_since_infection_at_baseline,
@@ -861,6 +867,7 @@ def competing_risk_progression_probability_for_curve(
             validated,
             time_since_infection_at_baseline=time_since,
             horizon_years=horizon,
+            progression_hazard_multiplier=multiplier,
         )
         return {
             "cumulativeIncidence": probability,
@@ -881,6 +888,7 @@ def competing_risk_progression_probability_for_curve(
             time_since_infection_at_baseline=time_since,
             horizon_years=horizon,
             death_hazard=death_hazard,
+            progression_hazard_multiplier=multiplier,
         )
         return {
             "cumulativeIncidence": probability,
@@ -903,6 +911,7 @@ def competing_risk_progression_probability_for_curve(
         horizon_years=horizon,
         survival_at=survival,
         integration_steps=integration_steps,
+        progression_hazard_multiplier=multiplier,
     )
     return {
         "cumulativeIncidence": probability,
@@ -926,6 +935,7 @@ def expected_progression_events_for_curve(
     competing_mortality_hazard: Any = None,
     integration_steps: int = DEFAULT_NUMERICAL_INTEGRATION_STEPS,
     exclude_baseline_active_tb: bool = True,
+    progression_hazard_multiplier: float = 1.0,
 ) -> dict[str, Any]:
     validated = validate_progression_curve_contract(curve)
     horizon = _finite_nonnegative_float(horizon_years, "horizon_years")
@@ -969,6 +979,7 @@ def expected_progression_events_for_curve(
                 competing_survival_curve=competing_survival_curve,
                 competing_mortality_hazard=competing_mortality_hazard,
                 integration_steps=integration_steps,
+                progression_hazard_multiplier=progression_hazard_multiplier,
             )
             probability = mortality["cumulativeIncidence"]
         expected = weight * probability * ascertainment
@@ -1035,6 +1046,7 @@ def validate_active_tb_observation_against_progression_curve(
     observation_model_id: str | None = None,
     competing_survival_curve: Any = None,
     competing_mortality_hazard: Any = None,
+    progression_hazard_multiplier: float = 1.0,
 ) -> dict[str, Any]:
     validated_curve = validate_progression_curve_contract(curve)
     strata_tuple = tuple(strata)
@@ -1071,6 +1083,7 @@ def validate_active_tb_observation_against_progression_curve(
         default_ascertainment_probability=q,
         competing_survival_curve=competing_survival_curve,
         competing_mortality_hazard=competing_mortality_hazard,
+        progression_hazard_multiplier=progression_hazard_multiplier,
     )
     observed_cases = float(observed["observedActiveTBCaseCount"])
     expected_cases = float(expected["expectedCases"])
@@ -3320,6 +3333,7 @@ def _analytic_curve_competing_incidence(
     time_since_infection_at_baseline: float,
     horizon_years: float,
     death_hazard: float,
+    progression_hazard_multiplier: float = 1.0,
 ) -> float:
     start = _finite_nonnegative_float(
         time_since_infection_at_baseline,
@@ -3338,7 +3352,7 @@ def _analytic_curve_competing_incidence(
     ):
         left_follow = float(segment["followUpStartYears"])
         duration = float(segment["exposureYears"])
-        tb_hazard = float(segment["segmentHazard"])
+        tb_hazard = progression_hazard_multiplier * float(segment["segmentHazard"])
         if duration <= 0.0 or tb_hazard <= 0.0:
             continue
         cumulative_tb_to_left = (
@@ -3348,6 +3362,7 @@ def _analytic_curve_competing_incidence(
             )
             - baseline_hazard
         )
+        cumulative_tb_to_left *= progression_hazard_multiplier
         total_hazard = tb_hazard + death
         survival_to_left = math.exp(-(cumulative_tb_to_left + death * left_follow))
         probability += (
@@ -3366,6 +3381,7 @@ def _numerical_curve_competing_incidence_with_survival_curve(
     horizon_years: float,
     survival_at,
     integration_steps: int,
+    progression_hazard_multiplier: float = 1.0,
 ) -> float:
     start = _finite_nonnegative_float(
         time_since_infection_at_baseline,
@@ -3394,6 +3410,7 @@ def _numerical_curve_competing_incidence_with_survival_curve(
             time_since_infection_at_baseline=start,
             follow_up_time=left,
             death_survival=survival_at(left),
+            progression_hazard_multiplier=progression_hazard_multiplier,
         )
         segment = 0.0
         for step in range(1, local_steps + 1):
@@ -3403,6 +3420,7 @@ def _numerical_curve_competing_incidence_with_survival_curve(
                 time_since_infection_at_baseline=start,
                 follow_up_time=follow_time,
                 death_survival=survival_at(follow_time),
+                progression_hazard_multiplier=progression_hazard_multiplier,
             )
             segment += 0.5 * (previous + current) * dt
             previous = current
@@ -3416,6 +3434,7 @@ def _curve_competing_integrand(
     time_since_infection_at_baseline: float,
     follow_up_time: float,
     death_survival: float,
+    progression_hazard_multiplier: float = 1.0,
 ) -> float:
     start = _finite_nonnegative_float(
         time_since_infection_at_baseline,
@@ -3428,8 +3447,8 @@ def _curve_competing_integrand(
         time_since_infection_at_baseline=start,
         horizon_years=follow,
     )
-    tb_survival = math.exp(-incremental_hazard)
-    tb_hazard = time_since_curve_instantaneous_hazard(curve, start + follow)
+    tb_survival = math.exp(-progression_hazard_multiplier * incremental_hazard)
+    tb_hazard = progression_hazard_multiplier * time_since_curve_instantaneous_hazard(curve, start + follow)
     return tb_survival * death_survival_value * tb_hazard
 
 

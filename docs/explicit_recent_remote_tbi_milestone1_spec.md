@@ -74,7 +74,107 @@ imported by `streamlit_app.py` and is not part of the frozen application
 navigation. It still does not add a costable event ledger, economics, DALYs,
 QALYs, deployment, merge or tag.
 
+Milestone 3G adds a versioned aggregate population progression-hazard adjustment
+to the isolated explicit-TBI application. Its working scenario is risk-enriched
+at 8×; standard is 1× and custom requires a positive finite multiplier. The
+inherited risk-factor progression policy remains `none`. This aggregate scenario
+is not an estimate, an OR product, or calibration to 20 cases. The central curve,
+TBI prevalence equations, age calibration and infection-time distributions are
+unchanged. The current implementation/validation summary is in
+`docs/explicit_recent_remote_tbi_v2_status.md`.
+
+## Milestone 3G population progression-risk adjustment
+
+The contract is `population_tbi_progression_risk_adjustment_v1`, stored under
+`explicitRecentRemoteTBI.populationTBIProgressionRiskAdjustment`. Required
+fields are `contractVersion`, `version`, `mode`, `multiplier`, `source`,
+`reviewStatus` and `notes`. Modes resolve as follows:
+
+| Mode | Resolved multiplier | Interpretation |
+| --- | ---: | --- |
+| `standard` | 1.0 | Unadjusted central curve reference scenario |
+| `risk_enriched` | 8.0 | Provisional working population-enrichment assumption |
+| `custom` | Explicit positive finite value | User-supplied scenario assumption |
+
+Invalid, missing, zero, negative and non-finite custom values are rejected.
+Values are not clipped. The isolated UI explicitly selects risk-enriched by
+default, with source `Working scenario assumption` and review status
+`provisional_requires_scientific_review`. General explicit runner builders and
+pre-3G runner configurations default to the unchanged standard scenario. Old UI
+session/results without the new contract are rejected instead of relabelled.
+
+Let H0(u) be the unchanged central cumulative hazard at infection age u. For a
+baseline TBI-positive person with progression clock u, the conditional future
+probability is:
+
+```text
+P(TB within t | baseline clock u) = 1 - exp(-m * [H0(u+t) - H0(u)])
+```
+
+The multiplier applies to hazard over every future segment, including the
+post-final-anchor extrapolation. It never multiplies or clips a final
+probability. With competing mortality the cause-specific integral uses
+`m * h0(u+t) * exp(-m * [H0(u+t)-H0(u)]) * S_death(t)`; mortality itself is
+unchanged. Stochastic inverse sampling uses the same uniform draw and solves
+the unscaled future hazard increment against `-log(1-U) / m`.
+
+Both recent and remote-only groups use the adjustment. Reset/no-reset clock
+selection occurs first. Prior-remote recently reinfected people retain their
+remote clock under no-reset while staying in the recent prevalence group.
+Deterministic intervention integration now uses that same no-reset mixture.
+Comparator/intervention share untreated progression potential as before.
+Effective TPT removes only prospective progression after its effective time.
+Screening/test/TPT parameters are unchanged; more progression before screening
+can change the number of people still eligible for latent-TB treatment.
+
+TBI prevalence, age weights, exposure hazards and infection-time distributions
+are untouched by m. Uninfected people have zero progression in this
+no-new-infection workflow; baseline active TB is separate and excluded from
+prospective incidence. There is no endogenous transmission.
+
+At N=1,500, recent TBI 2%, remote-only 8%, baseline active TB 0%, 20 years and
+the unchanged intervention defaults, actual 16×12-quadrature outputs are:
+
+| Hazard scenario | Recent comparator cases | Remote-only comparator cases | Comparator cases | Intervention cases | Direct cases averted |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Standard 1× | 0.9650788868031669 | 1.250218587353016 | 2.2152974741561837 | 1.937301993328546 | 0.27799548082763775 |
+| Risk-enriched 8× | 6.737556424892722 | 9.641908129825808 | 16.379464554718503 | 14.336705091021601 | 2.042759463696902 |
+
+The 8× result is below eight times the 1× count because hazard converts to
+probability nonlinearly. It is not forced to 20 cases. The motivation of a
+roughly 20-case risk-enriched population is not a validation target or fitted
+parameter in this milestone.
+
+The completed configuration includes an analytical comparator decomposition
+with group people, conditional average progression probability and expected
+cases. Recent plus remote-only people reconcile to baseline TBI; their cases
+sum to comparator incidence; intervention plus averted cases reconcile to the
+comparator. Hard checks run before results are returned and displayed. Display
+rounding does not change the model; case-component presentation preserves the
+displayed total. Technical JSON retains full precision.
+
+An analytical 1× versus selected-risk comparison holds every other completed
+assumption fixed. It is labelled analytical even when the main run is
+stochastic. Mode, resolved multiplier and provenance participate in runner
+configuration hashes, the actual calibration-cache key, health signatures,
+staleness checks and technical downloads. Changing validation observations does
+not change these projections or fit the multiplier.
+
+The old disease ORs, automatic products of risk-factor effects, maximum 2,916
+combined multiplier, retired infection-history pathways and Rising/Steady/
+Falling controls remain inactive. Future risk-factor-specific progression
+modelling requires reviewed RRs/HRs, correlation handling, and prevalence among
+TBI-positive people. It must replace or explicitly re-normalise/contextualise
+this aggregate enrichment assumption to avoid double counting; it must not
+automatically multiply risk-factor effects by 8.
+
+No costable ledger, economics, ICERs, DALYs or QALYs are added. The frozen
+application, branch/tag/artifacts, MATLAB and dynamic model remain unchanged.
+
 ## Selected identifiers
+
+- Population progression-risk adjustment:
+  `population_tbi_progression_risk_adjustment_v1`
 
 - Analysis basis: `explicit_recent_remote_tbi_foundation_v1`
 - Natural-history semantics: `explicit_recent_remote_tbi_history_v1`

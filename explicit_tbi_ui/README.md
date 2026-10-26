@@ -10,6 +10,19 @@ The application provides **Set up**, **Run analysis**, **Results**, and
 **Evidence and technical information**. The main Set up page contains the known
 recent and remote-only TBI prevalence inputs, as percentages of total population.
 
+Milestone 3G adds **Progression risk among people with TBI** on Set up. The
+working default is the provisional **Risk-enriched population — 8×** scenario.
+Standard uses 1×; Custom requires a positive finite multiplier. This multiplies
+future progression hazard, not prevalence or final probability. The 8× value
+is a working scenario assumption, not calibrated to 20 cases or independently
+estimated. Existing risk-factor OR multiplication remains inactive.
+
+Results include baseline-group contributions and an analytical 1× versus selected
+risk comparison using otherwise identical assumptions. At the working defaults,
+the 20-year comparator is about 2.22 cases at 1× and 16.38 at 8×. Neither new
+infections during follow-up nor endogenous transmission are modelled. See the
+current [milestone status](../docs/explicit_recent_remote_tbi_v2_status.md).
+
 The former root-level `explicit_tbi_app.py` entry point has been removed. Its
 location next to the legacy `pages/` directory caused automatic legacy multipage
 discovery. This directory deliberately has no `pages/` subdirectory. Do not add

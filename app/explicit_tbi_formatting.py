@@ -24,6 +24,15 @@ def format_percent(proportion: Real, *, decimals: int = 1, trim: bool = False) -
     ) + "%"
 
 
+def format_multiplier(value: Real) -> str:
+    """Keep a valid small multiplier visibly positive and large values compact."""
+    number = float(value)
+    if 0.0 < abs(number) < 0.01 or abs(number) >= 1e9:
+        mantissa, exponent = f"{number:.1e}".split("e")
+        return f"{format_number(float(mantissa), decimals=1)}e{int(exponent)}×"
+    return format_number(number) + "×"
+
+
 def percentage_input_format(proportion: Real, *, baseline: bool = False) -> str:
     # Preserve a meaningful second decimal for small baseline active-TB inputs.
     percent = 100.0 * float(proportion)
@@ -61,3 +70,17 @@ def display_table(
             return format_number(value, decimals=0 if column in integers else 2)
         table[column] = table[column].map(present)
     return table
+
+
+def format_reconciled_components(components: Iterable[float], total: float) -> list[str]:
+    """Sum-preserving two-decimal presentation, leaving all source values intact."""
+    values = [Decimal(str(value)) * 100 for value in components]
+    floors = [int(value // 1) for value in values]
+    target = int(Decimal(format_number(total).replace(",", "")) * 100)
+    remainder = target - sum(floors)
+    if not 0 <= remainder <= len(values):
+        raise ValueError("Cannot display non-reconciling case components.")
+    order = sorted(range(len(values)), key=lambda index: values[index] - floors[index], reverse=True)
+    for index in order[:remainder]:
+        floors[index] += 1
+    return [format_number(value / 100.0) for value in floors]

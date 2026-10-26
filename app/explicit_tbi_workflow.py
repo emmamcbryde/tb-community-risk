@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from copy import deepcopy
 import json
+import math
 from time import perf_counter, process_time
 from typing import Any, Mapping
 
@@ -29,6 +31,11 @@ from engine.apy.explicit_recent_remote_runner import (
     explicit_recent_remote_analysis_config,
     explicit_recent_remote_runner_config_hash,
     explicit_recent_remote_event_ledger_unavailable,
+    validate_deterministic_intervention_accounting,
+)
+from engine.apy.population_tbi_progression_risk import (
+    ADJUSTMENT_FIELD, build_progression_risk_adjustment,
+    validate_progression_risk_adjustment,
 )
 from engine.apy.regimen import (
     apply_regimen_overrides,
@@ -48,6 +55,11 @@ WORKFLOW_PAGES = (
 )
 DETERMINISTIC_PREVIEW_INFECTION_QUADRATURE_POINTS = 16
 DETERMINISTIC_PREVIEW_SCREEN_QUADRATURE_POINTS = 12
+PROGRESSION_RISK_LABELS = {
+    "standard": "Standard progression risk — 1×",
+    "risk_enriched": "Risk-enriched population — 8×",
+    "custom": "Custom multiplier",
+}
 
 
 def default_workflow_state() -> dict[str, Any]:
@@ -59,6 +71,8 @@ def default_workflow_state() -> dict[str, Any]:
         "baselineActiveTBReviewStatus": "working_default",
         "recentTBITarget": 0.02,
         "remoteOnlyTBITarget": 0.08,
+        "progressionRiskMode": "risk_enriched",
+        "customProgressionRiskMultiplier": 8.0,
         "recentTBISource": "Working demonstration value",
         "remoteOnlyTBISource": "Working demonstration value",
         "targetReferenceYear": 2026,
@@ -160,6 +174,7 @@ def build_explicit_workflow_config(state: Mapping[str, Any]) -> dict[str, Any]:
         review_status=str(state["targetReviewStatus"]),
         notes="Explicit recent/remote TBI development workflow.",
         reinfection_policy=str(state["reinfectionPolicy"]),
+        progression_risk_adjustment=progression_risk_for_state(state),
     )
     cfg["analysisMethod"] = (
         "agent_based" if state.get("analysisMethod") == STOCHASTIC_LABEL else "expected_value"
@@ -169,6 +184,14 @@ def build_explicit_workflow_config(state: Mapping[str, Any]) -> dict[str, Any]:
     return cfg
 
 
+def progression_risk_for_state(state: Mapping[str, Any]) -> dict[str, Any]:
+    return build_progression_risk_adjustment(
+        state.get("progressionRiskMode"),
+        multiplier=state.get("customProgressionRiskMultiplier") if state.get("progressionRiskMode") == "custom" else None,
+        notes="Population risk enrichment scenario. Not calibrated to an active-TB target or independently estimated. Inherited risk-factor ORs remain inactive.",
+    )
+
+
 def build_regimen_for_state(state: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str, Any]:
     library = default_regimen_library(config.get("partialShortCourseMode") or "threshold80")
     regimen = get_regimen_from_library(str(state["regimen"]), library)
@@ -176,6 +199,10 @@ def build_regimen_for_state(state: Mapping[str, Any], config: Mapping[str, Any])
 
 
 def validate_workflow_state(state: Mapping[str, Any], *, check_calibration: bool = True) -> list[str]:
+    try:
+        progression_risk_for_state(state)
+    except ValueError as exc:
+        return [str(exc)]
     checks = [
         ("total modelled population", float(state.get("population", 0.0)), 1.0, None),
         ("baseline active TB", float(state.get("baselineActiveTBProportion", -1.0)), 0.0, 1.0),
@@ -252,6 +279,10 @@ def health_signature(state: Mapping[str, Any]) -> str:
         "reinfectionPolicy",
     ]
     payload = {key: state.get(key) for key in material_keys}
+    try:
+        payload[ADJUSTMENT_FIELD] = progression_risk_for_state(state)
+    except ValueError:
+        payload[ADJUSTMENT_FIELD] = {"mode": state.get("progressionRiskMode"), "invalidCustomMultiplier": state.get("customProgressionRiskMultiplier")}
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
@@ -326,6 +357,56 @@ def run_explicit_workflow_analysis(state: Mapping[str, Any]) -> dict[str, Any]:
             "isValid": True,
             "replicateCount": len(replicate_validations),
         }
+    sensitivity_started = perf_counter()
+    selected_projection = raw_result.get("deterministicResult")
+    if selected_projection is None:
+        selected_projection = deterministic_explicit_recent_remote_intervention_expectations(
+            calibration, config=normalise_config(config), regimen=regimen,
+            horizons_years=(horizon,),
+            infection_quadrature_points=DETERMINISTIC_PREVIEW_INFECTION_QUADRATURE_POINTS,
+            screen_quadrature_points=DETERMINISTIC_PREVIEW_SCREEN_QUADRATURE_POINTS,
+        )
+    adjustment = config["explicitRecentRemoteTBI"][ADJUSTMENT_FIELD]
+    standard_adjustment = build_progression_risk_adjustment("standard")
+    standard_config = deepcopy(config)
+    standard_config["explicitRecentRemoteTBI"][ADJUSTMENT_FIELD] = standard_adjustment
+    if adjustment["multiplier"] == 1.0:
+        standard_projection = deepcopy(selected_projection)
+        standard_projection[ADJUSTMENT_FIELD] = standard_adjustment
+    else:
+        standard_calibration = resolve_calibration_for_config(standard_config)
+        standard_projection = deterministic_explicit_recent_remote_intervention_expectations(
+            standard_calibration, config=normalise_config(standard_config), regimen=regimen,
+            horizons_years=(horizon,),
+            infection_quadrature_points=DETERMINISTIC_PREVIEW_INFECTION_QUADRATURE_POINTS,
+            screen_quadrature_points=DETERMINISTIC_PREVIEW_SCREEN_QUADRATURE_POINTS,
+        )
+    decomposition = comparator_progression_decomposition(selected_projection, population, horizon)
+    projection_validation = validate_projection_accounting(config, selected_projection, decomposition)
+    standard_validation = validate_deterministic_intervention_accounting(standard_projection)
+    if not projection_validation["isValid"] or not standard_validation["isValid"]:
+        raise ValueError("Progression projection accounting failed: " + "; ".join(projection_validation["errors"] + standard_validation["errors"]))
+    sensitivity = {
+        "method": "analytical_progression_hazard_sensitivity_v1",
+        "standardAdjustment": standard_adjustment,
+        "selectedAdjustment": adjustment,
+        "standardProjection": standard_projection,
+        "standardConfiguration": standard_config,
+        "standardConfigHash": explicit_recent_remote_runner_config_hash(standard_config["explicitRecentRemoteTBI"]),
+        "rows": [
+            {
+                "Scenario": label, "Mode": contract["mode"], "Multiplier": contract["multiplier"],
+                "Comparator active-TB cases": projection["byHorizon"][f"{horizon:g}"]["comparatorActiveTBProportion"] * population,
+                "Intervention active-TB cases": projection["byHorizon"][f"{horizon:g}"]["interventionActiveTBProportion"] * population,
+                "Direct active-TB cases averted": projection["byHorizon"][f"{horizon:g}"]["directActiveTBCasesAvertedProportion"] * population,
+            }
+            for label, contract, projection in (
+                ("Standard progression risk", standard_adjustment, standard_projection),
+                ("Selected progression risk", adjustment, selected_projection),
+            )
+        ],
+    }
+    sensitivity_finished = perf_counter()
     natural_history = deterministic_explicit_recent_remote_expectations(
         calibration,
         horizons_years=(horizon,),
@@ -352,12 +433,18 @@ def run_explicit_workflow_analysis(state: Mapping[str, Any]) -> dict[str, Any]:
             "analysisPreparationSeconds": analysis_started - calibration_finished,
             "deterministicQuadratureSeconds": analysis_finished - analysis_started if state.get("analysisMethod") != STOCHASTIC_LABEL else 0.0,
             "stochasticSimulationSeconds": analysis_finished - analysis_started if state.get("analysisMethod") == STOCHASTIC_LABEL else 0.0,
-            "resultConstructionSeconds": perf_counter() - analysis_finished,
+            "analyticalSensitivitySeconds": sensitivity_finished - sensitivity_started,
+            "resultConstructionSeconds": perf_counter() - sensitivity_finished,
         },
         "healthSignature": health_signature(state),
         "config": config,
         "configHash": config_hash,
         "eventLedger": ledger_marker,
+        ADJUSTMENT_FIELD: adjustment,
+        "analyticalProjection": selected_projection,
+        "comparatorDecomposition": decomposition,
+        "projectionAccountingValidation": projection_validation,
+        "progressionRiskSensitivity": sensitivity,
         "calibration": calibration,
         "summaryRows": summary_rows,
         "ageRows": age_rows,
@@ -367,8 +454,79 @@ def run_explicit_workflow_analysis(state: Mapping[str, Any]) -> dict[str, Any]:
             "Direct active TB cases averted among the modelled population only.",
             "Active-TB observations are validation-only and do not recalibrate the progression curve.",
             "No endogenous transmission, cost, disability-weight or quality-adjusted outputs are produced.",
+            "The population progression-hazard multiplier is a scenario assumption, not calibrated or independently estimated.",
+            "No new infections occur during follow-up.",
         ],
     }
+
+
+def comparator_progression_decomposition(projection: Mapping[str, Any], population: int, horizon: float) -> list[dict[str, Any]]:
+    states = projection["stateProportions"]
+    outcome = projection["byHorizon"][f"{horizon:g}"]
+    contributions = {
+        STATE_RECENT: outcome["recentComparatorActiveTBProportion"] * population,
+        STATE_REMOTE_ONLY: outcome["remoteOnlyComparatorActiveTBProportion"] * population,
+        STATE_UNINFECTED: 0.0,
+        STATE_BASELINE_ACTIVE_TB: None,
+    }
+    rows = []
+    for state, label in (
+        (STATE_RECENT, "Recently infected within 5 years"),
+        (STATE_REMOTE_ONLY, "Remote-only infection"),
+        (STATE_UNINFECTED, "Uninfected"),
+        (STATE_BASELINE_ACTIVE_TB, "Baseline active TB"),
+    ):
+        people = population * states[state]
+        cases = contributions[state]
+        rows.append({
+            "state": state, "baselineGroup": label, "numberOfPeople": people,
+            "averageProgressionProbability": None if cases is None else (cases / people if people > 0.0 else 0.0),
+            "expectedComparatorActiveTBCases": cases,
+        })
+    rows.append({"state": "total", "baselineGroup": "Total", "numberOfPeople": population,
+                 "averageProgressionProbability": None,
+                 "expectedComparatorActiveTBCases": population * outcome["comparatorActiveTBProportion"]})
+    return rows
+
+
+def validate_projection_accounting(config: Mapping[str, Any], projection: Mapping[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Hard checks on unrounded projection values, before any display formatting."""
+    checked = validate_deterministic_intervention_accounting(projection)
+    errors = list(checked["errors"])
+    population = float(config["N"])
+    states = {row["state"]: row for row in rows}
+    required = {STATE_RECENT, STATE_REMOTE_ONLY, STATE_UNINFECTED, STATE_BASELINE_ACTIVE_TB, "total"}
+    if set(states) != required or len(rows) != 5:
+        return {"isValid": False, "errors": ["Comparator decomposition must contain each baseline group and a total exactly once."]}
+    def close(left, right, label, tolerance=1e-8):
+        if not math.isfinite(float(left)) or not math.isfinite(float(right)) or not math.isclose(left, right, rel_tol=tolerance, abs_tol=tolerance * max(1.0, population)):
+            errors.append(label)
+    close(sum(states[key]["numberOfPeople"] for key in required if key != "total"), population, "Baseline groups must sum to the population.")
+    close(states["total"]["numberOfPeople"], population, "Total population mismatch.")
+    runner = config["explicitRecentRemoteTBI"]
+    if projection.get(ADJUSTMENT_FIELD) != runner.get(ADJUSTMENT_FIELD):
+        errors.append("Projection progression-risk contract does not match configuration.")
+    close(states[STATE_RECENT]["numberOfPeople"], population * runner["recentTBITargetProportion"], "Recent TBI target mismatch.")
+    close(states[STATE_REMOTE_ONLY]["numberOfPeople"], population * runner["remoteOnlyTBITargetProportion"], "Remote-only TBI target mismatch.")
+    close(states[STATE_BASELINE_ACTIVE_TB]["numberOfPeople"], population * runner["baselineActiveTBProportion"], "Baseline active TB mismatch.")
+    close(states[STATE_UNINFECTED]["expectedComparatorActiveTBCases"], 0.0, "Uninfected progression must be zero.")
+    if states[STATE_BASELINE_ACTIVE_TB]["expectedComparatorActiveTBCases"] is not None or states[STATE_BASELINE_ACTIVE_TB]["averageProgressionProbability"] is not None:
+        errors.append("Baseline active TB must be excluded from incident projection.")
+    for key in (STATE_RECENT, STATE_REMOTE_ONLY, STATE_UNINFECTED):
+        row = states[key]
+        probability = row["averageProgressionProbability"]
+        # At saturated hazards, weighted quadrature/count division can exceed
+        # one by a few floating-point ulps. Accept numerical error only; retain
+        # the raw value and never clip the multiplier or a multiplied risk.
+        if not math.isfinite(probability) or not 0.0 <= probability <= 1.0 + 1e-12:
+            errors.append("Invalid group progression probability.")
+        close(row["numberOfPeople"] * probability, row["expectedComparatorActiveTBCases"], "Group probability/count mismatch.")
+    horizon = projection["byHorizon"][f"{float(config['followUpHorizonYears']):g}"]
+    group_cases = states[STATE_RECENT]["expectedComparatorActiveTBCases"] + states[STATE_REMOTE_ONLY]["expectedComparatorActiveTBCases"]
+    close(group_cases, states["total"]["expectedComparatorActiveTBCases"], "Recent plus remote-only cases must sum to total.")
+    close(group_cases, population * horizon["comparatorActiveTBProportion"], "Decomposition must equal comparator incident cases.")
+    close(horizon["interventionActiveTBProportion"] + horizon["directActiveTBCasesAvertedProportion"], horizon["comparatorActiveTBProportion"], "Intervention plus cases averted must equal comparator.")
+    return {"isValid": not errors, "errors": errors, "relativeAndPopulationScaledAbsoluteTolerance": 1e-8, "groupProbabilityUpperBoundTolerance": 1e-12}
 
 
 def active_tb_validation_for_state(
@@ -527,6 +685,9 @@ def provenance_text(result: Mapping[str, Any]) -> str:
             f"Progression curve: {cfg['progressionCurveIdentifier']}",
             f"TPT effect policy: {cfg['tptEffectPolicyIdentifier']}",
             f"Risk-factor progression policy: {cfg['riskFactorProgressionPolicy']}",
+            f"Population progression-risk adjustment: {json.dumps(cfg[ADJUSTMENT_FIELD], sort_keys=True)}",
+            "Population enrichment is an assumption, not a calibrated or independently estimated relative risk.",
+            "No future infections or endogenous transmission are modelled.",
             f"Active-TB observation policy: {cfg['activeTBObservationPolicy']}",
             f"Screening coverage policy: {cfg['screeningCoveragePolicyIdentifier']}",
             f"Screening coverage definition: {cfg['screeningCoverageDefinition']}",
@@ -552,6 +713,14 @@ def discard_incompatible_result(result: Any) -> Any:
     if not isinstance(pathway, Mapping):
         return None
     if pathway.get("pathwayIdentifier") != EXPLICIT_RECENT_REMOTE_PATHWAY_ID:
+        return None
+    try:
+        adjustment = validate_progression_risk_adjustment(pathway.get(ADJUSTMENT_FIELD))
+        if result.get(ADJUSTMENT_FIELD) != adjustment:
+            return None
+    except ValueError:
+        return None
+    if not all(key in result for key in ("analyticalProjection", "comparatorDecomposition", "progressionRiskSensitivity", "projectionAccountingValidation")):
         return None
     if not all(key in result for key in ("healthSignature", "summaryRows", "ageRows", "calibration", "configHash")):
         return None

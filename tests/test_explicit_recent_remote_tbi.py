@@ -3009,7 +3009,12 @@ class ScopeProtectionTests(unittest.TestCase):
             for path in (REPO_ROOT / "pages").glob("*.py")
         )
 
-        self.assertNotIn("explicit_recent_remote_tbi", combined)
+        # The legacy economics guard may name the pathway to reject it. Legacy
+        # pages must not import or expose the isolated progression workflow.
+        self.assertNotIn("from engine.apy.explicit_recent_remote_tbi", combined)
+        self.assertNotIn("import engine.apy.explicit_recent_remote_tbi", combined)
+        self.assertNotIn("run_explicit_workflow_analysis", combined)
+        self.assertNotIn("explicit_tbi_ui/app.py", combined)
         self.assertNotIn("explicit_recent_remote_progression", combined)
         self.assertNotIn("Recently infected within 5 years", combined)
         self.assertNotIn("Remote infection only", combined)

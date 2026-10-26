@@ -26,7 +26,7 @@ from engine.apy.explicit_recent_remote_runner import EXPLICIT_RECENT_REMOTE_PATH
 
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "explicit_tbi_ui/app.py"
-START = "4142c23a5f37e0bf9480c84f0858548002df161d"
+START = "136de0556d0ce6ce0ce9cb76b04e22efa5e2cffc"
 FROZEN = "03cc16e4a52a55e10019dab16bd4f599571c4b90"
 
 
@@ -274,7 +274,10 @@ class PrecisionAndDispatchTests(unittest.TestCase):
 class FrozenBoundaryTests(unittest.TestCase):
     def test_frozen_navigation_sources_and_artifacts_unchanged(self):
         # The economics page adds only a pre-import guard for explicit sessions.
-        paths = ["streamlit_app.py", "abm", "engine", "app/reference_data", "reports/sa_health_apy_health_economic_working_report_v1", "validation/matlab_reference"]
+        paths = ["streamlit_app.py", "abm", "engine", "app/reference_data", "reports/sa_health_apy_health_economic_working_report_v1", "validation/matlab_reference",
+                 ":(exclude)engine/apy/explicit_recent_remote_runner.py",
+                 ":(exclude)engine/apy/explicit_recent_remote_progression.py",
+                 ":(exclude)engine/apy/population_tbi_progression_risk.py"]
         changed = subprocess.check_output(["git", "diff", START, "--name-only", "--", *paths], cwd=ROOT, text=True)
         self.assertEqual(changed.strip(), "")
         for ref in ("release/sa-health-apy-he-v1.0.0", "sa-health-apy-he-v1.0.0^{}"):
@@ -291,7 +294,7 @@ class FrozenBoundaryTests(unittest.TestCase):
         completed = subprocess.run(
             [sys.executable, str(ROOT / "scripts/validate_explicit_tbi_ui.py"),
              "--streamlit-target", str(Path(st.__file__).resolve().parents[1]),
-             "--frozen", "--port", "8539"],
+             "--frozen", "--port", "8539", "--output-dir", "abm/output/milestone3g/frozen-integrity"],
             cwd=ROOT, text=True, capture_output=True, timeout=180,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)

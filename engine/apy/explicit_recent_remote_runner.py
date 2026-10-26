@@ -47,6 +47,10 @@ from engine.apy.explicit_recent_remote_tbi import (
     sample_time_since_most_recent_event,
 )
 from engine.apy.regimen import regimen_partial_efficacy
+from engine.apy.population_tbi_progression_risk import (
+    ADJUSTMENT_FIELD, adjustment_for_runner, build_progression_risk_adjustment,
+    positive_multiplier, validate_progression_risk_adjustment,
+)
 
 
 EXPLICIT_RECENT_REMOTE_PATHWAY_ID = "explicit_recent_remote_tbi_v2"
@@ -127,6 +131,7 @@ def build_explicit_recent_remote_runner_config(
     baseline_active_tb_review_status: str = "not_configured",
     tpt_effect_policy_identifier: str = TPT_EFFECT_POLICY_PREVENTS_FUTURE_PROGRESSION,
     common_random_number_contract_identifier: str = COMMON_RANDOM_NUMBER_PAIRED_BASELINE,
+    progression_risk_adjustment: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     tbi_config = build_explicit_recent_remote_config(
         enabled=True,
@@ -156,6 +161,7 @@ def build_explicit_recent_remote_runner_config(
         contract_identifier=common_random_number_contract_identifier,
     )
     payload = {
+        ADJUSTMENT_FIELD: build_progression_risk_adjustment() if progression_risk_adjustment is None else validate_progression_risk_adjustment(progression_risk_adjustment),
         "contractVersion": EXPLICIT_RECENT_REMOTE_RUNNER_CONTRACT_VERSION,
         "pathwayIdentifier": EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
         "enabled": True,
@@ -278,6 +284,7 @@ def explicit_recent_remote_analysis_config(
     progression_curve_identifier: str = CURVE_CENTRAL_TIME_SINCE_INFECTION,
     reinfection_policy: str = REINFECTION_POLICY_RESET_CLOCK,
     mortality_policy: str = COMPETING_MORTALITY_NOT_MODELLED,
+    progression_risk_adjustment: Mapping[str, Any] | None = None,
     **overrides: Any,
 ) -> dict[str, Any]:
     runner_config = build_explicit_recent_remote_runner_config(
@@ -290,6 +297,7 @@ def explicit_recent_remote_analysis_config(
         progression_curve_identifier=progression_curve_identifier,
         reinfection_policy=reinfection_policy,
         mortality_policy=mortality_policy,
+        progression_risk_adjustment=progression_risk_adjustment,
         stochastic_seed=overrides.get("seed"),
         repetitions=overrides.get("nReps"),
         age85_plus_max=int(overrides.get("age85PlusMax") or AGE85_PLUS_MAX_DEFAULT),
@@ -521,7 +529,9 @@ def validate_explicit_recent_remote_runner_config(
         REINFECTION_POLICY_NO_RESET_CLOCK,
     }:
         raise ValueError("Unsupported reinfectionPolicy.")
-    return deepcopy(dict(payload))
+    validated = deepcopy(dict(payload))
+    validated[ADJUSTMENT_FIELD] = adjustment_for_runner(payload)
+    return validated
 
 
 def explicit_recent_remote_runner_config_json(payload: Mapping[str, Any]) -> str:
@@ -682,6 +692,7 @@ def build_explicit_recent_remote_runner_calibration(config: Mapping[str, Any]) -
             "remoteOnlyInfectionHazard",
         ],
         "explicitRecentRemoteRunnerConfig": runner_config,
+        ADJUSTMENT_FIELD: adjustment_for_runner(runner_config),
         "explicitRecentRemoteRunnerConfigHash": explicit_recent_remote_runner_config_hash(
             runner_config
         ),
@@ -787,6 +798,7 @@ def apply_explicit_recent_remote_population_assignment(
         progression_clock,
         curve,
         rng,
+        progression_hazard_multiplier=adjustment_for_runner(runner_config)["multiplier"],
     )
     probabilities = mutually_exclusive_state_probabilities(
         ages,
@@ -839,7 +851,9 @@ def sample_future_active_tb_time_from_curve(
     time_since_infection_at_baseline: float,
     rng: Any,
     tolerance: float = 1e-12,
+    progression_hazard_multiplier: float = 1.0,
 ) -> float:
+    multiplier = positive_multiplier(progression_hazard_multiplier)
     validated = validate_progression_curve_contract(curve)
     u = float(rng.random())
     if u <= 0.0:
@@ -853,7 +867,7 @@ def sample_future_active_tb_time_from_curve(
     target_hazard = time_since_curve_cumulative_hazard(
         validated,
         start_time,
-    ) - math.log1p(-u)
+    ) - math.log1p(-u) / multiplier
     lo = 0.0
     hi = 1.0
     while time_since_curve_cumulative_hazard(validated, start_time + hi) < target_hazard:
@@ -897,8 +911,10 @@ def active_tb_validation_only_for_runner(
         ascertainment_source=ascertainment_source,
         ascertainment_review_status=ascertainment_review_status,
         observation_model_id=observation_model_id,
+        progression_hazard_multiplier=adjustment_for_runner(calibration["explicitRecentRemoteRunnerConfig"])["multiplier"],
     )
     result["activeTBObservationPolicy"] = ACTIVE_TB_OBSERVATION_POLICY_VALIDATION_ONLY
+    result[ADJUSTMENT_FIELD] = adjustment_for_runner(calibration["explicitRecentRemoteRunnerConfig"])
     result["progressionCurveHash"] = progression_curve_hash(curve)
     return result
 
@@ -1058,6 +1074,7 @@ def build_explicit_epidemiology_replicate_summary(
     summary = {
         "contractVersion": EPIDEMIOLOGICAL_INTERVENTION_OUTPUT_CONTRACT_VERSION,
         "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
+        ADJUSTMENT_FIELD: adjustment_for_runner(validated),
         "replicateId": replicate_id,
         "replicateSeed": replicate_seed,
         "tptEffectPolicyIdentifier": validated["tptEffectPolicyIdentifier"],
@@ -1140,6 +1157,7 @@ def summarise_explicit_epidemiology_replicates(
         "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
         "available": True,
         "replicateCount": len(replicate_summaries),
+        ADJUSTMENT_FIELD: adjustment_for_runner(validated),
         "tptEffectPolicyIdentifier": validated["tptEffectPolicyIdentifier"],
         "tptEffectPolicyHash": validated["tptEffectPolicyHash"],
         "commonRandomNumberContractIdentifier": validated[
@@ -1551,6 +1569,7 @@ def deterministic_explicit_recent_remote_intervention_expectations(
         runner_config["tptEffectPolicy"]
     )
     curve = validate_progression_curve_contract(calibration["progressionCurve"])
+    risk_adjustment = adjustment_for_runner(runner_config)
     horizons = tuple(
         _finite_nonnegative_float(value, "horizons_years")
         for value in horizons_years
@@ -1668,6 +1687,15 @@ def deterministic_explicit_recent_remote_intervention_expectations(
                     remote_hazard,
                 ),
             )
+            if runner_config["reinfectionPolicy"] == REINFECTION_POLICY_NO_RESET_CLOCK:
+                # Recently reinfected people with remote history retain that
+                # remote clock; they remain in the recent prevalence group.
+                prior = float(p_recent_with_prior[idx])
+                state_components = (
+                    (STATE_RECENT, float(p_recent[idx]) - prior, 0.0, float(durations.recent_years[idx]), recent_hazard),
+                    (STATE_RECENT, prior, recent_window, float(durations.remote_years[idx]), remote_hazard),
+                    state_components[1],
+                )
             age_weight = at_risk_fraction * float(weights[idx])
             for state_name, state_probability, window_start, duration, hazard in state_components:
                 if state_probability <= 0.0:
@@ -1687,6 +1715,7 @@ def deterministic_explicit_recent_remote_intervention_expectations(
                     competing_survival_curve=competing_survival_curve,
                     competing_mortality_hazard=competing_mortality_hazard,
                     integration_steps=integration_steps,
+                    progression_hazard_multiplier=risk_adjustment["multiplier"],
                 )
                 scale = age_weight * state_probability
                 comparator_component = scale * moments["activeByHorizon"]
@@ -1796,6 +1825,7 @@ def deterministic_explicit_recent_remote_intervention_expectations(
     result = {
         "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
         "method": "deterministic_epidemiological_intervention_expected_value",
+        ADJUSTMENT_FIELD: risk_adjustment,
         "integrationMethod": DETERMINISTIC_INTERVENTION_INTEGRATION_METHOD,
         "infectionQuadraturePoints": q_infection,
         "screenQuadraturePoints": q_screen,
@@ -2211,6 +2241,7 @@ def deterministic_explicit_recent_remote_expectations(
         calibration["explicitRecentRemoteRunnerConfig"]
     )
     curve = validate_progression_curve_contract(calibration["progressionCurve"])
+    risk_adjustment = adjustment_for_runner(runner_config)
     policy = str(reinfection_policy or runner_config["reinfectionPolicy"])
     if policy not in {REINFECTION_POLICY_RESET_CLOCK, REINFECTION_POLICY_NO_RESET_CLOCK}:
         raise ValueError("Unsupported reinfection_policy.")
@@ -2290,6 +2321,7 @@ def deterministic_explicit_recent_remote_expectations(
                     competing_survival_curve=competing_survival_curve,
                     competing_mortality_hazard=competing_mortality_hazard,
                     integration_steps=integration_steps,
+                    progression_hazard_multiplier=risk_adjustment["multiplier"],
                 ),
             )
             remote_expectation = _conditional_time_expectation(
@@ -2305,6 +2337,7 @@ def deterministic_explicit_recent_remote_expectations(
                     competing_survival_curve=competing_survival_curve,
                     competing_mortality_hazard=competing_mortality_hazard,
                     integration_steps=integration_steps,
+                    progression_hazard_multiplier=risk_adjustment["multiplier"],
                 ),
             )
             if policy == REINFECTION_POLICY_NO_RESET_CLOCK:
@@ -2381,6 +2414,7 @@ def deterministic_explicit_recent_remote_expectations(
     return {
         "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
         "method": "deterministic_expected_value",
+        ADJUSTMENT_FIELD: risk_adjustment,
         "integrationMethod": DETERMINISTIC_INFECTION_TIME_INTEGRATION_METHOD,
         "quadraturePoints": q_points,
         "usesMeanTimeSinceInfection": False,
@@ -2528,6 +2562,7 @@ def stochastic_explicit_recent_remote_natural_history(
     return {
         "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID,
         "method": STOCHASTIC_NATURAL_HISTORY_METHOD,
+        ADJUSTMENT_FIELD: adjustment_for_runner(calibration["explicitRecentRemoteRunnerConfig"]),
         "populationSize": n,
         "seed": None if seed is None else int(seed),
         "mortalityDrawsUsed": mortality_draws_used,
@@ -2809,6 +2844,7 @@ def _infected_intervention_moments(
     competing_survival_curve: Any,
     competing_mortality_hazard: Any,
     integration_steps: int,
+    progression_hazard_multiplier: float = 1.0,
 ) -> dict[str, float]:
     def by_clock(clock: float) -> dict[str, float]:
         active_by_horizon = _progression_probability_for_clock(
@@ -2819,6 +2855,7 @@ def _infected_intervention_moments(
             competing_survival_curve=competing_survival_curve,
             competing_mortality_hazard=competing_mortality_hazard,
             integration_steps=integration_steps,
+            progression_hazard_multiplier=progression_hazard_multiplier,
         )
 
         def by_screen(screen_time: float) -> dict[str, float]:
@@ -2830,6 +2867,7 @@ def _infected_intervention_moments(
                 competing_survival_curve=competing_survival_curve,
                 competing_mortality_hazard=competing_mortality_hazard,
                 integration_steps=integration_steps,
+                progression_hazard_multiplier=progression_hazard_multiplier,
             )
             latent_at_screen = max(0.0, 1.0 - active_before_screen)
             prevented = 0.0
@@ -2849,6 +2887,7 @@ def _infected_intervention_moments(
                     competing_survival_curve=competing_survival_curve,
                     competing_mortality_hazard=competing_mortality_hazard,
                     integration_steps=integration_steps,
+                    progression_hazard_multiplier=progression_hazard_multiplier,
                 )
                 after_screen_before_effective += path_probability * max(
                     0.0,
@@ -3029,6 +3068,7 @@ def _attach_explicit_targeting_scores(
             curve,
             time_since_infection_at_baseline=float(clocks[idx]),
             horizon_years=follow_horizon,
+            progression_hazard_multiplier=adjustment_for_runner(runner_config)["multiplier"],
         )
     population["ltbiRiskScore"] = p_tbi
     population["cureTargetScore"] = p_tbi
@@ -3040,6 +3080,8 @@ def _draw_active_times_from_progression_curve(
     progression_clock: np.ndarray,
     curve: Mapping[str, Any],
     rng: Any,
+    *,
+    progression_hazard_multiplier: float = 1.0,
 ) -> np.ndarray:
     t_active = np.full(len(states), np.inf, dtype=float)
     infected_idx = np.flatnonzero(
@@ -3050,6 +3092,7 @@ def _draw_active_times_from_progression_curve(
             curve,
             time_since_infection_at_baseline=float(progression_clock[idx]),
             rng=rng,
+            progression_hazard_multiplier=progression_hazard_multiplier,
         )
     return t_active
 
@@ -3107,12 +3150,14 @@ def _progression_probability_for_clock(
     competing_survival_curve: Any,
     competing_mortality_hazard: Any,
     integration_steps: int,
+    progression_hazard_multiplier: float = 1.0,
 ) -> float:
     if competing_survival_curve is None and competing_mortality_hazard is None:
         return time_since_curve_conditional_future_progression_probability(
             curve,
             time_since_infection_at_baseline=clock,
             horizon_years=horizon,
+            progression_hazard_multiplier=progression_hazard_multiplier,
         )
     if competing_survival_curve is not None:
         result = competing_risk_progression_probability_for_curve(
@@ -3124,6 +3169,7 @@ def _progression_probability_for_clock(
                 age,
             ),
             integration_steps=integration_steps,
+            progression_hazard_multiplier=progression_hazard_multiplier,
         )
         return float(result["cumulativeIncidence"])
     if callable(competing_mortality_hazard):
@@ -3136,6 +3182,7 @@ def _progression_probability_for_clock(
                 age,
             ),
             integration_steps=integration_steps,
+            progression_hazard_multiplier=progression_hazard_multiplier,
         )
         return float(result["cumulativeIncidence"])
     result = competing_risk_progression_probability_for_curve(
@@ -3144,6 +3191,7 @@ def _progression_probability_for_clock(
         horizon_years=horizon,
         competing_mortality_hazard=competing_mortality_hazard,
         integration_steps=integration_steps,
+        progression_hazard_multiplier=progression_hazard_multiplier,
     )
     return float(result["cumulativeIncidence"])
 

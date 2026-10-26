@@ -569,7 +569,11 @@ class ExplicitTBIStreamlitRenderedTests(unittest.TestCase):
             wraps=deterministic_explicit_recent_remote_intervention_expectations,
         ) as deterministic_dispatch:
             next(button for button in app.button if button.label == "Run explicit TBI analysis").click().run(timeout=180)
-        self.assertEqual(deterministic_dispatch.call_count, 1)
+        # One workflow dispatch contains the selected projection and one
+        # explicitly labelled analytical standard-risk sensitivity calculation.
+        self.assertEqual(deterministic_dispatch.call_count, 2)
+        from app.explicit_tbi_session import DISPATCH_COUNT_KEY
+        self.assertEqual(app.session_state[DISPATCH_COUNT_KEY], 1)
         self.assertFalse(app.exception)
         self.assertIn(APP_RESULT_KEY, app.session_state)
         result = app.session_state[APP_RESULT_KEY]

@@ -8,8 +8,9 @@ from typing import Any
 
 from app.explicit_tbi_workflow import (
     EXPLICIT_RECENT_REMOTE_PATHWAY_ID, WORKFLOW_PAGES, STOCHASTIC_LABEL,
-    default_workflow_state, discard_incompatible_result,
+    default_workflow_state, discard_incompatible_result, PROGRESSION_RISK_LABELS,
 )
+from engine.apy.population_tbi_progression_risk import CONTRACT_VERSION
 
 PREFIX = "explicit_tbi_ui_v1:"
 SCHEMA_KEY = PREFIX + "schema"
@@ -23,7 +24,7 @@ RENDER_TIMING_KEY = PREFIX + "render_seconds"
 INPUT_ERRORS_KEY = PREFIX + "input_errors"
 POPULATION_DRAFT_KEY = PREFIX + "population_draft"
 WIDGET_PREFIX = PREFIX + "widget:"
-SCHEMA = {"version": 1, "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID}
+SCHEMA = {"version": 2, "analysisPathway": EXPLICIT_RECENT_REMOTE_PATHWAY_ID, "progressionRiskContract": CONTRACT_VERSION}
 OWN_KEYS = {
     SCHEMA_KEY, STATE_KEY, RESULT_KEY, STALE_KEY, PAGE_KEY, WIDGET_VERSION_KEY,
     DISPATCH_COUNT_KEY, RENDER_TIMING_KEY, INPUT_ERRORS_KEY, POPULATION_DRAFT_KEY,
@@ -55,6 +56,7 @@ def initialize_explicit_session(session: MutableMapping[str, Any]) -> bool:
         valid_state = valid_state and state.get("analysisMethod") in (
             defaults["analysisMethod"], STOCHASTIC_LABEL,
         )
+        valid_state = valid_state and state.get("progressionRiskMode") in PROGRESSION_RISK_LABELS
     reset = bool(foreign_keys) or session.get(SCHEMA_KEY) != SCHEMA or not valid_state
     rejected = bool(foreign_keys) or (STATE_KEY in session and reset)
     if reset:
