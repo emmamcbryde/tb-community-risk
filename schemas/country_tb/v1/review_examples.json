@@ -1,0 +1,609 @@
+{
+  "baseline_population": {
+    "artifact_id": "example:baseline_population",
+    "contract_version": "1.0.0",
+    "geography_id": "custom:architecture-example",
+    "hashes": {
+      "calibration": "0000000000000000000000000000000000000000000000000000000000000000",
+      "configuration": "0000000000000000000000000000000000000000000000000000000000000000",
+      "data": "0000000000000000000000000000000000000000000000000000000000000000",
+      "demography": "0000000000000000000000000000000000000000000000000000000000000000",
+      "geography": "0000000000000000000000000000000000000000000000000000000000000000",
+      "risk_factor_prevalence": "0000000000000000000000000000000000000000000000000000000000000000",
+      "tbi_profile": "0000000000000000000000000000000000000000000000000000000000000000",
+      "tbi_risk_association": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "infection_clock_semantics": "most_recent_acquisition_or_reinfection",
+    "n_records": 1,
+    "parameter_draw_id": "example:unfitted",
+    "people": [
+      {
+        "age_years": 30,
+        "any_risk_factor": null,
+        "clinical_state": {
+          "active_tb_status": "unknown",
+          "infectiousness": null,
+          "prior_tb_status": "unknown",
+          "treatment_status": "unknown"
+        },
+        "eligibility_reason": "Future scope unresolved",
+        "first_infection_time": null,
+        "medical_risk_factors": {
+          "cxr_fibronodular": "unknown",
+          "cxr_granuloma": "unknown",
+          "diabetes": "unknown",
+          "haemodialysis": "unknown",
+          "head_neck_carcinoma": "unknown",
+          "heavy_smoking": "unknown",
+          "hiv": "unknown",
+          "silicosis": "unknown",
+          "tnf_inhibitor": "unknown",
+          "transplant_immunosuppression": "unknown",
+          "underweight": "unknown"
+        },
+        "mortality_input_id": null,
+        "most_recent_infection_time": null,
+        "person_id": "example:person-1",
+        "progression_risk": {
+          "effect_measure": "unresolved",
+          "multiplier": null,
+          "policy": "pending_review",
+          "reference_population_id": null,
+          "review_status": "not_reviewed"
+        },
+        "screening_eligibility": "unknown",
+        "sex": "unknown",
+        "tbi_state": "unresolved",
+        "time_since_infection_years": null,
+        "weight": 100
+      }
+    ],
+    "population_size": 100,
+    "provenance": [
+      {
+        "locator": "urn:country-tb:invented-test-data",
+        "review_status": "not_reviewed",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "source_id": "example:invented",
+        "source_vintage": "invented-2026-10-27",
+        "terms_status": "invented_example_only",
+        "transformation_rules": [
+          "Invented structural test values; not evidence."
+        ]
+      }
+    ],
+    "readiness": {
+      "dynamic": false,
+      "issues": [
+        "Structural example; not calibrated or representative; placeholder hashes"
+      ],
+      "static": false
+    },
+    "realization_seed": 1,
+    "recent_window_years": 2,
+    "reference_time": 2024,
+    "rng_algorithm": "not_generated",
+    "schema_id": "country_tb.baseline_population.v1"
+  },
+  "demography": {
+    "allocation_rule": null,
+    "artifact_id": "example:demography",
+    "contract_version": "1.0.0",
+    "geographic_status": "user_defined",
+    "geography_id": "custom:architecture-example",
+    "native_age_resolution": "grouped",
+    "oldest_age_rule": "Open 65+ tail unresolved; cannot generate ages",
+    "population_size": 100,
+    "provenance": [
+      {
+        "locator": "urn:country-tb:invented-test-data",
+        "review_status": "not_reviewed",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "source_id": "example:invented",
+        "source_vintage": "invented-2026-10-27",
+        "terms_status": "invented_example_only",
+        "transformation_rules": [
+          "Invented structural test values; not evidence."
+        ]
+      }
+    ],
+    "reference_year": 2024,
+    "rows": [
+      {
+        "age_lower": 0,
+        "age_upper_exclusive": 5,
+        "count": 10,
+        "sex": "all"
+      },
+      {
+        "age_lower": 5,
+        "age_upper_exclusive": 15,
+        "count": 20,
+        "sex": "all"
+      },
+      {
+        "age_lower": 15,
+        "age_upper_exclusive": 45,
+        "count": 30,
+        "sex": "all"
+      },
+      {
+        "age_lower": 45,
+        "age_upper_exclusive": 65,
+        "count": 25,
+        "sex": "all"
+      },
+      {
+        "age_lower": 65,
+        "age_upper_exclusive": null,
+        "count": 15,
+        "sex": "all"
+      }
+    ],
+    "schema_id": "country_tb.demography.v1",
+    "sex_availability": "all_sexes_only",
+    "source_population_size": 100
+  },
+  "geography": {
+    "artifact_id": "example:geography",
+    "boundary_vintage": "invented-v1",
+    "contract_version": "1.0.0",
+    "country_iso3": null,
+    "geography_id": "custom:architecture-example",
+    "kind": "custom",
+    "name": "Invented architecture example",
+    "parent_country_iso3": "AUS",
+    "population_definition": "Invented test population; no policy use",
+    "provenance": [
+      {
+        "locator": "urn:country-tb:invented-test-data",
+        "review_status": "not_reviewed",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "source_id": "example:invented",
+        "source_vintage": "invented-2026-10-27",
+        "terms_status": "invented_example_only",
+        "transformation_rules": [
+          "Invented structural test values; not evidence."
+        ]
+      }
+    ],
+    "reference_year": 2024,
+    "schema_id": "country_tb.geography.v1"
+  },
+  "incidence_history": {
+    "artifact_id": "example:incidence_history",
+    "contract_version": "1.0.0",
+    "geography_id": "custom:architecture-example",
+    "mode": "local_replacement",
+    "provenance": [
+      {
+        "locator": "urn:country-tb:invented-test-data",
+        "review_status": "not_reviewed",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "source_id": "example:invented",
+        "source_vintage": "invented-2026-10-27",
+        "terms_status": "invented_example_only",
+        "transformation_rules": [
+          "Invented structural test values; not evidence."
+        ]
+      }
+    ],
+    "quantity": "tb_disease_incidence",
+    "report_year": 2025,
+    "rows": [
+      {
+        "ascertainment_notes": "Invented estimate, not notifications",
+        "case_definition": "invented all-form TB",
+        "incidence_per_100k": {
+          "lower": null,
+          "state": "value",
+          "unit": "per_100000_person_year",
+          "upper": null,
+          "value": 5
+        },
+        "incident_cases": {
+          "lower": null,
+          "state": "value",
+          "unit": "cases_per_year",
+          "upper": null,
+          "value": 0.005
+        },
+        "population": 100,
+        "year": 2024
+      }
+    ],
+    "scale_factors": [],
+    "schema_id": "country_tb.incidence_history.v1",
+    "source_data_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "source_snapshot_id": null
+  },
+  "risk_factor_prevalence": {
+    "artifact_id": "example:risk_factor_prevalence",
+    "contract_version": "1.0.0",
+    "definition_registry_id": "tstin3d_candidates_m1",
+    "denominator": "non_active_tb_population",
+    "geography_id": "custom:architecture-example",
+    "provenance": [
+      {
+        "locator": "urn:country-tb:invented-test-data",
+        "review_status": "not_reviewed",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "source_id": "example:invented",
+        "source_vintage": "invented-2026-10-27",
+        "terms_status": "invented_example_only",
+        "transformation_rules": [
+          "Invented structural test values; not evidence."
+        ]
+      }
+    ],
+    "reference_year": 2024,
+    "rows": [
+      {
+        "age_lower": 0,
+        "age_upper_exclusive": 5,
+        "factor_id": "diabetes",
+        "geographic_status": "user_defined",
+        "lower_percent": null,
+        "reason": null,
+        "review_status": "not_reviewed",
+        "sex": "all",
+        "source_ids": [
+          "example:invented"
+        ],
+        "state": "value",
+        "upper_percent": null,
+        "value_percent": 0
+      },
+      {
+        "age_lower": 5,
+        "age_upper_exclusive": 15,
+        "factor_id": "diabetes",
+        "geographic_status": "user_defined",
+        "lower_percent": null,
+        "reason": null,
+        "review_status": "not_reviewed",
+        "sex": "all",
+        "source_ids": [
+          "example:invented"
+        ],
+        "state": "value",
+        "upper_percent": null,
+        "value_percent": 0
+      },
+      {
+        "age_lower": 15,
+        "age_upper_exclusive": 45,
+        "factor_id": "diabetes",
+        "geographic_status": "user_defined",
+        "lower_percent": null,
+        "reason": null,
+        "review_status": "not_reviewed",
+        "sex": "all",
+        "source_ids": [
+          "example:invented"
+        ],
+        "state": "value",
+        "upper_percent": null,
+        "value_percent": 5
+      },
+      {
+        "age_lower": 45,
+        "age_upper_exclusive": 65,
+        "factor_id": "diabetes",
+        "geographic_status": "user_defined",
+        "lower_percent": null,
+        "reason": null,
+        "review_status": "not_reviewed",
+        "sex": "all",
+        "source_ids": [
+          "example:invented"
+        ],
+        "state": "value",
+        "upper_percent": null,
+        "value_percent": 10
+      },
+      {
+        "age_lower": 65,
+        "age_upper_exclusive": null,
+        "factor_id": "diabetes",
+        "geographic_status": "user_defined",
+        "lower_percent": null,
+        "reason": null,
+        "review_status": "not_reviewed",
+        "sex": "all",
+        "source_ids": [
+          "example:invented"
+        ],
+        "state": "value",
+        "upper_percent": null,
+        "value_percent": 20
+      }
+    ],
+    "schema_id": "country_tb.risk_factor_prevalence.v1"
+  },
+  "tbi_profile": {
+    "artifact_id": "example:tbi_profile",
+    "calibration": {
+      "backcast": "constant_earliest",
+      "backcast_provenance_id": "example:invented",
+      "calibration_id": "example:unfitted",
+      "history_start_year": 1900,
+      "natural_history_id": "example:unreviewed",
+      "parameter_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "recent_window_years": 2,
+      "status": "not_fitted"
+    },
+    "contract_version": "1.0.0",
+    "denominator": "non_active_tb_population",
+    "geography_id": "custom:architecture-example",
+    "mode": "model_estimated",
+    "provenance": [
+      {
+        "locator": "urn:country-tb:invented-test-data",
+        "review_status": "not_reviewed",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "source_id": "example:invented",
+        "source_vintage": "invented-2026-10-27",
+        "terms_status": "invented_example_only",
+        "transformation_rules": [
+          "Invented structural test values; not evidence."
+        ]
+      }
+    ],
+    "reference_year": 2024,
+    "rows": [
+      {
+        "age_lower": 0,
+        "age_upper_exclusive": 5,
+        "derivation": "Invented profile; not a calibration",
+        "lower_total": null,
+        "observed_total": {
+          "lower": null,
+          "state": "missing",
+          "unit": "proportion",
+          "upper": null,
+          "value": null
+        },
+        "recent": 0.01,
+        "remote": 0.01,
+        "residual": null,
+        "sex": "all",
+        "standardized_residual": null,
+        "total": 0.02,
+        "uncertainty_kind": "not_quantified",
+        "uninfected": 0.98,
+        "upper_total": null
+      },
+      {
+        "age_lower": 5,
+        "age_upper_exclusive": 15,
+        "derivation": "Invented profile; not a calibration",
+        "lower_total": null,
+        "observed_total": {
+          "lower": null,
+          "state": "missing",
+          "unit": "proportion",
+          "upper": null,
+          "value": null
+        },
+        "recent": 0.01,
+        "remote": 0.04,
+        "residual": null,
+        "sex": "all",
+        "standardized_residual": null,
+        "total": 0.05,
+        "uncertainty_kind": "not_quantified",
+        "uninfected": 0.95,
+        "upper_total": null
+      },
+      {
+        "age_lower": 15,
+        "age_upper_exclusive": 45,
+        "derivation": "Invented profile; not a calibration",
+        "lower_total": null,
+        "observed_total": {
+          "lower": null,
+          "state": "missing",
+          "unit": "proportion",
+          "upper": null,
+          "value": null
+        },
+        "recent": 0.01,
+        "remote": 0.13999999999999999,
+        "residual": null,
+        "sex": "all",
+        "standardized_residual": null,
+        "total": 0.15,
+        "uncertainty_kind": "not_quantified",
+        "uninfected": 0.85,
+        "upper_total": null
+      },
+      {
+        "age_lower": 45,
+        "age_upper_exclusive": 65,
+        "derivation": "Invented profile; not a calibration",
+        "lower_total": null,
+        "observed_total": {
+          "lower": null,
+          "state": "missing",
+          "unit": "proportion",
+          "upper": null,
+          "value": null
+        },
+        "recent": 0.01,
+        "remote": 0.29,
+        "residual": null,
+        "sex": "all",
+        "standardized_residual": null,
+        "total": 0.3,
+        "uncertainty_kind": "not_quantified",
+        "uninfected": 0.7,
+        "upper_total": null
+      },
+      {
+        "age_lower": 65,
+        "age_upper_exclusive": null,
+        "derivation": "Invented profile; not a calibration",
+        "lower_total": null,
+        "observed_total": {
+          "lower": null,
+          "state": "missing",
+          "unit": "proportion",
+          "upper": null,
+          "value": null
+        },
+        "recent": 0.01,
+        "remote": 0.39,
+        "residual": null,
+        "sex": "all",
+        "standardized_residual": null,
+        "total": 0.4,
+        "uncertainty_kind": "not_quantified",
+        "uninfected": 0.6,
+        "upper_total": null
+      }
+    ],
+    "schema_id": "country_tb.tbi_profile.v1"
+  },
+  "tbi_risk_association": {
+    "age_driven_covariance": 0.00831,
+    "artifact_id": "example:tbi_risk_association",
+    "contract_version": "1.0.0",
+    "denominator": "non_active_tb_population",
+    "factor_allocation_policy": "independent_age_patterns_then_union_coupling",
+    "geography_id": "custom:architecture-example",
+    "method": "frechet_piecewise_overlap_v1",
+    "overall": {
+      "any_risk_prevalence": 0.07,
+      "cells": {
+        "neither": 0.75975,
+        "risk_only": 0.04825,
+        "tbi_and_risk": 0.02175,
+        "tbi_only": 0.17025
+      },
+      "maximum_overlap": 0.07,
+      "minimum_overlap": 0.0,
+      "overlap": 0.02175,
+      "phi": 0.08269023663636121,
+      "phi_status": "defined",
+      "tbi_prevalence": 0.192
+    },
+    "provenance": [
+      {
+        "locator": "urn:country-tb:invented-test-data",
+        "review_status": "not_reviewed",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "source_id": "example:invented",
+        "source_vintage": "invented-2026-10-27",
+        "terms_status": "invented_example_only",
+        "transformation_rules": [
+          "Invented structural test values; not evidence."
+        ]
+      }
+    ],
+    "rows": [
+      {
+        "age_lower": 0,
+        "age_upper_exclusive": 5,
+        "any_risk_prevalence": 0.0,
+        "cells": {
+          "neither": 0.98,
+          "risk_only": 0.0,
+          "tbi_and_risk": 0.0,
+          "tbi_only": 0.02
+        },
+        "maximum_overlap": 0.0,
+        "minimum_overlap": 0.0,
+        "overlap": 0.0,
+        "phi": null,
+        "phi_status": "undefined_degenerate_marginal",
+        "requested_alpha": 0.0,
+        "sex": "all",
+        "tbi_prevalence": 0.02,
+        "weight": 0.1
+      },
+      {
+        "age_lower": 5,
+        "age_upper_exclusive": 15,
+        "any_risk_prevalence": 0.0,
+        "cells": {
+          "neither": 0.95,
+          "risk_only": 0.0,
+          "tbi_and_risk": 0.0,
+          "tbi_only": 0.05
+        },
+        "maximum_overlap": 0.0,
+        "minimum_overlap": 0.0,
+        "overlap": 0.0,
+        "phi": null,
+        "phi_status": "undefined_degenerate_marginal",
+        "requested_alpha": 0.0,
+        "sex": "all",
+        "tbi_prevalence": 0.05,
+        "weight": 0.2
+      },
+      {
+        "age_lower": 15,
+        "age_upper_exclusive": 45,
+        "any_risk_prevalence": 0.05,
+        "cells": {
+          "neither": 0.8075,
+          "risk_only": 0.0425,
+          "tbi_and_risk": 0.0075,
+          "tbi_only": 0.1425
+        },
+        "maximum_overlap": 0.05,
+        "minimum_overlap": 0.0,
+        "overlap": 0.0075,
+        "phi": 0.0,
+        "phi_status": "defined",
+        "requested_alpha": 0.0,
+        "sex": "all",
+        "tbi_prevalence": 0.15,
+        "weight": 0.3
+      },
+      {
+        "age_lower": 45,
+        "age_upper_exclusive": 65,
+        "any_risk_prevalence": 0.1,
+        "cells": {
+          "neither": 0.63,
+          "risk_only": 0.07,
+          "tbi_and_risk": 0.03,
+          "tbi_only": 0.27
+        },
+        "maximum_overlap": 0.1,
+        "minimum_overlap": 0.0,
+        "overlap": 0.03,
+        "phi": 0.0,
+        "phi_status": "defined",
+        "requested_alpha": 0.0,
+        "sex": "all",
+        "tbi_prevalence": 0.3,
+        "weight": 0.25
+      },
+      {
+        "age_lower": 65,
+        "age_upper_exclusive": null,
+        "any_risk_prevalence": 0.2,
+        "cells": {
+          "neither": 0.48,
+          "risk_only": 0.12,
+          "tbi_and_risk": 0.08,
+          "tbi_only": 0.32
+        },
+        "maximum_overlap": 0.2,
+        "minimum_overlap": 0.0,
+        "overlap": 0.08,
+        "phi": 0.0,
+        "phi_status": "defined",
+        "requested_alpha": 0.0,
+        "sex": "all",
+        "tbi_prevalence": 0.4,
+        "weight": 0.15
+      }
+    ],
+    "schema_id": "country_tb.tbi_risk_association.v1",
+    "within_age_covariance": 0.0
+  }
+}
