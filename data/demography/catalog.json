@@ -1,0 +1,9 @@
+{
+  "schema_id": "country_tb.demography_catalog.v1",
+  "policy_version": "country_tb_source_hierarchy_1.0.0",
+  "snapshot_ids": [
+    "abs-erp-jun2024-07ca11bcb092",
+    "un-wpp2024-medium-8028a7a3e163"
+  ],
+  "selection": "Explicit frozen IDs. Source ranking is geographical and reviewed; never use file order."
+}

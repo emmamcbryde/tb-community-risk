@@ -1,6 +1,8 @@
 # Country and subnational TB model architecture review
 
-Milestone 1 defines a shared baseline population, scientific boundaries and evidence requirements for a general TB screening and preventive-treatment model. It does not implement a projection engine or an intervention. The model is for planning and sequencing, not for denying care.
+Milestone 2A implements the frozen incidence and demographic data layer. The model is for planning and sequencing, not for denying care. The original Milestone 1 architecture remains below as the scientific boundary; no projection engine or intervention is connected.
+
+Current review: [data contracts](data_layer_contracts.md), [duplicate forensics](duplicate_forensics.md), [source policy](demographic_source_policy.md), [annual updates](annual_data_updates.md), [worked examples](worked_examples_2a.md), and [current milestone status](MILESTONE_STATUS.md).
 
 Review the [architecture](architecture.md), then the [infection identifiability note](incidence_to_infection.md), [association mathematics](association.md), and [versioned contracts](schemas.md). The [implementation plan](implementation_plan.md) lists decisions required before executable modelling.
 

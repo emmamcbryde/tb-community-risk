@@ -1,45 +1,51 @@
 # Country and subnational TB milestone status
 
-Updated 2026-10-27. This file is the replaceable current milestone record; later milestones should replace its contents while retaining historical records in Git.
+Updated 2026-10-27. This file replaces the Milestone 1 status; historical versions remain in Git.
 
 ## Current milestone
 
-Milestone 1 architecture, evidence and data boundaries is complete for review. Scientific assumptions are proposed and require review; no country model has been calibrated or approved for analysis.
+Milestone 2A frozen incidence and demographic data loaders is implemented and validated, ready for a data-layer recheck. No infection-pressure/TBI model, individual synthetic population, projection, intervention, economics or production app is implemented.
 
-All ten requested deliverables are indexed in [README.md](README.md). Seven proposed contracts share version 1.0.0 and schema IDs country_tb.geography.v1, country_tb.incidence_history.v1, country_tb.demography.v1, country_tb.tbi_profile.v1, country_tb.risk_factor_prevalence.v1, country_tb.tbi_risk_association.v1 and country_tb.baseline_population.v1.
+## Trusted data layer
 
-The only executable additions are isolated validation, canonical hashing, age reconciliation and Fréchet/phi mathematics. They do not construct or project a population. The seven structural examples use invented data and placeholder hashes, with static and dynamic readiness both false.
+- Strict explicit-ID offline WHO loader: GTR 2025, observations 2000?2024, baseline 2024, 5,347 rows and 217 countries/areas. No fixture fallback.
+- Country/territory index retains stable identifiers, display names, WHO region, years, completeness and warnings.
+- Incidence modes: national_who_snapshot, subnational_scaled, subnational_user_series, custom_population_series. User numerators/denominators/rates and notification status are preserved.
+- Demographic complete key retains source/vintage, geography/level, year, estimate/projection status, scenario, sex, age bounds, unit and population measure.
+- Source ranking: reviewed user, ABS for Australia, UN WPP, documented fallback. Tied vintages require explicit choice.
+- Australia uses the exact ABS 2024 national estimate. Viet Nam and other supported countries use UN WPP 2024 Medium; its 2024 value is explicitly a projection.
+- Female/male remain separate. Published both-sex rows are audit-only when both sexes exist. Both-only/unknown sources remain visibly limited.
+- Immutable imports, source/evidence/transformed checksums, deterministic scientific hashes, exact decimal aggregation and original-snapshot restoration are implemented.
+- Medium is the default supplied projection scenario after 2024. Frozen WPP coverage ends in 2030; later years fail without an explicit new import.
 
-## Evidence and data decisions
+## Duplicate forensic result
 
-Use the already frozen national disease-incidence snapshot who-gtb2025-incidence-6997e3b087d2, report round 2025, estimate years 2000–2024, downloaded 2026-09-24. It contains 217 countries/areas and is distinct from the eight-code test fixture. The future production loader must refuse fixture fallback and bind the expected identity.
+Original file unchanged: 21,917 rows, SHA-256 e51101fa3f5054b9aeb11999d38f6b39a3b0ab4625daa00c5c7fd52e77e535d4.
 
-The WHO sibling main branch at 666088cac1e20dd1e9e52016ea857a9c48e0ba8d was audited read-only, including binary incidence, age/sex, population and risk outputs. It is not a fully reproducible or licensed code dependency for this architecture.
+There are 1,111 duplicate groups involving 2,323 rows and 1,212 excess rows. Ten countries contribute 101 excess rows each; VCT contributes 202. Every observed duplicate is an identical full-row repeat, with zero numerical discrepancy. Other categories have no established groups.
 
-Demography needs a new frozen reviewed source boundary. The legacy 2021 cache has 1,212 duplicate country/year/age keys, no sex column and insufficient source-vintage/oldest-age metadata. No demographic default was selected.
+The quarantined view has 20,705 unique legacy keys. The exact upstream generator/revision and sex semantics remain unresolved. No cache record is promoted to an active 2024 profile.
 
-TSTin3D's eleven requested values remain candidate effects, sensitivity-only pending contemporary review. Adult values are not applied to children. Its present script sums selected medical values; that behavior is audited, not adopted. Proposed highest-applicable combination needs review and sensitivity policies.
+## Validation and outputs
 
-## Validation
+139 focused tests passed in 116.65 seconds, including new data/duplicate/provenance/protection checks and relevant existing WHO/profile tests. Compilation, preview schemas/hashes, local links and Git whitespace checks passed. See milestone2a_validation.md for commands, earlier corrected failures and source/profile hashes.
 
-- New focused contract/math/isolation tests: 57 passed.
-- Existing focused WHO snapshot/import tests: 18 passed.
-- Commands: python -m pytest -q tests/country_tb tests/test_general_who_incidence.py -p no:cacheprovider.
-- Combined result: 75 passed in 2.92 seconds with Python 3.12.4, pytest 7.4.4 and jsonschema 4.19.2. jsonschema is a test-only dependency; the new engine prototype uses only the standard library and frozen production requirements were not changed.
-- Windows sandbox reruns encountered four temporary-directory permission errors in existing WHO tests. The successful combined run used the same tests outside the sandbox with process-local tempfile.tempdir set under abm/output/country_tb_m1_audit/test_tmp_elevated. No tests were weakened or changed to bypass those failures.
-- Structural schema and all seven examples validate locally; source/provenance round-trips and canonical hash behavior are covered.
-- New Python/JSON syntax, local-document links, selected WHO snapshot identity/coverage/checksum transcription and absence of pre-existing tracked-file changes passed. Before commit, all protected HEADs, tracked diffs, untracked-content hashes and all local branch/tag refs matched the starting receipt.
+Read-only preview folders under abm/output/country_tb_m2a_preview:
 
-No full suite, simulation, MATLAB validation run, Starsim run or production Streamlit workflow was started. None is needed for these isolated Python/schema and documentation additions.
+- AUS-f61fc25afb90
+- VNM-cc13e19cc3c1
+- PRK-de1392b6cfc8
 
-## Protected state
+Baseline totals are 27,204,809; 100,987,682; and 26,498,835 respectively. PRK incidence remains missing and visibly unavailable. Machine-readable duplicate and WPP reconciliation audits are committed under data/demography.
 
-No pre-existing tracked file, application entry point, runner, MATLAB source, frozen artifact or WHO source was changed. No code was copied or cherry-picked. Other worktrees retain their starting HEADs and user changes; their initial dirtiness is documented in [git_audit.md](git_audit.md).
+## Contracts and protection
 
-The only branch authorized to advance is feature/country-subnational-tb-model-v1. The delivery response records the resulting commit and push/clean-tree status without creating a self-referential commit-hash field in this file.
+Executable profiles use contract revision 1.1.0 and loader country_tb_data_loader_1.0.0. Family IDs are country_tb.incidence_history.v1, country_tb.demography.v1 and country_tb.baseline_data_profile.v1. The archived 1.0.0 proposal is not silently migrated.
 
-## Open scientific decisions and next milestone
+Protected worktree fingerprints and refs matched the starting receipt before commit. Frozen SA Health artifacts, unfinished explicit-TBI changes, the generic model, Starsim, WHO sibling, MATLAB and deployed apps were not modified. The only new CLI is an isolated data export. The final response records commit, push and post-push protection/clean-state checks.
 
-Resolve pre-WHO backcasts; incidence-trend elasticity and discrepancy; child/adult and recency-dependent natural history; test-positive versus infection-state calibration; reinfection/clearance; historical HIV/medical factors; demographic revision, migration, mortality and oldest ages; medical effect transport/combination; multimorbidity constraints; active/prior-TB initialization; and source-rights questions.
+## Unresolved issues and Milestone 2B
 
-Recommended Milestone 2 is frozen incidence/demography loaders and cross-artifact semantic validation, alongside the scientific calibration design. Screening, projection integration, economics and production pages remain outside that scope.
+Data limits: legacy cache lineage; year rules beyond the reviewed nearest-year proxy; coverage beyond 2030; additional variants/subnational ABS snapshots; and the existing WHO terms clarification. The full original WPP archive is preserved locally; selected native rows and transformed inputs are versioned in Git.
+
+Recommended Milestone 2B: independently recheck frozen source/year semantics, then approve child/adult natural-history evidence, recency/reinfection/clearance, pre-WHO histories, assay/TBI anchors and the calibration identification design. Preserve sex strata. Begin no calibration or intervention engine until explicitly authorized.

@@ -2,6 +2,8 @@
 
 Audit basis: general-community commit 24b632390ce75e24c15088309e45960a990e66ad. No existing component was edited.
 
+This is the historical Milestone 1 audit. [Milestone 2A forensics](duplicate_forensics.md) now classifies all 1,212 excess records as identical stored-row repeats, with unresolved upstream lineage. The [current source policy](demographic_source_policy.md) uses new frozen ABS/WPP data rather than this cache.
+
 | Component | Observed source and behavior | Reuse decision |
 | --- | --- | --- |
 | app/general/country_panel.py | Country/area dropdown from frozen WHO snapshot; preview/apply conflict controls and descriptive incidence chart | Reuse interaction design later; no page import now |

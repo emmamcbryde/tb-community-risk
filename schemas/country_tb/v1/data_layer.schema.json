@@ -1,0 +1,480 @@
+{
+  "$defs": {
+    "baseline": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline_year": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "contract_version": {
+          "const": "1.1.0"
+        },
+        "country_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "demography": {
+          "$ref": "#/$defs/demography"
+        },
+        "display": {
+          "type": "object"
+        },
+        "incidence": {
+          "$ref": "#/$defs/incidence"
+        },
+        "incidence_final_observation_year": {
+          "const": 2024
+        },
+        "loader_version": {
+          "const": "country_tb_data_loader_1.0.0"
+        },
+        "profile_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "schema_id": {
+          "const": "country_tb.baseline_data_profile.v1"
+        },
+        "scope": {
+          "const": "frozen_data_only"
+        },
+        "warnings": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "who_report_year": {
+          "const": 2025
+        }
+      },
+      "required": [
+        "schema_id",
+        "contract_version",
+        "loader_version",
+        "profile_hash",
+        "baseline_year",
+        "warnings",
+        "country_id",
+        "who_report_year",
+        "incidence_final_observation_year",
+        "scope",
+        "incidence",
+        "demography",
+        "display"
+      ],
+      "type": "object"
+    },
+    "demographic_record": {
+      "additionalProperties": false,
+      "properties": {
+        "age_lower": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "age_upper_exclusive": {
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "estimate_status": {
+          "enum": [
+            "estimate",
+            "projection",
+            "unknown"
+          ]
+        },
+        "geography_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "geography_level": {
+          "enum": [
+            "national",
+            "subnational",
+            "custom"
+          ]
+        },
+        "population": {
+          "pattern": "^(0|[0-9]+)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "population_variant": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "projection_scenario": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "review_status": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sex": {
+          "enum": [
+            "female",
+            "male",
+            "both",
+            "unknown"
+          ]
+        },
+        "source_checksum": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "source_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "source_vintage": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "unit": {
+          "const": "persons"
+        },
+        "year": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_vintage",
+        "geography_id",
+        "geography_level",
+        "estimate_status",
+        "projection_scenario",
+        "sex",
+        "unit",
+        "population_variant",
+        "source_checksum",
+        "review_status",
+        "year",
+        "age_lower",
+        "age_upper_exclusive",
+        "population"
+      ],
+      "type": "object"
+    },
+    "demography": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline_year": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "combined_population": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[0-9]+)(\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "combined_rows": {
+          "type": "array"
+        },
+        "completeness": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "contract_version": {
+          "const": "1.1.0"
+        },
+        "display": {
+          "type": "object"
+        },
+        "display_bands": {
+          "type": "array"
+        },
+        "geography_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "geography_level": {
+          "enum": [
+            "national",
+            "subnational",
+            "custom"
+          ]
+        },
+        "inactive_alternatives": {
+          "type": "array"
+        },
+        "loader_version": {
+          "const": "country_tb_data_loader_1.0.0"
+        },
+        "missing_age_intervals": {
+          "type": "array"
+        },
+        "profile_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "published_both_checks": {
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/demographic_record"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "schema_id": {
+          "const": "country_tb.demography.v1"
+        },
+        "sex_specific_available": {
+          "type": "boolean"
+        },
+        "sex_totals": {
+          "additionalProperties": {
+            "pattern": "^(0|[0-9]+)(\\.[0-9]+)?$",
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "source_resolution": {
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema_id",
+        "contract_version",
+        "loader_version",
+        "profile_hash",
+        "baseline_year",
+        "warnings",
+        "geography_id",
+        "geography_level",
+        "rows",
+        "sex_totals",
+        "combined_population",
+        "sex_specific_available",
+        "source_resolution",
+        "provenance",
+        "completeness",
+        "combined_rows",
+        "display_bands",
+        "published_both_checks",
+        "inactive_alternatives",
+        "missing_age_intervals"
+      ],
+      "type": "object"
+    },
+    "incidence": {
+      "properties": {
+        "baseline_year": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "completeness": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "contract_version": {
+          "const": "1.1.0"
+        },
+        "final_observation_year": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "geography_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "loader_version": {
+          "const": "country_tb_data_loader_1.0.0"
+        },
+        "mode": {
+          "enum": [
+            "national_who_snapshot",
+            "subnational_scaled",
+            "subnational_user_series",
+            "custom_population_series"
+          ]
+        },
+        "profile_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "report_year": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/incidence_record"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "schema_id": {
+          "const": "country_tb.incidence_history.v1"
+        },
+        "warnings": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema_id",
+        "contract_version",
+        "loader_version",
+        "profile_hash",
+        "baseline_year",
+        "warnings",
+        "mode",
+        "geography_id",
+        "rows",
+        "provenance",
+        "report_year",
+        "final_observation_year",
+        "completeness"
+      ],
+      "type": "object"
+    },
+    "incidence_record": {
+      "properties": {
+        "central": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[0-9]+)(\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "denominator": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[0-9]+)(\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lower": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[0-9]+)(\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "numerator": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[0-9]+)(\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "original_rate": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[0-9]+)(\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quantity": {
+          "enum": [
+            "estimated_tb_incidence",
+            "notifications"
+          ]
+        },
+        "unit": {
+          "const": "cases_per_100000_person_year"
+        },
+        "upper": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[0-9]+)(\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "year": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "year",
+        "central",
+        "lower",
+        "upper",
+        "numerator",
+        "denominator",
+        "original_rate",
+        "unit",
+        "quantity"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:country-tb:data-layer:1.1.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "First executable data-profile revision. Archived Milestone 1 proposal is not accepted by these loaders; cross-field semantics are enforced in Python.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/incidence"
+    },
+    {
+      "$ref": "#/$defs/demography"
+    },
+    {
+      "$ref": "#/$defs/baseline"
+    }
+  ],
+  "title": "Country TB executable frozen data profiles"
+}

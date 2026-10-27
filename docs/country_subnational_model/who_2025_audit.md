@@ -2,6 +2,8 @@
 
 Audit date: 2026-10-27. The sibling gtbreport2025 repository was read-only throughout. This audit selected existing frozen public data; no live WHO dataset was imported or modified.
 
+Milestone 2A adds a separate strict offline loader under engine/country_tb/incidence.py; its [current contract](data_layer_contracts.md) implements the production guards recommended here. The pre-existing shared loader audited below remains unchanged.
+
 ## Repository identity and state
 
 | Item | Observed |

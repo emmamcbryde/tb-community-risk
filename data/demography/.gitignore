@@ -1,0 +1,2 @@
+# Incomplete new imports are preserved but never catalogue inputs.
+snapshots/.draft-*/

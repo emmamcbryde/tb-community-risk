@@ -2,6 +2,8 @@
 
 ## Status and shared conventions
 
+Milestone 2A's first executable incidence/demography profiles use revision 1.1.0, documented in [data_layer_contracts.md](data_layer_contracts.md) and schemas/country_tb/v1/data_layer.schema.json. The 1.0.0 material below is the archived Milestone 1 proposal. It is preserved for review and is not automatically migrated or accepted by the production data loaders.
+
 Contract release 1.0.0 is a review proposal. [contracts.schema.json](../../schemas/country_tb/v1/contracts.schema.json) is a JSON Schema Draft 2020-12 document with seven named definitions and a root union. Its URI is urn:country-tb:contracts:1.0.0; validation is local and requires no network. [review_examples.json](../../schemas/country_tb/v1/review_examples.json) contains seven invented structural examples with placeholder hashes and failed readiness, not country data or a calibrated population.
 
 The JSON Schema checks structure, enums, required fields, ranges and value-state nullability. Cross-field scientific checks below are normative proposed behavior; only the isolated prevalence, age reconciliation and association helpers are executable in Milestone 1. Schema validation alone never confers analytical readiness. Full cross-artifact validation is Milestone 2 work.
