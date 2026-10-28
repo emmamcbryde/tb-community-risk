@@ -1,5 +1,9 @@
 # Incidence to infection identifiability
 
+Milestone 1 design note retained for history. The [Milestone 2B specification](calibration_specification.md)
+now makes the disease-forward-operator requirement and diagnostic exclusions
+explicit. No descriptive incidence smoother alone is a validated pressure mapping.
+
 ## Distinct quantities
 
 Disease incidence I(t) is new TB disease per population-time. Force of infection lambda(a,s,t) is the instantaneous acquisition hazard per susceptible person-year; annual risk of infection is 1 − exp(−integral(lambda)). Dividing an incidence rate by 100,000 changes its units, not its biological meaning. Neither that division nor an unreviewed Styblo conversion identifies infection pressure.

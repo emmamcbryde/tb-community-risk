@@ -1,0 +1,430 @@
+{
+  "schema_id": "country_tb.independent_frozen_recheck.v1",
+  "method": "source-artifact reconstruction; no production loader imports",
+  "who": {
+    "snapshot_id": "who-gtb2025-incidence-6997e3b087d2",
+    "report_year": 2025,
+    "years": [
+      2000,
+      2001,
+      2002,
+      2003,
+      2004,
+      2005,
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024
+    ],
+    "rows": 5347,
+    "countries_areas": 217,
+    "with_estimates": 216,
+    "transformed_file_sha256": "6997e3b087d26788b21a47d09968eca87b5b03c3cc50644ae4dcdcd860acfd07",
+    "manifest_file_sha256": "22d21158b75a47f237f5bee8ecbdb75516e579ccd17fad4a83a9d3ccd80d368a",
+    "manifest_analytical_hash": "32f228fc4338a9a61d56fa4770799c2274a3b9696f814d2304b3e2a3ebdee765",
+    "transformation_version": "who_incidence_importer_v2",
+    "source_files": [
+      {
+        "filename": "who_estimates.csv",
+        "role": "estimates",
+        "sha256": "6849d50d91579eaefa5833aa46d19d34e68dd6408a3768875991013f05586c30",
+        "url": "https://extranet.who.int/tme/generateCSV.asp?ds=estimates"
+      },
+      {
+        "definitions": {
+          "country": "Country or territory name",
+          "e_inc_100k": "Estimated incidence (all forms) per 100 000 population",
+          "e_inc_100k_hi": "Estimated incidence (all forms) per 100 000 population, high bound",
+          "e_inc_100k_lo": "Estimated incidence (all forms) per 100 000 population, low bound",
+          "e_inc_num": "Estimated number of incident cases (all forms)",
+          "e_inc_num_hi": "Estimated number of incident cases (all forms), high bound",
+          "e_inc_num_lo": "Estimated number of incident cases (all forms), low bound",
+          "e_inc_tbhiv_100k": "Estimated incidence of TB cases who are HIV-positive per 100 000 population",
+          "e_inc_tbhiv_100k_hi": "Estimated incidence of TB cases who are HIV-positive per 100 000 population, high bound",
+          "e_inc_tbhiv_100k_lo": "Estimated incidence of TB cases who are HIV-positive per 100 000 population, low bound",
+          "e_pop_num": "Estimated total population number",
+          "g_whoregion": "WHO region",
+          "iso2": "ISO 2-character country/territory code",
+          "iso3": "ISO 3-character country/territory code",
+          "iso_numeric": "ISO numeric country/territory code"
+        },
+        "filename": "who_dictionary.csv",
+        "role": "dictionary",
+        "sha256": "2b0aecd442bffabf2f313d2eaa478ffaea48d09fe78670a136a1956c042011bf",
+        "url": "https://extranet.who.int/tme/generateCSV.asp?ds=dictionary"
+      }
+    ],
+    "missing_triples": {
+      "hiv_positive_incidence_per_100k": 895,
+      "incidence_per_100k": 25,
+      "incident_cases": 25
+    },
+    "PRK_all_missing": true,
+    "entity_examples": {
+      "ANT": {
+        "name": "Netherlands Antilles",
+        "years": [
+          2000,
+          2001,
+          2002,
+          2003,
+          2004,
+          2005,
+          2006,
+          2007,
+          2008,
+          2009
+        ]
+      },
+      "SCG": {
+        "name": "Serbia & Montenegro",
+        "years": [
+          2000,
+          2001,
+          2002,
+          2003,
+          2004
+        ]
+      },
+      "CUW": {
+        "name": "Curaçao",
+        "years": [
+          2010,
+          2011,
+          2012,
+          2013,
+          2014,
+          2015,
+          2016,
+          2017,
+          2018,
+          2019,
+          2020,
+          2021,
+          2022,
+          2023,
+          2024
+        ]
+      },
+      "SXM": {
+        "name": "Sint Maarten (Dutch part)",
+        "years": [
+          2010,
+          2011,
+          2012,
+          2013,
+          2014,
+          2015,
+          2016,
+          2017,
+          2018,
+          2019,
+          2020,
+          2021,
+          2022,
+          2023,
+          2024
+        ]
+      },
+      "VNM": {
+        "name": "Viet Nam",
+        "years": [
+          2000,
+          2001,
+          2002,
+          2003,
+          2004,
+          2005,
+          2006,
+          2007,
+          2008,
+          2009,
+          2010,
+          2011,
+          2012,
+          2013,
+          2014,
+          2015,
+          2016,
+          2017,
+          2018,
+          2019,
+          2020,
+          2021,
+          2022,
+          2023,
+          2024
+        ]
+      },
+      "PRK": {
+        "name": "Democratic People's Republic of Korea",
+        "years": [
+          2000,
+          2001,
+          2002,
+          2003,
+          2004,
+          2005,
+          2006,
+          2007,
+          2008,
+          2009,
+          2010,
+          2011,
+          2012,
+          2013,
+          2014,
+          2015,
+          2016,
+          2017,
+          2018,
+          2019,
+          2020,
+          2021,
+          2022,
+          2023,
+          2024
+        ]
+      }
+    }
+  },
+  "legacy": {
+    "source_sha256": "e51101fa3f5054b9aeb11999d38f6b39a3b0ab4625daa00c5c7fd52e77e535d4",
+    "source_rows": 21917,
+    "unique_keys": 20705,
+    "duplicate_groups": 1111,
+    "groups_by_multiplicity": {
+      "2": 1010,
+      "3": 101
+    },
+    "excess_rows": 1212,
+    "per_country_excess": {
+      "BOL": 101,
+      "BRN": 101,
+      "CIV": 101,
+      "KOR": 101,
+      "LBY": 101,
+      "MMR": 101,
+      "RUS": 101,
+      "TWN": 101,
+      "VCT": 202,
+      "VEN": 101,
+      "VNM": 101
+    },
+    "all_repeated_stored_fields_identical": true,
+    "maximum_difference": "0",
+    "canonical_sha256": "a806060ed957386f03931f54bc857bdb57fb05ce380b61bb27f8250faa1d50bb"
+  },
+  "demography": [
+    {
+      "snapshot_id": "abs-erp-jun2024-07ca11bcb092",
+      "source_id": "abs_erp_jun2024",
+      "source_vintage": "ABS_2024-12-12_release",
+      "source_files": [
+        {
+          "filename": "abs_3101059_jun2024.xlsx",
+          "sha256": "9d436fca6a0261732f7c6d8f51c834d36707c279f3878d9a815dc4014c8d8086",
+          "url": "https://www.abs.gov.au/statistics/people/population/national-state-and-territory-population/jun-2024/3101059.xlsx"
+        }
+      ],
+      "transformed_file_hash": "07ca11bcb092f6bd62c1fc16d3229164680bc68033eac9c5c64404d89f31118a",
+      "manifest_hash": "e8682e4dddd49d27ab6a39cedd2a1a30bea6793c6ad66d6695db55de80d6f0ef",
+      "manifest_file_sha256": "1c861ac7cdf218059c2e0f2f0fb7ac90000553181d33b7cc090d522aa948c074",
+      "transformation_version": "country_tb_demography_import_1.0.0",
+      "coverage": {
+        "geographies": 1,
+        "sexes": [
+          "both",
+          "female",
+          "male"
+        ],
+        "source_estimate_projection_status": [
+          "estimate"
+        ],
+        "years": [
+          2024
+        ]
+      },
+      "independently_reconstructed_rows": 303,
+      "native_transformed_multiset_hash": "877d5d0573b35878d4f3231265baa6bf06842151cb35f8a0b54a1f15d37311fb",
+      "examples": {
+        "who:AUS": {
+          "sex_totals": {
+            "female": "13698889",
+            "male": "13505920",
+            "both": "27204809"
+          },
+          "derived_combined": "27204809",
+          "derived_minus_published_both": "0",
+          "max_cell_absolute_difference": "0",
+          "display_bands_by_sex": {
+            "female": [
+              "734677",
+              "1596391",
+              "5609289",
+              "3252531",
+              "2506001"
+            ],
+            "male": [
+              "774117",
+              "1689101",
+              "5714902",
+              "3133443",
+              "2194357"
+            ]
+          },
+          "estimate_status": "estimate",
+          "scenario": "historical",
+          "reference_date": "2024-06-30"
+        }
+      },
+      "full_original_archive_present_locally": true,
+      "full_original_archive_sha256": "9d436fca6a0261732f7c6d8f51c834d36707c279f3878d9a815dc4014c8d8086"
+    },
+    {
+      "snapshot_id": "un-wpp2024-medium-8028a7a3e163",
+      "source_id": "un_wpp2024_medium",
+      "source_vintage": "WPP2024",
+      "source_files": [
+        {
+          "filename": "WPP2024_PopulationBySingleAgeSex_Medium_2024-2100.csv.gz",
+          "sha256": "31804a296b663716236cd26c46415271cc9386fb3b2be56aff6467ad32283dc8",
+          "url": "https://population.un.org/wpp/assets/Excel%20Files/1_Indicator%20(Standard)/CSV_FILES/WPP2024_PopulationBySingleAgeSex_Medium_2024-2100.csv.gz"
+        }
+      ],
+      "transformed_file_hash": "8028a7a3e163eaa6146554a9167a2b6e1a3a87c95d7ad8ed006f4421c36c7ddd",
+      "manifest_hash": "a988c3f6428ea4dcdfdd001e88082ad0c963a8bc2e96c2bbf5186d5bbde93046",
+      "manifest_file_sha256": "2d22384a9075b0eb38b3c95a01c49b37f09c7f712a387b708544b3f6bb88a393",
+      "transformation_version": "country_tb_demography_import_1.0.0",
+      "coverage": {
+        "geographies": 237,
+        "sexes": [
+          "both",
+          "female",
+          "male"
+        ],
+        "source_estimate_projection_status": [
+          "projection"
+        ],
+        "years": [
+          2024,
+          2025,
+          2026,
+          2027,
+          2028,
+          2029,
+          2030
+        ]
+      },
+      "independently_reconstructed_rows": 502677,
+      "native_transformed_multiset_hash": "1cf13aed23088e4c33d2c203c3e6f90f4b5b36171ba3420eec221d56607a7ffb",
+      "examples": {
+        "who:AUS": {
+          "sex_totals": {
+            "female": "13458540",
+            "male": "13254658",
+            "both": "26713206"
+          },
+          "derived_combined": "26713198",
+          "derived_minus_published_both": "-8",
+          "max_cell_absolute_difference": "1",
+          "display_bands_by_sex": {
+            "female": [
+              "747216",
+              "1570073",
+              "5353894",
+              "3260362",
+              "2526995"
+            ],
+            "male": [
+              "788505",
+              "1660337",
+              "5453675",
+              "3142883",
+              "2209258"
+            ]
+          },
+          "estimate_status": "projection",
+          "scenario": "medium",
+          "reference_date": "2024-07-01"
+        },
+        "who:PRK": {
+          "sex_totals": {
+            "female": "13390111",
+            "male": "13108724",
+            "both": "26498834"
+          },
+          "derived_combined": "26498835",
+          "derived_minus_published_both": "1",
+          "max_cell_absolute_difference": "1",
+          "display_bands_by_sex": {
+            "female": [
+              "828720",
+              "1615357",
+              "5366872",
+              "3678986",
+              "1900176"
+            ],
+            "male": [
+              "875555",
+              "1701128",
+              "5550064",
+              "3596327",
+              "1385650"
+            ]
+          },
+          "estimate_status": "projection",
+          "scenario": "medium",
+          "reference_date": "2024-07-01"
+        },
+        "who:VNM": {
+          "sex_totals": {
+            "female": "51526284",
+            "male": "49461398",
+            "both": "100987686"
+          },
+          "derived_combined": "100987682",
+          "derived_minus_published_both": "-4",
+          "max_cell_absolute_difference": "1",
+          "display_bands_by_sex": {
+            "female": [
+              "3347439",
+              "7999458",
+              "22559846",
+              "12050330",
+              "5569211"
+            ],
+            "male": [
+              "3710225",
+              "8396263",
+              "22668741",
+              "11118839",
+              "3567330"
+            ]
+          },
+          "estimate_status": "projection",
+          "scenario": "medium",
+          "reference_date": "2024-07-01"
+        }
+      },
+      "full_original_archive_present_locally": true,
+      "full_original_archive_sha256": "31804a296b663716236cd26c46415271cc9386fb3b2be56aff6467ad32283dc8",
+      "full_original_selected_records_match": true
+    }
+  ]
+}

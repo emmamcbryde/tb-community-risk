@@ -1,0 +1,816 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:country_tb:calibration_design:1.0.0-design.1",
+  "title": "Proposed calibration contracts; no production acceptance implied",
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nonnegative": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "probability": {
+      "type": "string",
+      "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+    },
+    "sex": {
+      "enum": [
+        "female",
+        "male",
+        "both",
+        "unknown"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "$ref": "#/$defs/text"
+        },
+        "snapshot_id": {
+          "$ref": "#/$defs/text"
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "transformation_version": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "source_id",
+        "snapshot_id",
+        "sha256",
+        "transformation_version"
+      ]
+    },
+    "pressureRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/nonnegative"
+        },
+        "end": {
+          "$ref": "#/$defs/nonnegative"
+        },
+        "hazard_per_person_year": {
+          "$ref": "#/$defs/nonnegative"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "hazard_per_person_year"
+      ]
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "observation_id": {
+          "$ref": "#/$defs/text"
+        },
+        "geography_id": {
+          "$ref": "#/$defs/text"
+        },
+        "sex": {
+          "$ref": "#/$defs/sex"
+        },
+        "age_lower": {
+          "$ref": "#/$defs/nonnegative"
+        },
+        "age_upper_exclusive": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonnegative"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "survey_year": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "survey_date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "numerator": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "denominator": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "prevalence": {
+          "$ref": "#/$defs/probability"
+        },
+        "assay": {
+          "$ref": "#/$defs/text"
+        },
+        "positivity_threshold": {
+          "$ref": "#/$defs/text"
+        },
+        "sampling_frame": {
+          "$ref": "#/$defs/text"
+        },
+        "uncertainty": {
+          "type": "object"
+        },
+        "survey_design": {
+          "type": "object"
+        },
+        "review_status": {
+          "enum": [
+            "reviewed",
+            "not_reviewed",
+            "review_required"
+          ]
+        }
+      },
+      "required": [
+        "observation_id",
+        "geography_id",
+        "sex",
+        "age_lower",
+        "age_upper_exclusive",
+        "survey_year",
+        "survey_date",
+        "numerator",
+        "denominator",
+        "prevalence",
+        "assay",
+        "positivity_threshold",
+        "sampling_frame",
+        "uncertainty",
+        "survey_design",
+        "review_status"
+      ]
+    },
+    "profileRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "age": {
+          "$ref": "#/$defs/nonnegative"
+        },
+        "sex": {
+          "$ref": "#/$defs/sex"
+        },
+        "geography_id": {
+          "$ref": "#/$defs/text"
+        },
+        "scenario_id": {
+          "$ref": "#/$defs/text"
+        },
+        "uninfected": {
+          "$ref": "#/$defs/probability"
+        },
+        "recently_infected": {
+          "$ref": "#/$defs/probability"
+        },
+        "remote_only_infected": {
+          "$ref": "#/$defs/probability"
+        },
+        "total_tbi": {
+          "$ref": "#/$defs/probability"
+        },
+        "cumulative_hazard": {
+          "$ref": "#/$defs/nonnegative"
+        },
+        "uncertainty": {
+          "type": "object"
+        },
+        "observation_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "minItems": 0
+        },
+        "calibration_residuals": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "age",
+        "sex",
+        "geography_id",
+        "scenario_id",
+        "uninfected",
+        "recently_infected",
+        "remote_only_infected",
+        "total_tbi",
+        "cumulative_hazard",
+        "uncertainty",
+        "observation_ids",
+        "calibration_residuals"
+      ]
+    },
+    "infection_pressure_history": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_id": {
+          "const": "country_tb.infection_pressure_history.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0-design.1"
+        },
+        "status": {
+          "const": "design_only"
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance"
+          },
+          "minItems": 1
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "geography_id": {
+              "$ref": "#/$defs/text"
+            },
+            "sex": {
+              "$ref": "#/$defs/sex"
+            },
+            "unit": {
+              "const": "per_susceptible_person_year"
+            },
+            "history_kind": {
+              "enum": [
+                "supplied_pressure",
+                "conditional_shape_scenario",
+                "disease_calibrated"
+              ]
+            },
+            "mapping_id": {
+              "$ref": "#/$defs/text"
+            },
+            "disease_operator_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "normalization": {
+              "type": "object"
+            },
+            "backcast_hash": {
+              "$ref": "#/$defs/hash"
+            },
+            "future_policy": {
+              "enum": [
+                "none",
+                "hold",
+                "bounded_trend",
+                "supplied"
+              ]
+            },
+            "age_exposure_policy": {
+              "$ref": "#/$defs/text"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/pressureRow"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "geography_id",
+            "sex",
+            "unit",
+            "history_kind",
+            "mapping_id",
+            "disease_operator_id",
+            "normalization",
+            "backcast_hash",
+            "future_policy",
+            "age_exposure_policy",
+            "rows"
+          ]
+        },
+        "profile_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_id",
+        "contract_version",
+        "status",
+        "provenance",
+        "data",
+        "profile_hash"
+      ]
+    },
+    "historical_backcast_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_id": {
+          "const": "country_tb.historical_backcast_policy.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0-design.1"
+        },
+        "status": {
+          "const": "design_only"
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance"
+          },
+          "minItems": 1
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "enum": [
+                "constant_earliest",
+                "bounded_early_trend",
+                "supplied_history",
+                "anchor_fitted_history",
+                "uncertainty_distribution"
+              ]
+            },
+            "earliest_observed_time": {
+              "$ref": "#/$defs/nonnegative"
+            },
+            "history_start": {
+              "$ref": "#/$defs/nonnegative"
+            },
+            "parameters": {
+              "type": "object"
+            },
+            "bounds": {
+              "type": "object"
+            },
+            "join_rule": {
+              "$ref": "#/$defs/text"
+            },
+            "sensitivity_ids": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/text"
+              },
+              "minItems": 1
+            },
+            "review_status": {
+              "enum": [
+                "reviewed",
+                "not_reviewed",
+                "review_required"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "earliest_observed_time",
+            "history_start",
+            "parameters",
+            "bounds",
+            "join_rule",
+            "sensitivity_ids",
+            "review_status"
+          ]
+        },
+        "profile_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_id",
+        "contract_version",
+        "status",
+        "provenance",
+        "data",
+        "profile_hash"
+      ]
+    },
+    "tbi_observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_id": {
+          "const": "country_tb.tbi_observations.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0-design.1"
+        },
+        "status": {
+          "const": "design_only"
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance"
+          },
+          "minItems": 1
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "survey",
+                "reviewed_user_override"
+              ]
+            },
+            "parent_hash": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/hash"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "mode",
+            "parent_hash",
+            "rows"
+          ]
+        },
+        "profile_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_id",
+        "contract_version",
+        "status",
+        "provenance",
+        "data",
+        "profile_hash"
+      ]
+    },
+    "calibration_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_id": {
+          "const": "country_tb.calibration_policy.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0-design.1"
+        },
+        "status": {
+          "const": "design_only"
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance"
+          },
+          "minItems": 1
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "scenario_only",
+                "tbi_anchor",
+                "joint_disease_tbi"
+              ]
+            },
+            "free_parameters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/text"
+              },
+              "minItems": 0
+            },
+            "fixed_assumptions": {
+              "type": "object"
+            },
+            "objective": {
+              "$ref": "#/$defs/text"
+            },
+            "observation_model_id": {
+              "$ref": "#/$defs/text"
+            },
+            "disease_operator_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bounds": {
+              "type": "object"
+            },
+            "fit_tolerances": {
+              "type": "object"
+            },
+            "identifiability_checks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/text"
+              },
+              "minItems": 1
+            },
+            "incompatibility_action": {
+              "const": "fail_or_review_without_clipping"
+            }
+          },
+          "required": [
+            "mode",
+            "free_parameters",
+            "fixed_assumptions",
+            "objective",
+            "observation_model_id",
+            "disease_operator_id",
+            "bounds",
+            "fit_tolerances",
+            "identifiability_checks",
+            "incompatibility_action"
+          ]
+        },
+        "profile_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_id",
+        "contract_version",
+        "status",
+        "provenance",
+        "data",
+        "profile_hash"
+      ]
+    },
+    "calibrated_tbi_age_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_id": {
+          "const": "country_tb.calibrated_tbi_age_profile.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0-design.1"
+        },
+        "status": {
+          "const": "design_only"
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance"
+          },
+          "minItems": 1
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "baseline_year": {
+              "const": 2024
+            },
+            "baseline_time": {
+              "$ref": "#/$defs/nonnegative"
+            },
+            "target_state": {
+              "enum": [
+                "ever_infection",
+                "retained_infection",
+                "assay_positive"
+              ]
+            },
+            "recency_clock": {
+              "enum": [
+                "first_infection",
+                "most_recent_infection"
+              ]
+            },
+            "recent_window_years": {
+              "$ref": "#/$defs/nonnegative"
+            },
+            "pressure_hash": {
+              "$ref": "#/$defs/hash"
+            },
+            "calibration_policy_hash": {
+              "$ref": "#/$defs/hash"
+            },
+            "demography_hash": {
+              "$ref": "#/$defs/hash"
+            },
+            "observation_hashes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/hash"
+              },
+              "minItems": 0
+            },
+            "fit_status": {
+              "enum": [
+                "scenario_only",
+                "accepted",
+                "incompatible",
+                "review_required"
+              ]
+            },
+            "exclusions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/text"
+              },
+              "minItems": 0
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/profileRow"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "baseline_year",
+            "baseline_time",
+            "target_state",
+            "recency_clock",
+            "recent_window_years",
+            "pressure_hash",
+            "calibration_policy_hash",
+            "demography_hash",
+            "observation_hashes",
+            "fit_status",
+            "exclusions",
+            "rows"
+          ]
+        },
+        "profile_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_id",
+        "contract_version",
+        "status",
+        "provenance",
+        "data",
+        "profile_hash"
+      ]
+    },
+    "uncertainty_scenario_set": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_id": {
+          "const": "country_tb.uncertainty_scenario_set.v1"
+        },
+        "contract_version": {
+          "const": "1.0.0-design.1"
+        },
+        "status": {
+          "const": "design_only"
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance"
+          },
+          "minItems": 1
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "parameter_draws": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 0
+            },
+            "scenario_definitions": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 1
+            },
+            "population_variation_policy": {
+              "$ref": "#/$defs/text"
+            },
+            "revision_snapshot_ids": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/text"
+              },
+              "minItems": 1
+            },
+            "rng": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "draw_weights": {
+              "type": "object"
+            },
+            "interval_interpretation": {
+              "$ref": "#/$defs/text"
+            }
+          },
+          "required": [
+            "parameter_draws",
+            "scenario_definitions",
+            "population_variation_policy",
+            "revision_snapshot_ids",
+            "rng",
+            "draw_weights",
+            "interval_interpretation"
+          ]
+        },
+        "profile_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_id",
+        "contract_version",
+        "status",
+        "provenance",
+        "data",
+        "profile_hash"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/infection_pressure_history"
+    },
+    {
+      "$ref": "#/$defs/historical_backcast_policy"
+    },
+    {
+      "$ref": "#/$defs/tbi_observations"
+    },
+    {
+      "$ref": "#/$defs/calibration_policy"
+    },
+    {
+      "$ref": "#/$defs/calibrated_tbi_age_profile"
+    },
+    {
+      "$ref": "#/$defs/uncertainty_scenario_set"
+    }
+  ]
+}

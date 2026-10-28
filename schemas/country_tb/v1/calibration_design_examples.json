@@ -1,0 +1,250 @@
+[
+  {
+    "schema_id": "country_tb.infection_pressure_history.v1",
+    "contract_version": "1.0.0-design.1",
+    "status": "design_only",
+    "provenance": [
+      {
+        "source_id": "synthetic_2b",
+        "snapshot_id": "synthetic:no-country-data",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "transformation_version": "design_example_1"
+      }
+    ],
+    "data": {
+      "geography_id": "synthetic:G",
+      "sex": "female",
+      "unit": "per_susceptible_person_year",
+      "history_kind": "supplied_pressure",
+      "mapping_id": "synthetic_constant",
+      "disease_operator_id": null,
+      "normalization": {
+        "fixed": true
+      },
+      "backcast_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "future_policy": "none",
+      "age_exposure_policy": "constant_one_diagnostic",
+      "rows": [
+        {
+          "start": "1900",
+          "end": "2025",
+          "hazard_per_person_year": "0.01"
+        }
+      ]
+    },
+    "display": {
+      "label": "Invented design example"
+    },
+    "profile_hash": "3e7f835be780a60d55b29357a8c2340529a7231b31f1e9408eed70c45dd2d427"
+  },
+  {
+    "schema_id": "country_tb.historical_backcast_policy.v1",
+    "contract_version": "1.0.0-design.1",
+    "status": "design_only",
+    "provenance": [
+      {
+        "source_id": "synthetic_2b",
+        "snapshot_id": "synthetic:no-country-data",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "transformation_version": "design_example_1"
+      }
+    ],
+    "data": {
+      "method": "constant_earliest",
+      "earliest_observed_time": "2000",
+      "history_start": "1900",
+      "parameters": {
+        "level": "0.01"
+      },
+      "bounds": {
+        "maximum_hazard": "0.1"
+      },
+      "join_rule": "continuous_at_2000",
+      "sensitivity_ids": [
+        "bounded_trend"
+      ],
+      "review_status": "not_reviewed"
+    },
+    "display": {
+      "label": "Invented design example"
+    },
+    "profile_hash": "946b9c35f81b098110e6847a0b7ae9613215ea7476480d28cfc691f9bd524162"
+  },
+  {
+    "schema_id": "country_tb.tbi_observations.v1",
+    "contract_version": "1.0.0-design.1",
+    "status": "design_only",
+    "provenance": [
+      {
+        "source_id": "synthetic_2b",
+        "snapshot_id": "synthetic:no-country-data",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "transformation_version": "design_example_1"
+      }
+    ],
+    "data": {
+      "mode": "survey",
+      "parent_hash": null,
+      "rows": [
+        {
+          "observation_id": "synthetic:anchor",
+          "geography_id": "synthetic:G",
+          "sex": "female",
+          "age_lower": "15",
+          "age_upper_exclusive": "45",
+          "survey_year": 2024,
+          "survey_date": null,
+          "numerator": 20,
+          "denominator": 100,
+          "prevalence": "0.2",
+          "assay": "synthetic_perfect_assay",
+          "positivity_threshold": "synthetic_only",
+          "sampling_frame": "invented simple sample",
+          "uncertainty": {
+            "method": "binomial_example"
+          },
+          "survey_design": {
+            "kind": "simple_random_sample"
+          },
+          "review_status": "not_reviewed"
+        }
+      ]
+    },
+    "display": {
+      "label": "Invented design example"
+    },
+    "profile_hash": "0631a74c203ea0a32739952027dcbc32073c97c500df9bc8adbd9a15c9c96374"
+  },
+  {
+    "schema_id": "country_tb.calibration_policy.v1",
+    "contract_version": "1.0.0-design.1",
+    "status": "design_only",
+    "provenance": [
+      {
+        "source_id": "synthetic_2b",
+        "snapshot_id": "synthetic:no-country-data",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "transformation_version": "design_example_1"
+      }
+    ],
+    "data": {
+      "mode": "tbi_anchor",
+      "free_parameters": [
+        "scale"
+      ],
+      "fixed_assumptions": {
+        "history": "synthetic"
+      },
+      "objective": "synthetic_only",
+      "observation_model_id": "synthetic_perfect_assay",
+      "disease_operator_id": null,
+      "bounds": {
+        "scale": [
+          "0",
+          "1"
+        ]
+      },
+      "fit_tolerances": {
+        "absolute": "0.000001"
+      },
+      "identifiability_checks": [
+        "monotonic_scale",
+        "boundary",
+        "rank"
+      ],
+      "incompatibility_action": "fail_or_review_without_clipping"
+    },
+    "display": {
+      "label": "Invented design example"
+    },
+    "profile_hash": "713126abf86f8d6bd84e0c233b06ca9a3bd8aed55bdd819db3117110f6ede4c3"
+  },
+  {
+    "schema_id": "country_tb.calibrated_tbi_age_profile.v1",
+    "contract_version": "1.0.0-design.1",
+    "status": "design_only",
+    "provenance": [
+      {
+        "source_id": "synthetic_2b",
+        "snapshot_id": "synthetic:no-country-data",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "transformation_version": "design_example_1"
+      }
+    ],
+    "data": {
+      "baseline_year": 2024,
+      "baseline_time": "2024.5",
+      "target_state": "ever_infection",
+      "recency_clock": "first_infection",
+      "recent_window_years": "2",
+      "pressure_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "calibration_policy_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "demography_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "observation_hashes": [],
+      "fit_status": "scenario_only",
+      "exclusions": [
+        "reinfection",
+        "clearance",
+        "selective_mortality",
+        "migration",
+        "disease_exits"
+      ],
+      "rows": [
+        {
+          "age": "0",
+          "sex": "female",
+          "geography_id": "synthetic:G",
+          "scenario_id": "zero_at_birth",
+          "uninfected": "1",
+          "recently_infected": "0",
+          "remote_only_infected": "0",
+          "total_tbi": "0",
+          "cumulative_hazard": "0",
+          "uncertainty": {
+            "kind": "synthetic"
+          },
+          "observation_ids": [],
+          "calibration_residuals": []
+        }
+      ]
+    },
+    "display": {
+      "label": "Invented design example"
+    },
+    "profile_hash": "30a7a362d73d04648cdc14d58dd3b5b3debbfd6170fed4f10e3c62f72c6bcf8c"
+  },
+  {
+    "schema_id": "country_tb.uncertainty_scenario_set.v1",
+    "contract_version": "1.0.0-design.1",
+    "status": "design_only",
+    "provenance": [
+      {
+        "source_id": "synthetic_2b",
+        "snapshot_id": "synthetic:no-country-data",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "transformation_version": "design_example_1"
+      }
+    ],
+    "data": {
+      "parameter_draws": [],
+      "scenario_definitions": [
+        {
+          "id": "synthetic_constant"
+        }
+      ],
+      "population_variation_policy": "not_generated",
+      "revision_snapshot_ids": [
+        "synthetic:no-country-data"
+      ],
+      "rng": null,
+      "draw_weights": {
+        "synthetic_constant": "1"
+      },
+      "interval_interpretation": "scenario range, not posterior"
+    },
+    "display": {
+      "label": "Invented design example"
+    },
+    "profile_hash": "58e8a787a5bee2abd2a86dabf279336a8dec628f99218b15ff3c85c283aeaabc"
+  }
+]

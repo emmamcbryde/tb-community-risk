@@ -1,8 +1,10 @@
 # Country and subnational TB model architecture review
 
-Milestone 2A implements the frozen incidence and demographic data layer. The model is for planning and sequencing, not for denying care. The original Milestone 1 architecture remains below as the scientific boundary; no projection engine or intervention is connected.
+Milestone 2B independently rechecks the frozen 2A data and specifies infection-history/TBI calibration. The model is for planning and sequencing, not for denying care. No country calibration, projection engine or intervention is connected.
 
-Current review: [data contracts](data_layer_contracts.md), [duplicate forensics](duplicate_forensics.md), [source policy](demographic_source_policy.md), [annual updates](annual_data_updates.md), [worked examples](worked_examples_2a.md), and [current milestone status](MILESTONE_STATUS.md).
+Current 2B review: [source recheck](frozen_recheck_2b.md), [scientific specification](calibration_specification.md), [mapping candidates](mapping_candidates.md), [backcast sensitivities](backcast_synthetic_examples.md), [proposed contracts](calibration_contracts.md), [decision register and Milestone 2C](decision_register_2b.md), and [validation](milestone2b_validation.md).
+
+Retained 2A layer: [data contracts](data_layer_contracts.md), [duplicate forensics](duplicate_forensics.md), [source policy](demographic_source_policy.md), [annual updates](annual_data_updates.md), [worked examples](worked_examples_2a.md), and [current milestone status](MILESTONE_STATUS.md).
 
 Review the [architecture](architecture.md), then the [infection identifiability note](incidence_to_infection.md), [association mathematics](association.md), and [versioned contracts](schemas.md). The [implementation plan](implementation_plan.md) lists decisions required before executable modelling.
 
