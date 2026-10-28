@@ -1,30 +1,32 @@
 # Country and subnational TB milestone status
 
-Updated 2026-10-28. Replaces the Milestone 2B status; historical versions remain
-in Git. Milestone 2C isolated one-scale reinfection-capable catalytic
-calibration is implemented for scientific review.
+Updated 2026-10-28 for Milestone 2D. Historical milestone statuses remain in Git.
 
-The central process permits repeated Poisson infection events at the same
-pressure regardless of prior infection. Most recent infection determines
-recency; recent reinfection overrides remote-only, with earlier remote
-exposure auditable. No clearance or progression-engine link is added.
+Two explicit baseline-TBI modes, reviewed/user-specified TBI pathways,
+subgroup composition, population-weighted mixtures and a pure future-interface
+specification are implemented in the isolated country-model layer.
 
-The isolated pathway implements reviewed log-incidence shape proxies,
-lifetime backcasts, exact uniform age-cell integration, conditional
-most-recent-event distributions, supplied scales, overall-anchor roots,
-actual-count binomial likelihood, explicit WLS, fixed assay observation
-operators, source-preserving observations/overrides, six promoted contracts,
-deterministic hashes, population reconciliation and sensitivity scenarios.
+Active-TB-incidence inference deliberately returns
+`unavailable_pending_progression_and_risk_forward_operator`. It produces no
+TBI estimate or temporary progression-model calculation. Observed/user inputs
+support one-scale overall/age anchors, direct age/sex profiles, direct exclusive
+recent/remote states, and total-only overrides with recency unavailable unless
+explicit conditional allocation is selected.
 
-Australia and Viet Nam demonstrations use an invented shared supplied scale;
-they are diagnostic, not country estimates. PRK remains blocked. Unresolved
-100+ populations remain in reconciliation with no full-population point TBI
-prevalence. No reviewed empirical survey anchor has been adopted.
+Subgroup residence and exposure metadata are distinct. Mixtures require
+reviewed disjoint membership, aligned age/sex grids and reconciled populations.
+Unresolved groups and 100+ cells remain in every denominator; full-population
+TBI is unavailable when coverage is incomplete. Risk-factor fields remain null
+placeholders. All demonstrations use invented values, not country estimates.
 
-Read [science](milestone2c_calibration.md), [contracts](milestone2c_contracts.md),
-[results](milestone2c_examples.md), [recovery/validation](milestone2c_validation.md)
-and [decisions](decision_register_2b.md). Frozen 2A data/contracts, protected
-worktrees and SA Health refs remain unchanged. Risk allocation, interventions,
-production UI and all model-runner integrations remain deferred.
+Milestone 2C's repeated Poisson infection events, most-recent-event recency,
+remote-history audit and one-scale calibration remain unchanged. Its Australia/
+Viet Nam 0.005/year results remain diagnostic; PRK remains blocked. No
+progression, intervention, migration, transmission or economics model is added.
 
-The model supports planning and sequencing, not denying care.
+Read [behavior](milestone2d_sources_subgroups.md), [contracts](milestone2d_contracts.md),
+[validation/results](milestone2d_validation.md) and [decisions](decision_register_2d.md).
+Protected worktrees/refs, frozen data, production UI and all runners remain
+unchanged. Recommended next work is reviewed risk-factor population allocation;
+it is not started automatically. This model is for planning and sequencing,
+not denying care.

@@ -1,8 +1,10 @@
 # Country and subnational TB model architecture review
 
-Milestone 2C implements an isolated one-scale, reinfection-capable catalytic calibration for scientific review. The model is for planning and sequencing, not for denying care. No projection engine, risk allocation, intervention or production interface is connected. Country demonstrations use invented supplied scales and remain diagnostic, not country TBI estimates.
+Milestone 2D implements explicit baseline-TBI source selection, functional reviewed/user-input pathways, population subgroups and population-weighted mixtures. Active-TB-incidence inference is deliberately blocked pending an approved progression and risk-factor forward operator. The model is for planning and sequencing, not denying care. All demonstrations remain synthetic/diagnostic; no production application or runner is connected.
 
-Current 2C review: [scientific implementation](milestone2c_calibration.md), [executable contracts](milestone2c_contracts.md), [diagnostic results](milestone2c_examples.md), [recovery and validation](milestone2c_validation.md), and [updated decisions](decision_register_2b.md).
+Current 2D review: [source and subgroup behavior](milestone2d_sources_subgroups.md), [executable contracts](milestone2d_contracts.md), [validation and synthetic results](milestone2d_validation.md), and [approved/deferred decisions and next milestone](decision_register_2d.md).
+
+Retained 2C review: [scientific implementation](milestone2c_calibration.md), [executable contracts](milestone2c_contracts.md), [diagnostic results](milestone2c_examples.md), [recovery and validation](milestone2c_validation.md), and [updated decisions](decision_register_2b.md).
 
 Retained 2B review: [source recheck](frozen_recheck_2b.md), [scientific specification](calibration_specification.md), [mapping candidates](mapping_candidates.md), [backcast sensitivities](backcast_synthetic_examples.md), [proposed contracts](calibration_contracts.md), [decision register and Milestone 2C](decision_register_2b.md), and [validation](milestone2b_validation.md).
 
