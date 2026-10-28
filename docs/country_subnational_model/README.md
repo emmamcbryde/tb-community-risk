@@ -1,8 +1,10 @@
 # Country and subnational TB model architecture review
 
-Milestone 2D implements explicit baseline-TBI source selection, functional reviewed/user-input pathways, population subgroups and population-weighted mixtures. Active-TB-incidence inference is deliberately blocked pending an approved progression and risk-factor forward operator. The model is for planning and sequencing, not denying care. All demonstrations remain synthetic/diagnostic; no production application or runner is connected.
+Milestone 3A implements isolated risk-factor prevalence allocation, multimorbidity and explicit within-age/sex TBI association. Active-TB-incidence inference remains deliberately blocked pending an approved progression and risk forward operator. The model is for planning and sequencing, not denying care. All demonstrations remain synthetic/diagnostic; no production application or runner is connected.
 
-Current 2D review: [source and subgroup behavior](milestone2d_sources_subgroups.md), [executable contracts](milestone2d_contracts.md), [validation and synthetic results](milestone2d_validation.md), and [approved/deferred decisions and next milestone](decision_register_2d.md).
+Current 3A review: [allocation and evidence](milestone3a_allocation.md), [contracts](milestone3a_contracts.md), [invented diagnostics](milestone3a_examples.md), [validation](milestone3a_validation.md), and [decisions and next milestone](decision_register_3a.md).
+
+Retained 2D review: [source and subgroup behavior](milestone2d_sources_subgroups.md), [executable contracts](milestone2d_contracts.md), [validation and synthetic results](milestone2d_validation.md), and [approved/deferred decisions](decision_register_2d.md).
 
 Retained 2C review: [scientific implementation](milestone2c_calibration.md), [executable contracts](milestone2c_contracts.md), [diagnostic results](milestone2c_examples.md), [recovery and validation](milestone2c_validation.md), and [updated decisions](decision_register_2b.md).
 
