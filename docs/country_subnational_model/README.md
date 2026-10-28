@@ -1,8 +1,10 @@
 # Country and subnational TB model architecture review
 
-Milestone 2B independently rechecks the frozen 2A data and specifies infection-history/TBI calibration. The model is for planning and sequencing, not for denying care. No country calibration, projection engine or intervention is connected.
+Milestone 2C implements an isolated one-scale, reinfection-capable catalytic calibration for scientific review. The model is for planning and sequencing, not for denying care. No projection engine, risk allocation, intervention or production interface is connected. Country demonstrations use invented supplied scales and remain diagnostic, not country TBI estimates.
 
-Current 2B review: [source recheck](frozen_recheck_2b.md), [scientific specification](calibration_specification.md), [mapping candidates](mapping_candidates.md), [backcast sensitivities](backcast_synthetic_examples.md), [proposed contracts](calibration_contracts.md), [decision register and Milestone 2C](decision_register_2b.md), and [validation](milestone2b_validation.md).
+Current 2C review: [scientific implementation](milestone2c_calibration.md), [executable contracts](milestone2c_contracts.md), [diagnostic results](milestone2c_examples.md), [recovery and validation](milestone2c_validation.md), and [updated decisions](decision_register_2b.md).
+
+Retained 2B review: [source recheck](frozen_recheck_2b.md), [scientific specification](calibration_specification.md), [mapping candidates](mapping_candidates.md), [backcast sensitivities](backcast_synthetic_examples.md), [proposed contracts](calibration_contracts.md), [decision register and Milestone 2C](decision_register_2b.md), and [validation](milestone2b_validation.md).
 
 Retained 2A layer: [data contracts](data_layer_contracts.md), [duplicate forensics](duplicate_forensics.md), [source policy](demographic_source_policy.md), [annual updates](annual_data_updates.md), [worked examples](worked_examples_2a.md), and [current milestone status](MILESTONE_STATUS.md).
 

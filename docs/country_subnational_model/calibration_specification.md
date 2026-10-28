@@ -1,5 +1,14 @@
 # Milestone 2B: incidence, infection history and TBI calibration design
 
+**Milestone 2C correction (2026-10-28):** this retained design describes the
+completed 2B work. The implemented central pathway now uses repeated Poisson
+infection events with recency determined by the most recent infection;
+previous infection provides no acquisition protection. Its semantics,
+contracts and accepted scope are specified in
+[milestone2c_calibration.md](milestone2c_calibration.md). The historical 2B
+restricted diagnostic and its tests remain unchanged for reproducibility.
+It is not the central 2C model.
+
 This is a scientific design and an isolated synthetic mathematical diagnostic,
 not a fitted country model. The frozen 2A data and loader contracts are unchanged.
 The model is for planning and sequencing, not for denying care.
@@ -289,7 +298,7 @@ Single-year count cells such as age 20 represent \([20,21)\), not an exact
 20th birthday. Future integration must average probability over a reviewed
 within-cell age/date distribution; a midpoint approximation needs a recorded
 convergence check. Preserve fine ages internally and aggregate weighted
-infected counts to 0–4, 5–14, 15–44, 45–64, 65+ separately by sex, then combine
+infected counts to 0â€“4, 5â€“14, 15â€“44, 45â€“64, 65+ separately by sex, then combine
 counts once. Both-only data remain both-only.
 
 For 100+, the diagnostic cannot use age 100 as a silent representation of all

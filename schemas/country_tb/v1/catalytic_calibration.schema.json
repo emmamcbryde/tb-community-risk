@@ -1,0 +1,1780 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:country_tb:catalytic_calibration:1.0.0",
+  "title": "Isolated one-scale reinfection-capable catalytic calibration contracts",
+  "description": "Structural schema; Python APIs additionally enforce scientific and cross-field invariants.",
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nonnegative": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "probability": {
+      "type": "string",
+      "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+    },
+    "sex": {
+      "enum": [
+        "female",
+        "male",
+        "both",
+        "unknown"
+      ]
+    },
+    "review": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "reviewed",
+            "not_reviewed"
+          ]
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "status",
+        "source_id",
+        "rationale"
+      ],
+      "additionalProperties": true
+    },
+    "interval": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "end": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "shape": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "shape"
+      ],
+      "additionalProperties": false
+    },
+    "curves": {
+      "type": "object",
+      "required": [
+        "common"
+      ],
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/interval"
+        },
+        "minItems": 1
+      }
+    },
+    "stratum": {
+      "type": "object",
+      "properties": {
+        "age_lower": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "age_upper_exclusive": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "age_policy": {
+          "enum": [
+            "exact_age",
+            "uniform_within_single_year",
+            "reviewed_uniform_within_interval"
+          ]
+        },
+        "sex": {
+          "$ref": "#/$defs/sex"
+        },
+        "weight": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "age_review": {
+          "$ref": "#/$defs/review"
+        }
+      },
+      "required": [
+        "age_lower",
+        "age_upper_exclusive",
+        "age_policy",
+        "sex",
+        "weight"
+      ],
+      "additionalProperties": true
+    },
+    "observation": {
+      "type": "object",
+      "properties": {
+        "observation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "geography_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sex": {
+          "$ref": "#/$defs/sex"
+        },
+        "age_lower": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "age_upper_exclusive": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "survey_year": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2024
+        },
+        "survey_time": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "prevalence": {
+          "type": "string",
+          "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+        },
+        "numerator": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "denominator": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "review": {
+          "$ref": "#/$defs/review"
+        },
+        "source": {
+          "type": "object"
+        },
+        "sampling_frame": {
+          "type": "string",
+          "minLength": 1
+        },
+        "survey_design": {
+          "type": "object"
+        },
+        "assay_operator": {
+          "$ref": "#"
+        },
+        "weight_source": {
+          "type": "object"
+        },
+        "uncertainty": {
+          "type": "object"
+        },
+        "strata": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/stratum"
+          },
+          "minItems": 1
+        },
+        "receipt": {
+          "type": "object",
+          "properties": {
+            "source_record": {
+              "type": "object"
+            },
+            "source_record_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "source_record",
+            "source_record_sha256"
+          ],
+          "additionalProperties": false
+        },
+        "geography_level": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observation_policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provenance_hash": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "observation_id",
+        "geography_id",
+        "sex",
+        "age_lower",
+        "age_upper_exclusive",
+        "survey_year",
+        "survey_time",
+        "prevalence",
+        "numerator",
+        "denominator",
+        "review",
+        "source",
+        "sampling_frame",
+        "survey_design",
+        "assay_operator",
+        "weight_source",
+        "uncertainty",
+        "strata",
+        "receipt",
+        "geography_level",
+        "observation_policy",
+        "provenance_hash"
+      ],
+      "additionalProperties": true
+    },
+    "age_row": {
+      "type": "object",
+      "properties": {
+        "sex": {
+          "$ref": "#/$defs/sex"
+        },
+        "geography_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "age_lower": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "age_upper_exclusive": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "population": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "source_year": {
+          "type": "integer"
+        },
+        "baseline_year": {
+          "const": 2024
+        },
+        "source_estimate_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_projection_scenario": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "estimated",
+            "unestimated_open_age_tail"
+          ]
+        },
+        "age_policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "never_infected": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recent": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remote_only": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "any_tbi": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cumulative_hazard": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remote_hazard": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recent_hazard": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hazard_interpretation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parameter_endpoint_scenarios": {
+          "type": "object"
+        },
+        "most_recent_infection_time": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "recent_time_summary": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "remote_only_time_summary": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "prior_remote_plus_recent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/probability"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected_lifetime_infection_events": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/nonnegative"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected_time_since_most_recent_infection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/nonnegative"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "neverInfectedProbability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/probability"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remoteOnlyProbability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/probability"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recentProbability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/probability"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "anyTbiProbability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/probability"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priorRemotePlusRecentProbability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/probability"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pressure_shape_identifier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "alpha": {
+          "type": "string",
+          "minLength": 1
+        },
+        "backcast_policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recent_window_years": {
+          "type": "string",
+          "minLength": 1
+        },
+        "calibration_source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scenario_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reinfection_policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "progression_clock_policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provenance_hash": {
+          "type": "string",
+          "minLength": 1
+        },
+        "explicit_exclusions": {
+          "const": [
+            "clearance_or_reversion",
+            "migration",
+            "infection_selective_mortality",
+            "active_tb_exits",
+            "endogenous_transmission"
+          ]
+        },
+        "scientific_input_hashes": {
+          "type": "object"
+        },
+        "expected_state_counts": {
+          "type": "object"
+        },
+        "scientific_hash": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "required": [
+        "sex",
+        "geography_id",
+        "age_lower",
+        "age_upper_exclusive",
+        "population",
+        "source_year",
+        "baseline_year",
+        "source_estimate_status",
+        "source_projection_scenario",
+        "status",
+        "age_policy",
+        "never_infected",
+        "recent",
+        "remote_only",
+        "any_tbi",
+        "cumulative_hazard",
+        "remote_hazard",
+        "recent_hazard",
+        "hazard_interpretation",
+        "parameter_endpoint_scenarios",
+        "most_recent_infection_time",
+        "recent_time_summary",
+        "remote_only_time_summary",
+        "prior_remote_plus_recent",
+        "expected_lifetime_infection_events",
+        "expected_time_since_most_recent_infection",
+        "neverInfectedProbability",
+        "remoteOnlyProbability",
+        "recentProbability",
+        "anyTbiProbability",
+        "priorRemotePlusRecentProbability",
+        "pressure_shape_identifier",
+        "alpha",
+        "backcast_policy",
+        "recent_window_years",
+        "calibration_source",
+        "scenario_id",
+        "reinfection_policy",
+        "progression_clock_policy",
+        "provenance_hash",
+        "explicit_exclusions",
+        "scientific_input_hashes",
+        "expected_state_counts",
+        "scientific_hash"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "estimated"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "never_infected": {
+                "type": "string",
+                "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+              },
+              "recent": {
+                "type": "string",
+                "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+              },
+              "remote_only": {
+                "type": "string",
+                "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+              },
+              "any_tbi": {
+                "type": "string",
+                "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "never_infected": {
+                "type": "null"
+              },
+              "recent": {
+                "type": "null"
+              },
+              "remote_only": {
+                "type": "null"
+              },
+              "any_tbi": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "base": {
+      "type": "object",
+      "properties": {
+        "schema_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_catalytic_calibration_1.0.0"
+        },
+        "exclusions": {
+          "const": [
+            "clearance_or_reversion",
+            "migration",
+            "infection_selective_mortality",
+            "active_tb_exits",
+            "endogenous_transmission"
+          ]
+        },
+        "infection_state_semantics": {
+          "const": "nonhomogeneous_poisson_repeated_events_no_protection_no_clearance"
+        },
+        "disease_forward_operator": {
+          "type": "null"
+        },
+        "numerical_policy": {
+          "type": "object",
+          "properties": {
+            "working_decimal_precision": {
+              "const": 80
+            },
+            "state_decimal_places": {
+              "const": 40
+            },
+            "probability_repair": {
+              "const": "forbidden"
+            },
+            "rounding": {
+              "const": "ROUND_HALF_EVEN"
+            }
+          },
+          "required": [
+            "working_decimal_precision",
+            "state_decimal_places",
+            "probability_repair",
+            "rounding"
+          ],
+          "additionalProperties": false
+        },
+        "interpretation": {
+          "const": "conditional_reinfection_capable_catalytic_diagnostic"
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "display": {
+          "type": "object"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "reinfection_policy": {
+          "const": "same_pressure_regardless_of_previous_infection"
+        },
+        "progression_clock_policy": {
+          "const": "most_recent_reinfection_resets_clock_no_active_tb_progression_link"
+        }
+      },
+      "required": [
+        "schema_id",
+        "contract_version",
+        "implementation_version",
+        "exclusions",
+        "infection_state_semantics",
+        "disease_forward_operator",
+        "numerical_policy",
+        "interpretation",
+        "profile_hash",
+        "reinfection_policy",
+        "progression_clock_policy"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "#/$defs/base"
+    },
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.infection_pressure_shape.v1"
+            },
+            "kind": {
+              "const": "infection_pressure_shape_proxy"
+            },
+            "unit": {
+              "const": "dimensionless_shape"
+            },
+            "geography_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sex_policy": {
+              "type": "string",
+              "minLength": 1
+            },
+            "review": {
+              "$ref": "#/$defs/review"
+            },
+            "method": {
+              "enum": [
+                "smoothed_log_local_linear",
+                "proportional_unsmoothed",
+                "user_supplied_pressure_history"
+              ]
+            },
+            "source_incidence": {
+              "type": "object"
+            },
+            "source_incidence_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "normalization": {
+              "type": "object"
+            },
+            "parameters": {
+              "type": "object"
+            },
+            "uncertainty_policy": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 1
+            },
+            "diagnostics": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 1
+            },
+            "missing_years": {
+              "type": "array"
+            },
+            "sensitivity_specifications": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 0
+            },
+            "provenance": {
+              "type": "object"
+            },
+            "original_curves": {
+              "$ref": "#/$defs/curves"
+            },
+            "original_quantity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "curves": {
+              "$ref": "#/$defs/curves"
+            },
+            "source_bound": {
+              "enum": [
+                "lower",
+                "central",
+                "upper"
+              ]
+            }
+          },
+          "required": [
+            "schema_id",
+            "kind",
+            "unit",
+            "geography_id",
+            "sex_policy",
+            "review",
+            "method",
+            "normalization",
+            "parameters",
+            "uncertainty_policy"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "method": {
+                    "const": "user_supplied_pressure_history"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "curves",
+                  "original_curves",
+                  "original_quantity",
+                  "provenance"
+                ]
+              },
+              "else": {
+                "required": [
+                  "source_incidence",
+                  "source_incidence_hash",
+                  "rows",
+                  "diagnostics",
+                  "missing_years",
+                  "sensitivity_specifications"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.infection_pressure_history.v1"
+            },
+            "kind": {
+              "const": "reviewed_relative_pressure_history"
+            },
+            "unit": {
+              "const": "dimensionless_shape"
+            },
+            "geography_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "review": {
+              "$ref": "#/$defs/review"
+            },
+            "shape": {
+              "$ref": "#"
+            },
+            "shape_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "curves": {
+              "$ref": "#/$defs/curves"
+            },
+            "backcast": {
+              "type": "object"
+            },
+            "future_policy": {
+              "const": "none_no_post2024_extrapolation"
+            },
+            "age_exposure_policy": {
+              "const": "calendar_pressure_only"
+            },
+            "uncertainty_policy": {
+              "type": "string",
+              "minLength": 1
+            },
+            "backcast_policy": {
+              "$ref": "#"
+            },
+            "backcast_policy_hash": {
+              "$ref": "#/$defs/hash"
+            }
+          },
+          "required": [
+            "schema_id",
+            "kind",
+            "unit",
+            "geography_id",
+            "review",
+            "shape",
+            "shape_hash",
+            "curves",
+            "backcast",
+            "future_policy",
+            "age_exposure_policy",
+            "uncertainty_policy",
+            "backcast_policy",
+            "backcast_policy_hash"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.tbi_assay_operator.v1"
+            },
+            "assay_class": {
+              "enum": [
+                "TST",
+                "IGRA",
+                "TBST",
+                "synthetic_identity",
+                "direct_latent_tbi"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "positivity_threshold": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "sensitivity": {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            "specificity": {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            "review": {
+              "$ref": "#/$defs/review"
+            },
+            "provenance": {
+              "type": "object"
+            },
+            "observation_target": {
+              "type": "string",
+              "minLength": 1
+            },
+            "performance_provenance": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "schema_id",
+            "assay_class",
+            "name",
+            "positivity_threshold",
+            "sensitivity",
+            "specificity",
+            "review",
+            "provenance",
+            "observation_target",
+            "performance_provenance"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.tbi_observations.v1"
+            },
+            "mode": {
+              "enum": [
+                "survey",
+                "reviewed_profile_override"
+              ]
+            },
+            "prevalence_unit": {
+              "const": "proportion_0_1"
+            },
+            "review": {
+              "$ref": "#/$defs/review"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/observation"
+              },
+              "minItems": 1
+            },
+            "parent_profile_hash": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source_preservation": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "schema_id",
+            "mode",
+            "prevalence_unit",
+            "review",
+            "rows",
+            "parent_profile_hash",
+            "source_preservation"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.tbi_calibration_policy.v1"
+            },
+            "method": {
+              "enum": [
+                "overall_anchor",
+                "binomial",
+                "weighted_least_squares"
+              ]
+            },
+            "objective": {
+              "type": "string",
+              "minLength": 1
+            },
+            "free_parameters": {
+              "const": [
+                "alpha"
+              ]
+            },
+            "alpha_lower": {
+              "const": "0"
+            },
+            "alpha_upper": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "alpha_unit": {
+              "const": "per_person_year"
+            },
+            "alpha_tolerance": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "prevalence_tolerance": {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            "residual_tolerance": {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            "max_iterations": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "observation_weights": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              }
+            },
+            "uncertainty": {
+              "enum": [
+                "none",
+                "coherent_observation_intervals"
+              ]
+            },
+            "review": {
+              "$ref": "#/$defs/review"
+            },
+            "solver": {
+              "type": "string",
+              "minLength": 1
+            },
+            "likelihood_claim": {
+              "type": "boolean"
+            },
+            "incompatibility_action": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "schema_id",
+            "method",
+            "objective",
+            "free_parameters",
+            "alpha_lower",
+            "alpha_upper",
+            "alpha_unit",
+            "alpha_tolerance",
+            "prevalence_tolerance",
+            "residual_tolerance",
+            "max_iterations",
+            "observation_weights",
+            "uncertainty",
+            "review",
+            "solver",
+            "likelihood_claim",
+            "incompatibility_action"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.catalytic_scale_calibration.v1"
+            },
+            "fit_status": {
+              "enum": [
+                "accepted",
+                "supplied_scale",
+                "incompatible_anchors"
+              ]
+            },
+            "alpha": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "alpha_unit": {
+              "const": "per_person_year"
+            },
+            "scale_provenance": {
+              "type": "object"
+            },
+            "pressure_history": {
+              "$ref": "#"
+            },
+            "pressure_history_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "policy": {
+              "$ref": "#"
+            },
+            "policy_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "observations": {
+              "anyOf": [
+                {
+                  "$ref": "#"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "observations_hash": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "alpha_uncertainty": {
+              "type": "object"
+            },
+            "diagnostics": {
+              "type": "object"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 0
+            }
+          },
+          "required": [
+            "schema_id",
+            "fit_status",
+            "alpha",
+            "alpha_unit",
+            "pressure_history",
+            "pressure_history_hash",
+            "policy",
+            "policy_hash",
+            "observations",
+            "observations_hash",
+            "alpha_uncertainty",
+            "diagnostics",
+            "rows"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.catalytic_age_result.v1"
+            },
+            "geography_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sex": {
+              "$ref": "#/$defs/sex"
+            },
+            "time": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "age_lower": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "age_upper_exclusive": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "age_policy": {
+              "type": "string",
+              "minLength": 1
+            },
+            "alpha": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "alpha_unit": {
+              "type": "string",
+              "minLength": 1
+            },
+            "recent_window_years": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "history_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "cumulative_hazard": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "remote_hazard": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "recent_hazard": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "hazard_interpretation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "probability_rounding_absolute_bound": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "never_infected": {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            "recent": {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            "remote_only": {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            "any_tbi": {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            "most_recent_infection_time": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "recent_time_summary": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "remote_only_time_summary": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "expected_time_since_most_recent_infection": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/nonnegative"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expected_lifetime_infection_events": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/nonnegative"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "prior_remote_plus_recent": {
+              "$ref": "#/$defs/probability"
+            }
+          },
+          "required": [
+            "schema_id",
+            "geography_id",
+            "sex",
+            "time",
+            "age_lower",
+            "age_upper_exclusive",
+            "age_policy",
+            "alpha",
+            "alpha_unit",
+            "recent_window_years",
+            "history_hash",
+            "cumulative_hazard",
+            "remote_hazard",
+            "recent_hazard",
+            "hazard_interpretation",
+            "probability_rounding_absolute_bound",
+            "never_infected",
+            "recent",
+            "remote_only",
+            "any_tbi",
+            "most_recent_infection_time",
+            "recent_time_summary",
+            "remote_only_time_summary",
+            "expected_time_since_most_recent_infection",
+            "expected_lifetime_infection_events",
+            "prior_remote_plus_recent"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.calibrated_tbi_age_profile.v1"
+            },
+            "geography_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "baseline_year": {
+              "const": 2024
+            },
+            "baseline_time": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "recent_window_years": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "recency_clock": {
+              "const": "most_recent_infection_time"
+            },
+            "target_state": {
+              "const": "any_tbi"
+            },
+            "remote_only_rule": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "complete_age_coverage",
+                "partial_age_coverage"
+              ]
+            },
+            "population_scope": {
+              "const": "supplied_demographic_records_only"
+            },
+            "prevalence_unit": {
+              "const": "proportion_0_1"
+            },
+            "alpha": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "alpha_unit": {
+              "const": "per_person_year"
+            },
+            "calibration": {
+              "$ref": "#"
+            },
+            "calibration_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "source_demography": {
+              "type": "object"
+            },
+            "demography_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/age_row"
+              },
+              "minItems": 1
+            },
+            "display_bands": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 1
+            },
+            "sex_totals": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 1
+            },
+            "combined_totals": {
+              "type": "object"
+            },
+            "configuration": {
+              "type": "object"
+            },
+            "uncertainty_interpretation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "warnings": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 0
+            },
+            "scenario_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "derived_both_display_bands": {
+              "type": "array"
+            },
+            "published_both_reconciliation": {
+              "type": "array"
+            },
+            "cross_section_assumptions": {
+              "type": "array"
+            }
+          },
+          "required": [
+            "schema_id",
+            "geography_id",
+            "baseline_year",
+            "baseline_time",
+            "recent_window_years",
+            "recency_clock",
+            "target_state",
+            "remote_only_rule",
+            "status",
+            "population_scope",
+            "prevalence_unit",
+            "alpha",
+            "alpha_unit",
+            "calibration",
+            "calibration_hash",
+            "source_demography",
+            "demography_hash",
+            "rows",
+            "display_bands",
+            "sex_totals",
+            "combined_totals",
+            "configuration",
+            "uncertainty_interpretation",
+            "warnings",
+            "scenario_id",
+            "derived_both_display_bands",
+            "published_both_reconciliation",
+            "cross_section_assumptions"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.uncertainty_scenario_set.v1"
+            },
+            "uncertainty_kind": {
+              "type": "string",
+              "minLength": 1
+            },
+            "review": {
+              "$ref": "#/$defs/review"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 1
+            },
+            "rng": {
+              "type": "null"
+            },
+            "uncertainty_components": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "schema_id",
+            "uncertainty_kind",
+            "review",
+            "rows",
+            "rng",
+            "uncertainty_components"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.catalytic_preview_diagnostics.v1"
+            },
+            "profile_hash_reference": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "combined_totals": {
+              "type": "object"
+            },
+            "sex_totals": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 0
+            },
+            "calibration_diagnostics": {
+              "type": "object"
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 0
+            },
+            "warnings": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 0
+            }
+          },
+          "required": [
+            "schema_id",
+            "profile_hash_reference",
+            "combined_totals",
+            "sex_totals",
+            "calibration_diagnostics",
+            "rows",
+            "warnings"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.calibration_export_receipt.v1"
+            },
+            "profile_hash_reference": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "files": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          "required": [
+            "schema_id",
+            "profile_hash_reference",
+            "files"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.pressure_shape_unavailable.v1"
+            },
+            "geography_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_incidence_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "schema_id",
+            "geography_id",
+            "source_incidence_hash",
+            "reason"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.historical_backcast_policy.v1"
+            },
+            "method": {
+              "type": "string",
+              "minLength": 1
+            },
+            "start_time": {
+              "type": "string",
+              "minLength": 1
+            },
+            "first_observed_year": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parameters": {
+              "type": "object"
+            },
+            "reconstructed_period": {
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "bounds": {
+              "type": "object"
+            },
+            "warnings": {
+              "type": "array"
+            },
+            "provenance_hash": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "schema_id",
+            "method",
+            "start_time",
+            "first_observed_year",
+            "parameters",
+            "reconstructed_period",
+            "bounds",
+            "warnings",
+            "provenance_hash"
+          ]
+        },
+        {
+          "properties": {
+            "schema_id": {
+              "const": "country_tb.reviewed_tbi_override.v1"
+            },
+            "parent_profile_hash": {
+              "type": "string",
+              "minLength": 1
+            },
+            "geography_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "baseline_year": {
+              "const": 2024
+            },
+            "observations": {
+              "$ref": "#"
+            },
+            "observations_hash": {
+              "type": "string",
+              "minLength": 1
+            },
+            "review": {
+              "$ref": "#/$defs/review"
+            },
+            "rows": {
+              "type": "array"
+            },
+            "source_preservation": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "schema_id",
+            "parent_profile_hash",
+            "geography_id",
+            "baseline_year",
+            "observations",
+            "observations_hash",
+            "review",
+            "rows",
+            "source_preservation"
+          ]
+        }
+      ]
+    }
+  ],
+  "unevaluatedProperties": false
+}

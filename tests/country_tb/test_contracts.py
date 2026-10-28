@@ -243,8 +243,9 @@ def test_no_protected_app_runner_or_engine_imports_country_prototype():
         for path in (ROOT / directory).rglob("*.py"):
             if (ROOT / "engine" / "country_tb") in path.parents:
                 continue
-            if path == ROOT / "scripts" / "preview_country_tb_data.py":
-                continue  # Explicitly authorized isolated data-only developer CLI.
+            if path in {ROOT / "scripts" / "preview_country_tb_data.py",
+                        ROOT / "scripts" / "preview_country_tb_calibration.py"}:
+                continue  # Explicitly authorized isolated developer CLIs.
             source = path.read_text(encoding="utf-8-sig")
             assert "engine.country_tb" not in source, path
             for node in ast.walk(ast.parse(source, filename=str(path))):
