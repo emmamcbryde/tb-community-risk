@@ -1,16 +1,18 @@
 # Country and subnational TB milestone status
 
-Updated 2026-10-28 for Milestone 3A. Historical milestone statuses remain in Git.
+Updated 2026-10-29 for Milestone 3B. Historical milestone statuses remain in Git.
 
-The isolated country-model layer now allocates user-specified progression-factor
-prevalences within age/sex/subgroup strata, retains explicit definition and review
-status, handles overlap and multimorbidity, selects the highest applicable RR,
-and applies an explicit feasible residual association between any TBI and the
-declared non-recency risk-factor union. All marginals and TBI recency are retained.
+The isolated layer now projects first active-TB episodes after a supplied baseline,
+using attained age, time since most recent infection and the highest applicable
+RR through cumulative hazard. It supports competing mortality and explicit
+exogenous future infection/reinfection, with deterministic expected values and a
+continuous event-time Monte Carlo validator. All retained 2C–3A source contracts
+and implementations are unchanged; source marginals are preserved at initialization.
 
 Active-TB-incidence inference deliberately returns
-`unavailable_pending_progression_and_risk_forward_operator`. It produces no
-TBI estimate or temporary progression-model calculation. Observed/user inputs
+`unavailable_pending_progression_and_risk_forward_operator`. Forward code does
+not approve inverse calibration; independent reconciliation and identifiability
+review are still required. Observed/user inputs
 support one-scale overall/age anchors, direct age/sex profiles, direct exclusive
 recent/remote states, and total-only overrides with recency unavailable unless
 explicit conditional allocation is selected.
@@ -26,13 +28,21 @@ placeholder; the new allocation artifact references the unchanged baseline.
 Milestone 2C's repeated Poisson infection events, most-recent-event recency,
 remote-history audit and one-scale calibration remain unchanged. Its Australia/
 Viet Nam 0.005/year results remain diagnostic; PRK remains blocked. No
-progression, intervention, migration, transmission or economics model is added.
+intervention, migration, transmission or economics model is added. The new forward
+operator is a separate explicit consumer, not an integration into those old paths.
 
-Read [allocation](milestone3a_allocation.md), [contracts](milestone3a_contracts.md),
-[diagnostics](milestone3a_examples.md), [validation](milestone3a_validation.md)
-and [decisions](decision_register_3a.md).
+Pediatric curves remain external-required. The five-knot adult candidate is not
+adopted unqualified; a four-knot source-audited surrogate is diagnostic only.
+Central tail policy is no extrapolation. No reviewed national mortality snapshot
+has been adopted. Missing components block complete mathematical projections;
+no output is labelled a complete country estimate.
+
+Read [evidence](milestone3b_evidence.md), [mathematics](milestone3b_forward.md),
+[contracts](milestone3b_contracts.md), [diagnostics](milestone3b_examples.md),
+[validation](milestone3b_validation.md) and [decisions](decision_register_3b.md).
 Protected worktrees/refs, frozen data, production UI and all runners remain
-unchanged. Recommended next work is the age-, time-since-infection- and
-risk-specific active-TB progression forward operator; it has not been started.
-Stochastic individual generation remains deferred. This model is for planning and sequencing,
+unchanged. Recommended next work is independent incidence reconciliation,
+identifiability analysis and approval or rejection of incidence-based TBI inversion;
+it has not been started. A full individual factor-membership population generator
+remains deferred. This model is for planning and sequencing,
 not denying care.

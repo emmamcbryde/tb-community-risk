@@ -1,0 +1,1888 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:country_tb:progression_forward:1.0.0",
+  "title": "Isolated active-TB forward progression contracts; inverse calibration blocked",
+  "description": "Pure constructors additionally validate numerical semantics, evidence scope, monotonic hazards, overlap, population coverage and scientific hashes.",
+  "$defs": {
+    "curve": {
+      "type": "object",
+      "required": [
+        "status",
+        "risk_interpretation",
+        "knots",
+        "segments",
+        "tail",
+        "tail_parameters",
+        "source",
+        "provenance",
+        "review"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "reviewed_external",
+            "diagnostic_synthetic",
+            "diagnostic_adult_surrogate"
+          ]
+        },
+        "risk_interpretation": {
+          "enum": [
+            "net_risk_without_competing_mortality_v1",
+            "diagnostic_cumulative_risk_surrogate_pending_cause_specific_review_v1"
+          ]
+        },
+        "knots": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": [
+              "time_years",
+              "cumulative_risk",
+              "cumulative_hazard"
+            ],
+            "properties": {
+              "time_years": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              },
+              "cumulative_risk": {
+                "type": "string",
+                "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+              },
+              "cumulative_hazard": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "start",
+              "end",
+              "hazard_per_year"
+            ],
+            "properties": {
+              "start": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              },
+              "end": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              },
+              "hazard_per_year": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "tail": {
+          "enum": [
+            "no_extrapolation_v1",
+            "constant_final_segment_hazard_v1",
+            "declining_to_remote_plateau_v1",
+            "fixed_remote_hazard_v1"
+          ]
+        },
+        "tail_parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          }
+        },
+        "source": {
+          "type": "object"
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "review": {
+          "type": "object"
+        },
+        "interpolation": {
+          "type": "string"
+        },
+        "tail_scientific_status": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "cohort_row": {
+      "type": "object",
+      "required": [
+        "cohort_id",
+        "subgroup_id",
+        "sex",
+        "population",
+        "age",
+        "baseline_tbi_state",
+        "tau",
+        "effective_rr",
+        "responsibility_weights",
+        "prior_remote_plus_recent_fraction",
+        "baseline_active_tb_population",
+        "effect_status",
+        "pediatric_effect_approved",
+        "effect_age_applicability",
+        "unresolved_reasons"
+      ],
+      "properties": {
+        "cohort_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subgroup_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sex": {
+          "enum": [
+            "female",
+            "male"
+          ]
+        },
+        "population": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "age": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "baseline_tbi_state": {
+          "enum": [
+            "never_infected",
+            "recent",
+            "remote_only",
+            "unresolved"
+          ]
+        },
+        "tau": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effective_rr": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "responsibility_weights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+          }
+        },
+        "prior_remote_plus_recent_fraction": {
+          "type": "string",
+          "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+        },
+        "baseline_active_tb_population": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "effect_status": {
+          "type": "string"
+        },
+        "pediatric_effect_approved": {
+          "type": "boolean"
+        },
+        "effect_age_applicability": {
+          "type": "object",
+          "required": [
+            "age_lower",
+            "age_upper_exclusive",
+            "policy"
+          ],
+          "properties": {
+            "age_lower": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            "age_upper_exclusive": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "policy": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "unresolved_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "age_at_most_recent_infection": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_age_lower": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_age_upper_exclusive": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "projection_row": {
+      "type": "object",
+      "required": [
+        "cohort_id",
+        "subgroup_id",
+        "sex",
+        "baseline_tbi_state",
+        "effective_rr",
+        "risk_set_population",
+        "baseline_active_TB_excluded",
+        "status",
+        "unresolved_reasons",
+        "expected_cases",
+        "cumulative_risk",
+        "surviving_disease_free",
+        "competing_deaths",
+        "person_years"
+      ],
+      "properties": {
+        "cohort_id": {
+          "type": "string"
+        },
+        "subgroup_id": {
+          "type": "string"
+        },
+        "sex": {
+          "enum": [
+            "female",
+            "male"
+          ]
+        },
+        "baseline_tbi_state": {
+          "enum": [
+            "never_infected",
+            "recent",
+            "remote_only",
+            "unresolved"
+          ]
+        },
+        "effective_rr": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "risk_set_population": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "baseline_active_TB_excluded": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "status": {
+          "enum": [
+            "resolved",
+            "unresolved"
+          ]
+        },
+        "unresolved_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expected_cases": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cumulative_risk": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "surviving_disease_free": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "competing_deaths": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "person_years": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "incidence_per_100000_person_years": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_infection_events": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "reinfection_events": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "population_accounting_residual": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "prior_remote_plus_recent_baseline_subset_population": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "diagnostic_only": {
+          "type": "boolean"
+        },
+        "baseline_cohorts": {
+          "type": "object"
+        },
+        "source": {
+          "type": "object"
+        },
+        "review": {
+          "type": "object"
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "natural_history_audit": {
+          "type": "object"
+        },
+        "tail_scenarios": {
+          "type": "object"
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "projections": {
+          "type": "object"
+        },
+        "partial_reset_single_event": {
+          "type": "object"
+        },
+        "warning": {
+          "type": "string"
+        },
+        "incidence_comparison": {
+          "type": "object"
+        },
+        "constant_hazard_reference": {
+          "type": "object"
+        },
+        "monte_carlo": {
+          "type": "object"
+        },
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "historical_conditioning_sensitivity": {
+          "type": "object"
+        },
+        "schema_id": {
+          "const": "country_tb.active_tb_forward_diagnostic_set.v1"
+        },
+        "numerical_refinement": {
+          "type": "object"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "baseline_cohorts",
+        "constant_hazard_reference",
+        "contract_version",
+        "diagnostic_only",
+        "historical_conditioning_sensitivity",
+        "implementation_version",
+        "incidence_comparison",
+        "monte_carlo",
+        "natural_history_audit",
+        "numerical_refinement",
+        "partial_reset_single_event",
+        "profile_hash",
+        "projections",
+        "provenance",
+        "purpose",
+        "review",
+        "schema_id",
+        "source",
+        "tail_scenarios",
+        "warning"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "files": {
+          "type": "object"
+        },
+        "profile_hash_reference": {
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "schema_id": {
+          "const": "country_tb.active_tb_forward_export_receipt.v1"
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "contract_version",
+        "files",
+        "implementation_version",
+        "profile_hash",
+        "profile_hash_reference",
+        "purpose",
+        "schema_id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "review": {
+          "type": "object"
+        },
+        "reinfection_clock": {
+          "$ref": "#"
+        },
+        "competing_mortality": {
+          "$ref": "#"
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "step_years": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "mode": {
+          "enum": [
+            "baseline_cohort_only_v1",
+            "exogenous_future_infection_v1"
+          ]
+        },
+        "disease_event": {
+          "type": "string"
+        },
+        "inverse_incidence_calibration": {
+          "const": "unavailable_pending_progression_and_risk_forward_operator"
+        },
+        "numerical_precision": {
+          "type": "string"
+        },
+        "schema_id": {
+          "const": "country_tb.active_tb_forward_operator.v1"
+        },
+        "horizons": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          }
+        },
+        "recent_window_years": {
+          "type": "string"
+        },
+        "inverse_approval": {
+          "type": "string"
+        },
+        "diagnostic_only": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "object"
+        },
+        "effect_application": {
+          "$ref": "#"
+        },
+        "natural_history": {
+          "$ref": "#"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "numerical_method": {
+          "type": "string"
+        },
+        "future_pressure": {
+          "$ref": "#"
+        },
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "exclusions": {
+          "type": "array"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "competing_mortality",
+        "contract_version",
+        "diagnostic_only",
+        "disease_event",
+        "effect_application",
+        "exclusions",
+        "future_pressure",
+        "horizons",
+        "implementation_version",
+        "inverse_approval",
+        "inverse_incidence_calibration",
+        "mode",
+        "natural_history",
+        "numerical_method",
+        "numerical_precision",
+        "profile_hash",
+        "provenance",
+        "purpose",
+        "recent_window_years",
+        "reinfection_clock",
+        "review",
+        "schema_id",
+        "source",
+        "step_years"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "baseline_cohort_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "checks": {
+          "type": "array"
+        },
+        "RNG_type": {
+          "type": "string"
+        },
+        "projection_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "operator_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "RNG_initial_state_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object"
+          }
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "sample_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "event_time_method": {
+          "type": "string"
+        },
+        "tolerance_policy": {
+          "type": "object"
+        },
+        "RNG_final_state_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "global_RNG_used": {
+          "const": false
+        },
+        "schema_id": {
+          "const": "country_tb.active_tb_monte_carlo_validation.v1"
+        },
+        "horizon_years": {
+          "type": "string"
+        },
+        "covered_population": {
+          "type": "string"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "RNG_final_state_sha256",
+        "RNG_initial_state_sha256",
+        "RNG_type",
+        "baseline_cohort_hash",
+        "checks",
+        "contract_version",
+        "covered_population",
+        "event_time_method",
+        "global_RNG_used",
+        "horizon_years",
+        "implementation_version",
+        "operator_hash",
+        "passed",
+        "profile_hash",
+        "projection_hash",
+        "purpose",
+        "rows",
+        "sample_size",
+        "schema_id",
+        "tolerance_policy"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "baseline_cohort_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "horizon_interpretation": {
+          "type": "string"
+        },
+        "operator": {
+          "$ref": "#"
+        },
+        "coverage_interpretation": {
+          "type": "string"
+        },
+        "inverse_incidence_calibration": {
+          "type": "string"
+        },
+        "population": {
+          "type": "string"
+        },
+        "schema_id": {
+          "const": "country_tb.active_tb_projection_result.v1"
+        },
+        "baseline_active_TB_excluded": {
+          "type": "string"
+        },
+        "infection_time_interpretation": {
+          "type": "string"
+        },
+        "diagnostic_only": {
+          "type": "boolean"
+        },
+        "geography_id": {
+          "type": "string"
+        },
+        "historical_conditioning_limitation": {
+          "type": "string"
+        },
+        "operator_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "country_estimate_status": {
+          "type": "string"
+        },
+        "complete_country_estimate": {
+          "const": false
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "projections": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "horizon_years",
+              "rows",
+              "unresolved_population",
+              "expected_cases_full",
+              "expected_cases_covered"
+            ],
+            "properties": {
+              "horizon_years": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/projection_row"
+                }
+              },
+              "unresolved_population": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              },
+              "expected_cases_full": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "expected_cases_covered": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "instantaneous_baseline": {
+          "type": "object"
+        },
+        "mortality_status": {
+          "type": "string"
+        },
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "exclusions": {
+          "type": "array"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "baseline_active_TB_excluded",
+        "baseline_cohort_hash",
+        "complete_country_estimate",
+        "contract_version",
+        "country_estimate_status",
+        "coverage_interpretation",
+        "diagnostic_only",
+        "exclusions",
+        "geography_id",
+        "historical_conditioning_limitation",
+        "horizon_interpretation",
+        "implementation_version",
+        "infection_time_interpretation",
+        "instantaneous_baseline",
+        "inverse_incidence_calibration",
+        "mortality_status",
+        "operator",
+        "operator_hash",
+        "population",
+        "profile_hash",
+        "projections",
+        "purpose",
+        "schema_id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "review": {
+          "type": "object"
+        },
+        "source": {
+          "type": "object"
+        },
+        "geography_id": {
+          "type": "string"
+        },
+        "assumptions": {
+          "type": "string"
+        },
+        "licensing": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "age_lower",
+              "age_upper_exclusive",
+              "sex",
+              "subgroup_id",
+              "survival_probability_one_year",
+              "hazard_per_year"
+            ],
+            "properties": {
+              "age_lower": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              },
+              "age_upper_exclusive": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sex": {
+                "enum": [
+                  "female",
+                  "male",
+                  "both"
+                ]
+              },
+              "subgroup_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "survival_probability_one_year": {
+                "type": "string",
+                "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+              },
+              "hazard_per_year": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "mode": {
+          "enum": [
+            "no_mortality_diagnostic_v1",
+            "external_age_sex_survival_v1",
+            "reviewed_national_life_table_v1"
+          ]
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "snapshot_hash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "bias_if_unmodelled": {
+          "type": "string"
+        },
+        "schema_id": {
+          "const": "country_tb.competing_mortality.v1"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "assumptions",
+        "bias_if_unmodelled",
+        "contract_version",
+        "geography_id",
+        "implementation_version",
+        "licensing",
+        "mode",
+        "profile_hash",
+        "provenance",
+        "purpose",
+        "review",
+        "rows",
+        "schema_id",
+        "snapshot_hash",
+        "source",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "exogenous": {
+          "type": "boolean"
+        },
+        "review": {
+          "type": "object"
+        },
+        "automatic_WHO_extrapolation": {
+          "const": false
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "scenario": {
+          "enum": [
+            "zero",
+            "constant_at_2024",
+            "user_supplied",
+            "bounded_decline",
+            "bounded_increase"
+          ]
+        },
+        "endogenous_transmission": {
+          "const": false
+        },
+        "baseline_rate": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema_id": {
+          "const": "country_tb.future_exogenous_pressure.v1"
+        },
+        "horizon_years": {
+          "type": "string"
+        },
+        "source": {
+          "type": "object"
+        },
+        "rate_bounds": {
+          "anyOf": [
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "geography_id": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "start",
+              "end",
+              "rate_per_year",
+              "sex",
+              "subgroup_id"
+            ],
+            "properties": {
+              "start": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              },
+              "end": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              },
+              "rate_per_year": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              },
+              "sex": {
+                "enum": [
+                  "female",
+                  "male",
+                  "both"
+                ]
+              },
+              "subgroup_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "annual_change": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trend_interpolation": {
+          "type": "string"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "annual_change",
+        "automatic_WHO_extrapolation",
+        "baseline_rate",
+        "contract_version",
+        "endogenous_transmission",
+        "exogenous",
+        "geography_id",
+        "horizon_years",
+        "implementation_version",
+        "profile_hash",
+        "provenance",
+        "purpose",
+        "rate_bounds",
+        "review",
+        "rows",
+        "scenario",
+        "schema_id",
+        "source",
+        "trend_interpolation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "validation_only_not_calibration"
+        },
+        "target_incidence_per_100000_person_year": {
+          "type": "string"
+        },
+        "target_contract_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "projection_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "difference": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uncertainty": {
+          "type": "object"
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "predicted_covered_population_rate": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "ratio": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "changes_to_TBI_or_pressure": {
+          "type": "null"
+        },
+        "fitted_parameters": {
+          "type": "null"
+        },
+        "compatibility_warnings": {
+          "type": "array"
+        },
+        "predicted_incidence_per_100000_person_year": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prediction_measure": {
+          "type": "string"
+        },
+        "ratio_unavailable_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target": {
+          "type": "object"
+        },
+        "scenario_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "unresolved_population": {
+          "type": "string"
+        },
+        "inverse_incidence_calibration": {
+          "type": "string"
+        },
+        "model_exclusions": {
+          "type": "array"
+        },
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "schema_id": {
+          "const": "country_tb.incidence_validation_comparison.v1"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "changes_to_TBI_or_pressure",
+        "compatibility_warnings",
+        "contract_version",
+        "difference",
+        "fitted_parameters",
+        "implementation_version",
+        "inverse_incidence_calibration",
+        "model_exclusions",
+        "predicted_covered_population_rate",
+        "predicted_incidence_per_100000_person_year",
+        "prediction_measure",
+        "profile_hash",
+        "projection_hash",
+        "purpose",
+        "ratio",
+        "ratio_unavailable_reason",
+        "scenario_hash",
+        "schema_id",
+        "status",
+        "target",
+        "target_contract_hash",
+        "target_incidence_per_100000_person_year",
+        "uncertainty",
+        "unresolved_population"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "review": {
+          "type": "object"
+        },
+        "baseline_time": {
+          "type": "string"
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "baseline_year": {
+          "type": "integer"
+        },
+        "population": {
+          "type": "string"
+        },
+        "schema_id": {
+          "const": "country_tb.progression_baseline_cohort.v1"
+        },
+        "baseline_active_TB_excluded": {
+          "type": "string"
+        },
+        "prior_TB_history": {
+          "type": "string"
+        },
+        "recent_window_years": {
+          "type": "string"
+        },
+        "diagnostic_only": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "object"
+        },
+        "geography_id": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/cohort_row"
+          }
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "numerical_policy": {
+          "type": "object"
+        },
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "active_TB_exclusion_policy": {
+          "type": "string"
+        },
+        "risk_factor_followup": {
+          "type": "string"
+        },
+        "source_allocation": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "active_TB_exclusion_policy",
+        "baseline_active_TB_excluded",
+        "baseline_time",
+        "baseline_year",
+        "contract_version",
+        "diagnostic_only",
+        "geography_id",
+        "implementation_version",
+        "numerical_policy",
+        "population",
+        "prior_TB_history",
+        "profile_hash",
+        "provenance",
+        "purpose",
+        "recent_window_years",
+        "review",
+        "risk_factor_followup",
+        "rows",
+        "schema_id",
+        "source",
+        "source_allocation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "review": {
+          "type": "object"
+        },
+        "source": {
+          "type": "object"
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "multimorbidity": {
+          "const": "highest_applicable_reviewed_rr_v1"
+        },
+        "qualification": {
+          "type": "string"
+        },
+        "policy": {
+          "const": "provisional_rr_as_hazard_multiplier_v1"
+        },
+        "cap": {
+          "type": "null"
+        },
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "original_effect_measure": {
+          "type": "string"
+        },
+        "formula": {
+          "type": "string"
+        },
+        "schema_id": {
+          "const": "country_tb.progression_effect_application.v1"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "cap",
+        "contract_version",
+        "formula",
+        "implementation_version",
+        "multimorbidity",
+        "original_effect_measure",
+        "policy",
+        "profile_hash",
+        "provenance",
+        "purpose",
+        "qualification",
+        "review",
+        "schema_id",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "review": {
+          "type": "object"
+        },
+        "source": {
+          "type": "object"
+        },
+        "age_policy": {
+          "type": "string"
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "age_groups": {
+          "type": "array"
+        },
+        "group_curves": {
+          "type": "object",
+          "required": [
+            "0-4",
+            "5-14",
+            "15+"
+          ],
+          "properties": {
+            "0-4": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/curve"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "5-14": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/curve"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "15+": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/curve"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "sex_effect": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "sex_curves": {
+          "type": "object",
+          "properties": {
+            "female": {
+              "type": "object",
+              "required": [
+                "0-4",
+                "5-14",
+                "15+"
+              ],
+              "properties": {
+                "0-4": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/curve"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "5-14": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/curve"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "15+": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/curve"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            "male": {
+              "type": "object",
+              "required": [
+                "0-4",
+                "5-14",
+                "15+"
+              ],
+              "properties": {
+                "0-4": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/curve"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "5-14": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/curve"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "15+": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/curve"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "schema_id": {
+          "const": "country_tb.progression_natural_history.v1"
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "age_groups",
+        "age_policy",
+        "contract_version",
+        "group_curves",
+        "implementation_version",
+        "profile_hash",
+        "provenance",
+        "purpose",
+        "review",
+        "schema_id",
+        "sex_curves",
+        "sex_effect",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "calculation_only_sensitivity": {
+          "type": "boolean"
+        },
+        "review": {
+          "type": "object"
+        },
+        "source": {
+          "type": "object"
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_progression_forward_1.0.0"
+        },
+        "partial_reset_scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "identifiable_from_total_TBI": {
+          "const": false
+        },
+        "policy": {
+          "enum": [
+            "most_recent_reinfection_resets_progression_clock_v1",
+            "no_reinfection_clock_reset_sensitivity_v1",
+            "partial_reinfection_clock_reset_sensitivity_v1",
+            "partial_protection_against_reinfection_sensitivity_v1"
+          ]
+        },
+        "remaining_clock_fraction": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purpose": {
+          "const": "planning_and_sequencing_not_denying_care"
+        },
+        "reinfection_susceptibility": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema_id": {
+          "const": "country_tb.reinfection_progression_clock.v1"
+        },
+        "RR_multiplied_by_reinfection": {
+          "const": false
+        },
+        "receipt": {
+          "type": "object"
+        },
+        "display": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "RR_multiplied_by_reinfection",
+        "calculation_only_sensitivity",
+        "contract_version",
+        "identifiable_from_total_TBI",
+        "implementation_version",
+        "partial_reset_scope",
+        "policy",
+        "profile_hash",
+        "provenance",
+        "purpose",
+        "reinfection_susceptibility",
+        "remaining_clock_fraction",
+        "review",
+        "schema_id",
+        "source"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}
