@@ -1,6 +1,15 @@
 # Country and subnational TB milestone status
 
-Updated 2026-10-30 for Milestone 3C. Historical milestone statuses remain in Git.
+Updated 2026-10-30 for Milestone 3D. Historical milestone statuses remain in Git.
+
+Internal evidence synthesis and empirical model checks are complete for review,
+not external scientific sign-off. The new protocol, source ledger, immutable
+96-observation validation snapshot, ABS validation life-table extract, separated
+fit/validation utilities, three proposed sensitivity sets and reviewer response
+table are isolated. No central adult/pediatric/tail or country inverse configuration
+is approved. Empirical WHO incidence inversion remains blocked; user TBI inputs
+remain independent and functional. See the [3D reviewer package](milestone3d_review.md),
+[empirical results](milestone3d_empirical.md) and [decisions](decision_register_3d.md).
 
 Independent3B diagnostics reproduce. New offline diagnostic inversion checks
 scientific gates, attainable range, monotonicity/all roots, sensitivity and
@@ -31,8 +40,9 @@ Subgroups are allocated separately and combined by population counts. Unresolved
 groups and 100+ cells remain in denominators; full-population TBI is unavailable
 when its coverage is incomplete. Adult candidate effects are not applied to
 children automatically. Provisional legacy effects require explicit diagnostic
-use; the default effect policy is reviewed-only. All demonstrations use invented
-values, not country estimates. The 2D source contracts retain their null risk
+use; the default effect policy is reviewed-only. Prior fictional demonstrations
+remain distinct from3D's source-preserving empirical checks; neither supplies
+country TBI estimates. The 2D source contracts retain their null risk
 placeholder; the new allocation artifact references the unchanged baseline.
 
 Milestone 2C's repeated Poisson infection events, most-recent-event recency,
@@ -51,8 +61,8 @@ Read [evidence](milestone3b_evidence.md), [mathematics](milestone3b_forward.md),
 [contracts](milestone3b_contracts.md), [diagnostics](milestone3b_examples.md),
 [validation](milestone3b_validation.md) and [decisions](decision_register_3b.md).
 Protected worktrees/refs, frozen data, production UI and all runners remain
-unchanged. Recommended next work is independent incidence reconciliation,
-identifiability analysis and approval or rejection of incidence-based TBI inversion;
-it has not been started. A full individual factor-membership population generator
+unchanged. Recommended next work is scientific collaborator review, targeted
+matched data acquisition and a preregistered held-out validation plan; no
+production inverse approval or UI integration is started. A full individual factor-membership population generator
 remains deferred. This model is for planning and sequencing,
 not denying care.

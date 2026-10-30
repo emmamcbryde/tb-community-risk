@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:country_tb:empirical_validation:1.0.0",
+  "title": "Internal scientific evidence and empirical comparison; no automatic approval",
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": ["schema_id", "contract_version", "implementation_version", "profile_hash", "production_available", "externally_validated", "purpose"],
+      "properties": {
+        "contract_version": {"const": "1.0.0"},
+        "implementation_version": {"const": "country_tb_empirical_validation_1.0.0"},
+        "profile_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "production_available": {"const": false},
+        "externally_validated": {"const": false},
+        "purpose": {"const": "planning_and_sequencing_not_denying_care"}
+      }
+    },
+    "source_observation": {
+      "type": "object",
+      "required": ["record_id", "source_id", "citation", "url", "access_date", "geography_id", "geography_level", "subgroup_id", "participant_pool", "membership_group", "survey_year", "survey_period", "age_lower", "age_upper_exclusive", "sex", "view", "numerator", "denominator", "reported_prevalence_percent", "uncertainty", "assay", "threshold", "sampling_frame", "survey_design", "migration", "review_status", "transformation_notes", "source_locator", "source_cells", "compatibility"],
+      "properties": {
+        "record_id": {"type": "string", "minLength": 1},
+        "source_id": {"type": "string", "minLength": 1},
+        "numerator": {"type": ["integer", "null"], "minimum": 0},
+        "denominator": {"type": ["integer", "null"], "minimum": 1},
+        "sex": {"enum": ["female", "male", "both", "unknown"]},
+        "age_lower": {"type": "integer", "minimum": 0},
+        "age_upper_exclusive": {"type": ["integer", "null"], "minimum": 1},
+        "survey_year": {"type": "integer", "maximum": 2024},
+        "review_status": {"const": "internally_extracted_pending_scientific_review"},
+        "assay": {"enum": ["QFT-Plus", "QFT-GIT", "TST", "mixed_TST_IGRA", "direct_latent_TBI"]},
+        "migration": {"type": "object", "required": ["current_residence", "birth_geography", "previous_residence", "exposure_geography", "arrival_year", "residence_duration"]},
+        "source_cells": {"type": "array", "minItems": 1},
+        "uncertainty": {"type": "object", "required": ["kind"], "properties": {"kind": {"enum": ["reported_95CI", "not_reported"]}}}
+      }
+    },
+    "empirical_tbi_validation_inputs": {
+      "allOf": [{"$ref": "#/$defs/base"}],
+      "required": ["sources", "rows", "source_records", "review_status", "no_clearance_caveat"],
+      "properties": {
+        "schema_id": {"const": "country_tb.empirical_tbi_validation_inputs.v1"},
+        "sources": {"type": "array", "minItems": 1},
+        "rows": {"type": "array", "minItems": 1},
+        "source_records": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source_observation"}}
+      }
+    },
+    "empirical_validation_split": {
+      "allOf": [{"$ref": "#/$defs/base"}],
+      "required": ["input_hash", "fit_ids", "validation_ids", "kind", "rationale", "independence_claim", "cluster_caveat"],
+      "properties": {
+        "schema_id": {"const": "country_tb.empirical_validation_split.v1"},
+        "fit_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+        "validation_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+        "kind": {"enum": ["held_out_age_records", "cross_cohort_transport_comparison", "independent_survey"]}
+      }
+    },
+    "empirical_tbi_comparison": {
+      "allOf": [{"$ref": "#/$defs/base"}],
+      "anyOf": [{"required": ["rows", "source_hash", "scenario_hash", "thresholds_approved"]}, {"required": ["direction", "status"]}],
+      "properties": {
+        "schema_id": {"const": "country_tb.empirical_tbi_comparison.v1"},
+        "thresholds_approved": {"const": false},
+        "central_parameter_set_approved": {"const": false},
+        "complete_country_estimate_available": {"const": false}
+      }
+    },
+    "review_parameter_set": {
+      "allOf": [{"$ref": "#/$defs/base"}],
+      "required": ["parameter_set_id", "natural_history", "cumulative_risk_knots", "segment_hazards", "interpolation", "central_adult_curve", "central_remote_tail", "pediatric_curves", "scientific_approval", "selected_by_default", "source", "limitations"],
+      "properties": {
+        "schema_id": {"const": "country_tb.review_parameter_set.v1"},
+        "parameter_set_id": {"enum": ["conservative", "central_candidate", "higher_progression"]},
+        "central_adult_curve": {"type": "null"},
+        "central_remote_tail": {"type": "null"},
+        "scientific_approval": {"const": "pending"},
+        "selected_by_default": {"const": false}
+      }
+    },
+    "scientific_evidence_registry": {
+      "allOf": [{"$ref": "#/$defs/base"}],
+      "required": ["search_date", "protocol", "search_queries", "scope", "factor_rows", "rows", "pending_components", "RR74_warning"],
+      "properties": {
+        "schema_id": {"const": "country_tb.scientific_evidence_registry.v1"},
+        "factor_rows": {"type": "array", "minItems": 11, "maxItems": 11, "items": {
+          "type": "object", "required": ["factor_id", "exact_legacy_definition", "legacy_RR", "status", "citation", "url", "age_range", "treatment_status", "TBI_ascertainment", "reference_population", "effect_measure", "adjusted_estimate", "uncertainty", "follow_up", "absolute_event_rate", "adjustment_variables", "extraction_notes", "applicable_as_progression_hazard_multiplier"],
+          "properties": {"status": {"enum": ["reviewed_central", "sensitivity_only", "diagnostic_legacy", "incompatible_definition", "insufficient_evidence", "excluded"]}, "applicable_as_progression_hazard_multiplier": {"const": false}}
+        }}
+      }
+    },
+    "model_discrepancy": {
+      "allOf": [{"$ref": "#/$defs/base"}],
+      "required": ["source_hash", "scenario_hash", "rows", "discrepancy_fitted_into_alpha", "estimated_total_discrepancy", "conclusion"],
+      "properties": {
+        "schema_id": {"const": "country_tb.model_discrepancy.v1"},
+        "rows": {"type": "array", "minItems": 13, "maxItems": 13},
+        "discrepancy_fitted_into_alpha": {"const": false},
+        "estimated_total_discrepancy": {"type": "null"}
+      }
+    },
+    "scientific_reviewer_response": {
+      "allOf": [{"$ref": "#/$defs/base"}],
+      "required": ["rows", "status", "automatically_approved"],
+      "properties": {
+        "schema_id": {"const": "country_tb.scientific_reviewer_response.v1"},
+        "status": {"const": "external_review_not_yet_obtained"},
+        "automatically_approved": {"const": false},
+        "rows": {"type": "array", "items": {"required": ["component_id", "decision", "allowed_decisions", "comments", "alternative_source_or_value", "reviewer", "date"]}}
+      }
+    },
+    "assay_validation_scenario": {
+      "type": "object", "required": ["schema_id", "profile_hash", "operator", "age_lower", "variant", "source", "provenance", "review_status", "pediatric_performance", "production_available", "externally_validated"],
+      "properties": {
+        "schema_id": {"const": "country_tb.assay_validation_scenario.v1"},
+        "profile_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "production_available": {"const": false}, "externally_validated": {"const": false},
+        "age_lower": {"const": 15}, "pediatric_performance": {"type": "null"}
+      }
+    },
+    "validation_snapshot_manifest": {
+      "type": "object", "required": ["schema_id", "profile_hash", "snapshot_id", "scientific_hash", "files", "immutable", "licence_policy", "extraction_version"],
+      "properties": {"schema_id": {"const": "country_tb.validation_snapshot_manifest.v1"}, "immutable": {"const": true}, "files": {"type": "object", "required": ["sources.json", "source_observations.json", "model_inputs.json"]}}
+    },
+    "mortality_validation_snapshot": {
+      "type": "object", "required": ["schema_id", "profile_hash", "metadata", "source_rows", "rows", "production_available", "externally_validated"],
+      "properties": {
+        "schema_id": {"const": "country_tb.mortality_validation_snapshot.v1"},
+        "source_rows": {"type": "array", "minItems": 202, "maxItems": 202},
+        "rows": {"type": "array", "minItems": 200, "maxItems": 200},
+        "production_available": {"const": false}, "externally_validated": {"const": false},
+        "metadata": {"type": "object", "required": ["source_id", "geography_id", "citation", "url", "source_bytes_sha256", "access_date", "vintage", "licence", "projection_status", "death_scope", "open_age_policy", "adoption_status"]}
+      }
+    },
+    "mortality_validation_manifest": {
+      "type": "object", "required": ["schema_id", "profile_hash", "snapshot_id", "files", "scientific_hash", "immutable"],
+      "properties": {"schema_id": {"const": "country_tb.mortality_validation_manifest.v1"}, "immutable": {"const": true}, "files": {"type": "object", "required": ["mortality.json"]}}
+    }
+  },
+  "oneOf": [
+    {"$ref": "#/$defs/empirical_tbi_validation_inputs"},
+    {"$ref": "#/$defs/empirical_validation_split"},
+    {"$ref": "#/$defs/empirical_tbi_comparison"},
+    {"$ref": "#/$defs/review_parameter_set"},
+    {"$ref": "#/$defs/scientific_evidence_registry"},
+    {"$ref": "#/$defs/model_discrepancy"},
+    {"$ref": "#/$defs/scientific_reviewer_response"},
+    {"$ref": "#/$defs/assay_validation_scenario"},
+    {"$ref": "#/$defs/validation_snapshot_manifest"},
+    {"$ref": "#/$defs/mortality_validation_snapshot"},
+    {"$ref": "#/$defs/mortality_validation_manifest"}
+  ]
+}

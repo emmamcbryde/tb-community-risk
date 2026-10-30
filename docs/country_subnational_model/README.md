@@ -1,8 +1,10 @@
 # Country and subnational TB model architecture review
 
-Milestone 3C independently audits the forward operator and adds scientific-gated diagnostic incidence inversion. Country inference remains blocked: adult, pediatric, tail, effect, mortality and observation assumptions are not approved. Fully specified fictional closed-population diagnostics remain isolated. The model is for planning and sequencing, not denying care. No production application or runner is connected.
+Milestone 3D consolidates scientific evidence and performs source-preserving empirical TBI comparisons. Country inference remains blocked: adult, pediatric, tail, effect, mortality and observation assumptions are not approved. No central parameter set is automatically adopted and no external scientific validation is claimed. The model is for planning and sequencing, not denying care. No production application or runner is connected.
 
-Current 3C review: [scientific audit and evidence](milestone3c_scientific_review.md), [identifiability, gates and contracts](milestone3c_inversion.md), [diagnostics and validation](milestone3c_validation.md), and [decisions and next milestone](decision_register_3c.md).
+Current 3D review: [reviewer decision package](milestone3d_review.md), [prespecified protocol](milestone3d_protocol.md), [evidence and candidate parameters](milestone3d_evidence.md), [empirical datasets and comparisons](milestone3d_empirical.md), [contracts and validation](milestone3d_validation.md), [decisions](decision_register_3d.md), and [immutable inputs](../../data/country_tb_validation/README.md).
+
+Retained 3C review: [scientific audit and evidence](milestone3c_scientific_review.md), [identifiability, gates and contracts](milestone3c_inversion.md), [diagnostics and validation](milestone3c_validation.md), and [decisions and next milestone](decision_register_3c.md).
 
 Retained 3B review: [primary evidence and curve decisions](milestone3b_evidence.md), [forward mathematics and limitations](milestone3b_forward.md), [contracts](milestone3b_contracts.md), [diagnostics](milestone3b_examples.md), [validation](milestone3b_validation.md), and [decisions and next milestone](decision_register_3b.md).
 
