@@ -1,8 +1,10 @@
 # Country and subnational TB model architecture review
 
-Milestone 3B implements an isolated age-, time-since-infection- and risk-specific first-active-TB forward operator, competing mortality, exogenous reinfection and an explicit-RNG validator. Incidence-based TBI inference remains deliberately blocked pending independent validation and approval of inversion. The model is for planning and sequencing, not denying care. All demonstrations remain synthetic/diagnostic; no production application or runner is connected.
+Milestone 3C independently audits the forward operator and adds scientific-gated diagnostic incidence inversion. Country inference remains blocked: adult, pediatric, tail, effect, mortality and observation assumptions are not approved. Fully specified fictional closed-population diagnostics remain isolated. The model is for planning and sequencing, not denying care. No production application or runner is connected.
 
-Current 3B review: [primary evidence and curve decisions](milestone3b_evidence.md), [forward mathematics and limitations](milestone3b_forward.md), [contracts](milestone3b_contracts.md), [diagnostics](milestone3b_examples.md), [validation](milestone3b_validation.md), and [decisions and next milestone](decision_register_3b.md).
+Current 3C review: [scientific audit and evidence](milestone3c_scientific_review.md), [identifiability, gates and contracts](milestone3c_inversion.md), [diagnostics and validation](milestone3c_validation.md), and [decisions and next milestone](decision_register_3c.md).
+
+Retained 3B review: [primary evidence and curve decisions](milestone3b_evidence.md), [forward mathematics and limitations](milestone3b_forward.md), [contracts](milestone3b_contracts.md), [diagnostics](milestone3b_examples.md), [validation](milestone3b_validation.md), and [decisions and next milestone](decision_register_3b.md).
 
 Retained 3A review: [allocation and evidence](milestone3a_allocation.md), [contracts](milestone3a_contracts.md), [invented diagnostics](milestone3a_examples.md), [validation](milestone3a_validation.md), and [decisions](decision_register_3a.md).
 

@@ -1,6 +1,16 @@
 # Country and subnational TB milestone status
 
-Updated 2026-10-29 for Milestone 3B. Historical milestone statuses remain in Git.
+Updated 2026-10-30 for Milestone 3C. Historical milestone statuses remain in Git.
+
+Independent3B diagnostics reproduce. New offline diagnostic inversion checks
+scientific gates, attainable range, monotonicity/all roots, sensitivity and
+numerical refinement. Production availability remains false. Adult surrogate
+is sensitivity-only; pediatric curves and remote tail remain external-required;
+legacy RR hazard use and mortality/observation/migration assumptions are not
+approved for country inversion. Only explicitly fictional closed-population
+examples fit a scale. Actual unresolved-threshold approval remains pending.
+See [3C scientific review](milestone3c_scientific_review.md),
+[inversion contracts](milestone3c_inversion.md) and [decisions](decision_register_3c.md).
 
 The isolated layer now projects first active-TB episodes after a supplied baseline,
 using attained age, time since most recent infection and the highest applicable
@@ -11,8 +21,8 @@ and implementations are unchanged; source marginals are preserved at initializat
 
 Active-TB-incidence inference deliberately returns
 `unavailable_pending_progression_and_risk_forward_operator`. Forward code does
-not approve inverse calibration; independent reconciliation and identifiability
-review are still required. Observed/user inputs
+not approve inverse calibration. The3C review withholds country approval;
+external evidence and observation reconciliation remain required. Observed/user inputs
 support one-scale overall/age anchors, direct age/sex profiles, direct exclusive
 recent/remote states, and total-only overrides with recency unavailable unless
 explicit conditional allocation is selected.

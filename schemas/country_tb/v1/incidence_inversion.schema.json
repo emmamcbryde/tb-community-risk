@@ -1,0 +1,501 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:country_tb:incidence_inversion:1.0.0",
+  "title": "Scientific-gated diagnostic incidence inversion; production unavailable",
+  "$defs": {
+    "active_tb_incidence_observation": {
+      "type": "object",
+      "required": [
+        "schema_id",
+        "contract_version",
+        "implementation_version",
+        "production_available",
+        "profile_hash",
+        "source",
+        "review",
+        "provenance",
+        "geography_id",
+        "geography_level",
+        "subgroup_id",
+        "year",
+        "rate_per_100000_person_years",
+        "denominator_person_years",
+        "observation_period_years",
+        "measure",
+        "age_lower",
+        "age_upper_exclusive",
+        "sex",
+        "target_type",
+        "uncertainty",
+        "incident_or_prevalent",
+        "episode",
+        "acquisition",
+        "resident_compatibility",
+        "ascertainment",
+        "compatibility",
+        "adjustments"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_incidence_diagnostic_1.0.0"
+        },
+        "production_available": {
+          "const": false
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "source_id"
+          ]
+        },
+        "review": {
+          "type": "object",
+          "required": [
+            "status"
+          ]
+        },
+        "provenance": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "compatibility": {
+          "enum": [
+            "compatible",
+            "compatible_after_reviewed_adjustment",
+            "validation_only",
+            "incompatible",
+            "insufficiently_specified"
+          ]
+        },
+        "calibration_target": {
+          "type": "number",
+          "minimum": 0
+        },
+        "denominator_person_years": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "measure": {
+          "enum": [
+            "instantaneous_baseline_per_100000_person_years",
+            "prospective_per_100000_person_years"
+          ]
+        },
+        "schema_id": {
+          "const": "country_tb.active_tb_incidence_observation.v1"
+        }
+      }
+    },
+    "incidence_inversion_gate": {
+      "type": "object",
+      "required": [
+        "schema_id",
+        "contract_version",
+        "implementation_version",
+        "production_available",
+        "profile_hash",
+        "source",
+        "review",
+        "provenance",
+        "scenario_hash",
+        "observation_hash",
+        "checks",
+        "failed_criteria",
+        "prefit_allowed",
+        "unresolved_threshold_approval",
+        "scientific_review",
+        "concentration_policy",
+        "maximum_unresolved_share"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_incidence_diagnostic_1.0.0"
+        },
+        "production_available": {
+          "const": false
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "source_id"
+          ]
+        },
+        "review": {
+          "type": "object",
+          "required": [
+            "status"
+          ]
+        },
+        "provenance": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "prefit_allowed": {
+          "type": "boolean"
+        },
+        "checks": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "unresolved_threshold_approval": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "maximum_unresolved_share": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "schema_id": {
+          "const": "country_tb.incidence_inversion_gate.v1"
+        }
+      }
+    },
+    "incidence_to_tbi_diagnostic_calibration": {
+      "type": "object",
+      "required": [
+        "schema_id",
+        "contract_version",
+        "implementation_version",
+        "production_available",
+        "profile_hash",
+        "source",
+        "review",
+        "provenance",
+        "status",
+        "fitted_scale",
+        "profile",
+        "achieved_incidence",
+        "identifiability",
+        "gate",
+        "scenario_hash",
+        "observation",
+        "failures",
+        "public_status"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_incidence_diagnostic_1.0.0"
+        },
+        "production_available": {
+          "const": false
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "source_id"
+          ]
+        },
+        "review": {
+          "type": "object",
+          "required": [
+            "status"
+          ]
+        },
+        "provenance": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "status": {
+          "enum": [
+            "blocked_scientific_gate",
+            "rejected_nonidentifiable_or_infeasible",
+            "blocked_postfit_gate",
+            "diagnostic_only_not_approved_for_production"
+          ]
+        },
+        "fitted_scale": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "public_status": {
+          "const": "unavailable_pending_progression_and_risk_forward_operator"
+        },
+        "schema_id": {
+          "const": "country_tb.incidence_to_tbi_diagnostic_calibration.v1"
+        }
+      }
+    },
+    "incidence_identifiability_report": {
+      "type": "object",
+      "required": [
+        "schema_id",
+        "contract_version",
+        "implementation_version",
+        "production_available",
+        "profile_hash",
+        "source",
+        "review",
+        "provenance",
+        "scenario_hash",
+        "search_interval",
+        "target",
+        "grid_rows",
+        "monotonicity",
+        "attainable_range",
+        "target_attainable",
+        "stationary_points",
+        "all_roots",
+        "identifiable_over_search_interval",
+        "numerical_convergence",
+        "failure_status",
+        "tolerances",
+        "grid_refinement"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_incidence_diagnostic_1.0.0"
+        },
+        "production_available": {
+          "const": false
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "source_id"
+          ]
+        },
+        "review": {
+          "type": "object",
+          "required": [
+            "status"
+          ]
+        },
+        "provenance": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "monotonicity": {
+          "enum": [
+            "flat",
+            "non_monotonic",
+            "increasing",
+            "decreasing"
+          ]
+        },
+        "all_roots": {
+          "type": "array"
+        },
+        "identifiable_over_search_interval": {
+          "type": "boolean"
+        },
+        "schema_id": {
+          "const": "country_tb.incidence_identifiability_report.v1"
+        }
+      }
+    },
+    "progression_evidence_review": {
+      "type": "object",
+      "required": [
+        "schema_id",
+        "contract_version",
+        "implementation_version",
+        "production_available",
+        "profile_hash",
+        "source",
+        "review",
+        "provenance",
+        "adult_curve_status",
+        "adult_knots",
+        "adult_source",
+        "pediatric_status",
+        "pediatric_sources",
+        "remote_tail_status",
+        "remote_tail_source",
+        "rows",
+        "mortality_status",
+        "effect_policy_comparison"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_incidence_diagnostic_1.0.0"
+        },
+        "production_available": {
+          "const": false
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "source_id"
+          ]
+        },
+        "review": {
+          "type": "object",
+          "required": [
+            "status"
+          ]
+        },
+        "provenance": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "adult_curve_status": {
+          "enum": [
+            "reviewed_central",
+            "provisional_central",
+            "sensitivity_only",
+            "unsuitable"
+          ]
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 11,
+          "items": {
+            "type": "object",
+            "required": [
+              "factor_id",
+              "definition",
+              "candidate_effect",
+              "source",
+              "effect_type",
+              "reference_group",
+              "adjustment_variables",
+              "latent_infection_definition",
+              "age_range",
+              "treatment_status",
+              "time_horizon",
+              "outcome",
+              "transportability",
+              "proposed_central_use",
+              "sensitivity_use",
+              "decision",
+              "review_status"
+            ]
+          }
+        },
+        "schema_id": {
+          "const": "country_tb.progression_evidence_review.v1"
+        }
+      }
+    },
+    "incidence_reconciliation_report": {
+      "type": "object",
+      "required": [
+        "schema_id",
+        "contract_version",
+        "implementation_version",
+        "production_available",
+        "profile_hash",
+        "source",
+        "review",
+        "provenance",
+        "status",
+        "supplied_profile",
+        "supplied_profile_hash",
+        "observation",
+        "predicted_incidence",
+        "target_incidence",
+        "difference",
+        "ratio",
+        "compatibility_warning",
+        "unresolved_population",
+        "exclusions",
+        "public_status"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation_version": {
+          "const": "country_tb_incidence_diagnostic_1.0.0"
+        },
+        "production_available": {
+          "const": false
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "source_id"
+          ]
+        },
+        "review": {
+          "type": "object",
+          "required": [
+            "status"
+          ]
+        },
+        "provenance": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "status": {
+          "const": "validation_only_not_calibration"
+        },
+        "public_status": {
+          "const": "unavailable_pending_progression_and_risk_forward_operator"
+        },
+        "schema_id": {
+          "const": "country_tb.incidence_reconciliation_report.v1"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/active_tb_incidence_observation"
+    },
+    {
+      "$ref": "#/$defs/incidence_inversion_gate"
+    },
+    {
+      "$ref": "#/$defs/incidence_to_tbi_diagnostic_calibration"
+    },
+    {
+      "$ref": "#/$defs/incidence_identifiability_report"
+    },
+    {
+      "$ref": "#/$defs/progression_evidence_review"
+    },
+    {
+      "$ref": "#/$defs/incidence_reconciliation_report"
+    }
+  ]
+}
