@@ -1,0 +1,2 @@
+record_id,subgroup_id,age_lower,age_upper_exclusive,sex,any_tbi,recent,remote_only,never_infected,prior_remote_plus_recent,allocation_policy,source,review_status,geography_id,baseline_year
+states,main,0,,both,0.20,0.05,0.15,0.80,0.02,piecewise_constant_within_band_v1,Invented scientific-review example,diagnostic,custom:synthetic_review,2024

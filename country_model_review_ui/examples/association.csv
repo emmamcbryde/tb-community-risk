@@ -1,0 +1,2 @@
+control_id,scope,subgroup_id,sex,age_lower,age_upper_exclusive,control,source,review_status
+male_adult,age_band_sex,main,male,15,,0.5,Invented scientific-review example,diagnostic

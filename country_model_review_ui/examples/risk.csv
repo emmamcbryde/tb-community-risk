@@ -1,0 +1,3 @@
+record_id,subgroup_id,factor_id,age_lower,age_upper_exclusive,sex,state,prevalence,allocation_policy,supplied_exposure_definition,source,review_status,reason
+male_heavy_smoking,main,heavy_smoking,15,,male,value,0.20,piecewise_constant_within_supplied_band_v1,Cigarette smoking more than one pack/day,Invented compatible heavy-smoking example,diagnostic,Explicit invented adult exposure
+female_heavy_smoking,main,heavy_smoking,15,,female,value,0.01,piecewise_constant_within_supplied_band_v1,Cigarette smoking more than one pack/day,Invented compatible heavy-smoking example,diagnostic,Explicit invented adult exposure

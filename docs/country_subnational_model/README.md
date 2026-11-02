@@ -1,8 +1,10 @@
 # Country and subnational TB model architecture review
 
-Milestone 3D consolidates scientific evidence and performs source-preserving empirical TBI comparisons. Country inference remains blocked: adult, pediatric, tail, effect, mortality and observation assumptions are not approved. No central parameter set is automatically adopted and no external scientific validation is claimed. The model is for planning and sequencing, not denying care. No production application or runner is connected.
+Milestone 3E adds an isolated scientific-review Streamlit interface. User-specified TBI is the principal operational route; incidence inversion is disabled by default and available only as an explicitly supplied, fully gated diagnostic. Production country inference remains blocked. No central parameter set or external scientific validation is claimed. The model is for planning and sequencing, not denying care. No deployed application or legacy runner is connected.
 
-Current 3D review: [reviewer decision package](milestone3d_review.md), [prespecified protocol](milestone3d_protocol.md), [evidence and candidate parameters](milestone3d_evidence.md), [empirical datasets and comparisons](milestone3d_empirical.md), [contracts and validation](milestone3d_validation.md), [decisions](decision_register_3d.md), and [immutable inputs](../../data/country_tb_validation/README.md).
+Current 3E review: [application guide and launch](../../country_model_review_ui/README.md), [architecture, input contracts and scientific gates](milestone3e_ui.md), [rendered validation and performance](milestone3e_validation.md), and [decisions and reviewer questions](decision_register_3e.md).
+
+Retained 3D review: [reviewer decision package](milestone3d_review.md), [prespecified protocol](milestone3d_protocol.md), [evidence and candidate parameters](milestone3d_evidence.md), [empirical datasets and comparisons](milestone3d_empirical.md), [contracts and validation](milestone3d_validation.md), [decisions](decision_register_3d.md), and [immutable inputs](../../data/country_tb_validation/README.md).
 
 Retained 3C review: [scientific audit and evidence](milestone3c_scientific_review.md), [identifiability, gates and contracts](milestone3c_inversion.md), [diagnostics and validation](milestone3c_validation.md), and [decisions and next milestone](decision_register_3c.md).
 

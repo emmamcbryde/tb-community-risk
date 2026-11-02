@@ -1,0 +1,5 @@
+age_lower,age_upper_exclusive,sex,population,source,review_status,geography_id,baseline_year
+20,21,female,250,Invented scientific-review example,diagnostic,custom:synthetic_review,2024
+60,61,female,250,Invented scientific-review example,diagnostic,custom:synthetic_review,2024
+20,21,male,250,Invented scientific-review example,diagnostic,custom:synthetic_review,2024
+60,61,male,250,Invented scientific-review example,diagnostic,custom:synthetic_review,2024

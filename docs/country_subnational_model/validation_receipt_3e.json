@@ -1,0 +1,571 @@
+{
+  "schema_id": "country_tb.review_ui_validation_receipt.v1",
+  "recorded_at_utc": "2026-11-02T02:15:53.279399+00:00",
+  "milestone": "3E",
+  "starting_state": {
+    "starting_head": "eebbe0242cf7787cf0f2f00e0172070bff99b8c6",
+    "branch": "feature/country-subnational-tb-model-v1",
+    "upstream": "origin/feature/country-subnational-tb-model-v1",
+    "ahead_behind": "0\t0",
+    "status": []
+  },
+  "application_version": "country_tb_review_ui_1.0.0",
+  "production_available": false,
+  "externally_validated": false,
+  "primary_runtime": "repository-pinned Streamlit 1.39.0, workspace-only isolated target; shared environment unchanged",
+  "quick_checks": {
+    "passed": true,
+    "elapsed_seconds": 6.552770000009332,
+    "accepted_commands": {
+      "final_75_tests_139": {
+        "command": "python -m pytest tests/country_tb/test_review_ui_model.py tests/country_tb/test_review_ui_apptest.py -q --durations=8 -p no:tmpdir",
+        "exit_code": 0,
+        "elapsed_seconds": 65.86455970001407,
+        "files_unchanged_after_command": true,
+        "output_sha256": "15326449c058c1c1d8e0418249c972bb3dd2000783f04e8504e61f9bb0581d94",
+        "output": "abm/output/country_tb_m3e_audit_20261102/final_75_tests_139.txt",
+        "result": "75 passed, 360 warnings in 64.90s"
+      },
+      "retained_user_TBI_tests": {
+        "command": "python -m pytest tests/country_tb/test_baseline_sources.py -q --durations=4 -p no:tmpdir -k \"no_fallback or overall_known_scale or age_specific_one_scale or direct_profile_original or direct_recent_remote or subgroup_metadata or incomplete_subgroup or open_tail_direct_value or explicit_conditional_recency\"",
+        "exit_code": 0,
+        "elapsed_seconds": 6.395344500022475,
+        "files_unchanged_after_command": true,
+        "output_sha256": "2daa42c1bf0d3e6a052edfb09b929465ffff0a2d0136a0f3fa52ccedc7181da1",
+        "output": "abm/output/country_tb_m3e_audit_20261102/retained_user_TBI_tests.txt",
+        "result": "12 passed, 62 deselected in 5.78s"
+      },
+      "final_rendered_evidence_139": {
+        "command": "python scripts/validate_country_tb_review_ui.py --output abm/output/country_tb_m3e_rendered --prospective",
+        "exit_code": 0,
+        "elapsed_seconds": 49.75450359995011,
+        "files_unchanged_after_command": true,
+        "output_sha256": "f91a9f8af6219407d4ceedd06a7478fcf972e347ebc804646743ee490ca6d694",
+        "output": "abm/output/country_tb_m3e_audit_20261102/final_rendered_evidence_139.txt",
+        "result": "All seven views rendered through Streamlit AppTest; prospective benchmark complete"
+      }
+    },
+    "tested_file_checksums": {
+      "country_model_review_ui/__init__.py": "ff7b911be6c619238cb59166ff9ae82c1cd548c1011888e84013f8aa2b9d9b1d",
+      "country_model_review_ui/app.py": "d1d54ade8165a74df08904b3b4fcd5b7a94a236373bbcf11795950d72f53db08",
+      "country_model_review_ui/examples/association.csv": "8dabcf58e08b294a6fd9d1f10cf7474b4a4480a4e46f72df023af551095b2e45",
+      "country_model_review_ui/examples/population.csv": "e5d31e52c36edee10e2c4317839cb2445c1c0d34c16171c3df05748319ac2bde",
+      "country_model_review_ui/examples/risk.csv": "440ed34bbe2bf0852decbc200a83767f4fd69f32ffb95269b7f5ddf595755049",
+      "country_model_review_ui/examples/tbi_age_sex.csv": "6b0296d6b2b496e9c9e55f35aa670b0025efb10437b5e295e5e239f4f5463727",
+      "country_model_review_ui/examples/tbi_states.csv": "3aa2f9a269dbdd4b8538033e0439701c41bcceb21cea643ecb9cdf2cf709bd2f",
+      "country_model_review_ui/forward.py": "45df80646aa25eac03213ccd560765516cca7973a92fdb4fe32fab585d31e5a0",
+      "country_model_review_ui/gates.py": "c0a976bce1a7d3bc4cb981e2c3022d3c232277dcf83a9c0cf534f0166925712d",
+      "country_model_review_ui/model.py": "74a01e47b4ce737a20741604c24efb4cebf1edc0ef0b216ca3d375160cd95023",
+      "country_model_review_ui/presentation.py": "d2b2ee236470f84a45f279dcc90baff6110b02c092c57799881daa93a5cce26d",
+      "country_model_review_ui/state.py": "b0ffa6fc52af3fc3831f9f3986569133179ae72e8ad89adfc9e5d4d3b465f788",
+      "country_model_review_ui/views/__init__.py": "f8a9a415f5ca92c52dee0e67e5e66f35ff210432d3d8a88a324c67591288f5a2",
+      "country_model_review_ui/views/baseline.py": "dc41691e8e0671ffa22938d8838e61a13ea1c7ab243d7685627648f4a0f6848a",
+      "country_model_review_ui/views/evidence.py": "b71061eae6f0c38f411a016d0c01448740d67911461ac03557d557ea81cbfd7e",
+      "country_model_review_ui/views/natural.py": "e61451121c2251fa52d11d109284e512431fb7ba34d4aa9dcc5bfb4b920ef237",
+      "country_model_review_ui/views/population.py": "9de992d3c53b3a652822bc6e3801882ae3df3ea00ed7b4df9f2e8e0c07eadde0",
+      "country_model_review_ui/views/results.py": "36fc0fab84c5aa34ec8029682614348988467555b9300dde316072ea503c437b",
+      "country_model_review_ui/views/risk.py": "961595cc23ff971d9c5a4963719d95e07048bbc3adda90b9875378f4ed351220",
+      "country_model_review_ui/views/run.py": "423bcd49a3188f479e2d14df0e26505c725e169b6e86c6411712ecc82ab286ff",
+      "data/country_tb_validation/mortality/abs-life2022-2024-6785449a5200/manifest.json": "c15ace4186a4a6df7e69ca8226b3509d1ae52b91293db4278593fa8fc6ace08f",
+      "data/country_tb_validation/mortality/abs-life2022-2024-6785449a5200/mortality.json": "86403255343d67bcd1812ff85117caeec7c08f34bcbf3a53eab8d4e43f35e8a9",
+      "data/country_tb_validation/snapshots/tbi-validation-fe05d6d1ab8c/manifest.json": "6b196c69b2871fbf49546304a6511a40b1f21c3c0dfc0fa30c6249d0c7f3b2ac",
+      "data/country_tb_validation/snapshots/tbi-validation-fe05d6d1ab8c/model_inputs.json": "9d6d644ea8c66e7eaf7fa957b7694ca89e0ed6e9c2e4e8a6c7162431d3c3baa1",
+      "data/country_tb_validation/snapshots/tbi-validation-fe05d6d1ab8c/source_observations.json": "53e4c8dc2c91e0d6164ec854f862da36e023ef54eec413127841c97c666e4b3e",
+      "data/country_tb_validation/snapshots/tbi-validation-fe05d6d1ab8c/sources.json": "06cd2f46e5df1b1286025f840ec659025c9fa6c5026772eb8f3b6a69281310a5",
+      "engine/country_tb/__init__.py": "aa06438edb0e7932380fa05184c089a143f685ea253a343bd2a359be79498f3a",
+      "engine/country_tb/active_tb_targets.py": "6736c8e846f658083c996c5e17b7eb0286fcd5bba7c0b411c00cb92ea4bc035a",
+      "engine/country_tb/baseline_tbi_source.py": "75ce7f1edcf03e38e16e35f95c10b99d220a944156edbea7a3d7acd947d4afcb",
+      "engine/country_tb/calibration_common.py": "9d952947a60936a432bc3d59cce3fac7c06495c3cb8f4bfea159592411a474be",
+      "engine/country_tb/catalytic_calibration.py": "acd0cbdfba4beedc639432fb439056d9fac7df4e36de5c8e9e592638eed88bcf",
+      "engine/country_tb/catalytic_core.py": "10898522b98d9ffd581c579b84620cbdd7c66006ddbf5949928db0140fdffc74",
+      "engine/country_tb/catalytic_diagnostic.py": "e4558b2e552ed02a8fe962c1e1ee6f2d1118263899e143146cbb20fb6af5d17d",
+      "engine/country_tb/composition_common.py": "b12169e3c32f2ad69e7cf97a54c56d3c9331838e850694a2dfcb4676a74517f9",
+      "engine/country_tb/contracts.py": "9c7e97ee9268e5775bb579d432cecfc5fe9befed1b58b4d17d4f28600650fc9a",
+      "engine/country_tb/data_common.py": "cd66d26ffbf7c84acbcc57c6ba346a614fd86c287e39632a2d4c55be1be11487",
+      "engine/country_tb/data_profile.py": "9859490b145cade9c55ce53d5700ee9297a64e5250692d668bf92ee4fa8208a5",
+      "engine/country_tb/demography.py": "b720e51944f5924f83c29b9e038123ff5fa2425789d4b12922344394a826e70c",
+      "engine/country_tb/demography_import.py": "522a2d88bcb35cd8ea912542b5b82588799a459965ba9a7bf828068c5ff25801",
+      "engine/country_tb/direct_tbi_profile.py": "7160da938f891e7f50001dbde02dda68443d6b27096445c73934e063c24d34f3",
+      "engine/country_tb/duplicate_audit.py": "d902886a895df1537a25a7a232ad743b4b007d79274635592fbcd3c75837b21c",
+      "engine/country_tb/empirical_validation.py": "0ddfc6acf113baa00452c3e47e3aaee38458993e0a141951c07c79e6d55e4e30",
+      "engine/country_tb/incidence.py": "9fd9cc12659b4c953e782bc4c4a0961b160d2b9f4e905b65ef70848a13b69834",
+      "engine/country_tb/incidence_inversion.py": "cad4ac828ebb4a4091cdb00d952ff68c1e2187ef08de138b7457a2a99f23f870",
+      "engine/country_tb/incidence_mapping.py": "fffb986b55fb37364dbad47f6075a7eb2c12f4692c0f0c083c048cc9a13261a6",
+      "engine/country_tb/most_recent_event.py": "94cd3b442f9e8a19cf9dcb1d124a452d3f9f89dd703434851f60609bef00afb4",
+      "engine/country_tb/population_subgroups.py": "f13b331078bcc29be64acce4ae6bc61b3edc25e8e7acadaedc3d2a71c755b314",
+      "engine/country_tb/pressure_shape.py": "f5957c6ee10997b0ed494a0febd1a7bcab1b22f7728ee7e8764cf61926752647",
+      "engine/country_tb/preview_incidence_inversion.py": "dc157a498f7425e918a75ca0e5180a3fc8ab7e8205a531de7424049434e366a8",
+      "engine/country_tb/preview_progression.py": "8a7f690d9d0a4ebe70c571b18a7534b5bd2837e72d9f3128f8098f030c387f82",
+      "engine/country_tb/preview_risk_allocation.py": "fe36a94af115358b61bd3616c806f0c55a43c79fda578c511b8f3edeb1e38e60",
+      "engine/country_tb/progression_baseline.py": "206a024b2ba923252581b029df3219e59af99940fd77d4b2c5675050ab7d4b59",
+      "engine/country_tb/progression_common.py": "59f89bd18ad145e8570633867039c304e03d57f07a5c2ac0b2d89cada3ddaa4e",
+      "engine/country_tb/progression_evidence_review.py": "e5a844876af46404eb34f27595e93cea9743a5d2947569e678ee2d489e5f111e",
+      "engine/country_tb/progression_forward.py": "a9f1bcd635f23ad1930a13699b576c3bfde54561e8a03c33be5729e34d82d444",
+      "engine/country_tb/progression_natural_history.py": "22d1799e0903cca6a3a37cc5d7d9213918b5ca1cd55ff641f32f07d073c28579",
+      "engine/country_tb/progression_policies.py": "193a638df41362f2271c8fa2e2aa8659786f3b073f4ae942a3e72495fb170e3c",
+      "engine/country_tb/progression_validation.py": "39078811e1e3bf1a2b5612bf0f6cdbd69c07e6cb2074d38878b823f1450e1c40",
+      "engine/country_tb/review_parameters_3d.py": "1fa9563d207acf7aeebd1eb6d2f1819649e515740a833111fa140745b526a8e1",
+      "engine/country_tb/risk_allocation.py": "8ef90f1b2f0faa9e8ac8182434a866a300dd5bb15831f1100cd9b139fa1c5d1b",
+      "engine/country_tb/risk_common.py": "f92087c3d0cae5b749ba829578b42b77794bde05bb6645d176494eaaec704882",
+      "engine/country_tb/risk_factor_catalog.py": "7d1647ad5819ee05e2c8ae87f468677003496975e9af243853bf3104a1a2499f",
+      "engine/country_tb/risk_policies.py": "4036ecbf675c49ae75643bcb672617e619fa8d16b053cdd8f2a72d0cc5e1297e",
+      "engine/country_tb/risk_prevalence.py": "cc5f44d18ef0f22b9127902ced7ee1aea98bae21f817ac230fbfc7414035311a",
+      "engine/country_tb/tbi_baseline.py": "0d687549fe8d49b0e5b8ab4d355aeac8451a1746b5eb1e1d616a174d2da1dbc1",
+      "engine/country_tb/tbi_observations.py": "a9562b5bd6d27090cf1def16ab3af141455ae582ed7467e3aec0bad6f58c4cc2",
+      "engine/country_tb/validation_data.py": "71ea519b77e39a205d6469052aeefd51a204420996904f07e27080c0e2ee9381",
+      "engine/country_tb/validation_numerics.py": "bf7084e8fa01a0e6794eaf4c1943b7d9554d323ed1c1b1f9bb1e832f83739287",
+      "schemas/country_tb/v1/baseline_source_composition.schema.json": "4f4425f5d17fbe0c069b6a504b637ea87cb314f5c78b465e20d94bf618789dbd",
+      "schemas/country_tb/v1/calibration_design.schema.json": "ddda02fb42be7c344afd710af608b350dce36c220c80d760311c55979a05ddea",
+      "schemas/country_tb/v1/calibration_design_examples.json": "0505862a237021c4568780ed87bc339dcb0a76b7c3a67ee2a4a34b6a5d54543e",
+      "schemas/country_tb/v1/catalytic_calibration.schema.json": "2d2b1b2efb58d3f4fc148800f0b8b36e90f9611bad915dccac324d99117b00ca",
+      "schemas/country_tb/v1/contracts.schema.json": "ef6922ad5f7357296237db129b3a56ebe3a0ffec3e17e769a5096d6a0762adf2",
+      "schemas/country_tb/v1/data_layer.schema.json": "8a2370090d9ab903cf64ced65a05fedfaa0387ab73d1c62d07545387f3106f53",
+      "schemas/country_tb/v1/empirical_validation.schema.json": "9ca945f7e2257026a52cc8ae5b09a91417ebc848634ba33af7e9accef199b53e",
+      "schemas/country_tb/v1/incidence_inversion.schema.json": "97184138907d07c633d6dfc46687cc584a99476bab4e8b2671007e17e979dbda",
+      "schemas/country_tb/v1/progression_forward.schema.json": "7809ff9be854a1c50d4b8504c46f64b5e66a875e9195769f345df0d60eef51a0",
+      "schemas/country_tb/v1/review_examples.json": "ceccea4b8975d78f63430011c74add4a350745c233409ae99663346c6dc0b7cf",
+      "schemas/country_tb/v1/review_ui.schema.json": "4d037d5e772356b531d953eda385e5faf682c1bb57a7403deb68d3403b162f26",
+      "schemas/country_tb/v1/risk_allocation.schema.json": "829c5d585a7f3e576789c87fd91c0b20d59657a174ee364513861b47f1ac4c46",
+      "scripts/audit_country_tb_3c_for_3d.py": "599f719632b9b41ba2b22e4617b317e7521e14925ab510eae23f44e077c984f3",
+      "scripts/check_country_tb_validation_3d.py": "0ad277f11cd5807c3d9e241a7b71dfa40467f7c3f1ba01c5c86e6def2ebbf585",
+      "scripts/freeze_country_tb_mortality_3d.py": "ca148f7f1f4d186201f58808ded072ee40e69007dad7c6db93aa590d201e35bb",
+      "scripts/freeze_country_tb_validation_3d.py": "daf5456e4041ceec8d8bc84616867aaddd796c802cfa4c422bac4925c2ba71ee",
+      "scripts/validate_country_tb_empirical_3d.py": "9136b81ce5646fe48d7690eb6814340e5ca1710ebb6d60d31939bf2d7a5beeba",
+      "scripts/validate_country_tb_review_ui.py": "203fb242094200901db30d99529d6ba6686dda77bbf5c936a6ad4a29f53cbea0",
+      "tests/country_tb/test_baseline_sources.py": "f1237da3c32157f3375897ba510db7a89f8a13a7843f28611e98202b887f7d4a",
+      "tests/country_tb/test_calibration_design.py": "8f0c49329f52a22ffbcef332c03dcf31fb233dfe82c01074507ed522c636be55",
+      "tests/country_tb/test_catalytic_calibration.py": "1cbf7a55274e3b62e5d0353f60fbf4a5081f9ff75f41ebc16eaa407fb447662e",
+      "tests/country_tb/test_contracts.py": "c5b06fc805132bd97628f3d0b9065b1b677518180ddd381f110d211e95c4fb82",
+      "tests/country_tb/test_data_layer.py": "6440c7323565d6c699b554da77d799e1030459085cfd4614d80ade93029db0eb",
+      "tests/country_tb/test_empirical_validation.py": "790d5d731eeed39f4bcc67a93561b2a03332e4c5f68635dc3a46ff69c26853b1",
+      "tests/country_tb/test_incidence_inversion.py": "bfc8d73e74a3b6ed7e4fc55a42b09ee118953eae18a3b0b6e6777907afacbfe4",
+      "tests/country_tb/test_progression_forward.py": "ec5a4bc7a85489985c2993169e9d0293f2867754246e771ca2c74f2ea2b0cee3",
+      "tests/country_tb/test_review_ui_apptest.py": "38768c70d7d0349da62076d74e8e369694c0592b450749e0efb40c3e1124eb85",
+      "tests/country_tb/test_review_ui_model.py": "6691bb96c081d266ccd9cc2c8f49146f9c2f59f788e34e59bf60edba21f8d4e7",
+      "tests/country_tb/test_risk_allocation.py": "8f23aead9b7bb2c7f33d04713765e18e537bef5464e622528169f76f0803b08b"
+    },
+    "tested_files_still_unchanged": true,
+    "compiled_python_files": 18,
+    "validated_ui_contract_families": 9,
+    "scientific_hash_occurrences": 824,
+    "unique_scientific_hashes": 64,
+    "local_documentation_links": 81,
+    "known_synthetic_scale": 0.017,
+    "recovered_scale": 0.01699999999837018,
+    "production_available": false
+  },
+  "rendered_verification": {
+    "browser_verified": false,
+    "default_incidence_gate": "Incidence diagnostic is disabled by default; no source fallback.",
+    "example_configuration_hash": "60e81a7942b84480f46e3c532204c7625b2bce749c858b3a246c75d3f4092b0d",
+    "example_result_hash": "9688499934af16333f12366c03c2f35d1c0a044645cf5adaeb7609332c8cd879",
+    "externally_validated": false,
+    "files": {
+      "country_model_review_ui/__init__.py": "ff7b911be6c619238cb59166ff9ae82c1cd548c1011888e84013f8aa2b9d9b1d",
+      "country_model_review_ui/app.py": "d1d54ade8165a74df08904b3b4fcd5b7a94a236373bbcf11795950d72f53db08",
+      "country_model_review_ui/forward.py": "45df80646aa25eac03213ccd560765516cca7973a92fdb4fe32fab585d31e5a0",
+      "country_model_review_ui/gates.py": "c0a976bce1a7d3bc4cb981e2c3022d3c232277dcf83a9c0cf534f0166925712d",
+      "country_model_review_ui/model.py": "74a01e47b4ce737a20741604c24efb4cebf1edc0ef0b216ca3d375160cd95023",
+      "country_model_review_ui/presentation.py": "d2b2ee236470f84a45f279dcc90baff6110b02c092c57799881daa93a5cce26d",
+      "country_model_review_ui/state.py": "b0ffa6fc52af3fc3831f9f3986569133179ae72e8ad89adfc9e5d4d3b465f788",
+      "country_model_review_ui/views/__init__.py": "f8a9a415f5ca92c52dee0e67e5e66f35ff210432d3d8a88a324c67591288f5a2",
+      "country_model_review_ui/views/baseline.py": "dc41691e8e0671ffa22938d8838e61a13ea1c7ab243d7685627648f4a0f6848a",
+      "country_model_review_ui/views/evidence.py": "b71061eae6f0c38f411a016d0c01448740d67911461ac03557d557ea81cbfd7e",
+      "country_model_review_ui/views/natural.py": "e61451121c2251fa52d11d109284e512431fb7ba34d4aa9dcc5bfb4b920ef237",
+      "country_model_review_ui/views/population.py": "9de992d3c53b3a652822bc6e3801882ae3df3ea00ed7b4df9f2e8e0c07eadde0",
+      "country_model_review_ui/views/results.py": "36fc0fab84c5aa34ec8029682614348988467555b9300dde316072ea503c437b",
+      "country_model_review_ui/views/risk.py": "961595cc23ff971d9c5a4963719d95e07048bbc3adda90b9875378f4ed351220",
+      "country_model_review_ui/views/run.py": "423bcd49a3188f479e2d14df0e26505c725e169b6e86c6411712ecc82ab286ff",
+      "tests/country_tb/test_review_ui_apptest.py": "38768c70d7d0349da62076d74e8e369694c0592b450749e0efb40c3e1124eb85",
+      "tests/country_tb/test_review_ui_model.py": "6691bb96c081d266ccd9cc2c8f49146f9c2f59f788e34e59bf60edba21f8d4e7"
+    },
+    "production_available": false,
+    "rendered_pages": [
+      {
+        "captions": [
+          "Inspect data,assumptions and unresolved calculations. Not a production application or an externally validated model. For planning and sequencing,not denying care.",
+          "Frozen demographic records or an explicitly defined review population. Baseline 2024.",
+          "2024 is the latest observation year in the frozen WHO2025 snapshot. Other baseline years require a future contract.",
+          "Population CSV must retain separate female and male counts,including open ages. See the documented upload schema.",
+          "Source: User-supplied population CSV",
+          "Female and male records remain separate internally. Published both-sex rounding differences are preserved in source reconciliation.",
+          "Define a non-overlapping partition. Population counts determine weights. Birth,exposure and arrival fields are metadata,not a migration model.",
+          "Seven isolated review pages. No legacy workflows or economics pages.",
+          "Observed · User supplied · Model derived · Diagnostic sensitivity · Unresolved · Calculation blocked",
+          "country_tb_review_ui_1.0.0"
+        ],
+        "elapsed_seconds": 0.09281220001867041,
+        "expected_blocked_messages": [],
+        "headers": [
+          "Set up population"
+        ],
+        "metrics": [
+          {
+            "label": "Population",
+            "value": "1,000"
+          },
+          {
+            "label": "Open-age population retained",
+            "value": "0"
+          }
+        ],
+        "page": "Set up population",
+        "tables": [],
+        "warnings": []
+      },
+      {
+        "captions": [
+          "Inspect data,assumptions and unresolved calculations. Not a production application or an externally validated model. For planning and sequencing,not denying care.",
+          "WHO shape is a smoothed incidence proxy,not an estimated force of infection. Pre2000 uses the earliest normalized value. Residence does not determine historical exposure; no post2024 extrapolation.",
+          "CSV probabilities use proportions0–1. Percent input fields above use0–100. Missing values stay blank. Explicit100+ direct values are permitted without inventing an age.",
+          "Seven isolated review pages. No legacy workflows or economics pages.",
+          "Observed · User supplied · Model derived · Diagnostic sensitivity · Unresolved · Calculation blocked",
+          "country_tb_review_ui_1.0.0"
+        ],
+        "elapsed_seconds": 0.08454320003511384,
+        "expected_blocked_messages": [],
+        "headers": [
+          "Baseline TBI"
+        ],
+        "metrics": [],
+        "page": "Baseline TBI",
+        "tables": [],
+        "warnings": []
+      },
+      {
+        "captions": [
+          "Inspect data,assumptions and unresolved calculations. Not a production application or an externally validated model. For planning and sequencing,not denying care.",
+          "The control preserves TBI,each factor,any-risk union,population and recent/remote totals. Residual association is applied after age/sex structure.",
+          "Association preview on the last computed marginals; rerun to record changes. CSV overrides are applied on execution.",
+          "Recent infection and close contact are excluded from ordinary factor inputs. Recency comes from the infection model.",
+          "Explicit allocation policy required; exact single-year,banded,both-sex or sex-specific values. Override precedence is exact age/sex,exact age/both,band/sex,band/both,sex,global. Overlaps at equal precedence fail.",
+          "Seven isolated review pages. No legacy workflows or economics pages.",
+          "Observed · User supplied · Model derived · Diagnostic sensitivity · Unresolved · Calculation blocked",
+          "country_tb_review_ui_1.0.0"
+        ],
+        "elapsed_seconds": 0.04099200002383441,
+        "expected_blocked_messages": [],
+        "headers": [
+          "Risk factors"
+        ],
+        "metrics": [],
+        "page": "Risk factors",
+        "tables": [
+          {
+            "columns": [
+              "Age",
+              "Sex",
+              "Subgroup",
+              "Requested_c",
+              "Achieved_phi",
+              "Feasible_lower",
+              "Feasible_upper",
+              "Joint"
+            ],
+            "rows": 4
+          },
+          {
+            "columns": [
+              "Factor",
+              "Definition",
+              "Candidate_RR",
+              "Status"
+            ],
+            "rows": 11
+          }
+        ],
+        "warnings": [
+          "RR74 sensitivity gives94.31% one-year progression under the3.8% adult surrogate. This is a scientific warning,not evidence of plausibility."
+        ]
+      },
+      {
+        "captions": [
+          "Inspect data,assumptions and unresolved calculations. Not a production application or an externally validated model. For planning and sequencing,not denying care.",
+          "Menzies focal adult model at infection age20; historical cohort inputs and competing-risk transport unresolved. The2-year5% knot is not adopted.",
+          "No adult curve is applied below15. An exclusion requires matching population/observation scope and explicit review; child counts remain visible.",
+          "Repeated events remain possible. Recent reinfection overrides remote-only; prior remote exposure is retained without double counting.",
+          "Instantaneous rates do not change with future mortality. Optional one-year first-episode projection uses the unchanged forward operator with depletion and competing death. No long-horizon country result is implied.",
+          "Each gate is resolved/reviewed,sensitivity-only,unresolved,incompatible or blocked. Current sensitivity controls do not authorize inverse calibration.",
+          "Seven isolated review pages. No legacy workflows or economics pages.",
+          "Observed · User supplied · Model derived · Diagnostic sensitivity · Unresolved · Calculation blocked",
+          "country_tb_review_ui_1.0.0"
+        ],
+        "elapsed_seconds": 0.033139700011815876,
+        "expected_blocked_messages": [
+          "Calculation blocked — incidence inversion is disabled."
+        ],
+        "headers": [
+          "Natural history and scientific gates"
+        ],
+        "metrics": [],
+        "page": "Natural history and scientific gates",
+        "tables": [
+          {
+            "columns": [
+              "item",
+              "status",
+              "reason"
+            ],
+            "rows": 15
+          }
+        ],
+        "warnings": [
+          "No country central parameter configuration has been approved. Sensitivity selections do not resolve incidence-inference gates."
+        ]
+      },
+      {
+        "captions": [
+          "Inspect data,assumptions and unresolved calculations. Not a production application or an externally validated model. For planning and sequencing,not denying care.",
+          "Deterministic expected values first. No stochastic,intervention or economic outcomes are exposed.",
+          "A run retains source inputs,model-derived comparisons,unresolved populations and scientific hashes. Natural-history sensitivities do not calibrate TBI to incidence.",
+          "Seven isolated review pages. No legacy workflows or economics pages.",
+          "Observed · User supplied · Model derived · Diagnostic sensitivity · Unresolved · Calculation blocked",
+          "country_tb_review_ui_1.0.0"
+        ],
+        "elapsed_seconds": 0.020280600001569837,
+        "expected_blocked_messages": [],
+        "headers": [
+          "Run diagnostic"
+        ],
+        "metrics": [],
+        "page": "Run diagnostic",
+        "tables": [],
+        "warnings": [
+          "Explicitly restored synthetic review example — not Australian estimates"
+        ]
+      },
+      {
+        "captions": [
+          "Inspect data,assumptions and unresolved calculations. Not a production application or an externally validated model. For planning and sequencing,not denying care.",
+          "Observed / User supplied / Model derived / Diagnostic sensitivity / Unresolved / Calculation blocked",
+          "Any TBI over covered population: 20.00%. Full-population prevalence is unavailable when coverage is incomplete.",
+          "Population source: User-supplied CSV. Female/male records remain separate internally. Snapshot IDs are in technical provenance.",
+          "User supplied anchor; model-derived age and recency — supplied source values and model comparison profiles are retained separately. Assay positivity is not latent infection.",
+          "Recent and remote-only are exclusive. Prior remote + recent is a subset of recent,never an extra stacked state. Subgroups are combined using population counts; unresolved cells are listed separately.",
+          "Requested c is a normalized feasible control,not achieved phi. Phi is undefined for degenerate margins. All controls are within exact source age/sex/subgroup cells.",
+          "Population counts by maximum applicable RR; no additive or multiplicative central combination.",
+          "First episode after baseline only. Baseline active TB is excluded by the selected diagnostic assumption; prior TB,recurrence,imported disease,migration and historical depletion remain unrepresented.",
+          "Covered case flow: 0.48 expected first episodes/year at the baseline instant. This is not cumulative one-year cases.",
+          "Future survival has no effect on an instantaneous baseline hazard; no long-horizon country estimate.",
+          "Full-precision source values,native contracts,gate outcomes,unresolved populations and provenance. Preparation is explicit; no expensive export runs during ordinary rendering.",
+          "Seven isolated review pages. No legacy workflows or economics pages.",
+          "Observed · User supplied · Model derived · Diagnostic sensitivity · Unresolved · Calculation blocked",
+          "country_tb_review_ui_1.0.0"
+        ],
+        "elapsed_seconds": 0.31681280001066625,
+        "expected_blocked_messages": [],
+        "headers": [
+          "Results and validation"
+        ],
+        "metrics": [
+          {
+            "label": "Population retained",
+            "value": "1,000"
+          },
+          {
+            "label": "Any TBI — full supplied population",
+            "value": "20.00%"
+          },
+          {
+            "label": "Unresolved total-TBI population",
+            "value": "0"
+          },
+          {
+            "label": "Diagnostic instantaneous rate — complete supplied population",
+            "value": "48.18 /100,000 PY"
+          },
+          {
+            "label": "Unresolved progression population",
+            "value": "0"
+          }
+        ],
+        "page": "Results and validation",
+        "tables": [
+          {
+            "columns": [
+              "Subgroup",
+              "Age",
+              "Sex",
+              "Population",
+              "Any TBI",
+              "Recent",
+              "Remote only",
+              "Prior remote + recent (subset)"
+            ],
+            "rows": 4
+          },
+          {
+            "columns": [
+              "Subgroup",
+              "Population",
+              "TBI prevalence",
+              "Covered TBI people",
+              "Unresolved TBI people"
+            ],
+            "rows": 1
+          },
+          {
+            "columns": [
+              "Subgroup",
+              "Age",
+              "Sex",
+              "Any_risk",
+              "Requested_c",
+              "Achieved_phi",
+              "Feasible_lower",
+              "Feasible_upper",
+              "Joint"
+            ],
+            "rows": 4
+          },
+          {
+            "columns": [
+              "Factor",
+              "Subgroup",
+              "Age",
+              "Sex",
+              "Prevalence",
+              "State",
+              "Definition"
+            ],
+            "rows": 44
+          }
+        ],
+        "warnings": [
+          "Explicitly restored synthetic review example — not Australian estimates",
+          "Internal scientific review only. These outputs are not externally validated national TBI estimates.",
+          "Validation only,not calibration. WHO annual new/recurrent country incidence is not the same population/episode/time estimand as this instantaneous first-episode diagnostic. Disagreement never changes supplied TBI."
+        ]
+      },
+      {
+        "captions": [
+          "Inspect data,assumptions and unresolved calculations. Not a production application or an externally validated model. For planning and sequencing,not denying care.",
+          "Static inversion is a diagnostic/initialization tool,not a substitute for dynamic transmission. No Summer/Starsim workstream is connected.",
+          "Seven isolated review pages. No legacy workflows or economics pages.",
+          "Observed · User supplied · Model derived · Diagnostic sensitivity · Unresolved · Calculation blocked",
+          "country_tb_review_ui_1.0.0"
+        ],
+        "elapsed_seconds": 0.038441000040620565,
+        "expected_blocked_messages": [],
+        "headers": [
+          "Evidence and unresolved decisions"
+        ],
+        "metrics": [],
+        "page": "Evidence and unresolved decisions",
+        "tables": [
+          {
+            "columns": [
+              "Diagnostic dataset",
+              "RMSE (percentage points)"
+            ],
+            "rows": 4
+          },
+          {
+            "columns": [
+              "Set",
+              "Cumulative risk knots",
+              "Status",
+              "Population"
+            ],
+            "rows": 3
+          },
+          {
+            "columns": [
+              "Factor",
+              "Legacy definition",
+              "Review status",
+              "Effect measure",
+              "Evidence population / limitations",
+              "Conditional progression multiplier approved",
+              "Source"
+            ],
+            "rows": 11
+          }
+        ],
+        "warnings": [
+          "Milestone3D was internal scientific evidence synthesis and model checking,not external validation or scientific sign-off.",
+          "RR74 sensitivity gives94.31% one-year progression under the3.8% adult surrogate. This is a scientific warning,not evidence of plausibility."
+        ]
+      }
+    ],
+    "runtime_basis": "wall_clock; cold frozen demography vs warmed working example explicitly separated",
+    "schema_id": "country_tb.review_ui_rendered_receipt.v1",
+    "source_integrity": "immutable source loaders; no network requests",
+    "streamlit_version": "1.39.0",
+    "timings": {
+      "TBI_construction_seconds": 0.30051080003613606,
+      "default_incidence_gate_refusal_seconds": 7.210002513602376e-05,
+      "deterministic_forward_seconds": 0.029025800002273172,
+      "first_Viet_Nam_frozen_demography_selection_seconds": 30.48564989998704,
+      "first_app_load_seconds": 3.2459527000319213,
+      "first_app_render_seconds": 1.0269389000022784,
+      "optional_one_year_forward_seconds": 10.711501999991015,
+      "optional_one_year_run_wall_seconds": 12.689046400017105,
+      "population_context_reuse_seconds": 5.00003807246685e-07,
+      "population_selection_seconds": 0.0015222000074572861,
+      "results_page_wall_seconds": 0.31681280001066625,
+      "risk_allocation_seconds": 0.2814663000172004
+    },
+    "verification_type": "Streamlit_AppTest_not_live_browser",
+    "working_example": "Synthetic adult cohort,not Australian estimates"
+  },
+  "browser_verification": {
+    "performed": false,
+    "reason": "Browser access host unavailable. Automatic approval review rejected access to unrelated document window because of private-content exposure; no interaction or bypass."
+  },
+  "protected_state": {
+    "passed": true,
+    "protected_worktree_count": 4,
+    "frozen_files": 128,
+    "retained_2a_3d_files": 79,
+    "explicit_tbi_modified_preserved": 6,
+    "explicit_tbi_untracked_preserved": 2,
+    "manifest": "protected_fingerprints_3e.json"
+  },
+  "intended_files": [
+    "country_model_review_ui/README.md",
+    "country_model_review_ui/__init__.py",
+    "country_model_review_ui/app.py",
+    "country_model_review_ui/examples/association.csv",
+    "country_model_review_ui/examples/population.csv",
+    "country_model_review_ui/examples/risk.csv",
+    "country_model_review_ui/examples/tbi_age_sex.csv",
+    "country_model_review_ui/examples/tbi_states.csv",
+    "country_model_review_ui/forward.py",
+    "country_model_review_ui/gates.py",
+    "country_model_review_ui/model.py",
+    "country_model_review_ui/presentation.py",
+    "country_model_review_ui/state.py",
+    "country_model_review_ui/views/__init__.py",
+    "country_model_review_ui/views/baseline.py",
+    "country_model_review_ui/views/evidence.py",
+    "country_model_review_ui/views/natural.py",
+    "country_model_review_ui/views/population.py",
+    "country_model_review_ui/views/results.py",
+    "country_model_review_ui/views/risk.py",
+    "country_model_review_ui/views/run.py",
+    "docs/country_subnational_model/MILESTONE_STATUS.md",
+    "docs/country_subnational_model/README.md",
+    "docs/country_subnational_model/decision_register_3e.md",
+    "docs/country_subnational_model/milestone3e_ui.md",
+    "docs/country_subnational_model/milestone3e_validation.md",
+    "docs/country_subnational_model/protected_fingerprints_3e.json",
+    "docs/country_subnational_model/validation_receipt_3e.json",
+    "schemas/country_tb/v1/review_ui.schema.json",
+    "scripts/validate_country_tb_review_ui.py",
+    "tests/country_tb/test_review_ui_apptest.py",
+    "tests/country_tb/test_review_ui_model.py"
+  ],
+  "diff_check_passed": true,
+  "public_incidence_mode": "unavailable_pending_progression_and_risk_forward_operator",
+  "limitations": [
+    "AppTest evidence is not live browser verification or external scientific validation",
+    "No central country parameter configuration approved",
+    "2024 baseline only",
+    "Pediatric curves, unsupported remote histories and unknown open ages remain unresolved",
+    "First cold frozen WPP validation takes about 30 seconds; explicitly loaded and cached",
+    "Optional first-episode projection limited to one year and bounded node count",
+    "No production UI/inference integration; no merge, tag or deployment"
+  ],
+  "final_git_verification": "Post-commit/push agreement and clean state recorded separately to avoid a self-referential commit receipt."
+}
