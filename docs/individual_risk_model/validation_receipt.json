@@ -1,0 +1,292 @@
+{
+  "schema_id": "individual_tb.m1_validation_receipt.v1",
+  "recorded_at_utc": "2026-11-03T02:45:31.281994+00:00",
+  "starting_commit": "03cc16e4a52a55e10019dab16bd4f599571c4b90",
+  "commands": [
+    {
+      "command": "C:\\Users\\emmas\\anaconda3\\python.exe -m pytest tests/test_individual_risk_m1.py -q --durations=8",
+      "exit_code": 0,
+      "elapsed_seconds": 3.1406067000352778,
+      "log": "abm/output/individual_risk_m1/focused_tests.txt",
+      "log_sha256": "38d0bc75bd091fabd402f9fef813538ed2854faabee47b342ff0b978c856dbeb",
+      "output": ".....................................................................    [100%]\r\n============================= slowest 8 durations =============================\r\n0.80s call     tests/test_individual_risk_m1.py::test_dataframe_missing_preserved\r\n0.58s call     tests/test_individual_risk_m1.py::test_frozen_files_and_no_existing_ui_import\r\n0.12s call     tests/test_individual_risk_m1.py::test_example_policy_comparison_and_ids\r\n0.04s call     tests/test_individual_risk_m1.py::test_ranking_absolute_and_deterministic_ties\r\n0.04s call     tests/test_individual_risk_m1.py::test_tst_and_igra_are_distinct_observation_contracts\r\n0.03s call     tests/test_individual_risk_m1.py::test_csv_json_and_full_precision_roundtrip\r\n0.02s call     tests/test_individual_risk_m1.py::test_complete_deterministic_and_parameter_roundtrip\r\n0.02s call     tests/test_individual_risk_m1.py::test_missing_only_through_prior_and_bounds\r\n69 passed in 2.39s\r\n"
+    },
+    {
+      "command": "C:\\Users\\emmas\\anaconda3\\python.exe examples/individual_risk/run_example.py",
+      "exit_code": 0,
+      "elapsed_seconds": 0.3558297999552451,
+      "log": "abm/output/individual_risk_m1/synthetic_example.txt",
+      "log_sha256": "21db546ca064e0f76b2a9a66ab2ccf10696b6bacfffb9c31907195043dc2b284",
+      "output": "INVENTED SYNTHETIC DATA AND PARAMETERS; NOT FOR CLINICAL USE\r\nfictional_10 rank= 1 absolute risk= 0.25414440546257283 status= calculated\r\nfictional_05 rank= 2 absolute risk= 0.12084616461467876 status= calculated\r\nfictional_02 rank= 3 absolute risk= 0.07538637552189499 status= calculated\r\nfictional_04 rank= 3 absolute risk= 0.07538637552189499 status= calculated\r\nfictional_08 rank= 5 absolute risk= 0.04443032971028184 status= calculated_with_missing_information\r\nfictional_07 rank= 6 absolute risk= 0.03378075543807362 status= calculated\r\nfictional_01 rank= 7 absolute risk= 0.0261403738984512 status= calculated\r\nfictional_09 rank= 8 absolute risk= 0.01162423088822641 status= calculated_with_missing_information\r\nfictional_03 rank= 9 absolute risk= 0.0066334441672213 status= calculated\r\nfictional_06 rank= 10 absolute risk= 0.00045330128147603224 status= calculated\r\nfictional_11 rank= None absolute risk= None status= unavailable\r\nfictional_12 rank= None absolute risk= None status= unavailable\r\nFull precision CSV/JSON written to C:\\Users\\emmas\\Documents\\GITHUB\\tb-individual-risk-platform\\abm\\output\\individual_risk_m1\r\n"
+    }
+  ],
+  "compiled_files": 16,
+  "source_checksums": {
+    "examples/individual_risk/run_example.py": "b6853c8d0cdbf502c1ad71bc156718f6b11ae1b6a19b64f591450882d06bf565",
+    "examples/individual_risk/synthetic_parameters.py": "8623e0da4310742221b768b44ac8072ce6cdfd0318941992b763c1d9eaea4e9b",
+    "scripts/validate_individual_risk_m1.py": "61be8823c115c1e6fab8edbefce479bc363d6133bed640eed7b046ccd7b49445",
+    "tb_individual_risk/__init__.py": "fcb0f1bccb01c5c91ae08e5f3608696a376da39ce239baecd170464d3269c6e7",
+    "tb_individual_risk/contracts.py": "76f43ad2f160773cbba4bd53e45f8b526b0bbf82b1d84377d656b34c49086bf6",
+    "tb_individual_risk/infection_probability.py": "7ca9d6670261345c8e04898679542c59e8453c9a7bbf5afb398e7c57ec681ef8",
+    "tb_individual_risk/line_list.py": "24b53868b6b577bd1df2957f50b9b2fb2c4fe07ac320e8967d37a287cbf7e5ed",
+    "tb_individual_risk/missing_data.py": "ad2d4366c313d5d1a63b9e8a8d0676571fd1872806451933c2f11e5f479c24fd",
+    "tb_individual_risk/model.py": "4a86e3812f5b399ce22130f0c1479da8f85c80635f51aa2ccd72857310d60b45",
+    "tb_individual_risk/parameters.py": "31afc77f0d14ec909bc318b0b67a0d9b0d8a614c507eba87b42f5a683426ea23",
+    "tb_individual_risk/population_contract.py": "aca298b282fb836f3f73fb95a80bb81078802fec1745c68b72e731d0ecd1b79e",
+    "tb_individual_risk/progression.py": "1e6b0f7f810c133e243e9139b3380eb9132585fa5676eed29e864370eca9e012",
+    "tb_individual_risk/provenance.py": "8347da187d5e8ce39c187c68c72f0976bffe504775a6f10aae41ac3375d85fd4",
+    "tb_individual_risk/ranking.py": "897cb4a5026cc792f3d9aa581b08a3fc695c18aedfc2571ef6e7f8cebdb1cabf",
+    "tb_individual_risk/risk_factors.py": "3a2ad71b62df65c9827bff4e893e62299c08df5c4a7cb9af725f5b7e3c2bed4f",
+    "tests/test_individual_risk_m1.py": "fd25f07e80327692e7ab911be1610e28c2ae261f72019f431d66295d3f9424b9"
+  },
+  "source_files_unchanged_during_checks": true,
+  "protection": {
+    "passed": true,
+    "existing_frozen_files": 402,
+    "protected_worktrees": 6,
+    "all_other_refs_unchanged": true
+  },
+  "csv_json_roundtrip": true,
+  "all_result_hashes_verified": true,
+  "example_people": 12,
+  "example_resolved": 10,
+  "comparison": {
+    "highest_applicable_rr": [
+      {
+        "record_id": "fictional_10",
+        "rank": 1,
+        "absolute_risk": 0.25414440546257283,
+        "effective_rr": 12.0
+      },
+      {
+        "record_id": "fictional_05",
+        "rank": 2,
+        "absolute_risk": 0.12084616461467876,
+        "effective_rr": 5.0
+      },
+      {
+        "record_id": "fictional_02",
+        "rank": 3,
+        "absolute_risk": 0.07538637552189499,
+        "effective_rr": 3.0
+      },
+      {
+        "record_id": "fictional_04",
+        "rank": 3,
+        "absolute_risk": 0.07538637552189499,
+        "effective_rr": 3.0
+      },
+      {
+        "record_id": "fictional_08",
+        "rank": 5,
+        "absolute_risk": 0.04443032971028184,
+        "effective_rr": null
+      },
+      {
+        "record_id": "fictional_07",
+        "rank": 6,
+        "absolute_risk": 0.03378075543807362,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_01",
+        "rank": 7,
+        "absolute_risk": 0.0261403738984512,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_09",
+        "rank": 8,
+        "absolute_risk": 0.01162423088822641,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_03",
+        "rank": 9,
+        "absolute_risk": 0.0066334441672213,
+        "effective_rr": 2.0
+      },
+      {
+        "record_id": "fictional_06",
+        "rank": 10,
+        "absolute_risk": 0.00045330128147603224,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_11",
+        "rank": null,
+        "absolute_risk": null,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_12",
+        "rank": null,
+        "absolute_risk": null,
+        "effective_rr": 1.0
+      }
+    ],
+    "additive_excess_rr": [
+      {
+        "record_id": "fictional_10",
+        "rank": 1,
+        "absolute_risk": 0.3548890486600605,
+        "effective_rr": 19.0
+      },
+      {
+        "record_id": "fictional_05",
+        "rank": 2,
+        "absolute_risk": 0.12084616461467876,
+        "effective_rr": 5.0
+      },
+      {
+        "record_id": "fictional_04",
+        "rank": 3,
+        "absolute_risk": 0.09857080735585912,
+        "effective_rr": 4.0
+      },
+      {
+        "record_id": "fictional_02",
+        "rank": 4,
+        "absolute_risk": 0.07538637552189499,
+        "effective_rr": 3.0
+      },
+      {
+        "record_id": "fictional_08",
+        "rank": 5,
+        "absolute_risk": 0.045821395620319685,
+        "effective_rr": null
+      },
+      {
+        "record_id": "fictional_07",
+        "rank": 6,
+        "absolute_risk": 0.03378075543807362,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_01",
+        "rank": 7,
+        "absolute_risk": 0.0261403738984512,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_09",
+        "rank": 8,
+        "absolute_risk": 0.01162423088822641,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_03",
+        "rank": 9,
+        "absolute_risk": 0.0066334441672213,
+        "effective_rr": 2.0
+      },
+      {
+        "record_id": "fictional_06",
+        "rank": 10,
+        "absolute_risk": 0.00045330128147603224,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_11",
+        "rank": null,
+        "absolute_risk": null,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_12",
+        "rank": null,
+        "absolute_risk": null,
+        "effective_rr": 1.0
+      }
+    ],
+    "multiplicative_rr": [
+      {
+        "record_id": "fictional_10",
+        "rank": 1,
+        "absolute_risk": 0.6523375991032735,
+        "effective_rr": 96.0
+      },
+      {
+        "record_id": "fictional_04",
+        "rank": 2,
+        "absolute_risk": 0.1422480926222977,
+        "effective_rr": 6.0
+      },
+      {
+        "record_id": "fictional_05",
+        "rank": 3,
+        "absolute_risk": 0.12084616461467876,
+        "effective_rr": 5.0
+      },
+      {
+        "record_id": "fictional_02",
+        "rank": 4,
+        "absolute_risk": 0.07538637552189499,
+        "effective_rr": 3.0
+      },
+      {
+        "record_id": "fictional_08",
+        "rank": 5,
+        "absolute_risk": 0.048442032736306,
+        "effective_rr": null
+      },
+      {
+        "record_id": "fictional_07",
+        "rank": 6,
+        "absolute_risk": 0.03378075543807362,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_01",
+        "rank": 7,
+        "absolute_risk": 0.0261403738984512,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_09",
+        "rank": 8,
+        "absolute_risk": 0.01162423088822641,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_03",
+        "rank": 9,
+        "absolute_risk": 0.0066334441672213,
+        "effective_rr": 2.0
+      },
+      {
+        "record_id": "fictional_06",
+        "rank": 10,
+        "absolute_risk": 0.00045330128147603224,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_11",
+        "rank": null,
+        "absolute_risk": null,
+        "effective_rr": 1.0
+      },
+      {
+        "record_id": "fictional_12",
+        "rank": null,
+        "absolute_risk": null,
+        "effective_rr": 1.0
+      }
+    ]
+  },
+  "parameter_hash": "59daaf0dafb84f00b1192bf9cf5062883853d9f849eeb7620916ddb91bb9848a",
+  "clinical_use_approved": false,
+  "limitations": [
+    "All example parameters invented; no clinical central parameter set",
+    "No external validation or TSTin3D reproduction claim",
+    "Population generator contract only",
+    "No new UI, interventions, economics or transmission"
+  ],
+  "independent_decimal_worked_examples": {
+    "highest_applicable_rr": "0.075386375521894989648289847486775098480607611895160",
+    "additive_excess_rr": "0.098570807355859107695768679020958226817219782700380",
+    "multiplicative_rr": "0.14224809262229772718727683498957484101786608428309"
+  },
+  "evidence_status": "Documentary historical values verified in cited sources; no clinical numerical parameter set adopted.",
+  "final_git_state": "Reported after commit/push; not embedded self-referentially."
+}
