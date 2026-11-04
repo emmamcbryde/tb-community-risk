@@ -91,6 +91,17 @@ class ModelParameters:
             if not isinstance(component, Parameter) or component.name != name:
                 raise ValidationError(name, "Component identity mismatch.")
         statuses = [p.status for p in self.components.values()] + [self.population_prior.status]
+        def evidence_states(value):
+            if isinstance(value,dict):
+                for key,item in value.items():
+                    if isinstance(item,str) and (key=="status" or key=="adoption" and item=="historical_only"):yield item
+                    yield from evidence_states(item)
+            elif isinstance(value,(list,tuple)):
+                for item in value:yield from evidence_states(item)
+        nested=list(evidence_states({k:asdict(v) for k,v in self.components.items()}))
+        if "historical_only" in nested:
+            raise ValidationError("parameters","Historical-only evidence cannot enter the hazard formulation; use the separate reference package.")
+        statuses += nested
         if "synthetic_not_clinical" in statuses and self.classification != "synthetic_not_clinical":
             raise ValidationError("classification", "Synthetic parameters cannot be relabelled reviewed or clinical.")
         if self.classification == "reviewed" and any(s != "reviewed" for s in statuses):

@@ -1,4 +1,9 @@
-# Individual TB-risk core: Milestone 1
+# Individual TB-risk core: Milestone 2A
+
+Current status: [Milestone2A review and limitations](MODEL_STATUS.md). The default
+remains the hazard formulation with external-required clinical parameters. The
+publication-only historical formulation and immutable packages require explicit
+selection; see the [historical API/specification](historical_algorithm_m2a.md).
 
 An independent Python research library for calculating and ranking risk from a
 supplied model definition. This is for planning and sequencing, not denying care.

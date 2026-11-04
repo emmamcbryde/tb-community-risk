@@ -1,0 +1,73 @@
+{
+  "schema_id": "individual_tb.m2a_validation_receipt.v1",
+  "recorded_at_utc": "2026-11-04T01:56:45.825664+00:00",
+  "starting_head": "8b533f81a6a1435bed11f10db52c6d8d916224a1",
+  "commands": [
+    {
+      "command": "C:\\Users\\emmas\\anaconda3\\python.exe -m pytest tests/test_individual_risk_m1.py tests/test_individual_risk_m2a_audit.py tests/test_individual_risk_m2a_reference.py -q --durations=8",
+      "exit_code": 0,
+      "elapsed_seconds": 4.253464800072834,
+      "output": "........................................................................ [ 66%]\r\n.....................................                                    [100%]\r\n============================= slowest 8 durations =============================\r\n0.68s call     tests/test_individual_risk_m1.py::test_dataframe_missing_preserved\r\n0.54s call     tests/test_individual_risk_m1.py::test_frozen_files_and_no_existing_ui_import\r\n0.37s call     tests/test_individual_risk_m2a_reference.py::test_fixture_coverage_and_export\r\n0.26s call     tests/test_individual_risk_m1.py::test_example_policy_comparison_and_ids\r\n0.08s call     tests/test_individual_risk_m1.py::test_ranking_absolute_and_deterministic_ties\r\n0.05s call     tests/test_individual_risk_m1.py::test_tst_and_igra_are_distinct_observation_contracts\r\n0.04s call     tests/test_individual_risk_m2a_reference.py::test_hazard_policy_comparison_keeps_package_provenance\r\n0.04s call     tests/test_individual_risk_m2a_reference.py::test_historical_input_units_and_known_risk_factors\r\n109 passed in 3.50s\r\n",
+      "log_sha256": "a99fc5fe72f7e066652504d5c016b1f207400af2270806633f3fefa1d8c466f9"
+    },
+    {
+      "command": "C:\\Users\\emmas\\anaconda3\\python.exe scripts/reproduce_menzies_2008.py",
+      "exit_code": 0,
+      "elapsed_seconds": 2.2464729000348598,
+      "output": "{\"fictional_people\": 26, \"published_rows\": 42, \"full_algorithm_matches\": 0, \"partial_comparisons\": 26, \"partial_within_printed_resolution\": 24, \"partial_outside_resolution\": [\"T3_16\", \"T3_24\"], \"no_clinical_validation\": true, \"parameter_package_hash\": \"f612ff06cf5afd5abd8d935c71fb8d7242b8c9de72e65c9d57190e0ca00386f6\"}\r\n",
+      "log_sha256": "7f5aa2b1142302b6f1f6e8cb45d27b790d70698bb6769c2ff08c1af2a6b7e590"
+    }
+  ],
+  "compiled_python_files": 23,
+  "source_checksums": {
+    "examples/individual_risk/reference_fixtures.py": "7681fba2d675eb2c3e5b250f0a137729460a05bd623d94ca8edd37cf54b9e638",
+    "examples/individual_risk/run_example.py": "b6853c8d0cdbf502c1ad71bc156718f6b11ae1b6a19b64f591450882d06bf565",
+    "examples/individual_risk/synthetic_parameters.py": "8623e0da4310742221b768b44ac8072ce6cdfd0318941992b763c1d9eaea4e9b",
+    "scripts/reproduce_menzies_2008.py": "925973c2e9cf3de5bbeded21095de4c0312e56464b0412e9075026aa42b117a1",
+    "scripts/validate_individual_risk_m2a.py": "aeea5a35f14d1d03753dc7c46cb5a4fc2048f8fd770b87d5dab4b4655b017717",
+    "tb_individual_risk/__init__.py": "c5a6713627c863ef94e7bee969e4b0514e93b4735dffede099f582e7f33fc6dd",
+    "tb_individual_risk/contracts.py": "6a8821f6296e5d401163fe26d6e11c4a0145518d19d78938b1a8fb1f1921e2b3",
+    "tb_individual_risk/infection_probability.py": "7ca9d6670261345c8e04898679542c59e8453c9a7bbf5afb398e7c57ec681ef8",
+    "tb_individual_risk/line_list.py": "f46bfbc7121be5b3f8109c68dd3524b6b47fb814d6dbafedddad7cc7515aa293",
+    "tb_individual_risk/menzies_2008.py": "f59a6f70df3586904e8f00587d01775bf8df936bfb199c6efb1804204a8d1b5a",
+    "tb_individual_risk/missing_data.py": "ad2d4366c313d5d1a63b9e8a8d0676571fd1872806451933c2f11e5f479c24fd",
+    "tb_individual_risk/model.py": "fbd5909b5874d5ddcce3365439be4cb84756136fa0b8c2090c7bdcd9c30dd8ee",
+    "tb_individual_risk/packages.py": "52e66d1557cb4ac7d03920ceee3d91559c8752afc9191e0731250100c8f279a7",
+    "tb_individual_risk/parameters.py": "83bb6e051fccbfaae217b27c275241a0161deae330d12c4ee9cf933758cfdca3",
+    "tb_individual_risk/population_contract.py": "aca298b282fb836f3f73fb95a80bb81078802fec1745c68b72e731d0ecd1b79e",
+    "tb_individual_risk/progression.py": "1e6b0f7f810c133e243e9139b3380eb9132585fa5676eed29e864370eca9e012",
+    "tb_individual_risk/provenance.py": "b8b4009e36764ba8d8ecc85abd9ff20e0b76e1639ad041065af3e3f3af17d54e",
+    "tb_individual_risk/ranking.py": "016ff43ecc443bb7dda26b0d30924d3a0dc64c00d37eb358f0f65cd66f418eb7",
+    "tb_individual_risk/reference_comparison.py": "a795d2ce1aaaca97c6af8e154833eba9b623e5cc91a3ca4c40ee95276e8f7de8",
+    "tb_individual_risk/reference_data/contemporary_parameters_external_required_v1.json": "a72c446521d6b28639d4fa502d66af2b93ca5664ac7180d1572bef480dce99ed",
+    "tb_individual_risk/reference_data/menzies_2008_published_reference_v1.json": "36642676423aec352af2fb448effcfe245a803afd32a17558186ba915acbed22",
+    "tb_individual_risk/reference_data/published_examples_2008.json": "b3ac7586a9c1086aaeaa94b80e27f20c06b40524f465ed5ec216de23e6bb6e43",
+    "tb_individual_risk/reference_data/synthetic_demonstration_v1.json": "715ce4ffe46c542b64456a25574ae8cd5381525de249c27db6ee2622e194ab43",
+    "tb_individual_risk/risk_factors.py": "cb7664643157aff4030f6ef8a18b11451ffcec8f7a4353a31951681ab6aee924",
+    "tests/test_individual_risk_m1.py": "fd25f07e80327692e7ab911be1610e28c2ae261f72019f431d66295d3f9424b9",
+    "tests/test_individual_risk_m2a_audit.py": "237ae0ef3f48d45f73dddd3847f94172256b7fc173fe5554af436e688d0e9b18",
+    "tests/test_individual_risk_m2a_reference.py": "c8c7d0acfd5d1bc2d9f82c0584b97911f7b19780c44217ccb37263396e4c0c66"
+  },
+  "source_files_unchanged": true,
+  "package_file_checksums": {
+    "menzies_2008_published_reference_v1": "36642676423aec352af2fb448effcfe245a803afd32a17558186ba915acbed22",
+    "synthetic_demonstration_v1": "715ce4ffe46c542b64456a25574ae8cd5381525de249c27db6ee2622e194ab43",
+    "contemporary_parameters_external_required_v1": "a72c446521d6b28639d4fa502d66af2b93ca5664ac7180d1572bef480dce99ed"
+  },
+  "scientific_hash_occurrences": 496,
+  "unique_scientific_hashes": 186,
+  "protection": {
+    "passed": true,
+    "frozen_release_files": 402,
+    "protected_worktrees": 6,
+    "retained_files_except_authorized_edits": 418,
+    "frozen_peeled_tag": "03cc16e4a52a55e10019dab16bd4f599571c4b90"
+  },
+  "reproduction_summary": {
+    "full_algorithm_matches": 0,
+    "partial_comparisons": 26,
+    "partial_within_printed_resolution": 24
+  },
+  "clinical_validation": false,
+  "ordinary_prediction_network": false
+}

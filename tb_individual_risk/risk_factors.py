@@ -40,6 +40,10 @@ def risk_factors(values, parameters):
         cfg=require_component(parameters.component(name))
         if "factors" not in cfg:raise Unavailable(name+": explicit included/excluded factor scope required")
         if cfg.get("cap") is not None:raise ValidationError("cap","Multiplier caps are not implemented; no cap silently applied.")
+    definitions=factor_definitions(parameters)
+    if values.get("cxr")=="other" and not any(s["field"]=="cxr" and s.get("present_value")=="other" for _,s in definitions.values()):
+        if "cxr:other" not in parameters.component("radiographic_effects").config.get("explicit_scope_exclusions",{}):
+            raise Unavailable("Unclassified radiograph requires an appropriate effect or explicit exclusion; not reference risk.")
     effects = {}
     evidence = {}
     age = values.get("current_age")

@@ -1,0 +1,769 @@
+{
+  "allowed_formulations": [
+    "hazard_based_progression_v1"
+  ],
+  "classification": "synthetic_not_clinical",
+  "clinical_use_approved": false,
+  "model_parameters": {
+    "classification": "synthetic_not_clinical",
+    "combination_policy": "highest_applicable_rr",
+    "components": {
+      "age_effects": {
+        "config": {
+          "policy": "none_explicit"
+        },
+        "name": "age_effects",
+        "schema_id": "individual_tb.parameter.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      },
+      "baseline_progression_hazard": {
+        "config": {
+          "age_curves": [
+            {
+              "age_max": 150,
+              "age_min": 15,
+              "knots": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  2,
+                  0.04
+                ],
+                [
+                  10,
+                  0.08
+                ],
+                [
+                  30,
+                  0.1
+                ]
+              ],
+              "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+              "status": "synthetic_not_clinical"
+            }
+          ],
+          "required_history": [
+            "active_tb_at_baseline",
+            "previous_active_tb",
+            "previous_preventive_treatment"
+          ]
+        },
+        "name": "baseline_progression_hazard",
+        "schema_id": "individual_tb.parameter.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      },
+      "competing_mortality": {
+        "config": {
+          "mode": "none_explicit"
+        },
+        "name": "competing_mortality",
+        "schema_id": "individual_tb.parameter.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      },
+      "igra_interpretation": {
+        "config": {
+          "product": "SYNTHETIC_ASSAY",
+          "sensitivity": 0.8,
+          "specificity": 0.9
+        },
+        "name": "igra_interpretation",
+        "schema_id": "individual_tb.parameter.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      },
+      "infection_probability": {
+        "config": {
+          "assays": [
+            "igra"
+          ],
+          "mode": "bayes_assays"
+        },
+        "name": "infection_probability",
+        "schema_id": "individual_tb.parameter.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      },
+      "medical_risk_effects": {
+        "config": {
+          "explicit_scope_exclusions": {
+            "head_neck_carcinoma": "Not modelled in this invented demonstration; no clinical inference",
+            "immunosuppression": "Not modelled in this invented demonstration; no clinical inference",
+            "severe_renal_disease": "Not modelled in this invented demonstration; no clinical inference",
+            "silicosis": "Not modelled in this invented demonstration; no clinical inference",
+            "tnf_inhibitor": "Not modelled in this invented demonstration; no clinical inference",
+            "underweight": "Not modelled in this invented demonstration; no clinical inference"
+          },
+          "factors": {
+            "diabetes": {
+              "age_max": 150,
+              "age_min": 15,
+              "definition": "Invented diabetes state",
+              "effect_measure": "invented_RR_as_hazard_approximation",
+              "field": "diabetes",
+              "rr": 2.0,
+              "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+              "status": "synthetic_not_clinical"
+            },
+            "haemodialysis": {
+              "age_max": 150,
+              "age_min": 15,
+              "definition": "Invented haemodialysis state",
+              "effect_measure": "invented_RR_as_hazard_approximation",
+              "field": "haemodialysis",
+              "rr": 5.0,
+              "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+              "status": "synthetic_not_clinical"
+            },
+            "hiv": {
+              "age_max": 150,
+              "age_min": 15,
+              "definition": "Invented untreated HIV state",
+              "effect_measure": "invented_RR_as_hazard_approximation",
+              "field": "hiv",
+              "required_context": {
+                "hiv_treatment": false
+              },
+              "rr": 8.0,
+              "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+              "status": "synthetic_not_clinical"
+            },
+            "smoking": {
+              "age_max": 150,
+              "age_min": 15,
+              "definition": "Invented explicitly defined smoking exposure",
+              "effect_measure": "invented_RR_as_hazard_approximation",
+              "field": "smoking",
+              "rr": 3.0,
+              "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+              "status": "synthetic_not_clinical"
+            },
+            "transplantation": {
+              "age_max": 150,
+              "age_min": 15,
+              "definition": "Invented transplantation state",
+              "effect_measure": "invented_RR_as_hazard_approximation",
+              "field": "transplantation",
+              "rr": 12.0,
+              "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+              "status": "synthetic_not_clinical"
+            }
+          }
+        },
+        "name": "medical_risk_effects",
+        "schema_id": "individual_tb.parameter.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      },
+      "prediction_horizons": {
+        "config": {
+          "maximum_years": 20,
+          "selected_years": 5
+        },
+        "name": "prediction_horizons",
+        "schema_id": "individual_tb.parameter.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      },
+      "radiographic_effects": {
+        "config": {
+          "factors": {
+            "fibronodular": {
+              "age_max": 150,
+              "age_min": 15,
+              "definition": "Invented fibronodular finding",
+              "effect_measure": "invented_RR_as_hazard_approximation",
+              "field": "cxr",
+              "present_value": "fibronodular",
+              "rr": 4.0,
+              "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+              "status": "synthetic_not_clinical"
+            },
+            "granuloma": {
+              "age_max": 150,
+              "age_min": 15,
+              "definition": "Invented radiographic granuloma",
+              "effect_measure": "invented_RR_as_hazard_approximation",
+              "field": "cxr",
+              "present_value": "granuloma",
+              "rr": 2.0,
+              "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+              "status": "synthetic_not_clinical"
+            }
+          }
+        },
+        "name": "radiographic_effects",
+        "schema_id": "individual_tb.parameter.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      },
+      "recent_infection_progression": {
+        "config": {
+          "clock": "most_recent_infection",
+          "recent_window_years": 2
+        },
+        "name": "recent_infection_progression",
+        "schema_id": "individual_tb.parameter.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      },
+      "remote_infection_progression": {
+        "config": {
+          "annual_hazard": 0.001,
+          "tail_policy": "external_constant_hazard"
+        },
+        "name": "remote_infection_progression",
+        "schema_id": "individual_tb.parameter.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      },
+      "tst_interpretation": {
+        "config": {
+          "positive_threshold_mm": 10,
+          "sensitivity": 0.8,
+          "specificity": 0.85
+        },
+        "name": "tst_interpretation",
+        "schema_id": "individual_tb.parameter.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      }
+    },
+    "extreme_multiplier_warning": 20.0,
+    "max_scenarios": 8192,
+    "population_prior": {
+      "bounds": {
+        "diabetes": [
+          false,
+          true
+        ],
+        "pretest_tbi_probability": [
+          0.1,
+          0.3
+        ],
+        "smoking": [
+          false,
+          true
+        ],
+        "time_since_infection": [
+          1,
+          10
+        ]
+      },
+      "dependence_policy": "explicit_independence",
+      "distributions": {
+        "diabetes": [
+          {
+            "probability": 0.8,
+            "value": false
+          },
+          {
+            "probability": 0.2,
+            "value": true
+          }
+        ],
+        "pretest_tbi_probability": [
+          {
+            "probability": 0.5,
+            "value": 0.1
+          },
+          {
+            "probability": 0.5,
+            "value": 0.3
+          }
+        ],
+        "smoking": [
+          {
+            "probability": 0.7,
+            "value": false
+          },
+          {
+            "probability": 0.3,
+            "value": true
+          }
+        ],
+        "time_since_infection": [
+          {
+            "probability": 0.4,
+            "value": 1
+          },
+          {
+            "probability": 0.6,
+            "value": 10
+          }
+        ]
+      },
+      "joint_bound_states": [],
+      "joint_states": [],
+      "schema_id": "individual_tb.population_prior.v1",
+      "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+      "status": "synthetic_not_clinical"
+    },
+    "schema_id": "individual_tb.model_parameters.v1",
+    "scientific_hash": "59daaf0dafb84f00b1192bf9cf5062883853d9f849eeb7620916ddb91bb9848a"
+  },
+  "package_id": "synthetic_demonstration_v1",
+  "records": [
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "infection_probability",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "infection_probability",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "assays": [
+          "igra"
+        ],
+        "mode": "bayes_assays"
+      }
+    },
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "tst_interpretation",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "tst_interpretation",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "positive_threshold_mm": 10,
+        "sensitivity": 0.8,
+        "specificity": 0.85
+      }
+    },
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "igra_interpretation",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "igra_interpretation",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "product": "SYNTHETIC_ASSAY",
+        "sensitivity": 0.8,
+        "specificity": 0.9
+      }
+    },
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "baseline_progression_hazard",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "baseline_progression_hazard",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "age_curves": [
+          {
+            "age_max": 150,
+            "age_min": 15,
+            "knots": [
+              [
+                0,
+                0
+              ],
+              [
+                2,
+                0.04
+              ],
+              [
+                10,
+                0.08
+              ],
+              [
+                30,
+                0.1
+              ]
+            ],
+            "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+            "status": "synthetic_not_clinical"
+          }
+        ],
+        "required_history": [
+          "active_tb_at_baseline",
+          "previous_active_tb",
+          "previous_preventive_treatment"
+        ]
+      }
+    },
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "recent_infection_progression",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "recent_infection_progression",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "clock": "most_recent_infection",
+        "recent_window_years": 2
+      }
+    },
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "remote_infection_progression",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "remote_infection_progression",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "annual_hazard": 0.001,
+        "tail_policy": "external_constant_hazard"
+      }
+    },
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "age_effects",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "age_effects",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "policy": "none_explicit"
+      }
+    },
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "radiographic_effects",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "radiographic_effects",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "factors": {
+          "fibronodular": {
+            "age_max": 150,
+            "age_min": 15,
+            "definition": "Invented fibronodular finding",
+            "effect_measure": "invented_RR_as_hazard_approximation",
+            "field": "cxr",
+            "present_value": "fibronodular",
+            "rr": 4.0,
+            "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+            "status": "synthetic_not_clinical"
+          },
+          "granuloma": {
+            "age_max": 150,
+            "age_min": 15,
+            "definition": "Invented radiographic granuloma",
+            "effect_measure": "invented_RR_as_hazard_approximation",
+            "field": "cxr",
+            "present_value": "granuloma",
+            "rr": 2.0,
+            "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+            "status": "synthetic_not_clinical"
+          }
+        }
+      }
+    },
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "medical_risk_effects",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "medical_risk_effects",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "explicit_scope_exclusions": {
+          "head_neck_carcinoma": "Not modelled in this invented demonstration; no clinical inference",
+          "immunosuppression": "Not modelled in this invented demonstration; no clinical inference",
+          "severe_renal_disease": "Not modelled in this invented demonstration; no clinical inference",
+          "silicosis": "Not modelled in this invented demonstration; no clinical inference",
+          "tnf_inhibitor": "Not modelled in this invented demonstration; no clinical inference",
+          "underweight": "Not modelled in this invented demonstration; no clinical inference"
+        },
+        "factors": {
+          "diabetes": {
+            "age_max": 150,
+            "age_min": 15,
+            "definition": "Invented diabetes state",
+            "effect_measure": "invented_RR_as_hazard_approximation",
+            "field": "diabetes",
+            "rr": 2.0,
+            "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+            "status": "synthetic_not_clinical"
+          },
+          "haemodialysis": {
+            "age_max": 150,
+            "age_min": 15,
+            "definition": "Invented haemodialysis state",
+            "effect_measure": "invented_RR_as_hazard_approximation",
+            "field": "haemodialysis",
+            "rr": 5.0,
+            "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+            "status": "synthetic_not_clinical"
+          },
+          "hiv": {
+            "age_max": 150,
+            "age_min": 15,
+            "definition": "Invented untreated HIV state",
+            "effect_measure": "invented_RR_as_hazard_approximation",
+            "field": "hiv",
+            "required_context": {
+              "hiv_treatment": false
+            },
+            "rr": 8.0,
+            "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+            "status": "synthetic_not_clinical"
+          },
+          "smoking": {
+            "age_max": 150,
+            "age_min": 15,
+            "definition": "Invented explicitly defined smoking exposure",
+            "effect_measure": "invented_RR_as_hazard_approximation",
+            "field": "smoking",
+            "rr": 3.0,
+            "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+            "status": "synthetic_not_clinical"
+          },
+          "transplantation": {
+            "age_max": 150,
+            "age_min": 15,
+            "definition": "Invented transplantation state",
+            "effect_measure": "invented_RR_as_hazard_approximation",
+            "field": "transplantation",
+            "rr": 12.0,
+            "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+            "status": "synthetic_not_clinical"
+          }
+        }
+      }
+    },
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "competing_mortality",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "competing_mortality",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "mode": "none_explicit"
+      }
+    },
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "prediction_horizons",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "prediction_horizons",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "maximum_years": 20,
+        "selected_years": 5
+      }
+    },
+    {
+      "adoption": "synthetic_only",
+      "conditional_progression_or_disease_association": "not_applicable",
+      "crude_or_adjusted": "not_applicable",
+      "definition": "Versioned missing-input distributions and bound states",
+      "domain": "both",
+      "effect_measure": "not_applicable",
+      "equation": "See component config",
+      "limitations": "Invented",
+      "name": "missing_data_priors",
+      "publication_year": null,
+      "review_status": "synthetic_not_clinical",
+      "scope": "Explicit component applicability; no clinical approval",
+      "source_citation": "Invented M1 demonstration, no clinical evidence",
+      "source_page_table": "not applicable",
+      "source_population": "Fictional demonstration",
+      "source_url": null,
+      "unit": "configuration",
+      "value": {
+        "bounds": {
+          "diabetes": [
+            false,
+            true
+          ],
+          "pretest_tbi_probability": [
+            0.1,
+            0.3
+          ],
+          "smoking": [
+            false,
+            true
+          ],
+          "time_since_infection": [
+            1,
+            10
+          ]
+        },
+        "dependence_policy": "explicit_independence",
+        "distributions": {
+          "diabetes": [
+            {
+              "probability": 0.8,
+              "value": false
+            },
+            {
+              "probability": 0.2,
+              "value": true
+            }
+          ],
+          "pretest_tbi_probability": [
+            {
+              "probability": 0.5,
+              "value": 0.1
+            },
+            {
+              "probability": 0.5,
+              "value": 0.3
+            }
+          ],
+          "smoking": [
+            {
+              "probability": 0.7,
+              "value": false
+            },
+            {
+              "probability": 0.3,
+              "value": true
+            }
+          ],
+          "time_since_infection": [
+            {
+              "probability": 0.4,
+              "value": 1
+            },
+            {
+              "probability": 0.6,
+              "value": 10
+            }
+          ]
+        },
+        "joint_bound_states": [],
+        "joint_states": [],
+        "schema_id": "individual_tb.population_prior.v1",
+        "source": "invented_M1_arithmetic_demonstration_no_empirical_claim",
+        "status": "synthetic_not_clinical"
+      }
+    }
+  ],
+  "schema_id": "individual_tb.parameter_package.v1",
+  "scientific_hash": "70db67caa285bbfc3692794084a3111d5a376f9ceba49a3c1839e3ecc8d98b54",
+  "source_version": "Milestone1_8b533f8"
+}

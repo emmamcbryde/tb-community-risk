@@ -1,0 +1,34 @@
+{
+  "access_date": "2026-11-04",
+  "paper_url": "https://www.tstin3d.com/thinking3D_2008.pdf",
+  "paper_sha256": "9c8a8ff2c83b06a12507144fcdf04fa0264aa1208cce8e3a01e486e1123abe52",
+  "public_pages": [
+    {
+      "url": "https://tstin3d.com/en/calc.html",
+      "sha256": "ddfe19fbe4355dc5f41e1a2735a8c915a3664d48210a2ed6aee888b73140e297",
+      "scripts_read": false,
+      "submissions": 0
+    },
+    {
+      "url": "https://tstin3d.com/en/about.html",
+      "sha256": "dce87d0115d99cd29fe3d952d067ed94a6a371c66affcc4481ae6a0c0239d612",
+      "scripts_read": false,
+      "submissions": 0
+    },
+    {
+      "url": "https://tstin3d.com/en/references.html",
+      "sha256": "22555fc2c8f605930c703c98b7303698efe07124c2bbf689c127b743b1bd5b4b",
+      "scripts_read": false,
+      "submissions": 0
+    },
+    {
+      "url": "https://tstin3d.com/en/disclaimer.html",
+      "sha256": "fe939bd3a79ef5d3543755ec9692557008839cc9449ba657a5bfce873813119e",
+      "scripts_read": false,
+      "submissions": 0
+    }
+  ],
+  "pdf_inspection": "Relevant complete pages499-503 rendered with workspace-only PyMuPDF; formula/table/figure visually inspected",
+  "raw_third_party_code_committed": false,
+  "clinical_submissions": 0
+}

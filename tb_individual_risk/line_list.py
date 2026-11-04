@@ -80,7 +80,7 @@ def write_records(rows,*,csv_path,json_path):
 
 def export_results(results,*,csv_path,json_path):
     rows=records(results)
-    fields=("record_id","rank","central_absolute_risk","lower_missing_scenario","upper_missing_scenario",
+    fields=("record_id","rank","formulation","parameter_package","source_version","central_absolute_risk","lower_missing_scenario","upper_missing_scenario",
             "tbi_probability","conditional_progression_risk","effective_rr","expected_effective_rr","combination_policy",
             "horizon_years","status","ranking_uncertain","overlapping_missing_information_ranges","warning_status",
             "principal_risk_drivers","missing_critical_variables","input_completeness","warnings","scientific_hash","full_result_json")

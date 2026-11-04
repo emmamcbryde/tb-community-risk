@@ -16,9 +16,13 @@ BOOLEAN_FIELDS = {
 }
 NUMBER_FIELDS = {"current_age", "age_at_immigration", "immigration_year", "birth_year",
                  "time_since_infection", "tst_mm", "bcg_age", "horizon_years",
-                 "tbi_probability", "pretest_tbi_probability"}
-TEXT_FIELDS = {"country_of_birth", "current_country", "igra_product", "observation_date"}
+                 "tbi_probability", "pretest_tbi_probability", "historical_ari_probability",
+                 "historical_smear_positive_incidence_per_100k", "historical_ntm_sensitization_prevalence",
+                 "smoking_packs_per_day", "percent_ideal_body_weight"}
+TEXT_FIELDS = {"country_of_birth", "current_country", "igra_product", "observation_date", "tnf_inhibitor_product"}
 CATEGORIES = {
+    "historical_contact_type": {"none", "casual", "close"},
+    "historical_exposure_policy": {"constant_full_age_exposure_confirmed"},
     "sex": {"female", "male", "other"},
     "tst_result": {"positive", "negative", "not_done"},
     "igra_result": {"positive", "negative", "indeterminate", "borderline", "not_done"},
@@ -92,7 +96,7 @@ class Observation:
             else:
                 raise ValidationError(name, "Use an explicit known value for non-boolean fields.")
         elif name in NUMBER_FIELDS:
-            limit = 1 if name in {"tbi_probability", "pretest_tbi_probability"} else None
+            limit = 1 if name in {"tbi_probability", "pretest_tbi_probability", "historical_ari_probability", "historical_ntm_sensitization_prevalence"} else None
             number = finite(value, name, maximum=limit)
             if name in {"birth_year", "immigration_year"} and number != int(number):
                 raise ValidationError(name, "Calendar year must be integral.")

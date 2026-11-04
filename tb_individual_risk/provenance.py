@@ -4,7 +4,7 @@ from dataclasses import asdict, is_dataclass
 import hashlib
 import json
 
-VERSION = "individual_tb_risk_1.0.0"
+VERSION = "individual_tb_risk_1.1.0"
 
 def plain(value):
     if is_dataclass(value):

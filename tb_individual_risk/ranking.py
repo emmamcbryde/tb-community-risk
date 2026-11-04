@@ -4,7 +4,7 @@ from copy import deepcopy
 import math
 from .contracts import ValidationError,finite
 from .line_list import records
-from .provenance import seal
+from .provenance import seal,canonical
 
 
 def rank(model,line_list,*,by="unconditional_absolute_risk",likely_infected_threshold=None,horizon_years=None):
@@ -18,6 +18,7 @@ def rank(model,line_list,*,by="unconditional_absolute_risk",likely_infected_thre
         finite(horizon_years,"ranking horizon")
         source=[dict(row,horizon_years=horizon_years) if isinstance(row,dict) else row for row in source]
     results=[model.predict(row) for row in source]
+    lower_key,upper_key=("lower_conditional_missing_scenario","upper_conditional_missing_scenario") if by=="conditional_progression_risk" else ("lower_missing_scenario","upper_missing_scenario")
     counts=Counter(r.get("record_id") for r in results if r.get("record_id") is not None)
     horizons={r.get("horizon_years") for r in results if r.get("central_absolute_risk") is not None}
     incomparable=len(horizons)>1
@@ -40,17 +41,17 @@ def rank(model,line_list,*,by="unconditional_absolute_risk",likely_infected_thre
         row["rank"]=None
         if by=="expected_cases_per_1000" and score is not None:row["ranking_score"]=score*1000
         row["overlapping_missing_information_ranges"]=False
-        row["ranking_uncertain"]=row.get("lower_missing_scenario") is None or row.get("upper_missing_scenario") is None
+        row["ranking_uncertain"]=row.get(lower_key) is None or row.get(upper_key) is None
     # For each interval, overlap exists with a preceding prefix maximum or next lower bound.
-    intervals=sorted((r["lower_missing_scenario"],r["upper_missing_scenario"],i) for i,r in enumerate(results)
-        if r.get("lower_missing_scenario") is not None and r.get("upper_missing_scenario") is not None)
+    intervals=sorted((r[lower_key],r[upper_key],i) for i,r in enumerate(results)
+        if r.get(lower_key) is not None and r.get(upper_key) is not None)
     prefix=-math.inf
     for j,(lo,hi,i) in enumerate(intervals):
         overlap=prefix>=lo or (j+1<len(intervals) and intervals[j+1][0]<=hi)
         results[i]["overlapping_missing_information_ranges"]=overlap
         results[i]["ranking_uncertain"]|=overlap
         prefix=max(prefix,hi)
-    results.sort(key=lambda r:(r["ranking_score"] is None,-r["ranking_score"] if r["ranking_score"] is not None else 0,str(r.get("record_id") or ""),r["source_row_index"]))
+    results.sort(key=lambda r:(r["ranking_score"] is None,-r["ranking_score"] if r["ranking_score"] is not None else 0,canonical(r.get("record_id")),r["source_row_index"]))
     previous=object();assigned=None
     for position,row in enumerate(results,1):
         score=row["ranking_score"]
